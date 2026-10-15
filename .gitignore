@@ -1,0 +1,13 @@
+# Godot editor cache
+.godot/
+
+# Local path to an extract, and any pack copied into the project.
+# The extract is not part of OpenCHQ.
+local/
+data/
+
+# Export output
+export/
+*.tmp
+
+.DS_Store

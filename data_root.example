@@ -1,0 +1,21 @@
+# Copy this file to local/data_root.txt and set one path below.
+# That file is gitignored. Do not commit the extract.
+# The first usable line wins. Blank lines and # comments are skipped.
+#
+# The directory must contain:
+#   data/sites.json
+#   data/tmap.bin
+#   data/map_res.json
+#   data/game_meta.json
+#   data/resources_oil.json
+#   data/cities_capitals.json
+#   pics/WORLD_MAP.png
+#   anims/TANKS/img_02_48x31.png
+#   anims/TRNSPRT/img_02_43x16.png
+#
+# Relative to this project (Linux host and Windows, when the extract is the sibling folder):
+../Command HQ/modern/extracted
+#
+# Absolute. /mnt/nas is the share Windows has as K:.
+# /mnt/nas/projects/Command HQ/modern/extracted
+# K:/projects/Command HQ/modern/extracted
