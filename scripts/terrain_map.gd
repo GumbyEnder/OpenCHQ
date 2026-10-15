@@ -111,6 +111,21 @@ func id_at(x: int, y: int) -> int:
 	return v & 0x0F
 
 
+## Cells the map picture does not show. Docks, cities, and capitals are painted
+## onto the walk grid. Facilities are not a paint kind, so they are left out.
+func picture_cells() -> Array:
+	var out: Array = []
+	if bytes.is_empty():
+		return out
+	for y in CELL_H:
+		for x in CELL_W:
+			var id := id_at(x, y)
+			if id != 1 and id != 4 and id != 6:
+				continue
+			out.append({"x": x, "y": y, "id": id})
+	return out
+
+
 static func terrain_name(id: int) -> String:
 	if id < 0 or id >= NAMES.size():
 		return "unknown"

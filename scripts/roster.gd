@@ -51,7 +51,7 @@ static func notes_for(era_year: int) -> PackedStringArray:
 	if not tool_open(era_year, "nuke"):
 		notes.append("Nukes, satellites, foreign aid, and intel are not in this era.")
 	if era_year >= 9999:
-		notes.append("The concealed-start scenario hides the opponent. This loop still shows both pieces.")
+		notes.append("The concealed start hides the opponent until their capital is found.")
 	return notes
 
 

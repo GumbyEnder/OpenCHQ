@@ -19,6 +19,9 @@ func _play() -> void:
 	if not await _wait_ready(main):
 		_finish()
 		return
+	if not await _pass_start(main):
+		_finish()
+		return
 	if not await _opening(main, "opening.png"):
 		_finish()
 		return
@@ -62,6 +65,37 @@ func _wait_ready(main: Variant) -> bool:
 	return false
 
 
+func _pass_start(main: Variant) -> bool:
+	var screen: Control = main.start_screen
+	if screen == null or not screen.visible or main.map.visible or main.hud.visible:
+		_fail("start screen should cover the map until Start")
+		return false
+	var era := _find_option(screen, 1986)
+	var side := _find_option(screen, 1)
+	if era == null or side == null or _find_button(screen, "Start") == null:
+		_fail("start screen is missing the era, the side, or Start")
+		return false
+	var names := PackedStringArray()
+	for i in side.item_count:
+		names.append(side.get_item_text(i))
+	if side != _find_option(screen, 2) or not names.has("Blue") or not names.has("Red"):
+		_fail("start screen should offer Blue and Red")
+		return false
+	if era.get_item_id(era.selected) != 1986 or side.get_item_id(side.selected) != 1:
+		_fail("start screen should open on 1986 and Blue")
+		return false
+	_find_button(screen, "Start").pressed.emit()
+	await process_frame
+	if screen.visible or not main.map.visible or not main.hud.visible:
+		_fail("Start did not reveal the map")
+		return false
+	if main.era_year != 1986 or main.player_side != "blue" or main.time_on or main.game.beat != 0:
+		_fail("Start changed the opening (era %s side %s time %s beat %s)" % [main.era_year, main.player_side, main.time_on, main.game.beat])
+		return false
+	_ok("start screen hid the map until Start")
+	return true
+
+
 func _opening(main: Variant, shot: String) -> bool:
 	var wash := _site(main, "Washington")
 	var moscow := _site(main, "Moscow")
@@ -75,7 +109,20 @@ func _opening(main: Variant, shot: String) -> bool:
 		bad = true
 	if main.game.selected_side != "" or chip != "—":
 		bad = true
-	if main.map.zoom_text() != "100% of width" or not main.map.is_near_fit():
+	var mine_land = main.game.token(main.player_side)
+	var mine_ship = main.game.sea_token(main.player_side)
+	var other := "red" if main.player_side == "blue" else "blue"
+	if mine_land == null or mine_ship == null:
+		bad = true
+	elif not main.map.marked_piece(mine_land) or not main.map.marked_piece(mine_ship):
+		bad = true
+	elif main.map.marked_piece(main.game.token(other)) or main.map.marked_piece(main.game.sea_token(other)):
+		bad = true
+	elif main.map.is_near_fit():
+		bad = true
+	elif not main.map.sees(main.map.cell_center(mine_land.x, mine_land.y)):
+		bad = true
+	elif not main.map.sees(main.map.cell_center(mine_ship.x, mine_ship.y)):
 		bad = true
 	if wash.is_empty() or moscow.is_empty() or blue == null or red == null:
 		bad = true
@@ -385,6 +432,9 @@ func _contact(main: Variant) -> bool:
 
 
 func _win(main: Variant) -> bool:
+	# The opening frames the player's pieces, so Moscow is off that view.
+	await _press(main, KEY_F)
+	await process_frame
 	var wash := _site(main, "Washington")
 	var moscow := _site(main, "Moscow")
 	await _click_world(main, main.map.cell_center(int(wash["x"]), int(wash["y"])))

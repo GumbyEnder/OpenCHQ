@@ -7,6 +7,8 @@ var sites: SiteBook
 var beat := 0
 var note := ""
 var era_year := 1986
+## The side that takes orders. The other side marches on this side's capital.
+var player_side := "blue"
 var selected_side := ""
 var selected_domain := ""
 var tokens: Array = []
@@ -31,6 +33,8 @@ var extra_blue_on := false
 var extra_red_on := false
 var extra_blue := Vector2i(-999, -999)
 var extra_red := Vector2i(-999, -999)
+## Latched when the ordered side finds the other capital. Era 9999 reads it.
+var _capital_found := false
 
 ## Ocean cells off the capital-to-capital corridor. Walker class stays 0.
 const SEA_BLUE := Vector2i(0, 15)
@@ -77,10 +81,11 @@ func ordered_unit(side: String) -> Token:
 func reset() -> void:
 	sites.reset_owners()
 	beat = 0
-	note = "You are Blue. Click your piece, then a destination."
+	note = "You are %s. Your land piece and your ship are marked." % _label(player_side)
 	selected_side = ""
 	selected_domain = ""
 	_red_key = ""
+	_capital_found = false
 	oil_short = false
 	income_blue = 0
 	income_red = 0
@@ -166,11 +171,15 @@ func order(side: String, x: int, y: int) -> String:
 		unit.debt = 0
 		unit.pinned = false
 		return ""
+	# A hidden opponent is not a known blocker. Contact still stops the step.
+	var conceal := side == player_side and opponent_hidden()
 	var blocked := func(nx: int, ny: int) -> bool:
+		if conceal:
+			return false
 		return other.x == nx and other.y == ny
 	var path: Variant = terrain.route(unit.x, unit.y, x, y, blocked)
 	var contact := false
-	if path is Array and not (path as Array).is_empty() and _on_other((path as Array)[0], other):
+	if not conceal and path is Array and not (path as Array).is_empty() and _on_other((path as Array)[0], other):
 		path = null
 		contact = true
 	if (path == null or (path is Array and (path as Array).is_empty())) and blocked.call(x, y):
@@ -200,7 +209,7 @@ func order(side: String, x: int, y: int) -> String:
 		unit.debt = 0
 		if unit.domain != "sea":
 			unit.pinned = true
-		if side == "blue":
+		if side == player_side:
 			note = stopped
 		return stopped
 	if path == null or not path is Array or (path as Array).is_empty():
@@ -222,10 +231,10 @@ func order(side: String, x: int, y: int) -> String:
 		moving = "%s moving (%d cells, %s)" % [_label(side), steps.size(), ", ".join(via)]
 	if contact:
 		var stopped_note := "%s stopped short — damage amounts unknown" % _label(side)
-		if side == "blue":
+		if side == player_side:
 			note = stopped_note
 		return stopped_note
-	if side == "blue":
+	if side == player_side:
 		note = moving
 	return ""
 
@@ -247,7 +256,7 @@ func _order_sea(unit: Token, x: int, y: int) -> String:
 	unit.path = steps
 	unit.debt = int(steps[0]["pace"])
 	unit.pinned = false
-	if unit.side == "blue":
+	if unit.side == player_side:
 		note = "%s sailing (%d cells)" % [_label(unit.side), steps.size()]
 	return ""
 
@@ -274,26 +283,71 @@ func tick() -> Array:
 			unit.path = []
 			unit.debt = 0
 		return lines
-	var red := token("red")
-	var blue := token("blue")
-	if red.path.is_empty():
-		var cap: Dictionary = sites.capital("blue")
-		var key := "%d,%d,%s" % [blue.x, blue.y, str(cap["owner"])]
+	var opponent := "red" if player_side == "blue" else "blue"
+	var mine := token(player_side)
+	var opp := token(opponent)
+	if opp.path.is_empty():
+		var cap: Dictionary = sites.capital(player_side)
+		var key := "%d,%d,%s" % [mine.x, mine.y, str(cap["owner"])]
 		if _red_key != key:
-			var refused := order("red", int(cap["x"]), int(cap["y"]))
+			var refused := order(opponent, int(cap["x"]), int(cap["y"]))
 			_red_key = key if refused != "" else ""
-			if refused != "" and not lines.has(refused):
+			if refused != "" and not lines.has(refused) and not opponent_hidden():
 				lines.append(refused)
 	_say_combat(lines)
 	return lines
 
 
-static func visible_steps(path: Array, side: String) -> Array:
+## The opponent draws three steps. The ordered side draws the whole path.
+static func visible_steps(path: Array, side: String, player: String = "blue") -> Array:
 	if path.is_empty():
 		return []
-	if side != "blue":
+	if side != player:
 		return path.slice(0, mini(3, path.size()))
 	return path
+
+
+## Era 9999 draws the ordered side only, until their opponent's capital is found.
+func shows_piece(unit: Token) -> bool:
+	if unit == null:
+		return false
+	if unit.side == player_side:
+		return true
+	return not opponent_hidden()
+
+
+func opponent_hidden() -> bool:
+	if era_year < 9999 or winner() != "":
+		return false
+	_mark_capital_found()
+	return not _capital_found
+
+
+func _mark_capital_found() -> void:
+	if _capital_found or sites == null:
+		return
+	var opp := "red" if player_side == "blue" else "blue"
+	var cap: Variant = sites.capital(opp)
+	if not cap is Dictionary:
+		return
+	if str(cap["owner"]) == player_side:
+		_capital_found = true
+		return
+	var cx := int(cap["x"])
+	var cy := int(cap["y"])
+	for unit in tokens:
+		if unit.side != player_side:
+			continue
+		if posmod(unit.x, TerrainMap.CELL_W) == posmod(cx, TerrainMap.CELL_W) and unit.y == cy:
+			_capital_found = true
+			return
+
+
+func _public_line(side: String, line: String) -> String:
+	if line == "" or (side != player_side and opponent_hidden()):
+		return ""
+	note = line
+	return line
 
 
 func _advance(unit: Token) -> String:
@@ -308,8 +362,7 @@ func _advance(unit: Token) -> String:
 		unit.debt = 0
 		if unit.domain != "sea":
 			unit.pinned = true
-		note = "%s stopped short — damage amounts unknown" % _label(unit.side)
-		return note
+		return _public_line(unit.side, "%s stopped short — damage amounts unknown" % _label(unit.side))
 	unit.debt -= 1
 	if unit.debt > 0:
 		return ""
@@ -327,8 +380,7 @@ func _advance(unit: Token) -> String:
 		var line := "%s took %s" % [_label(unit.side), str(site["title"])]
 		if winner() != "":
 			line = "%s and holds every capital" % line
-		note = line
-		return line
+		return _public_line(unit.side, line)
 	return ""
 
 
@@ -494,7 +546,7 @@ func _say_income(lines: Array) -> void:
 
 func _say_combat(lines: Array) -> void:
 	var said := combat_pulse()
-	if said == "" or said == _combat_said:
+	if said == "" or said == _combat_said or opponent_hidden():
 		return
 	_combat_said = said
 	lines.append(said)

@@ -2,6 +2,7 @@ extends Control
 
 const MapViewScript = preload("res://scripts/map_view.gd")
 const HudScript = preload("res://scripts/hud.gd")
+const StartScreenScript = preload("res://scripts/start_screen.gd")
 const StillsScript = preload("res://scripts/stills.gd")
 
 var pack: DataPack
@@ -13,9 +14,12 @@ var game: MatchState
 var stills
 var map: MapView
 var hud: Hud
+var start_screen: Control
 var drawer_button: Button
 
 var era_year := 1986
+var player_side := "blue"
+var started := false
 var time_on := false
 var pixel_filter := true
 var labels_on := false
@@ -32,10 +36,16 @@ func _ready() -> void:
 	_apply_start_size()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	map = MapViewScript.new()
+	map.visible = false
 	add_child(map)
 	hud = HudScript.new()
+	hud.visible = false
 	add_child(hud)
 	hud.command.connect(_on_command)
+	start_screen = StartScreenScript.new()
+	start_screen.z_index = 20
+	add_child(start_screen)
+	start_screen.connect("begin_match", _begin_match)
 	drawer_button = Button.new()
 	drawer_button.text = "Controls"
 	drawer_button.position = Vector2(12, 8)
@@ -72,7 +82,6 @@ func _boot() -> void:
 	_on_resized()
 	_reset_state()
 	map.fit_view()
-	_log("%d original sites. You are Blue." % sites.count())
 	_sync()
 	var shot := OS.get_environment("OPENCHQ_SHOT")
 	if shot != "":
@@ -156,8 +165,11 @@ func _load_pack() -> String:
 
 
 func _fail(message: String) -> void:
+	if start_screen != null:
+		start_screen.visible = false
 	var lab := Label.new()
 	lab.text = message
+	lab.z_index = 30
 	lab.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lab.set_anchors_preset(Control.PRESET_FULL_RECT)
 	lab.offset_left = 24
@@ -207,6 +219,36 @@ func _layout() -> void:
 		hud.position = Vector2(size.x - panel_w, 0)
 		hud.size = Vector2(panel_w, size.y)
 	map._place_overlay()
+	if start_screen != null:
+		start_screen.visible = not started
+		start_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if not started:
+		map.visible = false
+		hud.visible = false
+		drawer_button.visible = false
+	else:
+		map.visible = true
+		hud.visible = true
+
+
+func _begin_match(year: int, side: String) -> void:
+	if started:
+		return
+	player_side = "red" if side == "red" else "blue"
+	if game != null:
+		game.player_side = player_side
+		game.note = "You are %s. Your land piece and your ship are marked." % _side_name(player_side)
+	started = true
+	if start_screen != null and start_screen.has_method("set_winner"):
+		start_screen.call("set_winner", "")
+	if get_viewport() != null:
+		get_viewport().gui_release_focus()
+	_set_era(year)
+	_layout()
+	_frame_owned()
+	var who := "Red" if player_side == "red" else "Blue"
+	_log("%d original sites. Era %s. Side %s." % [sites.count(), _era_name(era_year), who])
+	_sync()
 
 
 func _toggle_drawer() -> void:
@@ -226,14 +268,18 @@ func _toggle_drawer() -> void:
 
 
 func _on_command(action: String, arg: Variant) -> void:
+	if not started:
+		return
 	match action:
 		"fit":
 			_fit()
 		"zoom":
 			_zoom_selection()
+		"start":
+			_return_to_start()
 		"reset":
 			_reset_state()
-			map.fit_view()
+			_frame_owned()
 			_log("Opening view restored")
 			_sync()
 		"time":
@@ -245,7 +291,7 @@ func _on_command(action: String, arg: Variant) -> void:
 		"labels":
 			_toggle_labels()
 		"nuke", "satellite", "foreign_aid", "intel":
-			var line := game.use_tool("blue", action)
+			var line := game.use_tool(player_side, action)
 			if line != "":
 				game.note = line
 				_log(line)
@@ -271,6 +317,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not key.pressed or key.echo:
 		return
 	var focus := get_viewport().gui_get_focus_owner()
+	if not started:
+		return
 	if focus is LineEdit or focus is TextEdit or focus is OptionButton:
 		return
 	match key.keycode:
@@ -289,6 +337,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		_:
 			return
 	get_viewport().set_input_as_handled()
+
+
+func _frame_owned() -> void:
+	if map == null or game == null or map.size.x < 2.0:
+		return
+	var points: Array[Vector2] = []
+	var land := game.token(player_side)
+	var ship := game.sea_token(player_side)
+	if land != null:
+		points.append(map.cell_center(land.x, land.y))
+	if ship != null:
+		points.append(map.cell_center(ship.x, ship.y))
+	if points.size() < 2:
+		map.fit_view()
+		return
+	map.frame_points(points)
 
 
 func _fit() -> void:
@@ -365,6 +429,22 @@ func _set_era(year: int) -> void:
 	map.queue_redraw()
 
 
+func _return_to_start() -> void:
+	if not started or game == null or game.winner() == "":
+		return
+	var who := game.winner()
+	time_on = false
+	started = false
+	log_lines = PackedStringArray()
+	if hud != null:
+		hud.set_log("")
+	_reset_state()
+	_sync()
+	if start_screen != null and start_screen.has_method("set_winner"):
+		start_screen.call("set_winner", who)
+	_layout()
+
+
 func _reset_state() -> void:
 	time_on = false
 	pixel_filter = true
@@ -400,6 +480,8 @@ func _on_tick() -> void:
 
 
 func _on_hover(world: Vector2) -> void:
+	if not started:
+		return
 	var cell := map.cell_of(world)
 	var tid := terrain.id_at(cell.x, cell.y)
 	map.set_chip("terrain", "%s · %s" % [TerrainMap.terrain_name(tid), TerrainMap.pace_word(tid)])
@@ -418,18 +500,21 @@ func _on_hover(world: Vector2) -> void:
 	sites.hover_id = next_site
 	atlas.hover_id = next_city
 	oil.hover_id = next_oil
-	if game.selected_side == "blue":
+	if game.selected_side == player_side:
 		var key := "%d,%d" % [cell.x, cell.y]
 		if key != preview_key:
 			preview_key = key
-			var unit := game.ordered_unit("blue")
+			var unit := game.ordered_unit(player_side)
 			var found: Variant = null
 			if unit != null and unit.domain == "sea":
 				found = game.ship_route(unit.x, unit.y, cell.x, cell.y, unit.ship_class)
 			else:
-				var red := game.token("red")
+				var other := game.token(_opponent_side())
+				var conceal := game.opponent_hidden()
 				var blocked := func(nx: int, ny: int) -> bool:
-					return red.x == nx and red.y == ny
+					if conceal:
+						return false
+					return other.x == nx and other.y == ny
 				found = terrain.route(unit.x, unit.y, cell.x, cell.y, blocked)
 			map.preview = found if found is Array else []
 			map.show_preview = true
@@ -444,14 +529,18 @@ func _on_hover(world: Vector2) -> void:
 
 
 func _on_click(world: Vector2) -> void:
+	if not started:
+		return
 	get_viewport().gui_release_focus()
 	var cell := map.cell_of(world)
 	var picked := _pick(world)
 	sites.selected_id = -1
 	atlas.selected_id = ""
 	oil.selected_id = ""
-	if game.selected_side == "blue" and not (str(picked.get("kind", "")) == "token" and str(picked.get("side", "")) == "blue"):
-		var refused := game.order("blue", cell.x, cell.y)
+	var mine := player_side
+	var who := _side_name(mine)
+	if game.selected_side == mine and not (str(picked.get("kind", "")) == "token" and str(picked.get("side", "")) == mine):
+		var refused := game.order(mine, cell.x, cell.y)
 		_log(refused if refused != "" else game.note)
 		var site: Variant = sites.at_cell(cell.x, cell.y)
 		if site is Dictionary:
@@ -463,18 +552,18 @@ func _on_click(world: Vector2) -> void:
 		_sync()
 		map.queue_redraw()
 		return
-	if str(picked.get("kind", "")) == "token" and str(picked.get("side", "")) == "blue":
-		game.selected_side = "blue"
+	if str(picked.get("kind", "")) == "token" and str(picked.get("side", "")) == mine:
+		game.selected_side = mine
 		game.selected_domain = str(picked.get("domain", "land"))
-		var home_unit := game.ordered_unit("blue")
+		var home_unit := game.ordered_unit(mine)
 		var home: Variant = sites.at_cell(home_unit.x, home_unit.y)
 		if home is Dictionary:
 			sites.selected_id = int(home["id"])
 			_show_site(home)
 		elif home_unit.domain == "sea":
 			_show_sea(home_unit)
-		game.note = "Blue sea piece selected. Click a destination." if home_unit.domain == "sea" else "Blue piece selected. Click a destination."
-		_log("Blue sea piece selected" if home_unit.domain == "sea" else "Blue piece selected")
+		game.note = "%s sea piece selected. Click a destination." % who if home_unit.domain == "sea" else "%s piece selected. Click a destination." % who
+		_log("%s sea piece selected" % who if home_unit.domain == "sea" else "%s piece selected" % who)
 		_sync()
 		map.queue_redraw()
 		return
@@ -485,8 +574,8 @@ func _on_click(world: Vector2) -> void:
 	preview_key = ""
 	match picked.get("kind", ""):
 		"token":
-			_log("Red moves on its own")
-			var home_red: Variant = sites.at_cell(game.token("red").x, game.token("red").y)
+			_log("%s moves on its own" % _side_name(_opponent_side()))
+			var home_red: Variant = sites.at_cell(game.token(_opponent_side()).x, game.token(_opponent_side()).y)
 			if home_red is Dictionary:
 				sites.selected_id = int(home_red["id"])
 				_show_site(home_red)
@@ -515,6 +604,8 @@ func _pick(world: Vector2) -> Dictionary:
 	var best: MatchState.Token = null
 	var best_d := hit * 1.35
 	for unit in game.tokens:
+		if not game.shows_piece(unit):
+			continue
 		var dist := map.cell_center(unit.x, unit.y).distance_to(world)
 		if dist > best_d:
 			continue
@@ -617,6 +708,8 @@ func _sync() -> void:
 	if hud == null or game == null:
 		return
 	var won := game.winner() != ""
+	hud.set_orders(player_side, game.opponent_hidden())
+	hud.set_result(game.winner())
 	map.set_note(game.note, won)
 	hud.set_note(game.note, won)
 	hud.set_running(time_on)
@@ -699,6 +792,14 @@ func _roster_entries() -> Array:
 
 func _era_name(year: int) -> String:
 	return "????" if year >= 9999 else str(year)
+
+
+func _side_name(side: String) -> String:
+	return "Red" if side == "red" else "Blue"
+
+
+func _opponent_side() -> String:
+	return "red" if player_side == "blue" else "blue"
 
 
 func _log(message: String) -> void:

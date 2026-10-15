@@ -5,9 +5,15 @@ signal command(action: String, arg: Variant)
 
 var _era: OptionButton
 var _filter: OptionButton
+var _filter_row: HBoxContainer
 var _tier: OptionButton
 var _atlas_row: HBoxContainer
+var _atlas_hold: Control
+var _still_scroll: ScrollContainer
+var _orders: Label
 var _note: Label
+var _result: PanelContainer
+var _result_title: Label
 var _card_title: Label
 var _card_body: Label
 var _log: Label
@@ -83,13 +89,16 @@ func _ready() -> void:
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color("4ecdc4"))
 	box.add_child(title)
-	var sub := _muted("Blue moves on orders. Red marches on the other capital. Time starts held.")
-	box.add_child(sub)
+	box.add_child(_result_card())
+	_orders = _muted("Blue moves on orders. Red marches on the other capital. Time starts held.")
+	box.add_child(_orders)
+	box.add_child(_opening_card())
 
 	box.add_child(_row([_button("Fit", "fit"), _button("Zoom to selection", "zoom")]))
 	_time = _button("Run", "time")
 	box.add_child(_row([_button("Reset", "reset"), _time]))
 	_atlas = _button("Atlas", "atlas")
+	_atlas.visible = false
 	_oil = _button("Oil", "oil")
 	_labels = _button("Labels", "labels")
 	box.add_child(_row([_atlas, _oil, _labels]))
@@ -114,7 +123,9 @@ func _ready() -> void:
 	_filter.item_selected.connect(func(index: int) -> void:
 		command.emit("filter", "pixel" if index == 0 else "smooth")
 	)
-	box.add_child(_labeled("Filter", _filter))
+	_filter_row = _labeled("Filter", _filter)
+	_filter_row.visible = false
+	box.add_child(_filter_row)
 
 	_tier = OptionButton.new()
 	_tier.add_item("Major capitals", 1)
@@ -125,7 +136,12 @@ func _ready() -> void:
 	)
 	_atlas_row = _labeled("Atlas tier", _tier)
 	_atlas_row.visible = false
-	box.add_child(_atlas_row)
+	# The opening card replaces this control. The row flag still tracks the toggle.
+	_atlas_hold = Control.new()
+	_atlas_hold.visible = false
+	_atlas_hold.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_atlas_hold.add_child(_atlas_row)
+	box.add_child(_atlas_hold)
 
 	_note = Label.new()
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -149,33 +165,61 @@ func _ready() -> void:
 	roster_scroll.add_child(_roster_row)
 
 	_still_note = _muted("")
+	_still_note.visible = false
 	box.add_child(_still_note)
 	_still_pick = OptionButton.new()
 	_still_pick.item_selected.connect(func(index: int) -> void:
 		command.emit("still", _still_pick.get_item_text(index))
 	)
 	_still_row = _labeled("Stills", _still_pick)
+	_still_row.visible = false
 	box.add_child(_still_row)
-	var still_scroll := ScrollContainer.new()
-	still_scroll.custom_minimum_size = Vector2(0, 150)
-	still_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	still_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(still_scroll)
+	_still_scroll = ScrollContainer.new()
+	_still_scroll.visible = false
+	_still_scroll.custom_minimum_size = Vector2(0, 150)
+	_still_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_still_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(_still_scroll)
 	_still_grid = GridContainer.new()
 	_still_grid.columns = 4
 	_still_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_still_grid.add_theme_constant_override("h_separation", 6)
 	_still_grid.add_theme_constant_override("v_separation", 6)
-	still_scroll.add_child(_still_grid)
+	_still_scroll.add_child(_still_grid)
 
-	box.add_child(_muted("Drag the map. The world wraps east to west. Wheel zooms. Click your piece, then a cell. Ocean is a transport for the land piece. A sea piece sails by the sea lanes. Forest, mountain, polar, jungle, and shallows are slower. The 1990 ratio was not recovered. Oil rates are unknown. Nukes, satellites, foreign aid, and intel are only in 1986 and 2023. Oil is also on in the concealed start. Costs and radii stay unknown. An enemy route shows its first three steps. Cities pay each round. The amount is unknown. A tank costs twice an infantry unit. An oil shortage stops movement, grounds planes, and stops city income. Overlapping land icons engage. A shot is every other round and the damage is unknown. A second friendly deals damage and takes none. Flank and rear hits hurt more. Sea units are not flanked and are not pinned. A pinned land unit stays until the fight ends or a new move order. Keys: T time, L labels, F fit, R reset, O oil, A atlas."))
+	var rules := _muted("Drag the map. The world wraps east to west. Wheel zooms. Click your piece, then a cell. Ocean is a transport for the land piece. A sea piece sails by the sea lanes. Forest, mountain, polar, jungle, and shallows are slower. The 1990 ratio was not recovered. Oil rates are unknown. Nukes, satellites, foreign aid, and intel are only in 1986 and 2023. Oil is also on in the concealed start. Costs and radii stay unknown. An enemy route shows its first three steps. Cities pay each round. The amount is unknown. A tank costs twice an infantry unit. An oil shortage stops movement, grounds planes, and stops city income. Overlapping land icons engage. A shot is every other round and the damage is unknown. A second friendly deals damage and takes none. Flank and rear hits hurt more. Sea units are not flanked and are not pinned. A pinned land unit stays until the fight ends or a new move order. Keys: T time, L labels, F fit, R reset, O oil, A atlas.")
+	rules.visible = false
+	box.add_child(rules)
 	_log = _muted("")
 	box.add_child(_log)
+
+
+func set_orders(side: String, concealed: bool = false) -> void:
+	if _orders == null:
+		return
+	var who := "Red" if side == "red" else "Blue"
+	var other := "Blue" if side == "red" else "Red"
+	if concealed:
+		_orders.text = "%s moves on orders. %s stays hidden until their capital is found. Time starts held." % [who, other]
+	else:
+		_orders.text = "%s moves on orders. %s marches on the other capital. Time starts held." % [who, other]
 
 
 func set_note(text: String, win: bool) -> void:
 	_note.text = text
 	_note.add_theme_color_override("font_color", Color("4ecdc4") if win else Color("e4ecff"))
+
+
+## Hidden until a side holds every capital. The name comes first, then Start.
+func set_result(side: String) -> void:
+	if _result == null:
+		return
+	var named := side == "blue" or side == "red"
+	_result.visible = named
+	if not named or _result_title == null:
+		return
+	var who := "Red" if side == "red" else "Blue"
+	_result_title.text = "%s wins" % who
 
 
 func set_card(title: String, body: String) -> void:
@@ -220,6 +264,7 @@ func set_tier(tier: int) -> void:
 
 func set_atlas_row(show_row: bool) -> void:
 	_atlas_row.visible = show_row
+	_atlas_hold.visible = false
 
 
 func set_roster(entries: Array, notes: PackedStringArray) -> void:
@@ -254,7 +299,9 @@ func set_still_catalog(names: PackedStringArray, note: String) -> void:
 	_still_pick.clear()
 	for stem in names:
 		_still_pick.add_item(stem)
-	_still_row.visible = not names.is_empty()
+	_still_note.visible = false
+	_still_row.visible = false
+	_still_scroll.visible = false
 	if not names.is_empty():
 		_still_pick.select(0)
 	_still_pick.set_block_signals(false)
@@ -306,6 +353,63 @@ func _tool_button(text: String, action: String) -> Button:
 	var button := _button(text, action)
 	_tools[action] = button
 	return button
+
+
+func _result_card() -> PanelContainer:
+	var card := PanelContainer.new()
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color("14343a")
+	panel.border_color = Color("4ecdc4")
+	panel.set_border_width_all(1)
+	panel.set_corner_radius_all(6)
+	panel.content_margin_left = 10
+	panel.content_margin_right = 10
+	panel.content_margin_top = 10
+	panel.content_margin_bottom = 10
+	card.add_theme_stylebox_override("panel", panel)
+	var inner := VBoxContainer.new()
+	inner.add_theme_constant_override("separation", 8)
+	card.add_child(inner)
+	_result_title = Label.new()
+	_result_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_result_title.add_theme_font_size_override("font_size", 16)
+	_result_title.add_theme_color_override("font_color", Color("4ecdc4"))
+	inner.add_child(_result_title)
+	var again := Button.new()
+	again.text = "Start"
+	again.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	again.pressed.connect(func() -> void:
+		command.emit("start", null)
+	)
+	inner.add_child(again)
+	card.visible = false
+	_result = card
+	return card
+
+
+func _opening_card() -> PanelContainer:
+	var card := PanelContainer.new()
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color("14343a")
+	panel.border_color = Color("4ecdc4")
+	panel.set_border_width_all(1)
+	panel.set_corner_radius_all(6)
+	panel.content_margin_left = 10
+	panel.content_margin_right = 10
+	panel.content_margin_top = 10
+	panel.content_margin_bottom = 10
+	card.add_theme_stylebox_override("panel", panel)
+	var inner := VBoxContainer.new()
+	inner.add_theme_constant_override("separation", 6)
+	card.add_child(inner)
+	var title := Label.new()
+	title.text = "Every capital"
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color("4ecdc4"))
+	inner.add_child(title)
+	inner.add_child(_muted("The goal is every capital. Click your piece, then a cell. Time stays held until Run. Your land piece and your ship are marked."))
+	return card
 
 
 func _button(text: String, action: String) -> Button:

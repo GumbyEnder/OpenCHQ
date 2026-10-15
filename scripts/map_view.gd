@@ -13,6 +13,12 @@ const OWNER := {
 	"red": Color("ff8d8d"),
 	"neutral": Color("d5dbe8"),
 }
+## Walk-grid paint that the source picture leaves out. Not a side color.
+const PAINT_COLOR := {
+	1: Color("555555"),
+	4: Color("ffd27a"),
+	6: Color("aa5500"),
+}
 
 var logic_w := 30720.0
 var logic_h := 13632.0
@@ -43,6 +49,8 @@ var _k1 := 0
 var _chips: Control
 var _chip_labels := {}
 var _note: Label
+var _paint: Array = []
+var _paint_for: TerrainMap = null
 
 
 func _ready() -> void:
@@ -165,6 +173,75 @@ func zoom_to(world: Vector2) -> void:
 	queue_redraw()
 
 
+## The player's land piece and ship. The other side is not marked.
+func marked_piece(unit: MatchState.Token) -> bool:
+	if game == null or unit == null:
+		return false
+	if unit.side != game.player_side:
+		return false
+	return unit.domain == "land" or unit.domain == "sea"
+
+
+## Era 9999 omits the opponent until their capital is found.
+func piece_drawn(unit: MatchState.Token) -> bool:
+	return game != null and game.shows_piece(unit)
+
+
+## Fit both points, including across the east-west wrap. Not the whole map.
+func frame_points(points: Array) -> void:
+	if size.x < 2.0 or size.y < 2.0 or logic_w <= 0.0 or points.is_empty():
+		return
+	var base := (points[0] as Vector2).x
+	var min_x := 0.0
+	var max_x := 0.0
+	var min_y := (points[0] as Vector2).y
+	var max_y := min_y
+	for point in points:
+		var at := point as Vector2
+		var dx := _short_dx(base, at.x)
+		min_x = minf(min_x, dx)
+		max_x = maxf(max_x, dx)
+		min_y = minf(min_y, at.y)
+		max_y = maxf(max_y, at.y)
+	var pad_x := maxf(source_scale * 2.0, (max_x - min_x) * 0.18)
+	var pad_y := maxf(source_scale * 3.0, (max_y - min_y) * 0.28)
+	min_x -= pad_x
+	max_x += pad_x
+	min_y -= pad_y
+	max_y += pad_y
+	var span_x := maxf(source_scale, max_x - min_x)
+	var span_y := maxf(source_scale, max_y - min_y)
+	var min_s := fit_scale()
+	var max_s := size.x / (logic_w * 0.03)
+	view_scale = clampf(minf(size.x / span_x, size.y / span_y), min_s, max_s)
+	var mid_x := base + (min_x + max_x) * 0.5
+	var mid_y := (min_y + max_y) * 0.5
+	pan_x = size.x * 0.5 - mid_x * view_scale
+	pan_y = size.y * 0.5 - mid_y * view_scale
+	queue_redraw()
+
+
+func sees(world: Vector2) -> bool:
+	if view_scale <= 0.0 or size.x < 2.0 or logic_w <= 0.0:
+		return false
+	for k in [-1, 0, 1]:
+		var s := _world_to_screen(world.x + float(k) * logic_w, world.y)
+		if s.x >= 4.0 and s.x <= size.x - 4.0 and s.y >= 4.0 and s.y <= size.y - 4.0:
+			return true
+	return false
+
+
+func _short_dx(from: float, to: float) -> float:
+	var d := to - from
+	if logic_w <= 0.0:
+		return d
+	if d > logic_w * 0.5:
+		d -= logic_w
+	elif d < -logic_w * 0.5:
+		d += logic_w
+	return d
+
+
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
@@ -246,6 +323,7 @@ func _draw() -> void:
 		var rect := Rect2(origin, Vector2(logic_w * view_scale, logic_h * view_scale))
 		if rect.intersects(Rect2(Vector2(-2, -2), size + Vector2(4, 4))):
 			draw_texture_rect(map_tex, rect, false)
+	_draw_painted()
 	if oil != null and oil.visible:
 		_draw_oil()
 	if atlas != null and atlas.visible:
@@ -255,6 +333,52 @@ func _draw() -> void:
 	if game != null:
 		_draw_paths()
 		_draw_tokens()
+
+
+func rebuild_paint() -> void:
+	_paint_for = terrain
+	_paint = terrain.picture_cells() if terrain != null else []
+
+
+func paint_count() -> int:
+	if _paint_for != terrain:
+		rebuild_paint()
+	return _paint.size()
+
+
+func draws_paint_id(id: int) -> bool:
+	return PAINT_COLOR.has(id)
+
+
+func _draw_painted() -> void:
+	if terrain == null or view_scale <= 0.0:
+		return
+	if _paint_for != terrain:
+		rebuild_paint()
+	var cell := source_scale * view_scale
+	if cell < 0.5 or _paint.is_empty():
+		return
+	var view := Rect2(Vector2(-2, -2), size + Vector2(4, 4))
+	for mark in _paint:
+		var id := int(mark["id"])
+		if not PAINT_COLOR.has(id):
+			continue
+		var col := PAINT_COLOR[id] as Color
+		var wx := float(mark["x"]) * source_scale
+		var wy := float(mark["y"]) * source_scale
+		for k in range(_k0, _k1 + 1):
+			var origin := _world_to_screen(wx + float(k) * logic_w, wy)
+			var x0 := floorf(origin.x)
+			var y0 := floorf(origin.y)
+			var x1 := floorf(origin.x + cell)
+			var y1 := floorf(origin.y + cell)
+			if x1 <= x0:
+				x1 = x0 + 1.0
+			if y1 <= y0:
+				y1 = y0 + 1.0
+			var rect := Rect2(x0, y0, x1 - x0, y1 - y0)
+			if rect.intersects(view):
+				draw_rect(rect, col)
 
 
 func _draw_oil() -> void:
@@ -315,11 +439,20 @@ func _draw_paths() -> void:
 	var blue: MatchState.Token = game.token("blue")
 	var red: MatchState.Token = game.token("red")
 	var preview_sea := show_preview and not preview.is_empty() and game.selected_domain == "sea"
-	var blue_path: Array = preview if show_preview and not preview.is_empty() and not preview_sea else blue.path
-	_draw_path(MatchState.visible_steps(blue_path, "blue"), BLUE_PATH)
-	_draw_path(MatchState.visible_steps(red.path, "red"), RED_PATH)
+	var blue_path: Array = blue.path
+	var red_path: Array = red.path
+	if show_preview and not preview.is_empty() and not preview_sea:
+		if game.selected_side == "red":
+			red_path = preview
+		else:
+			blue_path = preview
+	var player := game.player_side
+	if piece_drawn(blue):
+		_draw_path(MatchState.visible_steps(blue_path, "blue", player), BLUE_PATH)
+	if piece_drawn(red):
+		_draw_path(MatchState.visible_steps(red_path, "red", player), RED_PATH)
 	for unit in game.tokens:
-		if unit.domain != "sea":
+		if unit.domain != "sea" or not piece_drawn(unit):
 			continue
 		var path: Array = unit.path
 		if unit.side == game.selected_side and preview_sea:
@@ -327,7 +460,7 @@ func _draw_paths() -> void:
 		if path.is_empty():
 			continue
 		var color := BLUE_PATH if unit.side == "blue" else RED_PATH
-		_draw_path(MatchState.visible_steps(path, unit.side), color)
+		_draw_path(MatchState.visible_steps(path, unit.side, game.player_side), color)
 
 
 func _draw_path(path: Array, color: Color) -> void:
@@ -339,17 +472,20 @@ func _draw_path(path: Array, color: Color) -> void:
 			draw_rect(Rect2(s.x - 1.5, s.y - 1.5, 3.0, 3.0), col)
 
 
-## Concealed start would hide the opponent. This loop still draws both pieces.
 func _draw_tokens() -> void:
 	var cell_px := source_scale * view_scale
 	for unit in game.tokens:
+		if not piece_drawn(unit):
+			continue
 		var center := cell_center(unit.x, unit.y)
 		var selected := _token_selected(unit)
 		var word := TerrainMap.pace_word(terrain.id_at(unit.x, unit.y))
 		var kind := "sea" if unit.domain == "sea" else Roster.token_kind(era_year, word)
 		var tex: Texture2D = sea_tex if kind == "sea" else (land_tex if kind == "land" else (transport_tex if kind == "transport" else null))
 		var sprite := tex if cell_px >= 14.0 and tex != null else null
+		var owned := marked_piece(unit)
 		for s in _screens(center.x, center.y):
+			var mark := Rect2()
 			if sprite != null:
 				var h := minf(22.0, maxf(14.0, cell_px * 0.7))
 				var w := h * float(sprite.get_width()) / float(sprite.get_height())
@@ -357,11 +493,35 @@ func _draw_tokens() -> void:
 				draw_texture_rect(sprite, rect, false)
 				var outline := Color("7eb6ff") if unit.side == "blue" else Color("ff8d8d")
 				draw_rect(rect.grow(1.0), outline, false, 2.0 if selected else 1.0)
+				mark = rect
 			else:
 				var radius := 10.0 if selected else 8.0
 				var fill := Color("1d4ed8") if unit.side == "blue" else Color("b91c1c")
 				draw_circle(s, radius, fill)
 				draw_arc(s, radius, 0, TAU, 24, Color.WHITE, 3.0 if selected else 1.5, true)
+				mark = Rect2(s.x - radius, s.y - radius, radius * 2.0, radius * 2.0)
+			if owned:
+				_draw_owned_mark(mark)
+
+
+func _draw_owned_mark(rect: Rect2) -> void:
+	var box := rect.grow(4.0)
+	var col := Color("4ecdc4")
+	var arm := minf(8.0, minf(box.size.x, box.size.y) * 0.45)
+	var width := 2.0
+	var tl := box.position
+	var tr := Vector2(box.end.x, box.position.y)
+	var bl := Vector2(box.position.x, box.end.y)
+	var br := box.end
+	draw_line(tl, tl + Vector2(arm, 0.0), col, width)
+	draw_line(tl, tl + Vector2(0.0, arm), col, width)
+	draw_line(tr, tr + Vector2(-arm, 0.0), col, width)
+	draw_line(tr, tr + Vector2(0.0, arm), col, width)
+	draw_line(bl, bl + Vector2(arm, 0.0), col, width)
+	draw_line(bl, bl + Vector2(0.0, -arm), col, width)
+	draw_line(br, br + Vector2(-arm, 0.0), col, width)
+	draw_line(br, br + Vector2(0.0, -arm), col, width)
+	_paint_label(Vector2(box.position.x, box.end.y + 16.0), "Yours", col)
 
 
 func _token_selected(unit: MatchState.Token) -> bool:

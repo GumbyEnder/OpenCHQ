@@ -8,6 +8,7 @@ const MatchScript = preload("res://scripts/match_state.gd")
 const RosterScript = preload("res://scripts/roster.gd")
 const StillsScript = preload("res://scripts/stills.gd")
 const SeaScript = preload("res://scripts/sea_lanes.gd")
+const MapScript = preload("res://scripts/map_view.gd")
 
 var _failures: PackedStringArray = []
 
@@ -123,6 +124,7 @@ func _check() -> void:
 		else:
 			_ok("capitals and cities paint centers and neighbors; facilities do not")
 	_check_paint_kinds(pack)
+	_check_picture(terrain)
 
 	var same: Variant = terrain.route(79, 44, 79, 44, Callable())
 	if not same is Array or not (same as Array).is_empty():
@@ -220,8 +222,8 @@ func _check() -> void:
 	var late_notes := RosterScript.notes_for(9999)
 	if early_notes.is_empty() or not str(early_notes[0]).contains("Infantry"):
 		_fail("1918 roster should say the infantry frame is missing")
-	elif late_notes.is_empty() or not str(late_notes[late_notes.size() - 1]).contains("both pieces"):
-		_fail("concealed era should say both pieces stay visible")
+	elif late_notes.is_empty() or not str(late_notes[late_notes.size() - 1]).contains("hides the opponent") or not str(late_notes[late_notes.size() - 1]).contains("capital"):
+		_fail("concealed era should hide the opponent until their capital is found")
 	else:
 		_ok("roster notes")
 
@@ -311,6 +313,24 @@ func _check() -> void:
 	if game.winner() != "" or game.beat != 0:
 		_fail("reset after a played match should clear the winner")
 
+	game.player_side = "red"
+	game.reset()
+	var played_red = game.token("red")
+	var marched_blue = game.token("blue")
+	var took_red: String = game.order("red", 79, 44)
+	if took_red != "" or played_red.path.is_empty() or not str(game.note).begins_with("Red"):
+		_fail("red should take the order when it is the side you play: %s" % took_red)
+	else:
+		game.tick()
+		if marched_blue.path.is_empty() or played_red.path.is_empty():
+			_fail("blue should march on its own and leave the red order in place")
+		elif str(game.note).begins_with("Blue"):
+			_fail("blue's march should not take the note from red")
+		else:
+			_ok("red takes orders and blue marches on its own")
+	game.player_side = "blue"
+	game.reset()
+
 	var oil = OilScript.new()
 	oil.load_doc(pack.json_any("data/resources_oil.json"), 30720.0, 13632.0)
 	var later := false
@@ -341,6 +361,7 @@ func _check() -> void:
 	_check_sea(pack, terrain, game)
 	_check_eras(terrain, game)
 	_check_blank(game)
+	_check_concealed(terrain, game)
 
 	var tex: Texture2D = pack.texture("pics/WORLD_MAP.png")
 	if tex == null or tex.get_width() != 320 or tex.get_height() != 142:
@@ -398,6 +419,104 @@ func _check_paint_kinds(pack) -> void:
 			_fail("base neighbor (%d,%d) is %d, expected %d" % [off.x, off.y, scratch.id_at(50 + off.x, 50 + off.y), want])
 			return
 	_ok("oilfields paint the center only; bases paint neighbors")
+
+
+func _check_picture(terrain) -> void:
+	var cells: Array = terrain.picture_cells()
+	var docks := 0
+	var cities := 0
+	var capitals := 0
+	var facility := false
+	var washington := false
+	var toronto := false
+	var archangel_dock := false
+	for cell in cells:
+		var id := int(cell["id"])
+		var x := int(cell["x"])
+		var y := int(cell["y"])
+		if x == 18 and y == 18:
+			facility = true
+		if id == 1:
+			docks += 1
+		elif id == 4:
+			capitals += 1
+		elif id == 6:
+			cities += 1
+		else:
+			_fail("picture cell is %s" % TerrainScript.terrain_name(id))
+			return
+		if x == 79 and y == 44 and id == 4:
+			washington = true
+		if x == 78 and y == 37 and id == 6:
+			toronto = true
+		if x == 181 and y == 12 and id == 1:
+			archangel_dock = true
+	if facility:
+		_fail("a facility cell was drawn on the picture")
+		return
+	if not washington or not toronto or not archangel_dock:
+		_fail("picture is missing a capital, a city, or a dock")
+		return
+	if capitals != 2 or docks != 150 or cities != 407:
+		_fail("picture has %d capitals, %d docks, %d city cells" % [capitals, docks, cities])
+		return
+	var view = MapScript.new()
+	view.terrain = terrain
+	view.rebuild_paint()
+	if view.paint_count() != cells.size():
+		_fail("the map does not draw every painted dock, city, and capital")
+		return
+	if not view.draws_paint_id(1) or not view.draws_paint_id(4) or not view.draws_paint_id(6):
+		_fail("docks, cities, or capitals have no picture color")
+		return
+	if view.draws_paint_id(5) or view.draws_paint_id(7) or view.draws_paint_id(8) or view.draws_paint_id(9):
+		_fail("the picture should leave file terrain and facilities alone")
+		return
+	view.free()
+	_ok("picture draws docks, cities, and capitals; facilities stay")
+
+
+func _check_owned_frame(game) -> bool:
+	var view = MapScript.new()
+	view.size = Vector2(1660, 1000)
+	view.game = game
+	var blue_land = game.token("blue")
+	var blue_sea = game.sea_token("blue")
+	var red_land = game.token("red")
+	var red_sea = game.sea_token("red")
+	if not view.marked_piece(blue_land) or not view.marked_piece(blue_sea):
+		view.free()
+		_fail("the player's land piece and ship should be marked")
+		return false
+	if view.marked_piece(red_land) or view.marked_piece(red_sea):
+		view.free()
+		_fail("the opponent's pieces should stay unmarked")
+		return false
+	var land_at: Vector2 = view.cell_center(blue_land.x, blue_land.y)
+	var ship_at: Vector2 = view.cell_center(blue_sea.x, blue_sea.y)
+	view.frame_points([land_at, ship_at])
+	if view.is_near_fit() or not view.sees(land_at) or not view.sees(ship_at):
+		view.free()
+		_fail("the opening should frame the player's land piece and ship")
+		return false
+	game.player_side = "red"
+	var red_land_at: Vector2 = view.cell_center(red_land.x, red_land.y)
+	var red_ship_at: Vector2 = view.cell_center(red_sea.x, red_sea.y)
+	if not view.marked_piece(red_land) or not view.marked_piece(red_sea) or view.marked_piece(blue_land):
+		game.player_side = "blue"
+		view.free()
+		_fail("marks should follow the ordered side")
+		return false
+	view.frame_points([red_land_at, red_ship_at])
+	if view.is_near_fit() or not view.sees(red_land_at) or not view.sees(red_ship_at):
+		game.player_side = "blue"
+		view.free()
+		_fail("the opening should frame the red land piece and ship")
+		return false
+	game.player_side = "blue"
+	view.free()
+	_ok("the ordered land piece and ship are marked and framed")
+	return true
 
 
 func _check_sea(pack, terrain, game) -> void:
@@ -600,6 +719,8 @@ func _check_eras(terrain, game) -> void:
 		return
 	if not TerrainScript.sea_accepts(0, terrain.id_at(red_sea.x, red_sea.y)):
 		_fail("the red sea piece should start on water")
+		return
+	if not _check_owned_frame(game):
 		return
 	var corridor: Variant = terrain.route(79, 44, 183, 25, Callable())
 	if corridor is Array:
@@ -886,6 +1007,125 @@ func _check_blank(game) -> void:
 		return
 	_ok("combat keeps the booklet shape and prints no damage figure")
 	game.reset()
+
+
+func _check_concealed(terrain, game) -> void:
+	var saved_era: int = game.era_year
+	var saved_side: String = game.player_side
+	var view = MapScript.new()
+	view.game = game
+	var ok := _concealed_cases(terrain, game, view)
+	view.free()
+	game.player_side = saved_side
+	game.era_year = saved_era
+	game.reset()
+	if ok:
+		_ok("concealed start hides the opponent until their capital is found")
+
+
+func _concealed_cases(terrain, game, view) -> bool:
+	game.player_side = "blue"
+	for year in [1918, 1942, 1986, 2023]:
+		game.era_year = year
+		game.reset()
+		if not view.piece_drawn(game.token("red")) or not view.piece_drawn(game.sea_token("red")):
+			_fail("%s should show the opponent" % year)
+			return false
+		if not view.piece_drawn(game.token("blue")) or not view.piece_drawn(game.sea_token("blue")):
+			_fail("%s should show the ordered side" % year)
+			return false
+	game.era_year = 9999
+	game.reset()
+	var red = game.token("red")
+	var blue = game.token("blue")
+	if view.piece_drawn(red) or view.piece_drawn(game.sea_token("red")):
+		_fail("the concealed start should hide the opponent")
+		return false
+	if not view.piece_drawn(blue) or not view.piece_drawn(game.sea_token("blue")):
+		_fail("the concealed start should keep the ordered pieces")
+		return false
+	var nx := -1
+	var ny := -1
+	for step in TerrainScript.STEPS:
+		var tx := 183 + int(step.x)
+		var ty := 25 + int(step.y)
+		if ty < 0 or ty >= TerrainScript.CELL_H:
+			continue
+		if TerrainScript.land_pace(terrain.id_at(tx, ty)) < 0:
+			continue
+		nx = tx
+		ny = ty
+		break
+	if nx < 0:
+		_fail("Moscow has no walkable neighbor")
+		return false
+	blue.x = nx
+	blue.y = ny
+	if view.piece_drawn(red):
+		_fail("standing beside the enemy capital should not reveal the opponent")
+		return false
+	var toronto: Variant = null
+	for place in game.sites.places:
+		if str(place["title"]) == "Toronto":
+			toronto = place
+			break
+	if toronto == null or str(toronto["owner"]) == "red":
+		_fail("Toronto should start unowned by Red")
+		return false
+	var said: String = game.note
+	red.x = int(toronto["x"]) + 1
+	red.y = int(toronto["y"])
+	red.path = [{"x": int(toronto["x"]), "y": int(toronto["y"]), "pace": 1, "word": "open"}]
+	red.debt = 1
+	game.tick()
+	if str(toronto["owner"]) != "red" or game.note != said or view.piece_drawn(red) or view.piece_drawn(game.sea_token("red")):
+		_fail("a hidden opponent should stay hidden, including a capture")
+		return false
+	game.reset()
+	red = game.token("red")
+	blue = game.token("blue")
+	red.x = 10
+	red.y = 10
+	blue.x = nx
+	blue.y = ny
+	blue.path = [{"x": 183, "y": 25, "pace": 1, "word": "open"}]
+	blue.debt = 1
+	game.sites.capital("blue")["owner"] = "neutral"
+	if view.piece_drawn(red):
+		_fail("the opponent should stay hidden until the capital is entered")
+		return false
+	game.tick()
+	if game.winner() != "" or str(game.sites.capital("red")["owner"]) != "blue" or not view.piece_drawn(red) or not view.piece_drawn(game.sea_token("red")):
+		_fail("entering the enemy capital should show the opponent")
+		return false
+	game.sites.capital("red")["owner"] = "red"
+	blue.x = nx
+	blue.y = ny
+	if not view.piece_drawn(red):
+		_fail("leaving the capital should keep the opponent visible")
+		return false
+	var sample := [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}, {"x": 5}]
+	if MatchScript.visible_steps(sample, "red", "blue").size() != 3:
+		_fail("a found opponent should still draw only three steps")
+		return false
+	game.player_side = "red"
+	game.reset()
+	if view.piece_drawn(game.token("blue")) or view.piece_drawn(game.sea_token("blue")) or not view.piece_drawn(game.token("red")):
+		_fail("a red order should hide Blue until Washington is found")
+		return false
+	game.sites.capital("blue")["owner"] = "red"
+	if not view.piece_drawn(game.token("blue")) or not view.piece_drawn(game.sea_token("blue")):
+		_fail("owning the enemy capital should reveal the opponent")
+		return false
+	game.player_side = "blue"
+	game.reset()
+	for place in game.sites.places:
+		if str(place["kind"]) == "capital":
+			place["owner"] = "red"
+	if game.winner() != "red" or not view.piece_drawn(game.token("red")) or not view.piece_drawn(game.sea_token("red")):
+		_fail("a finished concealed match should show the opponent")
+		return false
+	return true
 
 
 func _blank_text(text: String) -> bool:
