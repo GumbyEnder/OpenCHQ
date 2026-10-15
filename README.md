@@ -4,7 +4,7 @@ A world-map strategy game in the tradition of Danielle Bunten Berry's 1990 desig
 
 This is a Godot 4 project (GDScript, Compatibility renderer). The browser shell in the research tree is unchanged.
 
-No license is chosen yet. Do not treat the code as public domain, MIT, or any other license until a `LICENSE` file exists.
+Licensed under the MIT License. See `LICENSE`. That license covers this project. It does not cover the original game, which is not included here.
 
 ## Run
 
