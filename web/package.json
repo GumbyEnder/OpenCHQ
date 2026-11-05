@@ -1,0 +1,9 @@
+{
+  "name": "openchq-web",
+  "private": true,
+  "type": "module",
+  "description": "Browser shell for OpenCHQ. The match rules stay in the Godot project.",
+  "scripts": {
+    "start": "node server/main.mjs"
+  }
+}

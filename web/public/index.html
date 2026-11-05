@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCHQ</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="mark">OpenCHQ</p>
+      <p class="sub">Two sides. One map. The server keeps the rules.</p>
+    </div>
+    <p id="account" class="account"></p>
+  </header>
+
+  <main>
+    <section id="gate" class="panel">
+      <div>
+        <h1>Sign in</h1>
+        <form id="login">
+          <label>Name <input name="username" autocomplete="username" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">Enter</button>
+        </form>
+      </div>
+      <div>
+        <h1>Register</h1>
+        <form id="register">
+          <label>Name <input name="username" autocomplete="username" required></label>
+          <label>Password <input name="password" type="password" autocomplete="new-password" required></label>
+          <button type="submit">Create account</button>
+        </form>
+        <p class="fine">3 to 20 characters, starting with a letter. Password of 8 or more.</p>
+      </div>
+    </section>
+
+    <section id="play" class="play hidden">
+      <section class="panel lobby">
+        <h1>Lobby</h1>
+        <form id="launch" class="launch">
+          <label>Era
+            <select name="era">
+              <option value="1986" selected>1986</option>
+              <option value="1918">1918</option>
+              <option value="1942">1942</option>
+              <option value="2023">2023</option>
+              <option value="9999">Concealed</option>
+            </select>
+          </label>
+          <label>Your side
+            <select name="side">
+              <option value="blue" selected>Blue</option>
+              <option value="red">Red</option>
+            </select>
+          </label>
+          <button type="submit">Play a bot</button>
+        </form>
+        <p class="fine">You play the side you picked. A bot, or the person who accepts, takes the other side.</p>
+        <ul id="people"></ul>
+        <div id="invites"></div>
+      </section>
+
+      <section class="panel match">
+        <h1>Match</h1>
+        <div id="room" class="room-empty">Start a bot match, or invite someone who is online.</div>
+        <canvas id="board" width="640" height="284"></canvas>
+        <p class="fine">Schematic of the cell grid. Washington and Moscow are marked. The painted map stays in the desktop game until a rules worker is sending a view.</p>
+      </section>
+    </section>
+  </main>
+  <p id="flash" class="flash" role="status"></p>
+  <script src="/app.js"></script>
+</body>
+</html>

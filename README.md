@@ -6,7 +6,19 @@ It follows the tradition of Danielle Bunten Berry's 1990 design. This project is
 
 Licensed under the MIT License. See `LICENSE`. That license covers this project. It does not cover the original game, which is not included here.
 
-## Run
+## Branches
+
+`desktop-godot` is the full desktop game. `web` is the forward line: the same Godot rules and map, plus the browser shell in `web/`. `main` stays the earlier demo. The plan is `docs/WEB_PLAN.md`.
+
+Browser shell, from this folder:
+
+```
+node web/server/main.mjs
+```
+
+Then open `http://127.0.0.1:8094`. `OPENCHQ_WEB_PORT` changes the port. Accounts are stored in `~/.local/share/openchq/`, or in `OPENCHQ_WEB_DATA` if that is set. They are not part of the game.
+
+## Run the desktop game
 
 Godot 4.7 or a compatible 4.x editor:
 
