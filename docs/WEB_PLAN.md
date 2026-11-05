@@ -1,54 +1,64 @@
-# OpenCHQ in the browser
+# OpenCHQ is a browser game
 
-The desktop Godot game stays. The forward work is a browser client and a central server. The server runs the match. The browser shows one seat.
+The game we are building runs in a web browser. A Node server keeps the accounts, the lobby, and the match. The page draws the board and sends orders. Godot is not part of that game. The server does not start it, embed it, or export it.
 
-The preserved desktop line is the Git branch `desktop-godot` on `github.com/GumbyEnder/OpenCHQ`. `main` is still the earlier demo. New work lands on `web`.
+`desktop-godot` on `github.com/GumbyEnder/OpenCHQ` is the archive of the old desktop project. `main` is the earlier demo. New work lands on `web`. The Godot scripts on this branch are reference notes for the behaviors below. They are not the runtime.
 
-## What stays
+## The match
 
-The rules stay in `scripts/match_state.gd`. `scripts/check_rules.gd` remains the oracle. A browser change that cannot pass that check does not ship.
+One room has two sides, Blue and Red. The side that holds both capitals wins. Washington is Blue. Moscow is Red. A third person is another room, a spectator, or a partner on a side that already exists.
 
-The map stays in `scripts/map_view.gd`. It draws the local extract: the 320 by 142 picture, sites, oil, routes, and pieces. The browser does not receive `WORLD_MAP.png`, the unit stills, or `CHQ_unpacked.EXE`. Those files are original art and an original binary. Sea lanes stay a table the server reads. The client never parses the EXE.
+A player registers, signs in, and either:
 
-The Godot window still runs with `godot --path .` on this branch. It is the single-player game and the place the rules are proven.
+- starts against a bot, or
+- stands in the lobby, invites someone who is online, and plays when they accept.
 
-## What a match is
+The server is the only clock. One running round is 0.14 seconds. Hold stops the clock. The server does not wait for both players before a round. A dropped connection leaves that side's last orders in place.
 
-One room has two sides, Blue and Red. The winner is the side that holds both capitals. A third person is another room, a spectator, or a partner on a side that already exists. A third army is a different game.
+Each seat sees its own pieces, enemy pieces within 8 cells, and the first three steps of an enemy route. A still submarine stays hidden. In the concealed era the other side stays hidden until their capital is found. The browser never receives the other seat's hidden pieces.
 
-Two ways to start:
+## Rules the browser game carries
 
-- Against a bot. You pick the era and your side. The empty seat is the opponent already inside `tick()`: that army marches on your capital, and that ship sails once when idle.
-- Against a person. You register, sign in, stand in the lobby, and invite someone who is online. They accept. You are one side. They are the other. The bot orders stay off for both seats.
+These are the rules of the match. The web game implements them in JavaScript.
 
-The server is the only process that calls `tick()`. A client sends orders for its own seat. The server answers with the view that seat may see: own pieces in full, enemy pieces inside 8 cells, enemy routes as the first three steps, a still submarine hidden, and the concealed era hidden until that capital is found. The save file is not a network message. It contains both treasuries and every piece.
+- The board is 320 by 136 cells. X wraps. Y does not.
+- Ocean and lake are transport. Forest, mountain, polar, jungle, and shallows are slower. Wasteland is refused.
+- Eras are 1918, 1942, 1986, 2023, and the concealed start.
+- Each side starts with a land piece on its capital and a ship at sea, except 2023, which starts with no pieces.
+- Land and aircraft are bought in a friendly city. Ships are bought on a dock. A tank costs twice an infantry. A nuke stays refused.
+- City income is one billion for each city a side holds. Oil income is one billion for each well that side holds. Every 25 rounds those levels are added to that side's pool. A named country's well pays nobody until a unit takes it.
+- Each side has its own fuel reserve. Standing on a well refills that side. Running dry stops that side only.
+- Pieces stop short of a shared cell. A shot falls every other round of a fight. The damage figure is still unknown.
+- The bot marches its army on your capital and sails its ship once when idle. A human seat sends its own orders. The bot code does not run for a human seat.
 
-The clock stays continuous. One running round is 0.14 seconds, the same interval the desktop game uses. Speed 0 holds time. The server does not wait for both players before a round, because income, fuel, and combat count rounds. A dropped connection leaves the last path in place until the room ends.
+Prices other than the tank ratio, damage, the real oil rate, and scan radii stay stand-ins. The oil file's production ratings are not used. The original picture, the unit stills, and the unpacked executable are not sent to the browser.
 
-Fuel is still one reserve, and it belongs to the single desktop player. A dry reserve stops the whole match. Human games need a reserve per side before they are fair. That change is a rules change and has to pass `check_rules.gd`. It is not in the shell below.
+## The board
 
-The fight still follows the first land piece of each side. Bought tanks exist. They do not yet fight as a stack. Two humans will meet that on the first match.
+The page draws the board on a canvas from cells and sites. Terrain and site positions are read by the server from the local extract when that folder is present. The client gets cell ids and site records. It does not get the original map picture.
 
-## Baseline in this branch
+Until that board is wired, the match page shows a schematic with Washington and Moscow on the cell grid.
+
+## What already runs
 
 `node web/server/main.mjs` serves `http://127.0.0.1:8094`. `OPENCHQ_WEB_PORT` changes the port.
 
-- Register and sign in. Passwords are hashed. Sessions are cookies. Accounts live in `~/.local/share/openchq/` because the project directory is on a network share and SQLite cannot lock a file there. `OPENCHQ_WEB_DATA` overrides that folder.
+- Register and sign in. Passwords are hashed. Sessions are cookies. Accounts live in `~/.local/share/openchq/` because this project directory is on a network share. `OPENCHQ_WEB_DATA` overrides that folder.
 - The lobby lists people who are connected.
-- Play a bot. The room records your side, the era, and a held clock.
-- Invite a person, and accept or decline. An accepted invite opens one human room.
-- Hold and Run store the clock flag both seats can see.
+- Play a bot, or invite a person. Accepting opens one human room.
+- Hold and Run are shared clock flags.
 
-The shell does not move pieces. It does not attach `MatchState`. The match page says so. A schematic marks Washington and Moscow on the cell grid. It is not the painted map.
+Pieces do not move yet. The match object that will move them lives in this server, in JavaScript.
 
-## Next slices
+## Build order
 
-1. A rules worker. One headless Godot process per room, speaking JSON lines. Bot rooms leave the opponent block in `tick()` on. Human rooms skip it. The worker loads the data pack from the machine the server runs on, not from the browser.
-2. A per-seat view. The worker emits the same facts `shows_piece` and `visible_steps` already decide. The browser draws that view. Hidden pieces are absent from the message, not merely faded.
-3. Orders. Click your piece, then a cell. Buy, entrench, and the other desktop orders follow, each checked against the seat.
-4. Per-side fuel, then the human clock can run without one dry side freezing the other.
-5. Reconnect. The room keeps the match. The seat gets a fresh view. A spectator view can wait until the two-seat game is honest.
+1. Load terrain and sites on the server and paint the real cell grid in the page.
+2. Place the opening pieces. Accept an order. Advance one cell per running round.
+3. Bot orders for the empty seat. Human orders for a filled seat.
+4. Filter each seat's view before it leaves the server.
+5. Buying, oil capture, income, and a fuel reserve per side.
+6. Delete the Godot project from this branch once a browser match can open, march, and finish.
 
 ## Public host
 
-This shell binds to localhost and speaks plain HTTP. A public host needs HTTPS before the cookie is marked secure. It still must not publish the extract or the unpacked EXE.
+The shell binds to localhost and speaks plain HTTP. A public host needs HTTPS before the session cookie is marked secure. The extract and the unpacked executable stay off the public host.

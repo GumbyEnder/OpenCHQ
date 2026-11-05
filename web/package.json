@@ -2,7 +2,7 @@
   "name": "openchq-web",
   "private": true,
   "type": "module",
-  "description": "Browser shell for OpenCHQ. The match rules stay in the Godot project.",
+  "description": "OpenCHQ browser game. Accounts, lobby, and the match run on this server.",
   "scripts": {
     "start": "node server/main.mjs"
   }

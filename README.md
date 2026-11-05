@@ -2,15 +2,15 @@
 
 OpenCHQ is a world-map strategy game for two sides. Each side starts with a land piece at its capital and a ship at sea. The side that holds every capital wins.
 
-It follows the tradition of Danielle Bunten Berry's 1990 design. This project is independent of that game and of its rights holders, and it does not use that name or logo. It is a Godot 4 project (GDScript, Compatibility renderer). The browser shell in the research tree is unchanged.
+It follows the tradition of Danielle Bunten Berry's 1990 design. This project is independent of that game and of its rights holders, and it does not use that name or logo. The game runs in a web browser.
 
 Licensed under the MIT License. See `LICENSE`. That license covers this project. It does not cover the original game, which is not included here.
 
 ## Branches
 
-`desktop-godot` is the full desktop game. `web` is the forward line: the same Godot rules and map, plus the browser shell in `web/`. `main` stays the earlier demo. The plan is `docs/WEB_PLAN.md`.
+`web` is the game. `desktop-godot` archives the old desktop project and is not how this game runs. `main` is the earlier demo. The plan is `docs/WEB_PLAN.md`.
 
-Browser shell, from this folder:
+Play, from this folder:
 
 ```
 node web/server/main.mjs
@@ -18,7 +18,7 @@ node web/server/main.mjs
 
 Then open `http://127.0.0.1:8094`. `OPENCHQ_WEB_PORT` changes the port. Accounts are stored in `~/.local/share/openchq/`, or in `OPENCHQ_WEB_DATA` if that is set. They are not part of the game.
 
-## Run the desktop game
+## Archived desktop project
 
 Godot 4.7 or a compatible 4.x editor:
 

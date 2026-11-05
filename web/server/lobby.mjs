@@ -112,7 +112,7 @@ export function createLobby() {
       mode: "bot",
       era: eraOf(era),
       clock: "held",
-      note: "Clock held. The rules worker is not attached, so pieces do not move yet. The bot will use the desktop opponent when it is.",
+      note: "Clock held. Pieces do not move yet. The match will run here, in the browser game.",
       seats: {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
@@ -166,7 +166,7 @@ export function createLobby() {
       mode: "human",
       era: inviteRow.era,
       clock: "held",
-      note: "Clock held. The rules worker is not attached, so pieces do not move yet.",
+      note: "Clock held. Pieces do not move yet. The match will run here, in the browser game.",
       seats: { blue: null, red: null },
     };
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
@@ -185,8 +185,8 @@ export function createLobby() {
     if (!room) return { error: "You are not in a match." };
     room.clock = running ? "running" : "held";
     room.note = running
-      ? "Clock marked running. The rules worker is not attached, so pieces do not move yet."
-      : "Clock held. The rules worker is not attached, so pieces do not move yet.";
+      ? "Clock running. Pieces do not move yet. The match will run here, in the browser game."
+      : "Clock held. Pieces do not move yet. The match will run here, in the browser game.";
     tellRoom(room);
     return { ok: true };
   }
