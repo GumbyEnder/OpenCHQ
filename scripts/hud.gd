@@ -4,6 +4,7 @@ class_name Hud
 signal command(action: String, arg: Variant)
 
 var _era: OptionButton
+var _speed: OptionButton
 var _filter: OptionButton
 var _filter_row: HBoxContainer
 var _tier: OptionButton
@@ -11,6 +12,9 @@ var _atlas_row: HBoxContainer
 var _atlas_hold: Control
 var _still_scroll: ScrollContainer
 var _orders: Label
+var _opening: Label
+var _turn: Label
+var _treasury: Label
 var _note: Label
 var _result: PanelContainer
 var _result_title: Label
@@ -23,12 +27,22 @@ var _still_note: Label
 var _still_row: HBoxContainer
 var _still_pick: OptionButton
 var _still_grid: GridContainer
+var _stills: Button
+var _stills_hold: HBoxContainer
+var _era_row: HBoxContainer
+var _speed_row: HBoxContainer
 var _time: Button
 var _atlas: Button
 var _oil: Button
 var _labels: Button
 var _tools := {}
 var _active: StyleBoxFlat
+var _gauge: Label
+var _toast: Label
+var _piece_list: VBoxContainer
+var _piece_card: Label
+var _result_body: Label
+var _follow: Button
 
 
 func _ready() -> void:
@@ -90,20 +104,34 @@ func _ready() -> void:
 	title.add_theme_color_override("font_color", Color("4ecdc4"))
 	box.add_child(title)
 	box.add_child(_result_card())
-	_orders = _muted("Blue moves on orders. Red marches on the other capital. Time starts held.")
+	_orders = _muted("Blue moves on orders. Red marches on your capital.")
 	box.add_child(_orders)
+	_turn = _muted("Turn 0")
+	box.add_child(_turn)
+	_treasury = _muted("Resources 0 billion. City income 0. Oil income 0.")
+	box.add_child(_treasury)
 	box.add_child(_opening_card())
 
-	box.add_child(_row([_button("Fit", "fit"), _button("Zoom to selection", "zoom")]))
+	_follow = _button("Follow", "follow")
+	box.add_child(_row([_button("Fit", "fit"), _button("Zoom to selection", "zoom"), _follow]))
 	_time = _button("Run", "time")
-	box.add_child(_row([_button("Reset", "reset"), _time]))
+	box.add_child(_row([_button("Reset", "reset"), _time, _button("Cancel", "cancel")]))
+	box.add_child(_row([_button("Buy", "buy"), _button("Entrench", "entrench")]))
+	box.add_child(_row([_button("Land strike", "land_strike"), _button("Sea strike", "sea_strike")]))
+	box.add_child(_row([_button("Bomb", "bomb"), _button("Scramble", "scramble")]))
+	box.add_child(_row([_button("Paradrop", "paradrop")]))
+	_stills = _button("Stills", "stills")
+	_stills_hold = _row([_stills])
+	box.add_child(_stills_hold)
 	_atlas = _button("Atlas", "atlas")
 	_atlas.visible = false
 	_oil = _button("Oil", "oil")
 	_labels = _button("Labels", "labels")
 	box.add_child(_row([_atlas, _oil, _labels]))
 	box.add_child(_row([_tool_button("Nuke", "nuke"), _tool_button("Satellites", "satellite")]))
+	box.add_child(_row([_tool_button("Recon sat", "recon"), _tool_button("Killer sat", "killer")]))
 	box.add_child(_row([_tool_button("Foreign aid", "foreign_aid"), _tool_button("Intel", "intel")]))
+	box.add_child(_row([_tool_button("Cease fire", "cease"), _tool_button("Yes", "cease_yes"), _tool_button("No", "cease_no")]))
 
 	_era = OptionButton.new()
 	_era.add_item("1918", 1918)
@@ -115,7 +143,20 @@ func _ready() -> void:
 	_era.item_selected.connect(func(index: int) -> void:
 		command.emit("era", _era.get_item_id(index))
 	)
-	box.add_child(_labeled("Era", _era))
+	_era_row = _labeled("Era", _era)
+	box.add_child(_era_row)
+
+	_speed = OptionButton.new()
+	_speed.add_item("Held", 100)
+	_speed.add_item("Slow", 101)
+	_speed.add_item("Normal", 103)
+	_speed.add_item("Fast", 106)
+	_speed.select(0)
+	_speed.item_selected.connect(func(index: int) -> void:
+		command.emit("speed", _speed.get_item_id(index) - 100)
+	)
+	_speed_row = _labeled("Speed", _speed)
+	box.add_child(_speed_row)
 
 	_filter = OptionButton.new()
 	_filter.add_item("Pixel", 0)
@@ -143,9 +184,21 @@ func _ready() -> void:
 	_atlas_hold.add_child(_atlas_row)
 	box.add_child(_atlas_hold)
 
+	_gauge = _muted("Reserve 0")
+	_gauge.visible = false
+	box.add_child(_gauge)
+	_toast = Label.new()
+	_toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_toast.add_theme_color_override("font_color", Color("d6c07a"))
+	box.add_child(_toast)
 	_note = Label.new()
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(_note)
+	_piece_card = _muted("")
+	box.add_child(_piece_card)
+	_piece_list = VBoxContainer.new()
+	_piece_list.add_theme_constant_override("separation", 4)
+	box.add_child(_piece_list)
 	_card_title = Label.new()
 	_card_title.add_theme_font_size_override("font_size", 16)
 	_card_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -172,6 +225,7 @@ func _ready() -> void:
 		command.emit("still", _still_pick.get_item_text(index))
 	)
 	_still_row = _labeled("Stills", _still_pick)
+	_still_row.add_child(_button("Next frame", "still_next"))
 	_still_row.visible = false
 	box.add_child(_still_row)
 	_still_scroll = ScrollContainer.new()
@@ -187,11 +241,20 @@ func _ready() -> void:
 	_still_grid.add_theme_constant_override("v_separation", 6)
 	_still_scroll.add_child(_still_grid)
 
-	var rules := _muted("Drag the map. The world wraps east to west. Wheel zooms. Click your piece, then a cell. Ocean is a transport for the land piece. A sea piece sails by the sea lanes. Forest, mountain, polar, jungle, and shallows are slower. The 1990 ratio was not recovered. Oil rates are unknown. Nukes, satellites, foreign aid, and intel are only in 1986 and 2023. Oil is also on in the concealed start. Costs and radii stay unknown. An enemy route shows its first three steps. Cities pay each round. The amount is unknown. A tank costs twice an infantry unit. An oil shortage stops movement, grounds planes, and stops city income. Overlapping land icons engage. A shot is every other round and the damage is unknown. A second friendly deals damage and takes none. Flank and rear hits hurt more. Sea units are not flanked and are not pinned. A pinned land unit stays until the fight ends or a new move order. Keys: T time, L labels, F fit, R reset, O oil, A atlas.")
+	var rules := _muted("Drag the map. The world wraps east to west. Wheel zooms. Click your piece, then a cell. Ocean is a transport for the land piece. A sea piece sails by the sea lanes. Forest, mountain, polar, jungle, and shallows are slower. The 1990 ratio was not recovered. Oil rates are unknown. Nukes, satellites, foreign aid, and intel are only in 1986 and 2023. Oil is also on in the concealed start. Costs and radii stay unknown. An enemy route shows its first three steps. City income is the cities you hold. Oil income is the wells you hold. Both add to resources every 25 rounds. A tank costs twice an infantry unit. An oil shortage stops movement, grounds planes, and stops city income. Overlapping land icons engage. A shot is every other round and the damage is unknown. A second friendly deals damage and takes none. Flank and rear hits hurt more. Sea units are not flanked and are not pinned. A pinned land unit stays until the fight ends or a new move order. Keys: T time, L labels, F fit, R reset, O oil, A atlas.")
 	rules.visible = false
 	box.add_child(rules)
 	_log = _muted("")
 	box.add_child(_log)
+
+
+func set_opening(empty_army: bool) -> void:
+	if _opening == null:
+		return
+	if empty_army:
+		_opening.text = "Hold every capital. 2023 starts with no army. %s Time stays held until Run." % Assumptions.cash_note()
+		return
+	_opening.text = "Hold every capital. The marked land piece and the marked ship are yours. Click a piece, then a cell. Time stays held until Run."
 
 
 func set_orders(side: String, concealed: bool = false) -> void:
@@ -200,9 +263,9 @@ func set_orders(side: String, concealed: bool = false) -> void:
 	var who := "Red" if side == "red" else "Blue"
 	var other := "Blue" if side == "red" else "Red"
 	if concealed:
-		_orders.text = "%s moves on orders. %s stays hidden until their capital is found. Time starts held." % [who, other]
+		_orders.text = "%s moves on orders. %s stays hidden until their capital is found." % [who, other]
 	else:
-		_orders.text = "%s moves on orders. %s marches on the other capital. Time starts held." % [who, other]
+		_orders.text = "%s moves on orders. %s marches on your capital." % [who, other]
 
 
 func set_note(text: String, win: bool) -> void:
@@ -220,6 +283,8 @@ func set_result(side: String) -> void:
 		return
 	var who := "Red" if side == "red" else "Blue"
 	_result_title.text = "%s wins" % who
+	if _result_body != null:
+		_result_body.text = ""
 
 
 func set_card(title: String, body: String) -> void:
@@ -231,14 +296,34 @@ func set_log(text: String) -> void:
 	_log.text = text
 
 
-func set_running(running: bool) -> void:
-	_time.text = "Hold" if running else "Run"
+func set_running(running: bool, turn: int = 0) -> void:
+	if running:
+		_time.text = "Pause"
+	elif turn > 0:
+		_time.text = "Resume"
+	else:
+		_time.text = "Run"
 	_mark(_time, running)
+	if _turn != null:
+		_turn.text = "Turn %d" % turn
+
+
+func set_treasury(cash: int, cities: int, wells: int, stopped: bool) -> void:
+	if _treasury == null:
+		return
+	if cash < 0:
+		_treasury.text = ""
+		return
+	if stopped:
+		_treasury.text = "Resources %d billion. City income is stopped. Oil income is stopped." % cash
+		return
+	_treasury.text = "Resources %d billion. City income %d. Oil income %d." % [cash, cities, wells]
 
 
 func set_toggles(atlas_on: bool, oil_on: bool, oil_enabled: bool, labels_on: bool) -> void:
 	_mark(_atlas, atlas_on)
 	_mark(_oil, oil_on)
+	_oil.visible = oil_enabled
 	_oil.disabled = not oil_enabled
 	_mark(_labels, labels_on)
 
@@ -247,9 +332,18 @@ func set_era(year: int) -> void:
 	_select_id(_era, year)
 
 
+func set_speed(index: int) -> void:
+	if _speed == null:
+		return
+	_select_id(_speed, 100 + index)
+
+
 func set_tools(open_map: Dictionary) -> void:
 	for key in _tools:
-		(_tools[key] as Button).disabled = not bool(open_map.get(key, false))
+		var button := _tools[key] as Button
+		var open := bool(open_map.get(key, false))
+		button.visible = open
+		button.disabled = not open
 
 
 func set_filter_pixel(pixel: bool) -> void:
@@ -293,18 +387,89 @@ func set_roster(entries: Array, notes: PackedStringArray) -> void:
 		_roster_row.add_child(figure)
 
 
+func host_extra(node: Control) -> void:
+	if _piece_list != null and _piece_list.get_parent() != null:
+		_piece_list.get_parent().add_child(node)
+
+
+func detach_match_menus() -> Array:
+	var rows: Array = [_era_row, _speed_row, _stills_hold]
+	for row in rows:
+		if row != null and row.get_parent() != null:
+			row.get_parent().remove_child(row)
+	return rows
+
+
+func set_gauge(show_gauge: bool, reserve: int, short: bool) -> void:
+	if _gauge == null:
+		return
+	_gauge.visible = show_gauge
+	if not show_gauge:
+		return
+	if short:
+		_gauge.text = "Reserve %d Short" % reserve
+	else:
+		_gauge.text = "Reserve %d" % reserve
+
+
+func set_toast(text: String) -> void:
+	if _toast != null:
+		_toast.text = text
+
+
+func set_piece_card(text: String) -> void:
+	if _piece_card != null:
+		_piece_card.text = text
+
+
+func set_pieces(entries: Array) -> void:
+	if _piece_list == null:
+		return
+	for child in _piece_list.get_children():
+		child.queue_free()
+	for entry in entries:
+		var button := Button.new()
+		button.text = str(entry.get("text", ""))
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var index := int(entry.get("index", -1))
+		button.pressed.connect(func() -> void:
+			command.emit("piece", index)
+		)
+		_piece_list.add_child(button)
+
+
+func set_result_detail(turn: int, owners: String) -> void:
+	if _result_body == null:
+		return
+	_result_body.text = "Turn %d\n%s" % [turn, owners]
+
+
+func mark_follow(on: bool) -> void:
+	if _follow != null:
+		_mark(_follow, on)
+
+
+func set_still_note(text: String) -> void:
+	_still_note.text = text
+
+
 func set_still_catalog(names: PackedStringArray, note: String) -> void:
 	_still_note.text = note
 	_still_pick.set_block_signals(true)
 	_still_pick.clear()
 	for stem in names:
 		_still_pick.add_item(stem)
-	_still_note.visible = false
-	_still_row.visible = false
-	_still_scroll.visible = false
 	if not names.is_empty():
 		_still_pick.select(0)
 	_still_pick.set_block_signals(false)
+
+
+func set_stills_open(open: bool) -> void:
+	_still_note.visible = open
+	_still_row.visible = open
+	_still_scroll.visible = open
+	if _stills != null:
+		_mark(_stills, open)
 
 
 func set_still_sheet(entries: Array) -> void:
@@ -375,6 +540,15 @@ func _result_card() -> PanelContainer:
 	_result_title.add_theme_font_size_override("font_size", 16)
 	_result_title.add_theme_color_override("font_color", Color("4ecdc4"))
 	inner.add_child(_result_title)
+	_result_body = _muted("")
+	inner.add_child(_result_body)
+	var rematch := Button.new()
+	rematch.text = "Rematch"
+	rematch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rematch.pressed.connect(func() -> void:
+		command.emit("rematch", null)
+	)
+	inner.add_child(rematch)
 	var again := Button.new()
 	again.text = "Start"
 	again.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -408,7 +582,8 @@ func _opening_card() -> PanelContainer:
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color("4ecdc4"))
 	inner.add_child(title)
-	inner.add_child(_muted("The goal is every capital. Click your piece, then a cell. Time stays held until Run. Your land piece and your ship are marked."))
+	_opening = _muted("Hold every capital. The marked land piece and the marked ship are yours. Click a piece, then a cell. Time stays held until Run.")
+	inner.add_child(_opening)
 	return card
 
 

@@ -1,8 +1,8 @@
 # OpenCHQ
 
-A world-map strategy game in the tradition of Danielle Bunten Berry's 1990 design. OpenCHQ is not that game, and it is not affiliated with the rights holders. The original name and logo are not the name of this project.
+OpenCHQ is a world-map strategy game for two sides. Each side starts with a land piece at its capital and a ship at sea. The side that holds every capital wins.
 
-This is a Godot 4 project (GDScript, Compatibility renderer). The browser shell in the research tree is unchanged.
+It follows the tradition of Danielle Bunten Berry's 1990 design. This project is independent of that game and of its rights holders, and it does not use that name or logo. It is a Godot 4 project (GDScript, Compatibility renderer). The browser shell in the research tree is unchanged.
 
 Licensed under the MIT License. See `LICENSE`. That license covers this project. It does not cover the original game, which is not included here.
 
@@ -40,14 +40,18 @@ Original art and the extracted map are not in this repository. Point the game at
 
 The directory needs `data/sites.json`, `data/tmap.bin`, `data/map_res.json`, `data/game_meta.json`, `pics/WORLD_MAP.png`, and optionally `data/resources_oil.json`, `data/cities_capitals.json`, and `anims/` stills. Missing stills fall back to colored discs.
 
-## Play
+## The match
 
-You are Blue. Time starts held: orders are accepted, and the clock does not move until Run (key T). One running speed only. Red marches on Washington. Owning both capitals wins.
+You pick an era and a side before the map appears. The eras are 1918, 1942, 1986, 2023, and a concealed start labeled ????. Blue's capital is Washington. Red's capital is Moscow. You command the side you picked. In a named era the other side is on the map and marches on your capital. In the concealed start they stay hidden until you find their capital.
 
-Drag to pan. The map wraps east to west. The wheel zooms toward the cursor. Click your piece, then a cell. Fit shows the whole map. Zoom to selection frames the selected site or piece. Reset restores the opening view: 1986, sites on, atlas off, oil on, labels off, pixel filter, clock held.
+Start opens the purchase screen on the map. Your land piece and your ship are already placed. You may add units before the first turn. Land and aircraft go in a friendly city. Ships go on a dock beside one. Begin starts the match.
 
-Ocean is crossed as a transport. Forest, mountain, polar, jungle, and shallows are slower. The 1990 time ratio was not recovered, so the game does not state one. Wasteland is refused. An enemy route draws its first three steps. A friendly route draws in full.
+Time starts held, so an order waits. Run starts the turns. Pause and Resume stop and continue them. Keys T and P do the same. The turn counter advances once each turn. One running speed only.
 
-Prices, damage amounts, and oil rates are unknown and are not invented here. Oil is a marker from 1986 on, with no production total. The atlas is an optional modern-capital overlay, off by default, and those cities are not the original sites.
+Click your piece, then a cell. Drag to pan. The map wraps east to west. The wheel zooms toward the cursor. Fit shows the whole map. Zoom to selection frames the selected site or piece. Reset restores the opening view: 1986, sites on, atlas off, oil on, labels off, pixel filter, clock held.
 
-Keys, when a dropdown does not have focus: T time, L labels, F fit, R reset, O oil, A atlas. Below 760px the panel is a Controls drawer.
+Ocean and lake are transport. Forest, mountain, polar, jungle, and shallows are slower. The 1990 time ratio was not recovered, and the game leaves that pace unnamed. Wasteland is refused. An enemy route draws its first three steps. A friendly route draws in full.
+
+A tank costs twice an infantry. A nuke is listed at 10 billion. Starting money was not recovered, so that purchase is refused. Other prices, damage amounts, and oil rates stay blank. Oil is a marker from 1986 on, and also in the concealed start. The atlas is an optional overlay of modern capitals. It starts off, and those cities are separate from the original sites.
+
+Keys, when a dropdown does not have focus: T time, P pause, L labels, F fit, R reset, O oil, A atlas. Below 760px the panel is a Controls drawer.

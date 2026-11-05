@@ -23,9 +23,29 @@ const ROWS := [
 static func tool_open(era_year: int, tool: String) -> bool:
 	if tool == "oil":
 		return era_year == 1986 or era_year == 2023 or era_year >= 9999
-	if tool == "nuke" or tool == "satellite" or tool == "foreign_aid" or tool == "intel":
+	if tool == "nuke" or tool == "satellite" or tool == "foreign_aid" or tool == "intel" or tool == "cease":
 		return era_year == 1986 or era_year == 2023
 	return false
+
+
+## Purchase rows for the era. Price text is only the two booklet anchors.
+## An empty price was not recovered. ECONOMY.md's inferred costs are not used.
+static func buy_rows(era_year: int) -> Array:
+	var year := 1942 if era_year >= 9999 else era_year
+	var ship := "Stand-in %d billion" % Assumptions.PRICE_SHIP
+	var out: Array = [
+		{"name": "Infantry", "domain": "land", "price": "Stand-in %d billion" % Assumptions.PRICE_INFANTRY},
+		{"name": "Cruiser", "domain": "sea", "price": ship},
+		{"name": "Submarine", "domain": "sea", "price": "Stand-in %d billion" % Assumptions.PRICE_SUB},
+		{"name": "Transport", "domain": "sea", "price": ship},
+	]
+	if year >= 1942:
+		out.append({"name": "Tanks", "domain": "land", "price": "Stand-in %d billion" % Assumptions.PRICE_TANK})
+		out.append({"name": "Aircraft", "domain": "land", "price": "Stand-in %d billion" % Assumptions.PRICE_AIR})
+		out.append({"name": "Carrier", "domain": "sea", "price": ship})
+	if tool_open(era_year, "nuke"):
+		out.append({"name": "Nuke", "domain": "tool", "price": "Stand-in %d billion" % Assumptions.PRICE_NUKE})
+	return out
 
 
 ## The concealed start keeps the 1942 roster and does not inherit the 1986 tools.
@@ -51,7 +71,9 @@ static func notes_for(era_year: int) -> PackedStringArray:
 	if not tool_open(era_year, "nuke"):
 		notes.append("Nukes, satellites, foreign aid, and intel are not in this era.")
 	if era_year >= 9999:
-		notes.append("The concealed start hides the opponent until their capital is found.")
+		notes.append("Cities on the map are city-states. The concealed start hides the opponent until their capital is found.")
+	if era_year == 2023:
+		notes.append("2023 starts with no army. %s" % Assumptions.cash_note())
 	return notes
 
 

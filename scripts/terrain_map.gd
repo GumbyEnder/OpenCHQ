@@ -22,15 +22,16 @@ const NAMES := [
 	"jungle",
 	"polar",
 	"wasteland",
+	"facility",
 ]
 
 ## Forest, mountain, polar, jungle, and shallows. The manual names these as slower and gives no ratio.
-const SLOW := [false, false, true, false, false, false, false, false, false, true, true, false, true, true, false]
+const SLOW := [false, false, true, false, false, false, false, false, false, true, true, false, true, true, false, false]
 
 const STEPS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
-## sites.json kinds. Facility is not one of these, so those centers stay as the file left them.
-## Oilfield, plain, and forest paint the center only. The others also paint neighbors.
+## sites.json kinds. Facility id 15 is a stand-in mark, not a disposition subtype and not a 0x1102 link.
+## Oilfield, plain, forest, and facility paint the center only. The others also paint neighbors.
 const PAINT_CENTER := {
 	"capital": 4,
 	"base": 5,
@@ -38,6 +39,7 @@ const PAINT_CENTER := {
 	"oilfield": 7,
 	"plain": 8,
 	"forest": 9,
+	"facility": 15,
 }
 const PAINT_NEIGHBORS := {
 	"capital": true,
@@ -101,6 +103,48 @@ func paint_sites(places: Array) -> void:
 				set_id(x + dx, ny, 1 if cur <= 2 else 6)
 
 
+## Full neighbor paint when the counts stay 2 capitals, 150 docks, and 407 cities.
+## Otherwise centers only. Returns "full" or "centers".
+func paint_matched(places: Array) -> String:
+	paint_sites(places)
+	var counts := paint_counts()
+	if int(counts["capitals"]) == 2 and int(counts["docks"]) == 150 and int(counts["cities"]) == 407:
+		return "full"
+	_paint_centers(places)
+	return "centers"
+
+
+func paint_counts() -> Dictionary:
+	var docks := 0
+	var cities := 0
+	var capitals := 0
+	for y in CELL_H:
+		for x in CELL_W:
+			var painted := id_at(x, y)
+			if painted == 1:
+				docks += 1
+			elif painted == 4:
+				capitals += 1
+			elif painted == 6:
+				cities += 1
+	return {"capitals": capitals, "docks": docks, "cities": cities}
+
+
+func _paint_centers(places: Array) -> void:
+	bytes = file_bytes.duplicate()
+	var ordered: Array = places.duplicate()
+	ordered.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.get("id", 0)) < int(b.get("id", 0))
+	)
+	for place in ordered:
+		if not place is Dictionary:
+			continue
+		var kind := str(place.get("kind", ""))
+		if not PAINT_CENTER.has(kind):
+			continue
+		set_id(int(place.get("x", 0)), int(place.get("y", 0)), int(PAINT_CENTER[kind]))
+
+
 func id_at(x: int, y: int) -> int:
 	if y < 0 or y >= CELL_H:
 		return 13
@@ -112,7 +156,7 @@ func id_at(x: int, y: int) -> int:
 
 
 ## Cells the map picture does not show. Docks, cities, and capitals are painted
-## onto the walk grid. Facilities are not a paint kind, so they are left out.
+## onto the walk grid. The facility stand-in (id 15) stays off this picture.
 func picture_cells() -> Array:
 	var out: Array = []
 	if bytes.is_empty():

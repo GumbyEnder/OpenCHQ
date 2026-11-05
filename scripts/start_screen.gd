@@ -5,6 +5,7 @@ signal begin_match(year: int, side: String)
 var _era: OptionButton
 var _side: OptionButton
 var _won: Label
+var _era_line: Label
 
 
 func _ready() -> void:
@@ -75,7 +76,7 @@ func _ready() -> void:
 	_won.add_theme_color_override("font_color", Color("4ecdc4"))
 	_won.custom_minimum_size = Vector2(360, 0)
 	box.add_child(_won)
-	box.add_child(_muted("Pick an era and a side. The map stays hidden until Start."))
+	box.add_child(_muted("Hold every capital. Pick an era and a side. Start opens the map so you can place extra units. Begin starts the match."))
 
 	_era = OptionButton.new()
 	_era.add_item("1918", 1918)
@@ -84,7 +85,13 @@ func _ready() -> void:
 	_era.add_item("2023", 2023)
 	_era.add_item("????", 9999)
 	_era.select(2)
+	_era.item_selected.connect(func(_index: int) -> void:
+		_show_era()
+	)
 	box.add_child(_labeled("Era", _era))
+	_era_line = _muted("")
+	box.add_child(_era_line)
+	_show_era()
 
 	_side = OptionButton.new()
 	_side.add_item("Blue", 1)
@@ -96,6 +103,22 @@ func _ready() -> void:
 	start.text = "Start"
 	start.pressed.connect(_emit_begin)
 	box.add_child(start)
+
+
+func _show_era() -> void:
+	if _era_line == null or _era == null:
+		return
+	var year := _era.get_item_id(_era.selected)
+	if year >= 9999:
+		_era_line.text = "The concealed start hides the opponent until their capital is found."
+	elif year == 2023:
+		_era_line.text = "2023 uses the 1986 tools with no army, the stand-in pool, and the stand-in shuffle."
+	elif year == 1986:
+		_era_line.text = "1986 adds oil, nukes, satellites, aid, and intel."
+	elif year == 1942:
+		_era_line.text = "1942 adds tanks and planes."
+	else:
+		_era_line.text = "1918 fields infantry and ships."
 
 
 func _emit_begin() -> void:

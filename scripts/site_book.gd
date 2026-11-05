@@ -52,6 +52,14 @@ func reset_owners() -> void:
 		place["owner"] = place["home"]
 
 
+## Concealed start only. Cities already on the map become city-states.
+## Capitals and facilities keep the owner the file gave them.
+func apply_city_states() -> void:
+	for place in places:
+		if str(place.get("kind", "")) == "city":
+			place["owner"] = "neutral"
+
+
 func pick(lx: float, ly: float, hit_logic: float) -> Variant:
 	var best: Variant = null
 	var best_d := hit_logic * 1.25
@@ -90,4 +98,46 @@ func _from_raw(raw: Dictionary, countries: Array) -> Dictionary:
 		"owner": home,
 		"logic_x": (x + 0.5) * source_scale,
 		"logic_y": (y + 0.5) * source_scale,
+		"listed_x": x,
+		"listed_y": y,
 	}
+
+
+func restore_listed() -> void:
+	for place in places:
+		place["x"] = int(place["listed_x"])
+		place["y"] = int(place["listed_y"])
+	_reindex()
+
+
+## Stand-in. Non-capital cities trade listed cells. Capitals and facilities stay.
+func shuffle_cities(seed: int) -> bool:
+	restore_listed()
+	var cities: Array = []
+	for place in places:
+		if str(place.get("kind", "")) == "city":
+			cities.append(place)
+	var coords: Array = []
+	for place in cities:
+		coords.append([int(place["x"]), int(place["y"])])
+	coords = Assumptions.shuffle_points(coords, seed)
+	var moved := false
+	for i in cities.size():
+		var spot: Array = coords[i]
+		var place: Dictionary = cities[i]
+		if int(place["x"]) != int(spot[0]) or int(place["y"]) != int(spot[1]):
+			moved = true
+		place["x"] = int(spot[0])
+		place["y"] = int(spot[1])
+	_reindex()
+	return moved
+
+
+func _reindex() -> void:
+	by_cell = {}
+	for place in places:
+		var x := int(place["x"])
+		var y := int(place["y"])
+		place["logic_x"] = (x + 0.5) * source_scale
+		place["logic_y"] = (y + 0.5) * source_scale
+		by_cell[y * TerrainMap.CELL_W + posmod(x, TerrainMap.CELL_W)] = place

@@ -39,6 +39,9 @@ var preview: Array = []
 var show_preview := false
 var era_year := 1986
 var labels_on := false
+## Drawn repair mark. The bar has no amount, so its text stays empty.
+var repair_caption := ""
+var repair_bar_text := ""
 
 var _drag := false
 var _drag_moved := false
@@ -49,6 +52,14 @@ var _k1 := 0
 var _chips: Control
 var _chip_labels := {}
 var _note: Label
+var _stamp: Label
+var _contact: Label
+var _quote: Label
+var _badge: Label
+var _pulse: Label
+var _flash: Label
+var _banner: Label
+var _sat: Label
 var _paint: Array = []
 var _paint_for: TerrainMap = null
 
@@ -69,6 +80,22 @@ func _build_overlay() -> void:
 	_note.add_theme_font_size_override("font_size", 14)
 	_note.add_theme_color_override("font_color", Color("e4ecff"))
 	add_child(_note)
+	_stamp = _overlay_label(Color("4ecdc4"))
+	_contact = _overlay_label(Color("d6c07a"))
+	_quote = _overlay_label(Color("e4ecff"))
+	_badge = _overlay_label(Color("d6c07a"))
+	_pulse = _overlay_label(Color("4ecdc4"))
+	_flash = _overlay_label(Color("ff8d8d"))
+	_banner = _overlay_label(Color("4ecdc4"))
+	_sat = _overlay_label(Color("7eb6ff"))
+	add_child(_stamp)
+	add_child(_contact)
+	add_child(_quote)
+	add_child(_badge)
+	add_child(_pulse)
+	add_child(_flash)
+	add_child(_banner)
+	add_child(_sat)
 	var rows := VBoxContainer.new()
 	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rows.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
@@ -106,6 +133,55 @@ func set_chip(key: String, text: String) -> void:
 	var lab: Label = _chip_labels.get(key)
 	if lab != null:
 		lab.text = text
+
+
+func _overlay_label(color: Color) -> Label:
+	var lab := Label.new()
+	lab.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lab.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	lab.add_theme_font_size_override("font_size", 14)
+	lab.add_theme_color_override("font_color", color)
+	return lab
+
+
+func set_stamp(running: bool) -> void:
+	if _stamp != null:
+		_stamp.text = "Running" if running else "Held"
+
+
+func set_contact(on: bool) -> void:
+	if _contact != null:
+		_contact.text = "Last seen" if on else ""
+
+
+func set_quote(text: String) -> void:
+	if _quote != null:
+		_quote.text = text
+
+
+func set_badge(text: String) -> void:
+	if _badge != null:
+		_badge.text = text
+
+
+func set_pulse(on: bool) -> void:
+	if _pulse != null:
+		_pulse.text = "Pulse" if on else ""
+
+
+func set_flash(text: String) -> void:
+	if _flash != null:
+		_flash.text = text
+
+
+func set_banner(text: String) -> void:
+	if _banner != null:
+		_banner.text = text
+
+
+func set_satellite(on: bool) -> void:
+	if _sat != null:
+		_sat.text = "Satellite" if on else ""
 
 
 func set_note(text: String, win: bool) -> void:
@@ -308,6 +384,22 @@ func _place_overlay() -> void:
 	if _note != null:
 		_note.position = Vector2(12, 44)
 		_note.size = Vector2(maxf(0.0, size.x - 24.0), 48)
+	if _stamp != null:
+		_stamp.position = Vector2(maxf(12.0, size.x - 120.0), 12)
+	if _contact != null:
+		_contact.position = Vector2(12, 12)
+	if _quote != null:
+		_quote.position = Vector2(12, 96)
+	if _badge != null:
+		_badge.position = Vector2(12, 120)
+	if _pulse != null:
+		_pulse.position = Vector2(12, 144)
+	if _flash != null:
+		_flash.position = Vector2(120, 144)
+	if _banner != null:
+		_banner.position = Vector2(12, 168)
+	if _sat != null:
+		_sat.position = Vector2(12, 192)
 	if _chips != null:
 		_chips.position = Vector2(12, maxf(0.0, size.y - 68.0))
 		_chips.size = Vector2(maxf(0.0, size.x - 24.0), 60)
@@ -333,6 +425,7 @@ func _draw() -> void:
 	if game != null:
 		_draw_paths()
 		_draw_tokens()
+		_draw_feedback()
 
 
 func rebuild_paint() -> void:
@@ -381,11 +474,23 @@ func _draw_painted() -> void:
 				draw_rect(rect, col)
 
 
+func _oil_fill(field: Dictionary) -> Color:
+	var neutral := Color("2ecc71") if bool(field.get("offshore", false)) else Color("1a8f3c")
+	if game == null:
+		return neutral
+	var who := game.oil_owner_at(int(float(field.get("map_x", -1))), int(float(field.get("map_y", -1))))
+	if who == "blue":
+		return Color("3d7ec9")
+	if who == "red":
+		return Color("c4473a")
+	return neutral
+
+
 func _draw_oil() -> void:
 	for field in oil.placed:
 		var id := str(field.get("id", ""))
 		var hot := id == oil.hover_id or id == oil.selected_id
-		var fill := Color("2ecc71") if bool(field.get("offshore", false)) else Color("1a8f3c")
+		var fill := _oil_fill(field)
 		for s in _screens(float(field["lx"]), float(field["ly"])):
 			if hot:
 				draw_circle(s, 8.5, Color(0.180, 0.800, 0.443, 0.28))
@@ -439,8 +544,8 @@ func _draw_paths() -> void:
 	var blue: MatchState.Token = game.token("blue")
 	var red: MatchState.Token = game.token("red")
 	var preview_sea := show_preview and not preview.is_empty() and game.selected_domain == "sea"
-	var blue_path: Array = blue.path
-	var red_path: Array = red.path
+	var blue_path: Array = [] if blue == null else blue.path
+	var red_path: Array = [] if red == null else red.path
 	if show_preview and not preview.is_empty() and not preview_sea:
 		if game.selected_side == "red":
 			red_path = preview
@@ -473,6 +578,8 @@ func _draw_path(path: Array, color: Color) -> void:
 
 
 func _draw_tokens() -> void:
+	repair_caption = ""
+	repair_bar_text = ""
 	var cell_px := source_scale * view_scale
 	for unit in game.tokens:
 		if not piece_drawn(unit):
@@ -481,6 +588,8 @@ func _draw_tokens() -> void:
 		var selected := _token_selected(unit)
 		var word := TerrainMap.pace_word(terrain.id_at(unit.x, unit.y))
 		var kind := "sea" if unit.domain == "sea" else Roster.token_kind(era_year, word)
+		if unit.domain != "sea" and unit.transporting:
+			kind = "transport"
 		var tex: Texture2D = sea_tex if kind == "sea" else (land_tex if kind == "land" else (transport_tex if kind == "transport" else null))
 		var sprite := tex if cell_px >= 14.0 and tex != null else null
 		var owned := marked_piece(unit)
@@ -502,6 +611,37 @@ func _draw_tokens() -> void:
 				mark = Rect2(s.x - radius, s.y - radius, radius * 2.0, radius * 2.0)
 			if owned:
 				_draw_owned_mark(mark)
+			elif unit.revealed and unit.side != game.player_side:
+				_paint_label(Vector2(mark.position.x, mark.end.y + 16.0), "Revealed", Color("e4ecff"))
+			if unit.entrenched:
+				_paint_label(Vector2(mark.position.x, mark.position.y - 18.0), "Entrenched", Color("d6c07a"))
+			elif game.submarine_hidden(unit) and unit.side == game.player_side:
+				_paint_label(Vector2(mark.position.x, mark.position.y - 18.0), "Hidden", Color("d6c07a"))
+			elif unit.label == "Aircraft" and unit.idle_rounds > 0:
+				_paint_label(Vector2(mark.position.x, mark.position.y - 18.0), "Inactive %d" % unit.idle_rounds, Color("d6c07a"))
+			if game.repairing(unit):
+				var label_at := Vector2(mark.position.x, mark.end.y + 16.0)
+				_paint_label(label_at, "Repairing", Color("d6c07a"))
+				draw_rect(Rect2(label_at.x, label_at.y + 4.0, 18.0, 4.0), Color("d6c07a"), false, 1.0)
+				repair_caption = "Repairing"
+				repair_bar_text = ""
+
+
+func _draw_feedback() -> void:
+	if game == null:
+		return
+	if game.pulse == "intel":
+		draw_arc(size * 0.5, 36.0, 0, TAU, 32, Color("4ecdc4"), 3.0, true)
+	if game.flash_kind != "" and game.flash_cell.x > -900:
+		var at := cell_center(game.flash_cell.x, game.flash_cell.y)
+		for s in _screens(at.x, at.y):
+			draw_rect(Rect2(s.x - 14.0, s.y - 14.0, 28.0, 28.0), Color("ff8d8d"), false, 2.0)
+	if not game.satellites.is_empty():
+		draw_circle(Vector2(28, 28), 5.0, Color("7eb6ff"))
+	for mark in game.contacts:
+		var at := cell_center(int(mark.get("x", 0)), int(mark.get("y", 0)))
+		for s in _screens(at.x, at.y):
+			draw_rect(Rect2(s.x - 6.0, s.y - 6.0, 12.0, 12.0), Color("d6c07a"), false, 1.5)
 
 
 func _draw_owned_mark(rect: Rect2) -> void:
@@ -525,6 +665,8 @@ func _draw_owned_mark(rect: Rect2) -> void:
 
 
 func _token_selected(unit: MatchState.Token) -> bool:
+	if game.focus != null:
+		return game.focus == unit
 	if game.selected_side != unit.side:
 		return false
 	if game.selected_domain == "":

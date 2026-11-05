@@ -1,14 +1,15 @@
 extends RefCounted
 class_name Stills
 
-## Extracted PAN images. The file list is not a playback order.
+## Extracted PAN images. Playback follows extracted file order until the PAN opcodes are read.
 
-const NOTE := "Extracted stills. Playback order is unknown."
+const NOTE := "Extracted stills. Playback is an assumption: extracted file order."
 const MISSING_NOTE := "Stills are missing. Pieces stay colored discs."
 const PLAYBACK_KNOWN := false
 
 var names := PackedStringArray()
 var _files := {}
+var frame := 0
 
 
 func load_pack(pack) -> void:
@@ -39,6 +40,15 @@ func image_count() -> int:
 	for stem in names:
 		count += files_for(stem).size()
 	return count
+
+
+func advance(stem: String) -> String:
+	var files := files_for(stem)
+	if files.is_empty():
+		frame = 0
+		return NOTE
+	frame = (frame + 1) % files.size()
+	return "Playing %s. Assumption: extracted file order." % files[frame].get_file()
 
 
 func files_for(stem: String) -> PackedStringArray:
