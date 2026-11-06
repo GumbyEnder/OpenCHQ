@@ -349,7 +349,7 @@
     {
       "id": "pacing",
       "order": 320,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "orders",
         "combat",
@@ -358,7 +358,8 @@
       ],
       "title": "Make the match length a decision, not a leftover",
       "work": "Measure a real match end to end: rounds to first contact, rounds to a capital, rounds between income payments, and wall-clock minutes at the configured round length. Report the curve. If it is too short or too long, change config/game.json and re-measure; do not tune individual numbers by feel and do not change the rules to make a clock look right.",
-      "prove": "A recorded run reports wall-clock minutes for a 1986 bot match and the income cadence in seconds, and the harness asserts the match takes at least the owner's chosen floor (config) before a capital falls."
+      "prove": "A recorded run reports wall-clock minutes for a 1986 bot match and the income cadence in seconds, and the harness asserts the match takes at least the owner's chosen floor (config) before a capital falls.",
+      "evidence": "docs/PACING.md: two bot-vs-bot runs at 5 s/round. First contact round 85 (7.1 min) with the shipped bot, 33 captures, 24 kills, no winner inside 1200 rounds. Round length is a wall-clock knob; the front is the real problem."
     },
     {
       "id": "scale_out",
@@ -543,6 +544,18 @@
       "work": "320x136 at 2x makes a piece four pixels. Whole-cell zoom from 2x to 8x about the cursor, pan by right-drag and arrow keys, follow the selected piece, and an X pan that runs past the edge because the painter tiles the seam.",
       "prove": "render clampZoom/centerOn/panBy/zoomAt plus app.js wheel, pointer and key handlers; the seam stays continuous because paintCells wraps column lookups.",
       "evidence": "render.mjs camera helpers + app.js wiring; render test pins the zoom floor/ceiling, that a zoom keeps the cell under the cursor, and that centring is exact."
+    },
+    {
+      "id": "front_break",
+      "order": 322,
+      "status": "todo",
+      "depends": [
+        "combat_depth",
+        "pacing"
+      ],
+      "title": "A mass of force has to be decisive",
+      "work": "Measured: 1200 rounds with the bot on both sides produce 24 kills and no winner, because combat has no notion of odds - one piece fights one piece, every other round, and reinforcements arrive faster than the HITS rule can remove defenders. Pick the owner's option from docs/PACING.md (overrun when attackers outnumber the defender, labelled exchange odds in config, or supply by distance from a friendly city) and implement one. Do not invent a hidden number: a rule applied openly beats a probability nobody can read.",
+      "prove": "Two pieces against one removes the defender faster than one against one; a massed attack breaks a line in the soak; a match played by the bot on both sides ends inside 600 rounds with a winner."
     }
   ]
 }
