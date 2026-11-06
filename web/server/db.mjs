@@ -34,12 +34,18 @@ db.exec(`
   );
 `);
 
-const NAME = /^[A-Za-z][A-Za-z0-9_]{2,19}$/;
+// A handle may be a plain name or an email-shaped one, because that is how players will sign
+// up. It must still start with a letter, so a handle can never look like a number or a route.
+const NAME = /^[A-Za-z][A-Za-z0-9_.@-]{2,39}$/;
 
 export function checkUsername(username) {
   const name = String(username ?? "").trim();
   if (!NAME.test(name)) {
-    return { error: "Use 3 to 20 letters, numbers, or underscores, starting with a letter." };
+    return { error: "Use 3 to 40 letters, numbers, dots, dashes, @ or _, starting with a letter." };
+  }
+  // Reject handles that only pass the character class: no double dots, no trailing punctuation.
+  if (name.includes("..") || /[.@_-]$/.test(name) || name.includes("@.")) {
+    return { error: "That handle has a stray dot, dash or @ at the wrong place." };
   }
   return { name, key: name.toLowerCase() };
 }
