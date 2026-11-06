@@ -4,6 +4,7 @@ import { connect, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { colorForTerrain, PALETTE, paintBoard, SCHEMATIC } from "../public/paint.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const dataDir = mkdtempSync(path.join(tmpdir(), "openchq-web-"));
@@ -192,6 +193,71 @@ async function main() {
   const forbidden = ["WORLD_MAP", ".png", ".PNG", ".exe", ".EXE", "stills", "unpacked", "base64", "iVBOR", "/mnt/nas"];
   for (const token of forbidden) {
     if (boardText.includes(token)) fail("board payload leaks " + token);
+  }
+
+  // --- board_paint: the pure painter draws cell ids, not the original picture.
+  const paintModule = await fetch(base + "/paint.mjs");
+  if (paintModule.status !== 200) fail("paint.mjs is not served: " + paintModule.status);
+  if (!String(paintModule.headers.get("content-type") || "").includes("javascript")) {
+    fail("paint.mjs content-type " + paintModule.headers.get("content-type"));
+  }
+  const recorder = () => {
+    const fills = [];
+    const ctx = {
+      _style: "",
+      set fillStyle(value) {
+        this._style = value;
+      },
+      get fillStyle() {
+        return this._style;
+      },
+      fillRect(x, y, w, h) {
+        fills.push({ x, y, w, h, color: this._style });
+      },
+      clearRect() {},
+    };
+    return { ctx, fills };
+  };
+  const at = (fills, x, y) => fills.find((fill) => fill.x === x * 2 && fill.y === y * 2);
+  const grid = recorder();
+  const painted = paintBoard(grid.ctx, board, { scale: 2 });
+  if (painted.mode !== "cells") fail("painter mode " + painted.mode);
+  if (painted.painted < 320 * 136 * 0.5) fail("painter painted only " + painted.painted + " cells");
+  const spots = [["ocean", 0], ["shallows", 2], ["city", 6], ["capital", 4]];
+  const seen = {};
+  for (const [name, id] of spots) {
+    const index = board.cells.indexOf(id);
+    if (index < 0) fail("board has no " + name + " cell");
+    const x = index % 320;
+    const y = Math.floor(index / 320);
+    const fill = at(grid.fills, x, y);
+    if (!fill) fail("painter skipped " + name + " at " + x + "," + y);
+    if (fill.color !== PALETTE[name]) fail("painted " + name + " as " + fill.color + " not " + PALETTE[name]);
+    seen[name] = fill.color;
+  }
+  if (new Set(Object.values(seen)).size !== 4) fail("paint colors are not distinct: " + JSON.stringify(seen));
+  if (colorForTerrain("nonsense") !== null) fail("painter invented a color for an unknown terrain");
+  if (colorForTerrain(board.terrain[0]) !== PALETTE.ocean) fail("terrain name lookup moved");
+
+  const fallback = recorder();
+  const schematic = paintBoard(fallback.ctx, {
+    source: "missing",
+    cells: null,
+    width: 320,
+    height: 136,
+    capitals: { blue: { x: 79, y: 44 }, red: { x: 183, y: 25 } },
+  }, { scale: 2 });
+  if (schematic.mode !== "schematic") fail("missing extract did not fall back: " + schematic.mode);
+  if (!String(schematic.message || "").includes("extract is missing")) {
+    fail("schematic does not say the extract is missing: " + schematic.message);
+  }
+  const blueMark = at(fallback.fills, 79, 44);
+  if (!blueMark || blueMark.color !== SCHEMATIC.blue) fail("schematic does not mark Washington");
+  const redMark = at(fallback.fills, 183, 25);
+  if (!redMark || redMark.color !== SCHEMATIC.red) fail("schematic does not mark Moscow");
+  const schematicColors = Object.values(SCHEMATIC);
+  if (fallback.fills.some((fill) => !schematicColors.includes(fill.color))) {
+    fail("schematic used a color outside its palette: " + JSON.stringify([...new Set(fallback.fills.map((f) => f.color))]));
   }
 
   const shortPass = await post(base, "/api/register", { username: "Ada", password: "short" });

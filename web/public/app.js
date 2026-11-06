@@ -1,3 +1,5 @@
+import { paintBoard } from "./paint.mjs";
+
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
 const account = document.querySelector("#account");
@@ -6,6 +8,7 @@ const invites = document.querySelector("#invites");
 const roomBox = document.querySelector("#room");
 const flash = document.querySelector("#flash");
 const board = document.querySelector("#board");
+const boardNote = document.querySelector("#boardNote");
 
 let socket = null;
 let me = "";
@@ -41,29 +44,27 @@ function send(message) {
   socket.send(JSON.stringify(message));
 }
 
-function drawBoard() {
+function drawBoard(payload) {
   const ctx = board.getContext("2d");
-  const w = board.width;
-  const h = board.height;
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#081018";
-  ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = "#1a2740";
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= 320; x += 20) {
-    ctx.beginPath();
-    ctx.moveTo(x * 2, 0);
-    ctx.lineTo(x * 2, h);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= 142; y += 20) {
-    ctx.beginPath();
-    ctx.moveTo(0, y * 2);
-    ctx.lineTo(w, y * 2);
-    ctx.stroke();
-  }
+  const painted = paintBoard(ctx, payload, { scale: 2 });
   mark(ctx, 79, 44, "#3d7ec9", "Washington");
   mark(ctx, 183, 25, "#c4473a", "Moscow");
+  if (painted.mode === "schematic") {
+    boardNote.textContent = painted.message;
+    return;
+  }
+  boardNote.textContent =
+    "Cell grid drawn from the map extract on the server. Washington and Moscow are marked.";
+}
+
+async function loadBoard() {
+  try {
+    const res = await fetch("/api/board", { credentials: "same-origin" });
+    const payload = await res.json();
+    drawBoard(payload);
+  } catch (err) {
+    drawBoard({ source: "missing", cells: null, width: 320, height: 136 });
+  }
 }
 
 function mark(ctx, x, y, color, label) {
@@ -273,7 +274,7 @@ document.querySelector("#launch").addEventListener("submit", (event) => {
   send({ op: "bot", era: fields.get("era"), side: fields.get("side") });
 });
 
-drawBoard();
+loadBoard();
 
 fetch("/api/me", { credentials: "same-origin" })
   .then((res) => res.json())
