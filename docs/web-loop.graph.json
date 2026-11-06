@@ -371,6 +371,18 @@
       "title": "Decide single instance or many, with numbers",
       "work": "One process holds 2000 sockets and ticks 1000 rooms inside the round budget. Decide whether the product needs more than one instance (uptime, region, load). If yes, the room store moves to Postgres and rooms are sharded per instance with a sticky socket; if no, record that the volume-pinned single instance is the accepted design and what would overturn it.",
       "prove": "A written decision in docs/SCALE.md with the measured numbers it rests on, and the harness still prints WEB_OK on whichever path was chosen."
+    },
+    {
+      "id": "deploy_quietly",
+      "order": 340,
+      "status": "todo",
+      "depends": [
+        "reconnect",
+        "human_orders"
+      ],
+      "title": "A deploy must not drop a live game",
+      "work": "Every deploy restarts the process and closes every socket. Rooms survive (they are rows), but a player mid-match is disconnected by a build. Add a drain: the server answers a local-only POST /api/drain by holding every running room and replying when no seat is connected, and tools/fire.sh calls it before railway up with a timeout. If the drain does not clear in time, deploy anyway and say so. Never make the page poll to find out - the socket close is the signal.",
+      "prove": "The harness starts a room with a connected seat, calls drain, sees the clock hold and the response deferred, closes the seat, sees drain return, and confirms the store has the room held. A drain with no rooms returns at once."
     }
   ]
 }
