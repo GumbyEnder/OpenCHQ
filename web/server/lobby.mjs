@@ -5,9 +5,32 @@ import { forSeat } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { boardPayload } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
+import { issueOrder } from "./move.mjs";
 
 function sideOf(value) {
   return value === "red" ? "red" : "blue";
+}
+
+// The seat table the match carries. bot.mjs reads `match.seats[side].kind`, so the room
+// stamps it whenever seats are assigned or restored: a human seat is refused bot orders by
+// the module itself, not only by the caller.
+function stampSeats(room) {
+  if (!room || !room.match || !room.seats) return;
+  room.match.seats = {
+    blue: { kind: room.seats.blue ? room.seats.blue.kind : null },
+    red: { kind: room.seats.red ? room.seats.red.kind : null },
+  };
+}
+
+// The one seat a username holds. A socket may act as this seat and no other, so the side is
+// never read from the message body.
+function seatUsername(room, username) {
+  if (!room || !room.seats) return null;
+  for (const side of ["blue", "red"]) {
+    const seat = room.seats[side];
+    if (seat && seat.kind === "human" && seat.username === username) return side;
+  }
+  return null;
 }
 
 export function createLobby() {
@@ -35,6 +58,7 @@ export function createLobby() {
       room.match = openMatch(room.era, sitesForMatch());
       saveRoom(room);
     }
+    stampSeats(room);
     rooms.set(room.id, room);
     for (const seat of Object.values(room.seats ?? {})) {
       if (seat && seat.kind === "human" && seat.username) seatOf.set(seat.username, room.id);
@@ -157,7 +181,7 @@ export function createLobby() {
       mode: "bot",
       era: eraOf(era),
       clock: "held",
-      note: "Clock held. Pieces do not move yet. The match will run here, in the browser game.",
+      note: "Clock held. The board is waiting for orders.",
       seats: {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
@@ -166,6 +190,7 @@ export function createLobby() {
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
+    stampSeats(room);
     rooms.set(room.id, room);
     saveRoom(room);
     seatOf.set(username, room.id);
@@ -213,18 +238,47 @@ export function createLobby() {
       mode: "human",
       era: inviteRow.era,
       clock: "held",
-      note: "Clock held. Pieces do not move yet. The match will run here, in the browser game.",
+      note: "Clock held. The board is waiting for orders.",
       seats: { blue: null, red: null },
       match: openMatch(inviteRow.era, sitesForMatch()),
     };
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
     room.seats[other] = { username, kind: "human" };
+    stampSeats(room);
     rooms.set(room.id, room);
     saveRoom(room);
     seatOf.set(inviteRow.from, room.id);
     seatOf.set(username, room.id);
     tellRoom(room);
     sendPresence();
+    return { ok: true };
+  }
+
+  // A socket orders its own seat and nothing else. The side is derived from the seat table,
+  // never taken from the message; a side sent in the message must match or the order is
+  // refused before the match is touched. move.issueOrder re-checks piece ownership, so a
+  // forged piece id fails at the second gate too.
+  function order(username, message) {
+    const roomId = seatOf.get(username);
+    const room = roomId ? rooms.get(roomId) : null;
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const claimed = message.side === undefined || message.side === null ? mine : String(message.side);
+    if (claimed !== mine) {
+      return { error: "That side is not yours. You hold " + mine + "." };
+    }
+    const pieceId = String(message.piece ?? message.pieceId ?? "");
+    if (!pieceId) return { error: "An order needs a piece id." };
+    let result;
+    try {
+      result = issueOrder(room.match, mine, pieceId, message.x, message.y);
+    } catch (err) {
+      return { error: err && err.message ? err.message : String(err) };
+    }
+    if (!result || result.error) return { error: (result && result.error) || "The order was refused." };
+    saveRoom(room);
+    tellRoom(room);
     return { ok: true };
   }
 
@@ -235,8 +289,8 @@ export function createLobby() {
     room.clock = running ? "running" : "held";
     if (room.match) room.match.clock = room.clock;
     room.note = running
-      ? "Clock running. Pieces do not move yet. The match will run here, in the browser game."
-      : "Clock held. Pieces do not move yet. The match will run here, in the browser game.";
+      ? "Clock running. Pieces move one cell a round."
+      : "Clock held. The board is waiting for orders.";
     saveRoom(room);
     tellRoom(room);
     return { ok: true };
@@ -249,16 +303,16 @@ export function createLobby() {
     const events = [];
     for (const room of rooms.values()) {
       if (!room.match || room.match.over || room.clock !== "running") continue;
-      if (room.mode === "bot") {
-        for (const side of ["blue", "red"]) {
-          const seat = room.seats[side];
-          if (seat && seat.kind === "bot") {
-            try {
-              botOrders(room.match, side);
-            } catch (err) {
-              console.error("bot orders failed:", err && err.message ? err.message : err);
-            }
-          }
+      // Bot orders belong to bot seats, never to a room mode. A human room has no bot seat,
+      // so neither side is given orders there; a bot seat in any room is still a bot.
+      for (const side of ["blue", "red"]) {
+        const seat = room.seats[side];
+        if (!seat || seat.kind !== "bot") continue;
+        if (!room.match.seats) stampSeats(room);
+        try {
+          botOrders(room.match, side);
+        } catch (err) {
+          console.error("bot orders failed:", err && err.message ? err.message : err);
         }
       }
       const result = tickMatch(room.match);
@@ -287,6 +341,7 @@ export function createLobby() {
     if (op === "bot") return startBot(username, message.era, message.side);
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
+    if (op === "order") return order(username, message);
     if (op === "run") return setClock(username, true);
     if (op === "hold") return setClock(username, false);
     if (op === "leave") return leave(username);
