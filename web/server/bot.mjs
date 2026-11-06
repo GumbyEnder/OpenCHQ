@@ -112,6 +112,32 @@ function dataRootFor(match) {
   }
 }
 
+// Concentration. A line that marches evenly at a capital grinds and never breaks - measured:
+// 1200 rounds, 27 kills, no winner, because overrun needs surplus and an even front has none.
+// So the bot picks ONE point of the enemy line - the enemy piece with the fewest enemy friends
+// beside it - and the whole army converges there. That is behaviour, not a rule, so it costs
+// no fidelity: the same pieces, the same orders, aimed better.
+export function focusTarget(match, side, foe, capital) {
+  const enemies = (match.pieces || []).filter((unit) => unit && unit.side === foe);
+  if (enemies.length === 0) return capital;
+  const mine = (match.pieces || []).filter((unit) => unit && unit.side === side);
+  const friends = (cell) => enemies.filter((other) => other.id !== cell.id && Math.max(Math.abs(wrapDelta(other.x, cell.x)), Math.abs(Number(other.y) - Number(cell.y))) <= 1).length;
+
+  let best = null;
+  let bestCost = Infinity;
+  for (const enemy of enemies) {
+    // Distance from the army's centre of mass, so the choice is one the army can reach.
+    let sum = 0;
+    for (const piece of mine) sum += Math.max(Math.abs(wrapDelta(piece.x, enemy.x)), Math.abs(Number(piece.y) - Number(enemy.y)));
+    const cost = friends(enemy) * 1000 + (mine.length ? sum / mine.length : 0);
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = enemy;
+    }
+  }
+  return best ? { x: best.x, y: best.y } : capital;
+}
+
 function marchOne(match, side, piece, capital, events) {
   const cells = approachCells(match, piece, capital);
   if (cells.length === 0) {
@@ -153,13 +179,16 @@ export function ordersFor(match, side) {
   if (!capital || !Number.isInteger(capital.x) || !Number.isInteger(capital.y)) return events;
 
   const mine = match.pieces.filter((piece) => piece && piece.side === side);
+  // One focus for the whole army: a weak point of the enemy line once there is contact, the
+  // capital until then.
+  const focus = focusTarget(match, side, foe, capital);
 
   // The army marches on the player's capital. A piece already on a path keeps it; the army is
   // re-ordered only once it has arrived, so an order is not re-issued every round.
   for (const piece of mine) {
     if (piece.domain !== "land") continue;
     if (hasPath(piece)) continue;
-    marchOne(match, side, piece, capital, events);
+    marchOne(match, side, piece, focus, events);
   }
 
   // One sail: a ship that already has a path is left alone. Only an idle ship is routed. The

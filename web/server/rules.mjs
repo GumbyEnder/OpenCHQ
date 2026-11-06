@@ -80,6 +80,14 @@ export function hitsToKill() {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
+// Overrun. The owner's own list of what combat is missing names overrun, so the archive had it;
+// how much more force it took was never recovered. The rule used here invents no number: the
+// attacker overruns when it has strictly more friendly pieces on the defender's cell than the
+// defender has - a comparison a player can count on the screen.
+export function overrunEnabled() {
+  return rules().overrun !== false;
+}
+
 export function priceOf(kind) {
   const table = rules().prices || {};
   return Object.hasOwn(table, kind) ? Number(table[kind]) : null;

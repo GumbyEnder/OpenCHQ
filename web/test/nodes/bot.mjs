@@ -5,7 +5,7 @@
 // therefore accepts a graceful refusal (a bot_skip note, no crash, no invented path) and says
 // so, but a path must always point at the player's capital whenever one exists.
 
-import { ordersFor } from "../../server/bot.mjs";
+import { focusTarget, ordersFor } from "../../server/bot.mjs";
 import { openMatch } from "../../server/match.mjs";
 
 export const name = "bot";
@@ -44,14 +44,18 @@ export async function run(ctx) {
   const first = ordersFor(march, "blue");
   if (!Array.isArray(first)) fail("ordersFor did not return an array: " + JSON.stringify(first));
 
+  // With an enemy on the board the bot masses on the weakest point of the enemy line instead of
+  // marching at the capital; with no enemy the capital is still the target. Either way the path
+  // has to end next to the thing it was aimed at, and closer than it started.
+  const aim = focusTarget(march, "blue", "red", capital);
   if (Array.isArray(army.path) && army.path.length > 0) {
     const end = army.path[army.path.length - 1];
-    const gap = chebyshev(end, capital);
+    const gap = chebyshev(end, aim);
     if (gap > 3) {
-      fail("bot path ends " + gap + " cells from the player capital: " + JSON.stringify(army.path));
+      fail("bot path ends " + gap + " cells from its target (" + aim.x + "," + aim.y + "): " + JSON.stringify(army.path.slice(-3)));
     }
-    if (gap >= startGap) {
-      fail("bot path did not close on the capital: start " + startGap + ", end " + gap);
+    if (chebyshev(end, aim) >= chebyshev({ x: army.x, y: army.y }, aim) && chebyshev({ x: army.x, y: army.y }, aim) > 3) {
+      fail("bot path did not close on its target");
     }
     const order = first.find((event) => event.type === "bot_order" && event.pieceId === army.id);
     if (!order) fail("a path was set but no bot_order was reported: " + JSON.stringify(first));

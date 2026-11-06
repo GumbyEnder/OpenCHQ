@@ -4,7 +4,7 @@
 // stand forever with no shot note at all, and nothing would record `foughtRound` or the
 // per-piece shot count. Each assertion below names the fact it pins down.
 
-import { adjacent, resolve, SHOT_NOTE, FIGHT_OVER_NOTE } from "../../server/combat.mjs";
+import { adjacent, resolve, SHOT_NOTE, FIGHT_OVER_NOTE, OVERRUN_NOTE } from "../../server/combat.mjs";
 import { hitsToKill } from "../../server/rules.mjs";
 
 export const name = "combat";
@@ -181,4 +181,49 @@ export async function run(ctx) {
   }
   if (rosterMatch.pieces.length !== 2) say("combat removed a piece on damage that does not exist", rosterMatch.pieces.length);
   if (rosterMatch.over) say("combat ended the match on a hit count that was never measured", rosterMatch.over);
+
+  // --- overrun: surplus force breaks a cell, and 1v1 never does -----------------------
+  // The archive had overrun (the owner's list of missing combat depth names it). How much more
+  // force it took was never recovered, so the rule counts: strictly more friendly pieces on the
+  // defender's cell than the defender has, with both combatants excluded from the count.
+  const twoOnOne = matchOf(
+    [
+      piece("blue:land", "blue", 10, 10),
+      piece("blue:land:2", "blue", 10, 11),
+      piece("red:land", "red", 11, 10),
+    ],
+    1,
+  );
+  twoOnOne.pieces[0].movedRound = 1; // blue is the attacker
+  twoOnOne.pieces[2].movedRound = 0;
+  const broken = resolve(twoOnOne);
+  if (!broken.some((event) => event.type === "overrun")) say("two against one did not overrun", JSON.stringify(broken.map((e) => e.type)));
+  if (twoOnOne.pieces.length !== 2) say("the overrun did not remove the defender", twoOnOne.pieces.length);
+  if (!twoOnOne.pieces.every((unit) => unit.side === "blue")) say("the overrun removed the wrong piece");
+  const overrunEvent = broken.find((event) => event.type === "overrun");
+  if (overrunEvent && overrunEvent.by !== "blue:land") say("the overrun did not name the attacker", overrunEvent.by);
+  if (/\d/.test(String(OVERRUN_NOTE))) say("the overrun note invented a number: " + OVERRUN_NOTE);
+
+  // Even numbers do not break: 2v2 is a fight, not an overrun.
+  const twoOnTwo = matchOf(
+    [
+      piece("blue:land", "blue", 10, 10),
+      piece("blue:land:2", "blue", 10, 11),
+      piece("red:land", "red", 11, 10),
+      piece("red:land:2", "red", 11, 11),
+    ],
+    1,
+  );
+  twoOnTwo.pieces[0].movedRound = 1;
+  twoOnTwo.pieces[2].movedRound = 0;
+  const even = resolve(twoOnTwo);
+  if (even.some((event) => event.type === "overrun")) say("an even fight overran");
+
+  // A plain 1v1 still grinds: the existing hits rule is what removes the defender.
+  const oneOnOne = matchOf([piece("blue:land", "blue", 10, 10), piece("red:land", "red", 11, 10)], 1);
+  oneOnOne.pieces[0].movedRound = 1;
+  oneOnOne.pieces[1].movedRound = 0;
+  const grind = resolve(oneOnOne);
+  if (grind.some((event) => event.type === "overrun")) say("a 1v1 overran, which makes every fight instant");
+  if (oneOnOne.pieces.length !== 2) say("a 1v1 was decided in one exchange");
 }

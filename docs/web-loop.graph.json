@@ -548,14 +548,28 @@
     {
       "id": "front_break",
       "order": 322,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "combat_depth",
         "pacing"
       ],
       "title": "A mass of force has to be decisive",
-      "work": "Measured: 1200 rounds with the bot on both sides produce 24 kills and no winner, because combat has no notion of odds - one piece fights one piece, every other round, and reinforcements arrive faster than the HITS rule can remove defenders. Pick the owner's option from docs/PACING.md (overrun when attackers outnumber the defender, labelled exchange odds in config, or supply by distance from a friendly city) and implement one. Do not invent a hidden number: a rule applied openly beats a probability nobody can read.",
-      "prove": "Two pieces against one removes the defender faster than one against one; a massed attack breaks a line in the soak; a match played by the bot on both sides ends inside 600 rounds with a winner."
+      "work": "Overrun shipped as a count comparison. Measured: it does not break an even front. The open half of this node is concentration - see bot_concentration.",
+      "prove": "Two pieces against one removes the defender faster than one against one; a massed attack breaks a line in the soak; a match played by the bot on both sides ends inside 600 rounds with a winner.",
+      "evidence": "Overrun implemented as a comparison, not a threshold (strictly more friendly pieces on the defender's cell than the defender has, both combatants excluded), config-gated, tested in web/test/nodes/combat.mjs. A/B at 1200 rounds: 24 destroyed without it, 27 with it, captures unchanged at 33, no winner either way - the rule fires at a bulge and cannot fire along an even line."
+    },
+    {
+      "id": "bot_concentration",
+      "order": 323,
+      "status": "done",
+      "depends": [
+        "front_break",
+        "bot"
+      ],
+      "title": "The bot has to mass, not march",
+      "work": "Measured: with the shipped bot on both sides a 1200-round match produces one even line, 27 kills and no winner. Overrun cannot fire on an even line. The bot sends every piece at the enemy capital, so it never has surplus anywhere. Teach it to pick one point of the enemy line, gather the pieces that can reach it, and push there - concentration is a behaviour, not a rule, so it costs no fidelity.",
+      "prove": "A bot-vs-bot match ends inside 600 rounds with a winner, and the timeline shows a breakthrough (a round where one side loses 3+ pieces and the other loses none).",
+      "evidence": "bot.focusTarget: the army masses on the weakest enemy cell. A bot-vs-bot match now ends - red at round 441 (36.8 min at 5 s), first contact round 41, 44 destroyed, 42 captures - against no winner in 1200 rounds before. Reproducible across three runs. bot test rewritten to check the path closes on the chosen target, not the capital."
     }
   ]
 }

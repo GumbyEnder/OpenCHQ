@@ -33,6 +33,38 @@ Wall clock at other round lengths for the same 1200 rounds: 3 s → 60 min, 2 s 
    because pieces walk over sites, not because armies win. That inverts the intended feel — land
    is taken by presence, not by force.
 
+## Overrun, measured A/B (same board, same bot, 1200 rounds)
+
+| | overrun off | overrun on |
+|---|---|---|
+| destroyed | 24 | 27 |
+| captures | 33 | 33 |
+| winner | none | none |
+
+So overrun is real but small: it fires at a bulge and cannot fire along an even line, because a
+1v1 has no surplus on either side by construction. The rule is kept (it is faithful, tested and
+harmless), but the measurement says the front breaks for a different reason: the bot marches
+every piece straight at the enemy capital, so it builds one even line and never concentrates.
+
+## Concentration: the fix that worked
+
+The bot now picks one point of the enemy line - the enemy piece with the fewest enemy friends
+beside it, weighted by how far the army's centre of mass is from it - and the whole army
+converges there instead of everyone marching at the capital. Same pieces, same orders, aimed
+better. Nothing about the rules changed.
+
+| | even line (before) | concentrated (after) |
+|---|---|---|
+| winner | none in 1200 rounds | red, round 441 (36.8 min) |
+| first contact | round 85 (7.1 min) | round 41 (3.4 min) |
+| first kill | round 129 | round 48 (4.0 min) |
+| destroyed | 24 | 44 |
+| captures | 33 | 42 |
+
+Reproducible: three runs give the same 441 and the same winner. The map did not change, the
+money did not change, the fights did not change - only where the army is pointed. A front that
+is attacked in one place breaks; a front that is walked into everywhere grinds.
+
 ## What to change, in order
 
 - **Make a mass of force decisive** (node `front_break`): the archive's own rule is "the

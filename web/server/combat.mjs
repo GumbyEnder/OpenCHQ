@@ -12,7 +12,7 @@
 // only outcome is removal. No health bar, no partial damage, nothing to tune per unit.
 
 import { CELL_W } from "./board.mjs";
-import { hitsToKill } from "./rules.mjs";
+import { hitsToKill, overrunEnabled } from "./rules.mjs";
 
 // The desktop archive's voice, kept verbatim. It carries no digit on purpose: there is no
 // damage figure to report.
@@ -29,6 +29,20 @@ export function adjacent(a, b) {
   const dy = Math.abs(Number(a.y) - Number(b.y));
   return Math.max(wrap, dy) === 1;
 }
+
+// How many of `side` stand next to a cell, not counting the pieces the caller names. The two
+// combatants are always excluded, so a plain 1v1 is 0 against 0 and never overruns: the rule is
+// about surplus force, not about standing next to someone.
+function supportAt(pieces, side, cell, exclude) {
+  let count = 0;
+  for (const piece of pieces) {
+    if (!piece || exclude.has(piece.id) || piece.side !== side) continue;
+    if (adjacent(piece, cell)) count++;
+  }
+  return count;
+}
+
+export const OVERRUN_NOTE = "Overrun. More force stood on the cell than held it.";
 
 function keyOf(a, b) {
   return a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
@@ -118,12 +132,25 @@ export function resolve(match) {
     if (!aArmed) doomed.set(a.id, b.id);
     if (!bArmed) doomed.set(b.id, a.id);
 
-    if (limit > 0) {
-      const aMoved = Number(a.movedRound ?? -1);
-      const bMoved = Number(b.movedRound ?? -1);
-      const defender = aMoved < bMoved ? a : bMoved < aMoved ? b : (String(a.id) < String(b.id) ? a : b);
-      const attacker = defender === a ? b : a;
-      if (Number(defender.shots) >= limit) doomed.set(defender.id, attacker.id);
+    const aMoved = Number(a.movedRound ?? -1);
+    const bMoved = Number(b.movedRound ?? -1);
+    const defender = aMoved < bMoved ? a : bMoved < aMoved ? b : (String(a.id) < String(b.id) ? a : b);
+    const attacker = defender === a ? b : a;
+
+    // Overrun: the side with more pieces on the cell breaks it now, rather than grinding.
+    // Both sides are counted on the defender's cell, so the comparison is one a player can see.
+    if (overrunEnabled() && !doomed.has(defender.id)) {
+      const both = new Set([defender.id, attacker.id]);
+      const forAttacker = supportAt(match.pieces, attacker.side, defender, both);
+      const forDefender = supportAt(match.pieces, defender.side, defender, both);
+      if (forAttacker > forDefender) {
+        doomed.set(defender.id, attacker.id);
+        events.push({ type: "overrun", side: defender.side, pieceId: defender.id, by: attacker.id, x: defender.x, y: defender.y, round, note: OVERRUN_NOTE });
+      }
+    }
+
+    if (limit > 0 && !doomed.has(defender.id) && Number(defender.shots) >= limit) {
+      doomed.set(defender.id, attacker.id);
     }
   }
 
