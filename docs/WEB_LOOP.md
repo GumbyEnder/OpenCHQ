@@ -93,6 +93,10 @@ the stills, and `CHQ_unpacked.EXE` never leave this machine.
   on 127.0.0.1 with a throwaway `OPENCHQ_WEB_DATA`; never `~/.local/share/openchq`.
 - SQLite returns `database is locked` on the CIFS share, so accounts never live in the repo
   tree. Local default: `~/.local/share/openchq`. On Railway: the `/data` volume.
+- A game is a database row, not a Map entry. `web/server/rooms.mjs` writes on create and on
+  every clock change, restores rooms paused at boot, and prunes rooms idle over 24 h. Any node
+  that changes room state must call `saveRoom` before it tells the seats, and must never
+  assume in-memory state survived a restart.
 - Cap 40 iterations. At the cap the loop reports `CAP` and stops; raise `cap` in the graph
   file deliberately, in its own commit, if more passes are wanted.
 - When every node is `done` the loop reports `COMPLETE` and stops. `drop_godot` is last and

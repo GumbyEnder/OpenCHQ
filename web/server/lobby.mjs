@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { deleteRoom, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
 
 const ERAS = new Set(["1918", "1942", "1986", "2023", "9999"]);
 
@@ -16,6 +17,16 @@ export function createLobby() {
   const invites = new Map();
   const rooms = new Map();
   const seatOf = new Map();
+
+  // Rooms outlive the process. Restore every stored game paused, and seat its humans again so
+  // a returning player lands back in their own match. Games nobody touched for a day go away.
+  pruneRooms();
+  for (const room of loadRooms()) {
+    rooms.set(room.id, room);
+    for (const seat of Object.values(room.seats ?? {})) {
+      if (seat && seat.kind === "human" && seat.username) seatOf.set(seat.username, room.id);
+    }
+  }
 
   function presence() {
     const users = [];
@@ -62,6 +73,7 @@ export function createLobby() {
   function endRoom(room, reason) {
     room.note = reason;
     rooms.delete(room.id);
+    deleteRoom(room.id);
     for (const seat of [room.seats.blue, room.seats.red]) {
       if (seat.kind !== "human") continue;
       seatOf.delete(seat.username);
@@ -121,6 +133,7 @@ export function createLobby() {
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
     rooms.set(room.id, room);
+    saveRoom(room);
     seatOf.set(username, room.id);
     tellRoom(room);
     sendPresence();
@@ -172,6 +185,7 @@ export function createLobby() {
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
     room.seats[other] = { username, kind: "human" };
     rooms.set(room.id, room);
+    saveRoom(room);
     seatOf.set(inviteRow.from, room.id);
     seatOf.set(username, room.id);
     tellRoom(room);
@@ -187,6 +201,7 @@ export function createLobby() {
     room.note = running
       ? "Clock running. Pieces do not move yet. The match will run here, in the browser game."
       : "Clock held. Pieces do not move yet. The match will run here, in the browser game.";
+    saveRoom(room);
     tellRoom(room);
     return { ok: true };
   }

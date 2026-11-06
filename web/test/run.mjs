@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { connect, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { colorForTerrain, PALETTE, paintBoard, SCHEMATIC } from "../public/paint.mjs";
@@ -340,6 +341,40 @@ async function main() {
   const closed = await waitFor(adaBox, beforeClose, (message) => message.op === "room" && message.room === null, "gus left");
   if (closed.reason !== "Gus left the match.") fail("close reason " + closed.reason);
   wsAda.close();
+
+  // ---- a game outlives the process -----------------------------------------------------
+  // Ada starts a bot room, runs the clock, and the server is killed without closing anything.
+  // The room must come back on the next boot, paused, still hers.
+  const wsBefore = openSocket(base, ada.token);
+  const boxBefore = listen(wsBefore);
+  await new Promise((resolve) => wsBefore.addEventListener("open", resolve));
+  wsBefore.send(JSON.stringify({ op: "bot", era: "1986", side: "blue" }));
+  const beforeRoom = await waitFor(boxBefore, 0, (m) => m.op === "room" && m.room && m.room.mode === "bot", "bot room before restart");
+  const survivedId = beforeRoom.room.id;
+  if (!survivedId) fail("bot room has no id");
+  wsBefore.send(JSON.stringify({ op: "run" }));
+  await waitFor(boxBefore, 0, (m) => m.op === "room" && m.room && m.room.clock === "running", "clock running before restart");
+
+  const store = new DatabaseSync(path.join(dataDir, "openchq.sqlite"));
+  const row = store.prepare("SELECT id, clock, state FROM rooms WHERE id = ?").get(survivedId);
+  if (!row) fail("room was never written to the store: " + survivedId);
+  if (row.clock !== "running") fail("stored clock is " + row.clock);
+  const storedSeats = JSON.parse(row.state).seats;
+  if (storedSeats.blue.username !== "Ada") fail("stored seat " + JSON.stringify(storedSeats));
+  store.close();
+
+  await stopServer();
+  await startServer(port);
+
+  const wsAfter = openSocket(base, ada.token);
+  const boxAfter = listen(wsAfter);
+  await new Promise((resolve) => wsAfter.addEventListener("open", resolve));
+  const welcome = await waitFor(boxAfter, 0, (m) => m.op === "welcome", "welcome after restart");
+  if (!welcome.room) fail("the game did not survive the restart");
+  if (welcome.room.id !== survivedId) fail("reconnected to a different room " + welcome.room.id);
+  if (welcome.room.clock !== "held") fail("a restart resumed the clock: " + welcome.room.clock);
+  if (welcome.room.you !== "blue") fail("seat was lost across the restart: " + welcome.room.you);
+  wsAfter.close();
 }
 
 try {

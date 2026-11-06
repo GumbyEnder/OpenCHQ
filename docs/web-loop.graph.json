@@ -93,11 +93,25 @@
       "prove": "A pure painter test checks the color of ocean, shallows, city, and capital. The harness still prints WEB_OK."
     },
     {
+      "id": "room_store",
+      "order": 85,
+      "status": "done",
+      "depends": [
+        "lobby",
+        "harness"
+      ],
+      "title": "Rooms outlive the process",
+      "work": "A room is a row, not a Map entry. web/server/rooms.mjs owns a rooms table on the same SQLite database; the lobby writes on create and on every clock change, deletes only on a real end, and restores every stored room paused at boot. Idle rooms older than 24 hours are pruned. A restart never resumes a clock.",
+      "prove": "The harness starts a bot room, runs the clock, kills the server, restarts it on the same data directory and reconnects: the same room id comes back, held, with the caller still in its seat. Removing the store write makes that assertion fail.",
+      "evidence": "Committed with the storage pass; WEB_OK with the restart block in web/test/run.mjs."
+    },
+    {
       "id": "pieces",
       "order": 90,
       "status": "todo",
       "depends": [
-        "board_paint"
+        "board_paint",
+        "room_store"
       ],
       "title": "Opening pieces",
       "work": "A match module in JavaScript places Blue at Washington and Red at Moscow, plus one ship each, for 1918, 1942, 1986, and the concealed era. 2023 places no pieces. Creating a bot or human room attaches this match. The room view includes the caller's pieces.",
@@ -241,6 +255,18 @@
       "prove": "The harness gives one side both capitals, ticks, and sees the winner and a frozen board on the next tick. WEB_OK."
     },
     {
+      "id": "load_test",
+      "order": 215,
+      "status": "todo",
+      "depends": [
+        "tick",
+        "room_store"
+      ],
+      "title": "A thousand rooms inside one round",
+      "work": "Prove the target scale on this host, with numbers, not adjectives. tools/bench-rooms.mjs measures a full tick pass over N rooms and the cost of snapshotting them to the store. Assert in the harness that 1000 rooms of 8 pieces tick and snapshot well inside the 0.14 s round budget, and that a held room costs nothing: no tick, no write. Report the headroom multiples. Do not shrink the model to make the number look good.",
+      "prove": "node tools/bench-rooms.mjs 1000 8 reports headroom above 10x for both the tick pass and the snapshot, and the harness prints WEB_OK including that assertion."
+    },
+    {
       "id": "reconnect",
       "order": 220,
       "status": "todo",
@@ -249,7 +275,7 @@
         "human_orders"
       ],
       "title": "Reconnect",
-      "work": "A dropped socket does not delete the room immediately. The same account can open a new socket and receive a fresh view of its seat. The other seat keeps its path.",
+      "work": "A dropped socket does not delete the room: the room is held, kept in the store, and the seat stays reserved for that account. A unit nobody is watching does not tick, does not pay, and does not burn fuel. The same account opening a new socket gets a fresh view of its seat, still paused, and can run it again. The other seat keeps its path. This node flips the disconnect behaviour that the harness currently proves as 'left the match'.",
       "prove": "The harness closes one socket, connects again as the same user, and sees the same room id and its own pieces. WEB_OK."
     },
     {

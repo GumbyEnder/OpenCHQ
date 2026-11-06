@@ -86,7 +86,8 @@ There is no delete-account route yet; they are harmless.
 | --- | --- | --- | --- |
 | Accounts (`users`) | SQLite `users` table | yes | yes — `/data` is a volume |
 | Sessions (`sessions`) | SQLite `sessions` table | yes | yes |
-| Live rooms, seats, clock, invites | **process memory** in `lobby.mjs` | no | no |
+| Rooms, seats, clock, match blob | SQLite `rooms` table | yes | yes |
+| Invite offers (unaccepted) | process memory | n/a (transient by nature) | n/a |
 | Terrain / sites | not on this host at all | n/a | n/a |
 
 SQLite is a real database, not a stand-in: `node:sqlite`, one file, WAL mode, on a mounted
@@ -97,6 +98,33 @@ in a table. Measured on the live container after a redeploy: `journal_mode = wal
 Pragmas set in `web/server/db.mjs`: `journal_mode = WAL`, `synchronous = NORMAL`,
 `busy_timeout = 5000`, `foreign_keys = ON`. WAL is safe here because a Railway volume is a
 local mount — it would not be safe on the CIFS share.
+
+### Room persistence (added 2026-11-06)
+
+A game is a row. `web/server/rooms.mjs` writes `rooms(id, mode, era, clock, note, state,
+created_at, saved_at)` on create and on every clock change, deletes only when a room really
+ends, and restores every stored room **paused** at boot with its humans seated again. Idle
+rooms older than 24 h are pruned at boot. A restart never resumes a clock — the server owns
+the clock, and a fresh process must not run rounds nobody asked for.
+
+Proved in the harness by killing the server mid-game and booting it again on the same data
+directory: the room id, the seat and a `held` clock all come back. Removing the store write
+makes that assertion fail, so the proof is not vacuous.
+
+### Scale probe (tools/bench-rooms.mjs, this host, one core)
+
+| Measure, 1000 rooms x 8 pieces | Cost | Budget (0.14 s round) | Headroom |
+| --- | --- | --- | --- |
+| tick pass, all rooms | 0.15 ms | 140 ms | ~920x |
+| snapshot all rooms, one transaction | 1.65 ms | 140 ms | ~85x |
+| snapshot all rooms, one transaction each | 3.23 ms | 140 ms | ~43x |
+| 2000 seat views built + JSON | 7.1 ms (2.6 MB) | 140 ms | ~20x |
+| 5000 rooms: tick / snapshot | 0.59 / 9.24 ms | 140 ms | ~236x / ~15x |
+
+Read: the database is not the bottleneck at 1000 concurrent games. The expensive part is
+sending a full view to every seat every round (~2.6 MB per round, ~18 MB/s at 2000 players),
+so the scale work that matters later is view deltas, not a bigger database. Idle games cost
+nothing because a held room does not tick or write.
 
 ### Why not Postgres yet
 

@@ -7,7 +7,8 @@ import path from "node:path";
 const root = process.env.OPENCHQ_WEB_DATA || path.join(homedir(), ".local", "share", "openchq");
 mkdirSync(root, { recursive: true });
 
-const db = new DatabaseSync(path.join(root, "openchq.sqlite"));
+export const dataRoot = root;
+export const db = new DatabaseSync(path.join(root, "openchq.sqlite"));
 // One writer, many readers. WAL keeps a login from blocking a lobby read, and the busy
 // timeout turns a rare lock into a short wait instead of an error. The volume is a local
 // mount on the host, so WAL is safe here (it is not safe on a network share).
