@@ -11,6 +11,7 @@
 import { CELL_W, CELL_H, boardPayload, resolveDataRoot } from "./board.mjs";
 import { landPace, isRefused } from "./rules.mjs";
 import { seaRoute } from "./lanes.mjs";
+import { inactiveRounds, isAircraft } from "./air.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -164,6 +165,10 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   const piece = match.pieces.find((unit) => unit.id === pieceId);
   if (!piece) return { error: "No such piece: " + pieceId + "." };
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
+  if (isAircraft(piece)) {
+    const remaining = inactiveRounds(piece, match.round);
+    if (remaining > 0) return { error: `That aircraft is inactive for ${remaining} more rounds.` };
+  }
 
   const x = Number(toX);
   const y = Number(toY);
@@ -218,6 +223,8 @@ export function advance(match) {
   if (!match || !Array.isArray(match.pieces) || match.over) return events;
   for (const piece of match.pieces) {
     if (!Array.isArray(piece.path) || piece.path.length === 0) continue;
+    // An aircraft on a mission is not on the ground to be moved.
+    if (inactiveRounds(piece, match.round) > 0) continue;
     // A ship's path comes from the lane graph (lanes.seaRoute), stepped one waypoint at a time;
     // a land piece's comes from a walk. The stepping below is the same either way, so neither
     // domain may be skipped here - skipping sea is what left every routed ship standing still.

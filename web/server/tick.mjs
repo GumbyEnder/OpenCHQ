@@ -13,6 +13,7 @@
 import { advance } from "./move.mjs";
 import { resolve } from "./combat.mjs";
 import { occupy, pay, upkeep } from "./economy.mjs";
+import { tickAir } from "./air.mjs";
 
 const SIDES = ["blue", "red"];
 
@@ -63,7 +64,7 @@ export function tickMatch(match) {
   const events = [];
   // Modules that are still stubs return [] (or nothing). A round does not depend on them
   // producing events; it only depends on them being called in this order.
-  for (const step of [advance, resolve, occupy, upkeep, pay]) {
+  for (const step of [advance, resolve, occupy, tickAir, upkeep, pay]) {
     const produced = step(match);
     if (Array.isArray(produced)) events.push(...produced);
   }

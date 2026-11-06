@@ -462,14 +462,15 @@
     {
       "id": "air",
       "order": 275,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "transports",
         "combat"
       ],
       "title": "Aircraft are a resource, not a piece",
       "work": "1942 and later: a mission makes the aircraft inactive for a number of rounds, combat air patrol scrambles near an enemy mission, a strike returns no damage number but must resolve something, carriers extend the reach. Express every duration in rounds against the configured round length and keep the archive's rule that a carrier aircraft cannot paradrop. Where the original gave no number, the stand-in stays in config and is labelled.",
-      "prove": "Harness: a mission sets an inactive-until round and the aircraft does not move before it; a patrol near an enemy mission goes inactive; an aircraft with no carrier reach cannot strike. Numbers come from config."
+      "prove": "Harness: a mission sets an inactive-until round and the aircraft does not move before it; a patrol near an enemy mission goes inactive; an aircraft with no carrier reach cannot strike. Numbers come from config.",
+      "evidence": "web/server/air.mjs: strike costs 8 rounds, scramble 4 (booklet counts, config under air), an inactive aircraft cannot be ordered or move, a mission needs a friendly city/dock/ship within reach (reach 10 is labelled a stand-in), and a strike sinks caught cargo but invents no damage. Test: web/test/nodes/air.mjs."
     },
     {
       "id": "late_kit",
