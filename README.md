@@ -8,7 +8,7 @@ Licensed under the MIT License. See `LICENSE`. That license covers this project.
 
 ## Branches
 
-`web` is the game. `desktop-godot` archives the old desktop project and is not how this game runs. `main` is the earlier demo. The plan is `docs/WEB_PLAN.md`. The build loop and the current node are in `docs/WEB_LOOP.md`. As of the harness checkpoint, `node web/test/run.mjs` prints `WEB_OK`. The next node is terrain on the server. Pieces do not move yet.
+`web` is the game. `desktop-godot` archives the old desktop project and is not how this game runs. `main` is the earlier demo. The plan is `docs/WEB_PLAN.md`. The handoff for a new agent is `docs/WEB_HANDOFF.md`. The build loop is `docs/WEB_LOOP.md`. As of the harness checkpoint, `node web/test/run.mjs` prints `WEB_OK`. The next node is terrain on the server. Pieces do not move yet.
 
 Play, from this folder:
 

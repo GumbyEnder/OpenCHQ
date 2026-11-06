@@ -4,7 +4,7 @@ You cannot see the parent chat. This is one fire of a loop. The game is a web br
 
 ## Where we are
 
-Checked 2026-11-06 on branch `web`. The loop is paused between fires. It is not stuck on a red test.
+Checked 2026-11-06 on branch `web`. The loop is paused between fires. It is not stuck on a red test. The handoff for a new agent is `docs/WEB_HANDOFF.md`.
 
 A fire does one ready node, requires `node web/test/run.mjs` to print `WEB_OK`, marks that node done, and stops. The fire prompt forbids commit, push, and creating a scheduler. After `harness` finished, nothing pasted the next fire, so `board_data` never started. The loop docs and `web/test/` stayed untracked until this checkpoint was committed by hand.
 
