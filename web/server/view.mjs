@@ -101,7 +101,7 @@ function visibleEnemy(unit, ownPieces, match) {
   return ownPieces.some((own) => withinSight(own, unit));
 }
 
-function viewPiece(unit, steps) {
+function viewPiece(unit, steps, round) {
   return {
     id: unit.id,
     side: unit.side,
@@ -114,7 +114,20 @@ function viewPiece(unit, steps) {
     facing: unit.facing ?? null,
     fighting: unit.fighting ?? null,
     shots: unit.shots ?? 0,
+    // The five words the unit list uses. Derived, never stored twice.
+    transport: unit.transport === true,
+    entrenched: unit.entrenched === true,
+    state: stateOf(unit, round),
   };
+}
+
+function stateOf(unit, round) {
+  const until = Number(unit.inactiveUntil);
+  if (Number.isFinite(until) && until > (Number(round) || 0)) return "inactive";
+  if (Array.isArray(unit.path) && unit.path.length > 0) return "moving";
+  if (unit.repairing === true) return "repairing";
+  if (unit.entrenched === true) return "digging";
+  return "idle";
 }
 
 export function forSeat(match, side) {
@@ -129,7 +142,7 @@ export function forSeat(match, side) {
     const pieces = match.pieces.map((unit) => {
       const steps = cloneSteps(unit.path);
       if (steps.length) routes[unit.id] = cloneSteps(steps);
-      return viewPiece(unit, steps);
+      return viewPiece(unit, steps, match.round);
     });
     return {
       pieces,
@@ -152,7 +165,7 @@ export function forSeat(match, side) {
 
   for (const unit of own) {
     const steps = ownRoutes(unit);
-    pieces.push(viewPiece(unit, steps));
+    pieces.push(viewPiece(unit, steps, match.round));
     if (steps.length) routes[unit.id] = cloneSteps(steps);
   }
 
@@ -160,7 +173,7 @@ export function forSeat(match, side) {
     for (const unit of enemy) {
       if (!visibleEnemy(unit, own, match)) continue;
       const steps = enemyRoutes(unit);
-      pieces.push(viewPiece(unit, steps));
+      pieces.push(viewPiece(unit, steps, match.round));
       if (steps.length) routes[unit.id] = cloneSteps(steps);
     }
   }

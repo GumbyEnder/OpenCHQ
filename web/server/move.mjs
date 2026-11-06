@@ -181,6 +181,12 @@ export function planOrder(match, side, pieceId, toX, toY) {
 
   // A ship sails the recovered lane graph, never a straight line. The land walker below is
   // deliberately not consulted: it does not know where water is.
+  // An order ends digging or repairing: the archive clears entrench on a move order. Only
+  // touch the keys that exist, so an order does not change a piece's shape - a preview that
+  // writes nothing must leave the piece byte-identical.
+  if (piece.entrenched === true) piece.entrenched = false;
+  if (piece.repairing === true) piece.repairing = false;
+
   if (piece.domain === "sea") {
     const holder = pieceAt(match, x, y, piece.id);
     if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
@@ -230,6 +236,69 @@ function facingFor(fromX, fromY, toX, toY) {
 
 // One running round. A step whose ground costs two beats is taken on the second round the
 // piece spends on it, and the pace counter only decrements where the ground allows.
+// --- what a piece is doing -----------------------------------------------------------------
+//
+// The unit list names five states and the archive only ever printed the words: moving, digging,
+// repairing, inactive, idle. Entrenching is infantry only and its bonus was never recovered, so
+// it is recorded and shown and applies no number. A move order clears it (docs/POLISH_LOOP.md).
+
+export function pieceState(piece, match) {
+  if (!piece) return null;
+  if (inactiveRounds(piece, match && match.round) > 0) return "inactive";
+  if (Array.isArray(piece.path) && piece.path.length > 0) return "moving";
+  if (piece.repairing === true) return "repairing";
+  if (piece.entrenched === true) return "digging";
+  return "idle";
+}
+
+export const ENTRENCH_NOTE = "Stand-in. The bonus for entrenching was not recovered.";
+export const REPAIR_NOTE = "Stand-in. Repair has no recovered duration.";
+
+// Dig in. Infantry only, and only while standing still.
+export function entrench(match, side, pieceId) {
+  if (!match || !Array.isArray(match.pieces)) return { error: "There is no match." };
+  if (match.over) return { error: "The match is over." };
+  const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
+  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
+  if (piece.kind !== "infantry") return { error: "Only infantry can entrench." };
+  if (piece.transport === true) return { error: "A transport cannot dig in." };
+  if (Array.isArray(piece.path) && piece.path.length > 0) return { error: "That piece is still moving." };
+  if (inactiveRounds(piece, match.round) > 0) return { error: "That unit is inactive." };
+  piece.entrenched = true;
+  piece.repairing = false;
+  piece.dugRound = Number(match.round) || 0;
+  return {
+    ok: true,
+    piece,
+    state: "digging",
+    events: [{ type: "entrench", side, pieceId: piece.id, x: piece.x, y: piece.y, round: Number(match.round) || 0, note: ENTRENCH_NOTE }],
+  };
+}
+
+// Repair in place, at a friendly city. No duration recovered, so the state simply holds until
+// the piece is ordered somewhere.
+export function repair(match, side, pieceId) {
+  if (!match || !Array.isArray(match.pieces)) return { error: "There is no match." };
+  const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
+  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
+  if (Array.isArray(piece.path) && piece.path.length > 0) return { error: "That piece is still moving." };
+  const site = (match.sites || []).find((entry) => entry && entry.x === piece.x && entry.y === piece.y);
+  if (!site || !["city", "capital", "dock", "docks"].includes(site.kind)) {
+    return { error: "Repair happens at a city or dock." };
+  }
+  if (site.owner !== side) return { error: `${site.name || "That site"} is not ${side}'s.` };
+  piece.repairing = true;
+  piece.entrenched = false;
+  return {
+    ok: true,
+    piece,
+    state: "repairing",
+    events: [{ type: "repair", side, pieceId: piece.id, site: site.id, name: site.name, round: Number(match.round) || 0, note: REPAIR_NOTE }],
+  };
+}
+
 export function advance(match) {
   const events = [];
   if (!match || !Array.isArray(match.pieces) || match.over) return events;

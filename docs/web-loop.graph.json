@@ -519,6 +519,18 @@
       "work": "economy.capture only ever considers an oil well - a piece standing on a city or a capital changes nothing, so all 62 cities are decorative and income cannot grow or shrink. Make occupation the capture rule for city, capital and dock: a piece alone on a site owned by the other side (or neutral) takes it, the site keeps one owner at a time, a capital is held while a piece stands on it and lost when it leaves, and income reads the result. Keep wells as they are.",
       "prove": "Harness: a piece walks onto a neutral city and owns it; an enemy piece takes it back; a capital held for a round is lost when the piece steps off; the pay round uses the new count. Soak: sites change hands and income curves move with the map.",
       "evidence": "economy.occupy (called by tick between resolve and upkeep) transfers city/dock/capital ownership to the side standing on it; capitals are never seeded. Soak 1000: 8 captures including Moscow and Washington changing hands twice."
+    },
+    {
+      "id": "combat_depth",
+      "order": 265,
+      "status": "done",
+      "depends": [
+        "combat"
+      ],
+      "title": "Digging in and repairing, as words not numbers",
+      "work": "Entrenchment is infantry only, its bonus was never recovered, and a move order clears it (docs/POLISH_LOOP.md). Repair is a state that holds while a piece stands on a friendly city or dock. Every piece carries one of the five words the unit list uses: moving, digging, repairing, inactive, idle.",
+      "prove": "web/test/nodes/combat_depth.mjs pins the refusals, the state words, that an order clears digging, and that the seat view carries state, entrenched and transport.",
+      "evidence": "move.pieceState/entrench/repair; view.viewPiece carries state; occupy rewritten to one path over pieces after the capacity bench fell to 9.6x (now 11.2x at 1000 rooms)."
     }
   ]
 }

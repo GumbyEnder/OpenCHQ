@@ -254,10 +254,19 @@ export function occupy(match) {
   if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) return events;
   seedOwners(match);
 
+  // One pass over the pieces, not one pass per site: with 84 sites and 1000 rooms a round the
+  // per-site filter was the difference between 10x and 3x headroom in the capacity bench.
+  const byCell = new Map();
+  for (const piece of match.pieces) {
+    if (!piece || !isSide(piece.side)) continue;
+    const key = Number(piece.x) + "," + Number(piece.y);
+    if (!byCell.has(key)) byCell.set(key, []);
+    byCell.get(key).push(piece.side);
+  }
+
   for (const site of match.sites) {
     if (!site || !occupiable(site.kind)) continue;
-    const standing = match.pieces.filter((p) => p && p.x === site.x && p.y === site.y && isSide(p.side));
-    const sides = [...new Set(standing.map((p) => p.side))];
+    const sides = [...new Set(byCell.get(Number(site.x) + "," + Number(site.y)) || [])];
     const holder = sides.length === 1 ? sides[0] : null; // contested or empty: nobody holds it
 
     // A capital is taken the same way and kept the same way; what makes it different is that
