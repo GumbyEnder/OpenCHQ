@@ -293,7 +293,7 @@
     {
       "id": "reconnect",
       "order": 220,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "sight",
         "human_orders"
