@@ -80,6 +80,50 @@ Reproduce with `bash local/verify-live.sh` (gitignored, machine-local).
 Two throwaway accounts now exist on the live database (`Verifier*`) from the auth check.
 There is no delete-account route yet; they are harmless.
 
+## Storage: what persists, what does not
+
+| Data | Where | Survives a deploy | Survives a lost container |
+| --- | --- | --- | --- |
+| Accounts (`users`) | SQLite `users` table | yes | yes — `/data` is a volume |
+| Sessions (`sessions`) | SQLite `sessions` table | yes | yes |
+| Live rooms, seats, clock, invites | **process memory** in `lobby.mjs` | no | no |
+| Terrain / sites | not on this host at all | n/a | n/a |
+
+SQLite is a real database, not a stand-in: `node:sqlite`, one file, WAL mode, on a mounted
+volume. Credentials are scrypt hashes with per-user salts; session tokens are 24 random bytes
+in a table. Measured on the live container after a redeploy: `journal_mode = wal`,
+`users = 3` (unchanged across the restart), file `20 KB`.
+
+Pragmas set in `web/server/db.mjs`: `journal_mode = WAL`, `synchronous = NORMAL`,
+`busy_timeout = 5000`, `foreign_keys = ON`. WAL is safe here because a Railway volume is a
+local mount — it would not be safe on the CIFS share.
+
+### Why not Postgres yet
+
+A managed Postgres would buy: multiple app replicas, concurrent writers, point-in-time
+recovery, and no volume pinning. It would cost: a `pg` dependency (the repo's standing rule is
+zero npm dependencies in `web/`), a migration, and a second service. None of that is needed by
+a two-seat, one-room-per-pair game whose write load is "register, login, session". The volume
+also caps the service at one instance, which is exactly what the in-memory room model already
+requires.
+
+Move to Postgres when one of these becomes true: more than one app instance is needed for
+uptime or load, writes start contending under WAL's single writer, or room state has to
+outlive the process. The trigger to watch is node `reconnect` (order 220) — that is the node
+where per-seat room state stops being disposable, and the decision belongs there, not now.
+
+### Deploy policy (this is the part that was actually hurting)
+
+A deploy restarts the process, which ends every live room. The loop used to deploy on every
+green fire, and GitHub push-to-deploy also fired on docs-only commits — 7 deploys in the first
+13 minutes, each one a reboot.
+
+- GitHub push-to-deploy is disconnected. `railway up` from `tools/fire.sh` is the only deploy path.
+- `tools/fire.sh` deploys only when the pass touched `web/` or `package.json`. A graph, doc or
+  loop-counter commit prints `NO_RUNTIME_CHANGE` and does not reboot the game.
+- Manual deploy after a server change: `railway up -y -d --service openchq-web`.
+- `railway up` uploads the tree, so it never picks up a pushed-but-untested commit by accident.
+
 ## What the public host deliberately does not have
 
 The game extract. No `data/tmap.bin`, no `WORLD_MAP.png`, no unit stills, no
