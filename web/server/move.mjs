@@ -201,7 +201,9 @@ export function advance(match) {
   if (!match || !Array.isArray(match.pieces) || match.over) return events;
   for (const piece of match.pieces) {
     if (!Array.isArray(piece.path) || piece.path.length === 0) continue;
-    if (piece.domain !== "land") continue;
+    // A ship's path comes from the lane graph (lanes.seaRoute), stepped one waypoint at a time;
+    // a land piece's comes from a walk. The stepping below is the same either way, so neither
+    // domain may be skipped here - skipping sea is what left every routed ship standing still.
 
     const next = piece.path[0];
     const nx = wrapX(next.x);

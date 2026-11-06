@@ -492,6 +492,28 @@
       "title": "Accounts a stranger can own",
       "work": "Sign-up accepts an email-shaped handle, but there is no way to change a password, no session expiry, no rate limit on login or register, and no way to close an account. Add password change and sign-out-all, expire idle sessions, rate-limit failures per handle and per address, and delete an account's rooms and sessions when it closes. Keep the cookie flags as they are.",
       "prove": "Harness: a wrong password repeated hits the limit; an expired session is refused; a changed password invalidates old sessions; closing an account removes its rooms. Rate-limit state survives a restart or says plainly that it does not."
+    },
+    {
+      "id": "combat_lethality",
+      "order": 230,
+      "status": "todo",
+      "depends": [
+        "combat"
+      ],
+      "title": "A battle has to have a result",
+      "work": "A 1000-round soak with both seats played fired 2270 shots and left 400 pieces alive: combat.resolve only counts shots, and nothing in the server ever removes a piece, so armies are immortal and no match can end. Give the exchange an outcome. Where the archive prints no damage, the outcome is a rule the user sets in config - e.g. a piece that has been under fire for N consecutive rounds is destroyed, or odds per exchange - never a number invented in code. Read the value from config/game.json, keep it in rounds, and say in player-facing text that it is a stand-in.",
+      "prove": "Harness: two adjacent pieces firing for the configured number of rounds destroy exactly one of them, the survivor keeps its cell, the store reflects the removal, and a piece that breaks contact resets the clock. Soak: a 1000-round both-sides match produces destroyed units and a winner."
+    },
+    {
+      "id": "city_capture",
+      "order": 235,
+      "status": "todo",
+      "depends": [
+        "combat"
+      ],
+      "title": "Cities change hands, and that is income",
+      "work": "economy.capture only ever considers an oil well - a piece standing on a city or a capital changes nothing, so all 62 cities are decorative and income cannot grow or shrink. Make occupation the capture rule for city, capital and dock: a piece alone on a site owned by the other side (or neutral) takes it, the site keeps one owner at a time, a capital is held while a piece stands on it and lost when it leaves, and income reads the result. Keep wells as they are.",
+      "prove": "Harness: a piece walks onto a neutral city and owns it; an enemy piece takes it back; a capital held for a round is lost when the piece steps off; the pay round uses the new count. Soak: sites change hands and income curves move with the map."
     }
   ]
 }
