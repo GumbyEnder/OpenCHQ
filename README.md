@@ -8,7 +8,7 @@ Licensed under the MIT License. See `LICENSE`. That license covers this project.
 
 ## Branches
 
-`web` is the game. `desktop-godot` archives the old desktop project and is not how this game runs. `main` is the earlier demo. The plan is `docs/WEB_PLAN.md`. The handoff for a new agent is `docs/WEB_HANDOFF.md`. The build loop is `docs/WEB_LOOP.md`. As of the harness checkpoint, `node web/test/run.mjs` prints `WEB_OK`. The next node is terrain on the server. Pieces do not move yet.
+`web` is the game. `desktop-godot` archives the old desktop project and is not how this game runs. `main` is the earlier demo. The plan is `docs/WEB_PLAN.md`. The handoff for a new agent is `docs/WEB_HANDOFF.md`. The build loop is `docs/WEB_LOOP.md`, and the node graph is `docs/web-loop.graph.json`.
 
 Play, from this folder:
 
@@ -17,30 +17,6 @@ node web/server/main.mjs
 ```
 
 Then open `http://127.0.0.1:8094`. `OPENCHQ_WEB_PORT` changes the port. Accounts are stored in `~/.local/share/openchq/`, or in `OPENCHQ_WEB_DATA` if that is set. They are not part of the game.
-
-## Archived desktop project
-
-Godot 4.7 or a compatible 4.x editor:
-
-```
-godot --path .
-```
-
-Or open this folder in the Godot project manager. The main scene is `scenes/main.tscn`.
-
-Headless rule check:
-
-```
-godot --headless --path . --script res://scripts/check_rules.gd
-```
-
-### Windows
-
-This folder is on the share the Linux host mounts at `/mnt/nas` and Windows has as `K:`.
-
-Open `K:\projects\OpenCHQ\project.godot` in Godot 4.7, then Play. `run-windows.bat` does the same thing when `godot` is on `PATH`.
-
-The extract is the next folder over, `K:\projects\Command HQ\modern\extracted`. A project-relative line in `local/data_root.txt` finds it. A `/mnt/nas/...` line is read from `K:` on Windows. Do not run the Linux editor and the Windows editor on this folder at the same time. The `.godot` cache is shared.
 
 ## Data pack
 

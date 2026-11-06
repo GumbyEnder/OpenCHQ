@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { connect, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -588,6 +588,20 @@ async function main() {
   if (welcome.room.you !== "blue") fail("seat was lost across the restart: " + welcome.room.you);
   if (welcome.room.red.username !== "Gus") fail("the other seat was lost across the restart");
   wsAfter.close();
+
+  // ---- drop_godot: this branch carries only the browser game --------------------------
+  const godotLeftovers = ["project.godot", "scenes", "scripts", "icon.svg", "icon.svg.import", "run-windows.bat"];
+  for (const leftover of godotLeftovers) {
+    if (existsSync(path.join(root, leftover))) fail("the Godot tree is still on the web branch: " + leftover);
+  }
+  if (!existsSync(path.join(root, "web", "server", "main.mjs"))) fail("dropping the Godot tree took the web server with it");
+  const archive = spawnSync("git", ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/desktop-godot"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (archive.status !== 0 || !String(archive.stdout).trim()) {
+    fail("origin/desktop-godot is gone: the archive branch must outlive the deletion");
+  }
 
   // ---- the node tests, one file per graph node ------------------------------------------
   await runNodeTests(makeContext(base, port));
