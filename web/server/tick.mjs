@@ -1,6 +1,7 @@
 // One running round, and the end of the match. Owner: A1.
 //
-// One call to tickMatch is one round: advance, resolve fights, run upkeep and pay, then look
+// One call to tickMatch is one round: advance, resolve fights, take the sites the pieces stand
+// on, run upkeep and pay, then look
 // for a winner. Nothing here reads a clock, a timer or the wall time - the caller decides when
 // a round happens, and roundSeconds lives in config/game.json. A held clock or a finished
 // match returns before any module runs, so a held room cannot drift, burn fuel or pay income.
@@ -11,7 +12,7 @@
 
 import { advance } from "./move.mjs";
 import { resolve } from "./combat.mjs";
-import { pay, upkeep } from "./economy.mjs";
+import { occupy, pay, upkeep } from "./economy.mjs";
 
 const SIDES = ["blue", "red"];
 
@@ -62,7 +63,7 @@ export function tickMatch(match) {
   const events = [];
   // Modules that are still stubs return [] (or nothing). A round does not depend on them
   // producing events; it only depends on them being called in this order.
-  for (const step of [advance, resolve, upkeep, pay]) {
+  for (const step of [advance, resolve, occupy, upkeep, pay]) {
     const produced = step(match);
     if (Array.isArray(produced)) events.push(...produced);
   }

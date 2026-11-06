@@ -230,6 +230,9 @@ export function advance(match) {
     piece.y = ny;
     piece.path.shift();
     piece.pace = piece.path.length > 0 ? Math.max(1, Number(piece.path[0].pace) || 1) : 1;
+    // Combat needs to know who advanced into contact: the mover attacks, the piece that has
+    // been sitting still defends. Nothing else reads this.
+    piece.movedRound = Number(match.round) || 0;
     events.push({ type: "move", pieceId: piece.id, x: nx, y: ny });
   }
   return events;

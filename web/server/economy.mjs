@@ -18,6 +18,13 @@ const SIDES = Object.freeze(["blue", "red"]);
 const CITY_KINDS = new Set(["city"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
 const WELL_KINDS = new Set(["oilfield", "well"]);
+// A capital is occupiable but is never a country claim: it has no owner until a piece takes
+// it, and losing the piece opens it again. That is the win condition's rule.
+const CAPITAL_KINDS = new Set(["capital"]);
+
+function occupiable(kind) {
+  return ownable(kind) || CAPITAL_KINDS.has(kind);
+}
 
 // A unit's domain. The match's piece shape names land and sea only, so aircraft are
 // bought at a city and travel with the land walkers.
@@ -234,6 +241,34 @@ export function capture(match, side, x, y) {
   well.owner = side;
   syncWellLists(match, well.id, side);
   return [{ type: "capture", site: well.id, name: well.name, side, from }];
+}
+
+// --- occupation: what standing on a site does ----------------------------------------------
+//
+// A well was the only site a piece could take, which left every city and both capitals
+// decorative: income could never move with the map. Standing on a site is now the capture
+// rule. A city or dock changes hands permanently; a capital is held only while a piece stands
+// on it, because that is what the win condition reads.
+export function occupy(match) {
+  const events = [];
+  if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) return events;
+  seedOwners(match);
+
+  for (const site of match.sites) {
+    if (!site || !occupiable(site.kind)) continue;
+    const standing = match.pieces.filter((p) => p && p.x === site.x && p.y === site.y && isSide(p.side));
+    const sides = [...new Set(standing.map((p) => p.side))];
+    const holder = sides.length === 1 ? sides[0] : null; // contested or empty: nobody holds it
+
+    // A capital is taken the same way and kept the same way; what makes it different is that
+    // the win condition reads it, and a piece standing on it is the freshest fact. An open
+    // capital (nobody has taken it) stays open, which is why ownership is never seeded onto one.
+    if (holder && site.owner !== holder) {
+      events.push({ type: "capture", site: site.id, name: site.name, kind: site.kind, side: holder, from: site.owner ?? null });
+      site.owner = holder;
+    }
+  }
+  return events;
 }
 
 // --- income ------------------------------------------------------------------------------

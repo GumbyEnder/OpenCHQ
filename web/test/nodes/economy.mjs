@@ -9,7 +9,7 @@
 import { priceOf, rules } from "../../server/rules.mjs";
 import { startPool } from "../../server/rules.mjs";
 import { openMatch } from "../../server/match.mjs";
-import { buy, capture, pay, upkeep } from "../../server/economy.mjs";
+import { buy, capture, occupy, pay, upkeep } from "../../server/economy.mjs";
 
 export const name = "economy";
 
@@ -202,6 +202,42 @@ export async function run(ctx) {
   eq(capture(match, "red", 210, 65).length, 1, "a neutral well must be takeable");
   eq(siteOf(match, 32).owner, "red", "the neutral well did not flip to red");
   eq(capture(match, "red", 200, 60).length, 0, "a city is not a well: capture must do nothing");
+
+  // ---- occupation: a city changes hands, a capital is held only while stood on --------
+  // Until this existed, capture() could only ever take a well, so every city on the map was
+  // decorative and income could not move with the board.
+  const occ = freshMatch();
+  occ.pieces = [
+    { id: "blue:land", side: "blue", domain: "land", kind: null, x: 180, y: 22, path: [], pace: 1, facing: null, fighting: null, shots: 0 },
+    { id: "red:land", side: "red", domain: "land", kind: null, x: 10, y: 10, path: [], pace: 1, facing: null, fighting: null, shots: 0 },
+  ];
+  const firstTake = occupy(occ);
+  eq(siteOf(occ, 12).owner, "blue", "a blue piece standing on Kiev did not take it");
+  const takeEvent = firstTake.find((event) => event.type === "capture" && event.site === 12);
+  must(Boolean(takeEvent), "taking a city produced no capture event: " + JSON.stringify(firstTake));
+  eq(takeEvent.from, "red", "the capture event did not name the side that lost the city");
+  eq(occupy(occ).length, 0, "standing still on an owned city captured it again");
+
+  // Red walks on and takes it back.
+  occ.pieces[1].x = 180;
+  occ.pieces[1].y = 22;
+  occ.pieces[0].x = 0;
+  occ.pieces[0].y = 0;
+  const retake = occupy(occ);
+  eq(siteOf(occ, 12).owner, "red", "an enemy piece did not take the city back");
+  must(retake.some((event) => event.type === "capture" && event.side === "red"), "the retake was silent");
+
+  // A capital is taken by standing on it, and stays taken: that claim is what the win
+  // condition reads when nobody is standing there.
+  occ.pieces[0].x = 183;
+  occ.pieces[0].y = 25;
+  must(occupy(occ).some((event) => event.type === "capture" && event.site === 1 && event.side === "blue"),
+    "a blue piece on Moscow did not take the capital");
+  eq(siteOf(occ, 1).owner, "blue", "Moscow did not flip");
+  occ.pieces[0].x = 0;
+  occ.pieces[0].y = 0;
+  eq(occupy(occ).length, 0, "walking off a taken capital must not silently change the claim");
+  eq(siteOf(occ, 1).owner, "blue", "a taken capital lost its claim when the piece stepped off");
 
   // ---- the module never invents an oil production rating ------------------------------
   for (const site of match.sites) {

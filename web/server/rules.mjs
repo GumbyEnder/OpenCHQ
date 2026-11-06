@@ -73,6 +73,13 @@ export function enemyRouteSteps() {
   return Number(rules().enemyRouteSteps);
 }
 
+// The archive's HITS: how many shots in one continuous fight remove the defender.
+// See docs/POLISH_LOOP.md - it is a stand-in fight, not a damage model.
+export function hitsToKill() {
+  const value = Number(rules().hits);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
 export function priceOf(kind) {
   const table = rules().prices || {};
   return Object.hasOwn(table, kind) ? Number(table[kind]) : null;

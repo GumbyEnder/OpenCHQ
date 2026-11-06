@@ -6,16 +6,20 @@
 // continuous fight - never twice in a row, never a second shot in the same round for the
 // same piece.
 //
-// What is deliberately NOT here: a damage number. The archive's HITS is 6 and stays 6 in
-// config/game.json, but no shot carries a hit count, a health value or a kill. Removal waits
-// on a measured hit count that has not been recovered; this node must not invent one. A
-// shot is recorded as a fact ("these two pieces fired this round"), nothing more.
+// What is deliberately NOT here: a damage number. The archive's rule (docs/POLISH_LOOP.md)
+// is not hit points - it is "after HITS shots in one continuous fight the defender is gone",
+// and HITS is 6 in config/game.json. So a shot is still a fact with no digit on it, and the
+// only outcome is removal. No health bar, no partial damage, nothing to tune per unit.
 
 import { CELL_W } from "./board.mjs";
+import { hitsToKill } from "./rules.mjs";
 
 // The desktop archive's voice, kept verbatim. It carries no digit on purpose: there is no
-// damage figure to report yet.
+// damage figure to report.
 export const SHOT_NOTE = "Stand-in fight. The shot has no damage yet.";
+
+// Said when the count is reached. Also the archive's line.
+export const FIGHT_OVER_NOTE = "Stand-in fight. The defender is gone.";
 
 // Chebyshev distance 1, X wraps around the board edge, Y does not.
 export function adjacent(a, b) {
@@ -62,6 +66,12 @@ export function resolve(match) {
   // same beat as every other fight: a shared front, not a per-pair timer.
   const canFire = round - Number(match.foughtRound ?? -1) >= 2;
   let firedRound = -1;
+  // The archive's stand-in fight (docs/POLISH_LOOP.md): after HITS shots in one continuous
+  // fight the defender is removed, not damaged. The defender is the piece that has been
+  // stationary longer - the mover is the attacker. When neither has moved (a synthetic pair,
+  // or two pieces that met head-on) the lower id defends, which is deterministic and says so.
+  const limit = hitsToKill();
+  const doomed = new Map(); // pieceId -> attacker id
 
   for (const [a, b] of pairs) {
     // A piece trades fire with one enemy at a time; a second adjacent enemy waits its turn
@@ -93,6 +103,39 @@ export function resolve(match) {
     // quantity - there is no damage figure to attach.
     events.push({ type: "shot", side: a.side, pieceId: a.id, at: { x: b.x, y: b.y }, round, note: SHOT_NOTE });
     events.push({ type: "shot", side: b.side, pieceId: b.id, at: { x: a.x, y: a.y }, round, note: SHOT_NOTE });
+
+    if (limit > 0) {
+      const aMoved = Number(a.movedRound ?? -1);
+      const bMoved = Number(b.movedRound ?? -1);
+      const defender = aMoved < bMoved ? a : bMoved < aMoved ? b : (String(a.id) < String(b.id) ? a : b);
+      const attacker = defender === a ? b : a;
+      if (Number(defender.shots) >= limit) doomed.set(defender.id, attacker.id);
+    }
+  }
+
+  // Removal happens after the pairs loop, so a piece that dies this round still fires.
+  if (doomed.size > 0) {
+    for (const piece of match.pieces) {
+      const attacker = doomed.get(piece.id);
+      if (attacker === undefined) continue;
+      events.push({
+        type: "destroyed",
+        side: piece.side,
+        pieceId: piece.id,
+        by: attacker,
+        x: piece.x,
+        y: piece.y,
+        round,
+        note: FIGHT_OVER_NOTE,
+      });
+    }
+    match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));
+    for (const piece of match.pieces) {
+      if (piece.fighting && doomed.has(piece.fighting)) {
+        piece.fighting = null;
+        piece.shots = 0;
+      }
+    }
   }
 
   // Pieces no longer in contact forget the fight; a later meeting starts fresh.

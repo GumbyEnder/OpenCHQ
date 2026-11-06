@@ -4,7 +4,8 @@
 // stand forever with no shot note at all, and nothing would record `foughtRound` or the
 // per-piece shot count. Each assertion below names the fact it pins down.
 
-import { adjacent, resolve, SHOT_NOTE } from "../../server/combat.mjs";
+import { adjacent, resolve, SHOT_NOTE, FIGHT_OVER_NOTE } from "../../server/combat.mjs";
+import { hitsToKill } from "../../server/rules.mjs";
 
 export const name = "combat";
 
@@ -122,6 +123,30 @@ export async function run(ctx) {
   const again = shotsOf(resolve(gap));
   if (again.length !== 2) say("re-engaging did not fire", again);
   if (gap.pieces[0].shots !== 1) say("a new continuous fight inherited old shots", gap.pieces[0].shots);
+
+  // --- the archive's stand-in fight: after HITS shots the defender is gone -------------
+  // docs/POLISH_LOOP.md: "after that many shots in one continuous fight, the defender is
+  // removed". The mover is the attacker, so the stationary piece defends.
+  const limit = hitsToKill();
+  if (limit !== 6) fail("HITS left 6; WEB_HANDOFF says raising it changes the desktop result: " + limit);
+  const duel = [piece("blue:land", "blue", 40, 40), piece("red:land", "red", 41, 40)];
+  duel[0].movedRound = 7; // blue advanced into contact; red has been sitting there
+  const duelMatch = matchOf(duel, 1);
+  let killed = null;
+  for (let round = 1; round <= 2 * limit + 2 && !killed; round++) {
+    duelMatch.round = round;
+    const out = resolve(duelMatch);
+    killed = out.find((event) => event.type === "destroyed") || null;
+    if (killed && round < 2 * limit - 1) fail("a piece died before HITS shots landed: round " + round);
+  }
+  if (!killed) fail("a continuous fight never removed the defender");
+  if (killed.side !== "red") fail("the mover did not survive; the defender must be the stationary piece: " + JSON.stringify(killed));
+  if (killed.note !== FIGHT_OVER_NOTE) fail("the removal line is not the archive's: " + killed.note);
+  if (duelMatch.pieces.length !== 1) fail("removal left " + duelMatch.pieces.length + " pieces");
+  if (duelMatch.pieces[0].id !== "blue:land") fail("the wrong piece survived: " + JSON.stringify(duelMatch.pieces));
+  if (duelMatch.pieces[0].fighting !== null || duelMatch.pieces[0].shots !== 0) {
+    fail("the survivor kept the dead piece's fight bookkeeping", duelMatch.pieces[0]);
+  }
 
   // --- friends and distant enemies never fire -----------------------------------------
   const friends = [piece("blue:land", "blue", 10, 10), piece("blue:tank", "blue", 11, 10)];
