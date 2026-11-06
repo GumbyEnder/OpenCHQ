@@ -383,6 +383,115 @@
       "title": "A deploy must not drop a live game",
       "work": "Every deploy restarts the process and closes every socket. Rooms survive (they are rows), but a player mid-match is disconnected by a build. Add a drain: the server answers a local-only POST /api/drain by holding every running room and replying when no seat is connected, and tools/fire.sh calls it before railway up with a timeout. If the drain does not clear in time, deploy anyway and say so. Never make the page poll to find out - the socket close is the signal.",
       "prove": "The harness starts a room with a connected seat, calls drain, sees the clock hold and the response deferred, closes the seat, sees drain return, and confirms the store has the room held. A drain with no rooms returns at once."
+    },
+    {
+      "id": "order_wire",
+      "order": 240,
+      "status": "todo",
+      "depends": [
+        "orders",
+        "human_orders",
+        "combat"
+      ],
+      "title": "A player can actually give an order",
+      "work": "The server accepts op \"order\" but nothing sends one: the page has no click-to-command. Select a piece on the canvas, hover shows the route and its cost in rounds, click commits and sends {op:\"order\",piece,to:{x,y}}. The reply is acknowledged in place; a refusal is shown as the message the server returned, never swallowed. Own pieces only, own seat only.",
+      "prove": "Harness: a socket order moves the piece on the next tick and a refused order returns a reason that reaches the page. Browser: click a piece, click a destination, the route preview appears and the piece moves after a round."
+    },
+    {
+      "id": "buy_wire",
+      "order": 245,
+      "status": "todo",
+      "depends": [
+        "buy"
+      ],
+      "title": "Buying exists, so 2023 is playable",
+      "work": "economy.buy is implemented and unreachable: there is no \"buy\" op and no panel. Add the op with the same seat checks as \"order\", and a panel listing the era's units with prices read from config/game.json, disabled when the seat cannot pay or has no friendly city/dock for that kind. 2023 opens with no army, so without this the empty era cannot be played at all. A nuke stays refused and says so.",
+      "prove": "Harness: in a 2023 room, buy an infantry at a friendly city - cash falls by the configured price and the piece appears; a nuke is refused with a reason; a second purchase in an occupied cell is refused. Browser: the panel shows prices and the piece appears on the board."
+    },
+    {
+      "id": "hud",
+      "order": 250,
+      "status": "todo",
+      "depends": [
+        "buy_wire",
+        "income",
+        "fuel"
+      ],
+      "title": "The screen must show what the rules are doing",
+      "work": "The room view carries no cash, fuel or income state, and the canvas draws a 320x136 map at 2x so a piece is about four pixels. Add cash, per-side fuel, rounds until the next payment and owned city/well counts to the view; show them in a HUD. Add camera zoom (4x) with follow on the selected piece and drag/arrow panning, keeping the wrap seam continuous.",
+      "prove": "Harness: the room view reports cash and fuel that change when the economy does. Browser: with the extract present, a piece is visibly a piece at 4x, the HUD shows cash and the countdown, and panning across x=0 does not tear."
+    },
+    {
+      "id": "feedback",
+      "order": 255,
+      "status": "todo",
+      "depends": [
+        "order_wire",
+        "combat",
+        "win"
+      ],
+      "title": "Every rule the server applies must be visible",
+      "work": "Shots resolve silently, captures are invisible and a finished match shows nothing but a note. Send the tick's events to the seats (shot, capture, blocked, over) and render them: a shot flash on the fighting cells, a capture toast naming the site, a blocked-order marker, and an end screen naming the winner with the round. Nothing invented: a shot still has no damage number, so the cue shows that a shot happened, not how hard.",
+      "prove": "Harness: a tick over a fighting pair and a capture emits events that reach the seat socket. Browser: the flash, the toast and the end screen are visible, and the shot cue contains no digit."
+    },
+    {
+      "id": "sight_render",
+      "order": 260,
+      "status": "todo",
+      "depends": [
+        "sight",
+        "hud"
+      ],
+      "title": "Fog of war has to look like fog",
+      "work": "The server filters the view but the page draws an evenly lit map, so the fog is invisible and the sight rule teaches nothing. Draw seen terrain lit, remembered-but-unseen terrain dimmed, and never-seen terrain darker still; outline the sight radius of the selected piece. Hidden enemy pieces stay absent - do not draw a placeholder where one might be.",
+      "prove": "Harness: pure helper maps a visibility class per cell for a given sight set. Browser: moving a piece reveals a ring and the map is visibly darker outside it; no enemy marker appears outside the radius."
+    },
+    {
+      "id": "transports",
+      "order": 270,
+      "status": "todo",
+      "depends": [
+        "order_wire",
+        "lanes"
+      ],
+      "title": "Land units cross water in transports",
+      "work": "Today a land piece walks across ocean at the slow pace, which is a stand-in for a mechanic the original had: land units form transports, and transports are vulnerable. Give a land piece ordered across water a transport state (a sea piece carrying it), moving on the lane graph, killable while it carries cargo, and landing the cargo on a coast cell. Keep every duration in rounds against the configured round length.",
+      "prove": "Harness: a land unit ordered across the Atlantic receives a transport, is not removed when it is not attacked, lands on the far coast, and a transport that is engaged loses its cargo. A land unit ordered to land never enters transport."
+    },
+    {
+      "id": "air",
+      "order": 275,
+      "status": "todo",
+      "depends": [
+        "transports",
+        "combat"
+      ],
+      "title": "Aircraft are a resource, not a piece",
+      "work": "1942 and later: a mission makes the aircraft inactive for a number of rounds, combat air patrol scrambles near an enemy mission, a strike returns no damage number but must resolve something, carriers extend the reach. Express every duration in rounds against the configured round length and keep the archive's rule that a carrier aircraft cannot paradrop. Where the original gave no number, the stand-in stays in config and is labelled.",
+      "prove": "Harness: a mission sets an inactive-until round and the aircraft does not move before it; a patrol near an enemy mission goes inactive; an aircraft with no carrier reach cannot strike. Numbers come from config."
+    },
+    {
+      "id": "late_kit",
+      "order": 280,
+      "status": "todo",
+      "depends": [
+        "air",
+        "income"
+      ],
+      "title": "The 1986 kit, minus the numbers nobody has",
+      "work": "Nukes, recon and killer satellites, intel scans, foreign aid and cease-fires. Keep the archive's restraints: capitals have an exclusion radius, crews refuse to target home ground, launches stop after three, the first user is penalised, and nuclear winter can lose for both sides. Where the original never printed a radius, cost or damage, the value lives in config as an explicit stand-in or the action stays refused.",
+      "prove": "Harness: a nuke is refused by default config; with the flag set it paints wasteland and applies the penalty; intel reveals and tells the opponent; the three-launch limit stops the fourth. No invented number appears in code."
+    },
+    {
+      "id": "account_ops",
+      "order": 285,
+      "status": "todo",
+      "depends": [
+        "buy_wire"
+      ],
+      "title": "Accounts a stranger can own",
+      "work": "Sign-up accepts an email-shaped handle, but there is no way to change a password, no session expiry, no rate limit on login or register, and no way to close an account. Add password change and sign-out-all, expire idle sessions, rate-limit failures per handle and per address, and delete an account's rooms and sessions when it closes. Keep the cookie flags as they are.",
+      "prove": "Harness: a wrong password repeated hits the limit; an expired session is refused; a changed password invalidates old sessions; closing an account removes its rooms. Rate-limit state survives a restart or says plainly that it does not."
     }
   ]
 }
