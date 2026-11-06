@@ -36,7 +36,11 @@ match = {
     pace: 1|2,                             // ticks this piece still owes on its current step
     facing: "e"|"w"|"n"|"s"|null,
     fighting: <pieceId>|null,              // the enemy it traded shots with
-    shots: 0                               // shots taken in the current continuous fight
+    shots: 0,                              // shots taken in the current continuous fight
+    transport: true|false,                 // a land piece standing in water is cargo:
+                                           // it does not fire and the first exchange sinks it
+    movedRound: <round>|undefined          // last round it moved; combat reads it to tell
+                                           // the attacker (mover) from the defender
   } ],
   foughtRound: -1,                         // last round a shot was resolved
   winner: null|"blue"|"red",

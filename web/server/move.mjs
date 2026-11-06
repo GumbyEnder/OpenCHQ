@@ -44,6 +44,23 @@ function terrainAt(x, y) {
   return grid[index] ?? null;
 }
 
+// Sea terrain ids: ocean, docks, shallows (board.TERRAIN / rules.seaAccepts class 0).
+const WATER_MAX_ID = 2;
+
+function isWater(x, y) {
+  const id = terrainAt(x, y);
+  return id !== null && Number(id) <= WATER_MAX_ID;
+}
+
+// A land piece in the water is a transport, and a transport is cargo: it cannot fight back.
+// The state follows the cell, so there is nothing to keep in sync by hand.
+function syncTransport(piece, x, y) {
+  const inWater = isWater(x, y);
+  const had = piece.transport === true;
+  piece.transport = inWater;
+  return had !== inWater;
+}
+
 // Terrain cost of entering a cell. With no extract the ground is treated as open, so a test
 // that runs without board data still walks rather than crashing.
 function paceAt(x, y) {
@@ -233,7 +250,17 @@ export function advance(match) {
     // Combat needs to know who advanced into contact: the mover attacks, the piece that has
     // been sitting still defends. Nothing else reads this.
     piece.movedRound = Number(match.round) || 0;
-    events.push({ type: "move", pieceId: piece.id, x: nx, y: ny });
+    const changed = syncTransport(piece, nx, ny);
+    events.push({ type: "move", pieceId: piece.id, x: nx, y: ny, transport: piece.transport });
+    if (changed) {
+      events.push({
+        type: piece.transport ? "embarked" : "landed",
+        pieceId: piece.id,
+        side: piece.side,
+        x: nx,
+        y: ny,
+      });
+    }
   }
   return events;
 }

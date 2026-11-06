@@ -93,16 +93,30 @@ export function resolve(match) {
     if (!canFire) continue;
     if (shotThisRound.has(a.id) || shotThisRound.has(b.id)) continue;
 
-    a.shots = Number(a.shots || 0) + 1;
-    b.shots = Number(b.shots || 0) + 1;
-    shotThisRound.add(a.id);
-    shotThisRound.add(b.id);
+    // A transport is cargo: it does not fire back, and it does not survive being caught.
+    // That is the whole reason sea control matters - an unescorted crossing is a loss.
+    const aArmed = a.transport !== true;
+    const bArmed = b.transport !== true;
+    if (!aArmed && !bArmed) continue; // cargo meeting cargo is a standoff, not a battle
+
+    if (aArmed) {
+      a.shots = Number(a.shots || 0) + 1;
+      shotThisRound.add(a.id);
+    }
+    if (bArmed) {
+      b.shots = Number(b.shots || 0) + 1;
+      shotThisRound.add(b.id);
+    }
     firedRound = round;
 
     // Each side fires; the shot lands on the other piece's cell. `at` is a place, not a
     // quantity - there is no damage figure to attach.
-    events.push({ type: "shot", side: a.side, pieceId: a.id, at: { x: b.x, y: b.y }, round, note: SHOT_NOTE });
-    events.push({ type: "shot", side: b.side, pieceId: b.id, at: { x: a.x, y: a.y }, round, note: SHOT_NOTE });
+    if (aArmed) events.push({ type: "shot", side: a.side, pieceId: a.id, at: { x: b.x, y: b.y }, round, note: SHOT_NOTE });
+    if (bArmed) events.push({ type: "shot", side: b.side, pieceId: b.id, at: { x: a.x, y: a.y }, round, note: SHOT_NOTE });
+
+    // The catch: the first exchange sinks the transport.
+    if (!aArmed) doomed.set(a.id, b.id);
+    if (!bArmed) doomed.set(b.id, a.id);
 
     if (limit > 0) {
       const aMoved = Number(a.movedRound ?? -1);

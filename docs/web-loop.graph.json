@@ -449,14 +449,15 @@
     {
       "id": "transports",
       "order": 270,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "order_wire",
         "lanes"
       ],
       "title": "Land units cross water in transports",
       "work": "Today a land piece walks across ocean at the slow pace, which is a stand-in for a mechanic the original had: land units form transports, and transports are vulnerable. Give a land piece ordered across water a transport state (a sea piece carrying it), moving on the lane graph, killable while it carries cargo, and landing the cargo on a coast cell. Keep every duration in rounds against the configured round length.",
-      "prove": "Harness: a land unit ordered across the Atlantic receives a transport, is not removed when it is not attacked, lands on the far coast, and a transport that is engaged loses its cargo. A land unit ordered to land never enters transport."
+      "prove": "Harness: a land unit ordered across the Atlantic receives a transport, is not removed when it is not attacked, lands on the far coast, and a transport that is engaged loses its cargo. A land unit ordered to land never enters transport.",
+      "evidence": "move.syncTransport derives cargo from the cell (water = ocean/docks/shallows); embark/landed events; combat.resolve lets a transport fire nothing and sinks it on the first exchange. Soak 1000: 767 embarked, 603 landed, match still resolves (blue r466)."
     },
     {
       "id": "air",
