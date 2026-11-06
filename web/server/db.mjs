@@ -8,6 +8,15 @@ const root = process.env.OPENCHQ_WEB_DATA || path.join(homedir(), ".local", "sha
 mkdirSync(root, { recursive: true });
 
 const db = new DatabaseSync(path.join(root, "openchq.sqlite"));
+// One writer, many readers. WAL keeps a login from blocking a lobby read, and the busy
+// timeout turns a rare lock into a short wait instead of an error. The volume is a local
+// mount on the host, so WAL is safe here (it is not safe on a network share).
+db.exec(`
+  PRAGMA journal_mode = WAL;
+  PRAGMA synchronous = NORMAL;
+  PRAGMA busy_timeout = 5000;
+  PRAGMA foreign_keys = ON;
+`);
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,

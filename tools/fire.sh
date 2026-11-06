@@ -60,6 +60,7 @@ const n = g.nodes.find((x) => x.id === process.argv[1]);
 console.log(n ? n.title : process.argv[1]);
 ' "$NODE")
 
+PREV=$(git rev-parse HEAD)
 git add -A
 if git diff --cached --quiet; then
   echo "LOOP_NO_DIFF $NODE: node marked done with no code change"
@@ -93,9 +94,20 @@ else
   fi
 fi
 
+# A deploy restarts the process, which ends every live room (reconnect is still a later
+# node). Only ship when something a player can see actually changed: server code, the page,
+# or the deploy manifest. Docs, the graph and the loop counter do not justify a reboot.
+RUNTIME_CHANGED=0
+if git diff --name-only "$PREV" HEAD | grep -Eq '^(web/|package\.json$|\.node-version$)'; then
+  RUNTIME_CHANGED=1
+fi
+
 DEPLOY_STATE=deployed
 if [ "${OPENCHQ_LOOP_NODEPLOY:-0}" = "1" ]; then
   DEPLOY_STATE="deploy-skipped"
+elif [ "$RUNTIME_CHANGED" = "0" ]; then
+  DEPLOY_STATE="deploy-skipped:no-runtime-change"
+  echo "NO_RUNTIME_CHANGE $NODE: nothing under web/ changed, no reboot"
 else
   RAILWAY_BIN=$(command -v railway || true)
   if [ -z "$RAILWAY_BIN" ] && [ -x "$HOME/.railway/bin/railway" ]; then
