@@ -1,10 +1,10 @@
 {
   "iteration": 3,
   "cap": 40,
-  "current": "human_orders",
-  "lastNodeId": "pieces",
-  "lastResult": "claimed",
-  "lastRunAt": "2026-11-06T19:25:56.833Z",
+  "current": null,
+  "lastNodeId": "human_orders",
+  "lastResult": "WEB_OK",
+  "lastRunAt": "2026-11-06T19:29:12.555Z",
   "history": [
     {
       "node": "board_paint",
@@ -17,6 +17,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-06T18:38:56.426Z"
+    },
+    {
+      "node": "human_orders",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-06T19:29:12.555Z"
     }
   ]
 }
