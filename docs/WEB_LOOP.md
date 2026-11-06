@@ -97,6 +97,9 @@ the stills, and `CHQ_unpacked.EXE` never leave this machine.
   every clock change, restores rooms paused at boot, and prunes rooms idle over 24 h. Any node
   that changes room state must call `saveRoom` before it tells the seats, and must never
   assume in-memory state survived a restart.
+- A dropped client pauses the game, it does not end it: `holdRoom` keeps the seat, stops the
+  clock and stores the room. Only an explicit `leave` deletes a room. Do not "fix" a
+  disconnect back into an end-of-match.
 - Cap 40 iterations. At the cap the loop reports `CAP` and stops; raise `cap` in the graph
   file deliberately, in its own commit, if more passes are wanted.
 - When every node is `done` the loop reports `COMPLETE` and stops. `drop_godot` is last and

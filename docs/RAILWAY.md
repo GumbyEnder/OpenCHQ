@@ -85,8 +85,13 @@ reconnected through `local/ws-room.mjs check`:
 {"survived":true,"roomId":"e48ea51193e023a7","expected":"e48ea51193e023a7","clock":"held","you":"blue"}
 ```
 
-Same room, same seat, clock paused by the restart. Note this is the *crash* path: a graceful
-socket close still ends the room until node `reconnect` (order 220) flips it to pause-and-keep.
+Same room, same seat, clock paused by the restart.
+
+A graceful socket close behaves the same way: the lobby holds the room, stops the clock, keeps
+the seat reserved for that account, and the connected seat can run it again. Proven in the
+harness — drop one seat, the other sees `Gus disconnected. The match is paused and still
+yours.` with the clock held, the store row keeps both seats, and `run` resumes the same room.
+Swapping `holdRoom` back to `endRoom` makes that assertion fail.
 
 Two throwaway accounts now exist on the live database (`Verifier*`) from the auth check.
 There is no delete-account route yet; they are harmless.

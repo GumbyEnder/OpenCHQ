@@ -336,33 +336,47 @@ async function main() {
   const gusHuman = await waitFor(gusBox, 0, (message) => message.op === "room" && message.room && message.room.mode === "human", "gus room");
   if (gusHuman.room.you !== "red") fail("gus side " + gusHuman.room.you);
 
+  // ---- a dropped client pauses the game, it does not end it ----------------------------
+  const survivedId = human.room.id;
+  if (!survivedId) fail("human room has no id");
+  wsAda.send(JSON.stringify({ op: "run" }));
+  const runningHuman = await waitFor(
+    adaBox,
+    0,
+    (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "running",
+    "human clock running"
+  );
+  if (!runningHuman) fail("the human clock never ran");
+
   const beforeClose = adaBox.length;
   wsGus.close();
-  const closed = await waitFor(adaBox, beforeClose, (message) => message.op === "room" && message.room === null, "gus left");
-  if (closed.reason !== "Gus left the match.") fail("close reason " + closed.reason);
-  wsAda.close();
-
-  // ---- a game outlives the process -----------------------------------------------------
-  // Ada starts a bot room, runs the clock, and the server is killed without closing anything.
-  // The room must come back on the next boot, paused, still hers.
-  const wsBefore = openSocket(base, ada.token);
-  const boxBefore = listen(wsBefore);
-  await new Promise((resolve) => wsBefore.addEventListener("open", resolve));
-  wsBefore.send(JSON.stringify({ op: "bot", era: "1986", side: "blue" }));
-  const beforeRoom = await waitFor(boxBefore, 0, (m) => m.op === "room" && m.room && m.room.mode === "bot", "bot room before restart");
-  const survivedId = beforeRoom.room.id;
-  if (!survivedId) fail("bot room has no id");
-  wsBefore.send(JSON.stringify({ op: "run" }));
-  await waitFor(boxBefore, 0, (m) => m.op === "room" && m.room && m.room.clock === "running", "clock running before restart");
+  const paused = await waitFor(
+    adaBox,
+    beforeClose,
+    (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "held",
+    "gus dropped and the match paused"
+  );
+  if (!/disconnected/.test(String(paused.room.note || ""))) fail("pause note " + paused.room.note);
+  if (paused.room.red.username !== "Gus" || paused.room.red.kind !== "human") {
+    fail("the dropped seat was not kept: " + JSON.stringify(paused.room.red));
+  }
 
   const store = new DatabaseSync(path.join(dataDir, "openchq.sqlite"));
-  const row = store.prepare("SELECT id, clock, state FROM rooms WHERE id = ?").get(survivedId);
-  if (!row) fail("room was never written to the store: " + survivedId);
-  if (row.clock !== "running") fail("stored clock is " + row.clock);
-  const storedSeats = JSON.parse(row.state).seats;
-  if (storedSeats.blue.username !== "Ada") fail("stored seat " + JSON.stringify(storedSeats));
+  const kept = store.prepare("SELECT clock, state FROM rooms WHERE id = ?").get(survivedId);
+  if (!kept) fail("a dropped client deleted the stored game");
+  if (kept.clock !== "held") fail("stored clock after a drop is " + kept.clock);
+  const keptSeats = JSON.parse(kept.state).seats;
+  if (keptSeats.blue.username !== "Ada" || keptSeats.red.username !== "Gus") {
+    fail("stored seats after a drop " + JSON.stringify(keptSeats));
+  }
   store.close();
 
+  // the seat that is still connected can pick the game back up
+  wsAda.send(JSON.stringify({ op: "run" }));
+  const resumed = await waitFor(adaBox, 0, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "running", "resume after a drop");
+  if (resumed.room.red.username !== "Gus") fail("resume lost the other seat");
+
+  // ---- and the game outlives the process ----------------------------------------------
   await stopServer();
   await startServer(port);
 
@@ -374,6 +388,7 @@ async function main() {
   if (welcome.room.id !== survivedId) fail("reconnected to a different room " + welcome.room.id);
   if (welcome.room.clock !== "held") fail("a restart resumed the clock: " + welcome.room.clock);
   if (welcome.room.you !== "blue") fail("seat was lost across the restart: " + welcome.room.you);
+  if (welcome.room.red.username !== "Gus") fail("the other seat was lost across the restart");
   wsAfter.close();
 }
 

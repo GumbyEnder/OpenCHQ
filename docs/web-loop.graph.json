@@ -275,8 +275,9 @@
         "human_orders"
       ],
       "title": "Reconnect",
-      "work": "A dropped socket does not delete the room: the room is held, kept in the store, and the seat stays reserved for that account. A unit nobody is watching does not tick, does not pay, and does not burn fuel. The same account opening a new socket gets a fresh view of its seat, still paused, and can run it again. The other seat keeps its path. This node flips the disconnect behaviour that the harness currently proves as 'left the match'.",
-      "prove": "The harness closes one socket, connects again as the same user, and sees the same room id and its own pieces. WEB_OK."
+      "work": "A dropped socket does not delete the room or free the seat: the match is held, kept in the store, and reserved for that account, and it does not tick, pay or burn fuel while nobody watches. That pause-and-keep half already ships (done ahead of this node, proved by the harness: drop a seat, the room survives paused, the connected seat can run it again). What remains here: a returning socket gets the same filtered view of its seat it had before (own pieces, sight 8, first three enemy steps), and the absent seat's standing orders are still in the match and still execute when the clock runs.",
+      "prove": "The harness closes one socket, connects again as the same user, and sees the same room id and its own pieces. WEB_OK.",
+      "note": "pause-on-empty shipped with the room_store pass"
     },
     {
       "id": "drop_godot",

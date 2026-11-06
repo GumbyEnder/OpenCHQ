@@ -70,6 +70,15 @@ export function createLobby() {
     }
   }
 
+  // A disconnect pauses the game; it does not destroy it. The seat stays reserved for the
+  // account, the room stays in the store, and the clock stops so nothing runs unwatched.
+  function holdRoom(room, note) {
+    room.clock = "held";
+    room.note = note;
+    saveRoom(room);
+    tellRoom(room);
+  }
+
   function endRoom(room, reason) {
     room.note = reason;
     rooms.delete(room.id);
@@ -91,7 +100,9 @@ export function createLobby() {
       if (sockets.get(username) !== peer) return;
       sockets.delete(username);
       const roomId = seatOf.get(username);
-      if (roomId && rooms.has(roomId)) endRoom(rooms.get(roomId), username + " left the match.");
+      if (roomId && rooms.has(roomId)) {
+        holdRoom(rooms.get(roomId), username + " disconnected. The match is paused and still yours.");
+      }
       for (const [id, invite] of invites) {
         if (invite.from === username || invite.to === username) invites.delete(id);
       }
