@@ -70,6 +70,17 @@ else
   echo "COMMITTED $(git rev-parse --short HEAD) ${NODE}"
 fi
 
+# The CIFS share can make git's stat cache miss a file that two commands just rewrote,
+# so the graph and the counter sometimes land after the main commit. Sweep them.
+if [ -n "$(git status --porcelain -- docs/web-loop.graph.json docs/loop-state.json)" ]; then
+  git add -- docs/web-loop.graph.json docs/loop-state.json
+  if ! git diff --cached --quiet; then
+    git commit -q -m "loop: record ${NODE} state (iteration ${ITERATION}/${CAP})" &&
+      echo "COMMITTED $(git rev-parse --short HEAD) loop-state"
+  fi
+fi
+
+
 PUSH_STATE=pushed
 if [ "${OPENCHQ_LOOP_NOPUSH:-0}" = "1" ]; then
   PUSH_STATE="push-skipped"

@@ -84,7 +84,7 @@
     {
       "id": "board_paint",
       "order": 80,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "board_data"
       ],
