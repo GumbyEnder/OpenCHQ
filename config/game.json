@@ -25,7 +25,7 @@
     "roundSeconds": "5 s chosen 2026-11-06 by the owner. At 1 cell per round the Washington-Moscow march is ~104 cells, about 8.7 minutes. The original felt like a campaign, not a 24-second war, and 0.14 s made income land every 3.5 s.",
     "payEvery": "Rounds between income payments. 25 rounds at 5 s is just over two minutes.",
     "prices": "Only two relations were recovered: a tank is twice an infantry, a nuke is 10. The rest are stand-ins.",
-    "fuel": "Per side, deliberately not the desktop archive's single shared reserve.",
+    "fuel": "STAND-IN. The archive's fuel reserve and burn were never recovered: 10000 reserve and 1 per round are invented and are here only so a side can run short. Per side, deliberately not the desktop archive's single shared reserve.",
     "hits": "The archive's HITS is 6. Do not raise it: the desktop Washington-to-Moscow march meets one cell short and Red holds both capitals.",
     "air": "The 8 and 4 are the booklet counts (docs/POLISH_LOOP.md: air mission inactive 8 rounds, scramble 4). The reach of 10 is a STAND-IN: the archive's aircraft range was not recovered.",
     "nukes": "A nuke is refused by default and the archive's own stand-in deals no damage and paints no wasteland. exclusion 2 is a STAND-IN guard around a capital; the archive kept a home-ground guard but never printed its size. The launch limit (three fired or three absorbed) is the booklet count and stays in code.",

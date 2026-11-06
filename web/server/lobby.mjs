@@ -103,6 +103,9 @@ export function createLobby() {
       routes: seen ? seen.routes : {},
       sites: seen ? seen.sites : [],
       capitals: seen ? seen.capitals : null,
+      // Cash, fuel and the rounds until the next payment. The page needs them to draw a
+      // countdown; without them the clock is dead time and a player cannot plan a purchase.
+      seat: seen ? seen.seat : null,
       over: room.match ? Boolean(room.match.over) : false,
       winner: room.match ? room.match.winner : null,
       note: room.note,

@@ -145,7 +145,7 @@ export async function run(ctx) {
 
   // ---- hidden pieces are absent, never flagged ------------------------------------------
   const topKeys = Object.keys(reachView).sort().join(",");
-  expect(fail, topKeys === "capitals,notes,pieces,routes,sites", "the view shape changed: " + topKeys);
+  expect(fail, topKeys === "capitals,notes,pieces,routes,seat,sites", "the view shape changed: " + topKeys);
   for (const piece of reachView.pieces) {
     for (const key of ["hidden", "visible", "concealed", "seen"]) {
       expect(fail, !(key in piece), "a piece carries a '" + key + "' flag: " + JSON.stringify(piece));
@@ -212,4 +212,18 @@ export async function run(ctx) {
 
 function otherLength(value) {
   return Array.isArray(value) ? value.length : JSON.stringify(value);
+
+  // --- the seat view carries what the seat can spend, and when it is next paid ---------
+  // Without this the page cannot draw a payment countdown and the clock is dead time.
+  const purse = openMatch("1986", []);
+  purse.clock = "running";
+  purse.round = 22;
+  purse.sides = { blue: { cash: 7, fuel: 100 }, red: { cash: 3, fuel: 100 } };
+  const mineView = forSeat(purse, "blue");
+  expect(fail, mineView.seat && mineView.seat.cash === 7, "the seat view lost its cash");
+  expect(fail, mineView.seat && mineView.seat.fuel === 100, "the seat view lost its fuel");
+  expect(fail, mineView.seat && Number.isFinite(mineView.seat.payIn), "the seat view has no payment countdown");
+  expect(fail, mineView.seat.payIn > 0 && mineView.seat.payIn <= mineView.seat.payEvery, "the countdown is outside one payment");
+  // The other side's purse must not travel: a seat knows only its own.
+  expect(fail, !JSON.stringify(mineView).includes('"cash":3'), "the enemy purse leaked into the seat view");
 }

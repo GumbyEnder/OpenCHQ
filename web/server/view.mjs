@@ -14,7 +14,7 @@
 // pulling the scout back does not un-discover the enemy.
 
 import { CELL_W, SEATS } from "./board.mjs";
-import { enemyRouteSteps, sightCells } from "./rules.mjs";
+import { enemyRouteSteps, payEvery, sightCells } from "./rules.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -130,6 +130,23 @@ function stateOf(unit, round) {
   return "idle";
 }
 
+// Hold on - `seat` is a local name above; the exported view calls it `seat` on purpose.
+function seatStatus(match, side) {
+  const sides = match && match.sides;
+  const entry = sides && typeof sides === "object" ? sides[side] : null;
+  const cash = Number(entry && entry.cash);
+  const fuel = Number(entry && entry.fuel);
+  const every = Number(payEvery());
+  const round = Number(match && match.round) || 0;
+  const payIn = Number.isFinite(every) && every > 0 ? every - (round % every) : null;
+  return {
+    cash: Number.isFinite(cash) ? cash : null,
+    fuel: Number.isFinite(fuel) ? fuel : null,
+    payIn,
+    payEvery: Number.isFinite(every) && every > 0 ? every : null,
+  };
+}
+
 export function forSeat(match, side) {
   if (!match || !Array.isArray(match.pieces)) {
     return { pieces: [], routes: {}, sites: [], capitals: {}, notes: [] };
@@ -152,6 +169,7 @@ export function forSeat(match, side) {
         blue: match.capitals && match.capitals.blue ? { ...match.capitals.blue } : null,
         red: match.capitals && match.capitals.red ? { ...match.capitals.red } : null,
       },
+      seat: null,
       notes: [],
     };
   }
@@ -189,11 +207,15 @@ export function forSeat(match, side) {
     if (point) capitals[name] = { x: point.x, y: point.y };
   }
 
+  // What the seat can spend and when it next gets paid. Without this the page cannot draw a
+  // countdown and the clock is dead time: the player has no way to know a payment is coming.
+  const seat = seatStatus(match, side);
+
   const notes = [];
   if (hidden) {
     const seatName = (SEATS[enemySide] && SEATS[enemySide].name) || "The other side";
     notes.push(seatName + " has not been found.");
   }
 
-  return { pieces, routes, sites, capitals, notes };
+  return { pieces, routes, sites, capitals, seat, notes };
 }
