@@ -159,7 +159,11 @@ function route(match, from, to) {
   return path;
 }
 
-export function issueOrder(match, side, pieceId, toX, toY) {
+// The route an order WOULD take, without touching the match. The page hovers with this, so
+// the preview a player sees is the walk the server will actually give them, not a straight
+// line drawn by the client. `rounds` is the walk's cost in rounds: every step costs its
+// terrain pace, so a slow cell is two rounds.
+export function planOrder(match, side, pieceId, toX, toY) {
   if (!match || !Array.isArray(match.pieces)) return { error: "No match is running." };
   if (match.over) return { error: "This match is over." };
   const piece = match.pieces.find((unit) => unit.id === pieceId);
@@ -187,8 +191,8 @@ export function issueOrder(match, side, pieceId, toX, toY) {
       route = null;
     }
     if (!route || !route.length) return { error: "No sea lane reaches that cell." };
-    piece.path = route.map((step) => ({ x: step.x, y: step.y, pace: 1 }));
-    return { ok: true, path: piece.path };
+    const path = route.map((step) => ({ x: step.x, y: step.y, pace: 1 }));
+    return { ok: true, path, rounds: path.length };
   }
 
   if (isRefused(terrainAt(x, y) ?? -1)) return { error: "Wasteland is refused." };
@@ -198,14 +202,22 @@ export function issueOrder(match, side, pieceId, toX, toY) {
 
   const path = route(match, piece, { x, y });
   if (path === null) return { error: "No route. Wasteland is refused and a held cell is not entered." };
-  if (path.length === 0) {
+  const rounds = path.reduce((sum, step) => sum + Math.max(1, Number(step.pace) || 1), 0);
+  return { ok: true, path, rounds };
+}
+
+export function issueOrder(match, side, pieceId, toX, toY) {
+  const plan = planOrder(match, side, pieceId, toX, toY);
+  if (!plan || plan.error) return plan || { error: "The order was refused." };
+  const piece = match.pieces.find((unit) => unit.id === pieceId);
+  if (!plan.path.length) {
     piece.path = [];
     piece.pace = 1;
-    return { ok: true, path: [] };
+    return { ok: true, path: [], rounds: 0 };
   }
-  piece.path = path;
-  piece.pace = Math.max(1, Number(path[0].pace) || 1);
-  return { ok: true, path: path.map((step) => ({ ...step })) };
+  piece.path = plan.path;
+  piece.pace = Math.max(1, Number(plan.path[0].pace) || 1);
+  return { ok: true, path: plan.path.map((step) => ({ ...step })), rounds: plan.rounds };
 }
 
 function facingFor(fromX, fromY, toX, toY) {

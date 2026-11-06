@@ -387,7 +387,7 @@
     {
       "id": "order_wire",
       "order": 240,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "orders",
         "human_orders",
@@ -475,14 +475,15 @@
     {
       "id": "late_kit",
       "order": 280,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "air",
         "income"
       ],
       "title": "The 1986 kit, minus the numbers nobody has",
       "work": "Nukes, recon and killer satellites, intel scans, foreign aid and cease-fires. Keep the archive's restraints: capitals have an exclusion radius, crews refuse to target home ground, launches stop after three, the first user is penalised, and nuclear winter can lose for both sides. Where the original never printed a radius, cost or damage, the value lives in config as an explicit stand-in or the action stays refused.",
-      "prove": "Harness: a nuke is refused by default config; with the flag set it paints wasteland and applies the penalty; intel reveals and tells the opponent; the three-launch limit stops the fourth. No invented number appears in code."
+      "prove": "Harness: a nuke is refused by default config; with the flag set it paints wasteland and applies the penalty; intel reveals and tells the opponent; the three-launch limit stops the fourth. No invented number appears in code.",
+      "evidence": "web/server/late.mjs: era-gated tool list (1918/1942 hide the 1986 kit, concealed start shows oil only), intel reveals and tells, satellite reveals quietly, aid flips a city, cease-fire accepted and changes nothing, nuke refused by default with the booklet's three-launch limit and a home-ground guard. Test: web/test/nodes/late_kit.mjs."
     },
     {
       "id": "account_ops",

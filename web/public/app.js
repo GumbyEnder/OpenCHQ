@@ -1,4 +1,14 @@
 import { capitalMarkers, fitViewport, legendEntries, paintMatch, statusLine } from "./render.mjs";
+import {
+  PICK_HINT,
+  ackText,
+  cellAtEvent,
+  orderMessage,
+  ownPieceAt,
+  previewLine,
+  refusalText,
+  routeRequest,
+} from "./command.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -16,6 +26,11 @@ let me = "";
 let users = [];
 let pending = [];
 let room = null;
+// Click-to-command: the selected own piece, and the server's plan for the cell the pointer
+// is over. The page never invents a route; `preview` is the reply to `op: "route"`.
+let selected = null;
+let preview = null;
+let hoverKey = "";
 // The last /api/board payload. A missing extract is a normal state here: the
 // hosted build never has one, and the page draws the schematic instead.
 let boardPayload = {
@@ -87,10 +102,64 @@ function renderLegend() {
 // only ever the ones the server put in `room.pieces`; nothing is inferred.
 function drawMatch() {
   const ctx = board.getContext("2d");
-  const result = paintMatch(ctx, boardPayload, room, { view: viewForCanvas(), own: room && room.you });
-  boardNote.textContent = statusLine(boardPayload, room, result);
+  const result = paintMatch(ctx, boardPayload, room, {
+    view: viewForCanvas(),
+    own: room && room.you,
+    preview,
+  });
+  boardNote.textContent = previewLine(preview) || statusLine(boardPayload, room, result);
   renderLegend();
 }
+
+function clearCommand() {
+  selected = null;
+  preview = null;
+  hoverKey = "";
+  drawMatch();
+}
+
+function askRoute(cell) {
+  if (!selected || !cell) return;
+  const key = selected.id + ":" + cell.x + "," + cell.y;
+  if (key === hoverKey) return;
+  hoverKey = key;
+  send(routeRequest(selected, cell));
+}
+
+// Click a piece: it is selected and the next click is a destination. Click a cell with a
+// piece selected: the order goes to the server as {op:"order",piece,to:{x,y}}.
+board.addEventListener("click", (event) => {
+  if (!room || !room.you) return;
+  const cell = cellAtEvent(event, board, viewForCanvas());
+  if (!cell) return;
+  const mine = ownPieceAt(room.pieces, cell, room.you);
+  if (mine) {
+    selected = mine;
+    preview = null;
+    hoverKey = mine.id + ":" + mine.x + "," + mine.y;
+    say(PICK_HINT + " Then pick a destination.");
+    drawMatch();
+    return;
+  }
+  if (!selected) {
+    say(PICK_HINT);
+    return;
+  }
+  const message = orderMessage(selected, cell);
+  if (message) send(message);
+});
+
+board.addEventListener("mousemove", (event) => {
+  if (!room || !room.you || !selected) return;
+  askRoute(cellAtEvent(event, board, viewForCanvas()));
+});
+
+board.addEventListener("mouseleave", () => {
+  if (!preview) return;
+  preview = null;
+  hoverKey = "";
+  drawMatch();
+});
 
 async function loadBoard() {
   try {
@@ -247,13 +316,37 @@ function connect() {
     } else if (message.op === "room") {
       room = message.room;
       if (message.reason) say(message.reason);
+      if (selected && (!room || !(room.pieces || []).some((piece) => piece.id === selected.id))) {
+        selected = null;
+        preview = null;
+        hoverKey = "";
+      }
       pending = [];
       renderInvites();
       renderPeople();
       renderRoom();
       drawMatch();
+    } else if (message.op === "route") {
+      // Late replies for another piece are not this selection's route.
+      if (!selected || message.piece !== selected.id) return;
+      preview = {
+        from: { x: selected.x, y: selected.y },
+        to: message.to,
+        path: Array.isArray(message.path) ? message.path : [],
+        rounds: message.rounds,
+        error: message.error || "",
+      };
+      drawMatch();
+    } else if (message.op === "ordered") {
+      say(ackText(message));
+      clearCommand();
     } else if (message.op === "error") {
-      say(message.error);
+      // The server's sentence is what the player reads. It is never swallowed.
+      say(refusalText(message));
+      if (preview) {
+        preview = { ...preview, path: [], error: refusalText(message) };
+        drawMatch();
+      }
     }
   });
   socket.addEventListener("close", () => {

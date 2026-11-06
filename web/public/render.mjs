@@ -263,6 +263,50 @@ export function paintCapitals(ctx, markers, view) {
   return list.length;
 }
 
+// The route a hovered order would take, drawn from the server's plan. `preview` is
+// {from:{x,y}, to:{x,y}, path:[{x,y,pace}], rounds, error?}. A refusal draws the marker in
+// the dark ink and no line; the sentence itself goes on the board note.
+export const ROUTE_INK = "#ffd166";
+
+export function paintPreview(ctx, preview, view, opts = {}) {
+  if (!preview) return 0;
+  const v = view;
+  const path = Array.isArray(preview.path) ? preview.path : [];
+  const to = preview.to || (path.length ? path[path.length - 1] : null);
+  const ink = preview.error ? PIECE_INK.enemy : ROUTE_INK;
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = Math.max(1, v.scale * 0.7);
+
+  let started = false;
+  ctx.beginPath();
+  const from = preview.from;
+  if (from && Number.isFinite(Number(from.x)) && Number.isFinite(Number(from.y))) {
+    const at = cellToPixel(wrapX(from.x, v.boardW), Number(from.y), v);
+    ctx.moveTo(at.x, at.y);
+    started = true;
+  }
+  for (const step of path) {
+    if (!step || !Number.isFinite(Number(step.x)) || !Number.isFinite(Number(step.y))) continue;
+    const at = cellToPixel(wrapX(step.x, v.boardW), Number(step.y), v);
+    if (!started) {
+      ctx.moveTo(at.x, at.y);
+      started = true;
+    } else {
+      ctx.lineTo(at.x, at.y);
+    }
+  }
+  if (started) ctx.stroke();
+
+  if (to && Number.isFinite(Number(to.x)) && Number.isFinite(Number(to.y))) {
+    const at = cellToPixel(wrapX(to.x, v.boardW), Number(to.y), v);
+    const r = Math.max(2, v.scale * 2);
+    ctx.beginPath();
+    ctx.rect(at.x - r, at.y - r, r * 2, r * 2);
+    ctx.stroke();
+  }
+  return path.length;
+}
+
 // One line under the canvas. Says plainly when the extract is absent.
 export function statusLine(board, room, result = {}) {
   if (result.mode === "schematic" || !result.mode) return EXTRACT_MISSING;
@@ -296,14 +340,16 @@ export function paintMatch(ctx, board, room, opts = {}) {
     // The schematic painter draws at the origin, so this path stays unpanned.
     const flat = { ...view, left: 0, top: 0 };
     paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale });
+    const preview = paintPreview(ctx, opts.preview, flat, opts);
     const pieces = paintPieces(ctx, room && room.pieces, flat, opts);
     const capitals = paintCapitals(ctx, capitalMarkers(board), flat);
-    return { mode, painted: 0, pieces, capitals, message: EXTRACT_MISSING, view: flat };
+    return { mode, painted: 0, pieces, capitals, preview, message: EXTRACT_MISSING, view: flat };
   }
 
+  const preview = paintPreview(ctx, opts.preview, view, opts);
   const pieces = paintPieces(ctx, room && room.pieces, view, opts);
   const capitals = paintCapitals(ctx, capitalMarkers(board), view);
-  return { mode, painted, pieces, capitals, message: "", view };
+  return { mode, painted, pieces, capitals, preview, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.

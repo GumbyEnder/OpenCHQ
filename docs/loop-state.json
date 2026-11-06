@@ -1,10 +1,10 @@
 {
   "iteration": 8,
   "cap": 40,
-  "current": "order_wire",
-  "lastNodeId": "drop_godot",
-  "lastResult": "claimed",
-  "lastRunAt": "2026-11-06T23:14:59.395Z",
+  "current": null,
+  "lastNodeId": "order_wire",
+  "lastResult": "WEB_OK",
+  "lastRunAt": "2026-11-06T23:20:41.147Z",
   "history": [
     {
       "node": "board_paint",
@@ -47,6 +47,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-06T22:33:45.649Z"
+    },
+    {
+      "node": "order_wire",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-06T23:20:41.147Z"
     }
   ]
 }

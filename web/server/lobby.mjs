@@ -5,7 +5,7 @@ import { forSeat } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
-import { issueOrder } from "./move.mjs";
+import { issueOrder, planOrder } from "./move.mjs";
 import { roundSeconds } from "./rules.mjs";
 
 function sideOf(value) {
@@ -284,6 +284,35 @@ export function createLobby() {
   // never taken from the message; a side sent in the message must match or the order is
   // refused before the match is touched. move.issueOrder re-checks piece ownership, so a
   // forged piece id fails at the second gate too.
+  // The page sends the destination as {to:{x,y}}; older harness calls send x/y flat. Both
+  // name the same cell, and neither is trusted for the side.
+  function destinationOf(message) {
+    const to = message.to && typeof message.to === "object" ? message.to : {};
+    const x = message.x ?? to.x;
+    const y = message.y ?? to.y;
+    return { x, y };
+  }
+
+  // Hover: the same planner the order uses, but read-only. A player who previews a route
+  // gets the route they would actually walk, and a refusal reads the way the order's would.
+  function routeFor(username, message) {
+    const roomId = seatOf.get(username);
+    const room = roomId ? rooms.get(roomId) : null;
+    const peer = sockets.get(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const pieceId = String(message.piece ?? message.pieceId ?? "");
+    if (!pieceId) return { error: "A route needs a piece id." };
+    const to = destinationOf(message);
+    const plan = planOrder(room.match, mine, pieceId, to.x, to.y);
+    const reply = plan && plan.error
+      ? { op: "route", piece: pieceId, to, error: plan.error }
+      : { op: "route", piece: pieceId, to, path: plan.path, rounds: plan.rounds };
+    if (peer) peer.send(reply);
+    return { ok: true };
+  }
+
   function order(username, message) {
     const roomId = seatOf.get(username);
     const room = roomId ? rooms.get(roomId) : null;
@@ -296,15 +325,20 @@ export function createLobby() {
     }
     const pieceId = String(message.piece ?? message.pieceId ?? "");
     if (!pieceId) return { error: "An order needs a piece id." };
+    const to = destinationOf(message);
     let result;
     try {
-      result = issueOrder(room.match, mine, pieceId, message.x, message.y);
+      result = issueOrder(room.match, mine, pieceId, to.x, to.y);
     } catch (err) {
       return { error: err && err.message ? err.message : String(err) };
     }
     if (!result || result.error) return { error: (result && result.error) || "The order was refused." };
     saveRoom(room);
     tellRoom(room);
+    // The seat hears its own order back: the page acknowledges in place instead of guessing
+    // that a silent socket meant success.
+    const peer = sockets.get(username);
+    if (peer) peer.send({ op: "ordered", piece: pieceId, to, rounds: result.rounds ?? 0 });
     return { ok: true };
   }
 
@@ -376,6 +410,7 @@ export function createLobby() {
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
     if (op === "order") return order(username, message);
+    if (op === "route") return routeFor(username, message);
     if (op === "run") return setClock(username, true);
     if (op === "hold") return setClock(username, false);
     if (op === "leave") return leave(username);
