@@ -1,12 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { deleteRoom, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
-
-const ERAS = new Set(["1918", "1942", "1986", "2023", "9999"]);
-
-function eraOf(value) {
-  const era = String(value ?? "1986");
-  return ERAS.has(era) ? era : "1986";
-}
+import { eraOf, openMatch, piecesFor } from "./match.mjs";
 
 function sideOf(value) {
   return value === "red" ? "red" : "blue";
@@ -22,6 +16,12 @@ export function createLobby() {
   // a returning player lands back in their own match. Games nobody touched for a day go away.
   pruneRooms();
   for (const room of loadRooms()) {
+    // A stored room from before the match module has seats but no match. Open one for its
+    // era so an old row still shows its side's opening pieces.
+    if (!room.match) {
+      room.match = openMatch(room.era);
+      saveRoom(room);
+    }
     rooms.set(room.id, room);
     for (const seat of Object.values(room.seats ?? {})) {
       if (seat && seat.kind === "human" && seat.username) seatOf.set(seat.username, room.id);
@@ -58,6 +58,8 @@ export function createLobby() {
       you,
       blue: { username: room.seats.blue.username, kind: room.seats.blue.kind },
       red: { username: room.seats.red.username, kind: room.seats.red.kind },
+      round: room.match ? room.match.round : 0,
+      pieces: piecesFor(room.match),
       note: room.note,
     };
   }
@@ -140,6 +142,7 @@ export function createLobby() {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
       },
+      match: openMatch(eraOf(era)),
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
@@ -192,6 +195,7 @@ export function createLobby() {
       clock: "held",
       note: "Clock held. Pieces do not move yet. The match will run here, in the browser game.",
       seats: { blue: null, red: null },
+      match: openMatch(inviteRow.era),
     };
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
     room.seats[other] = { username, kind: "human" };

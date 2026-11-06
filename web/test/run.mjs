@@ -302,6 +302,30 @@ async function main() {
     fail("bot room shape " + JSON.stringify(botRoom.room));
   }
 
+  // --- pieces: a match opens with a land piece on each capital and one ship per side.
+  const opening = botRoom.room;
+  if (opening.era !== "1986") fail("opening era " + opening.era);
+  if (opening.round !== 0) fail("a new match starts at round " + opening.round);
+  if (!Array.isArray(opening.pieces)) fail("the room view has no pieces: " + JSON.stringify(opening));
+  if (opening.pieces.length !== 4) fail("1986 opened with " + opening.pieces.length + " pieces");
+  const unit = (id) => opening.pieces.find((piece) => piece.id === id);
+  const expectUnit = (id, side, domain, x, y) => {
+    const found = unit(id);
+    if (!found) fail("opening is missing " + id + ": " + JSON.stringify(opening.pieces));
+    if (found.side !== side || found.domain !== domain || found.x !== x || found.y !== y) {
+      fail(id + " is " + JSON.stringify(found));
+    }
+    if (found.side !== "blue" && found.side !== "red") fail("piece on no side: " + JSON.stringify(found));
+  };
+  expectUnit("blue:land", "blue", "land", 79, 44);
+  expectUnit("blue:sea", "blue", "sea", 0, 15);
+  expectUnit("red:land", "red", "land", 183, 25);
+  expectUnit("red:sea", "red", "sea", 300, 70);
+  const cellAt = (x, y) => board.cells[y * 320 + x];
+  if (cellAt(79, 44) !== 4 || cellAt(183, 25) !== 4) fail("the land pieces are not on the capitals");
+  if (cellAt(0, 15) !== 0 || cellAt(300, 70) !== 0) fail("the ships are not on ocean cells");
+  if (new Set(opening.pieces.map((piece) => piece.id)).size !== 4) fail("piece ids are not unique");
+
   const afterBot = adaBox.length;
   wsAda.send(JSON.stringify({ op: "run" }));
   const running = await waitFor(adaBox, afterBot, (message) => message.op === "room" && message.room && message.room.clock === "running", "run");
@@ -316,6 +340,21 @@ async function main() {
   wsAda.send(JSON.stringify({ op: "leave" }));
   const leftBot = await waitFor(adaBox, afterHold, (message) => message.op === "room" && message.room === null, "leave bot");
   if (!String(leftBot.reason || "").includes("Ada")) fail("leave reason " + leftBot.reason);
+
+  // --- pieces: 2023 is the empty era, and its room view says so.
+  const after1986 = adaBox.length;
+  wsAda.send(JSON.stringify({ op: "bot", era: "2023", side: "blue" }));
+  const empty2023 = await waitFor(
+    adaBox,
+    after1986,
+    (message) => message.op === "room" && message.room && message.room.mode === "bot" && message.room.era === "2023",
+    "2023 bot room"
+  );
+  if (!Array.isArray(empty2023.room.pieces)) fail("the 2023 view has no pieces field");
+  if (empty2023.room.pieces.length !== 0) fail("2023 opened with " + empty2023.room.pieces.length + " pieces");
+  const after2023 = adaBox.length;
+  wsAda.send(JSON.stringify({ op: "leave" }));
+  await waitFor(adaBox, after2023, (message) => message.op === "room" && message.room === null, "leave 2023");
 
   const afterLeave = adaBox.length;
   wsAda.send(JSON.stringify({ op: "invite", user: "Gus", era: "1942", side: "blue" }));
@@ -335,6 +374,13 @@ async function main() {
   }
   const gusHuman = await waitFor(gusBox, 0, (message) => message.op === "room" && message.room && message.room.mode === "human", "gus room");
   if (gusHuman.room.you !== "red") fail("gus side " + gusHuman.room.you);
+  // A human room opens the same match: 1942 places four pieces, and each seat's view carries them.
+  if (!Array.isArray(human.room.pieces) || human.room.pieces.length !== 4) {
+    fail("1942 human room pieces " + JSON.stringify(human.room.pieces));
+  }
+  if (human.room.pieces.filter((piece) => piece.side === "red").length !== 2) {
+    fail("the human room lost a side's opening pieces: " + JSON.stringify(human.room.pieces));
+  }
 
   // ---- a dropped client pauses the game, it does not end it ----------------------------
   const survivedId = human.room.id;
