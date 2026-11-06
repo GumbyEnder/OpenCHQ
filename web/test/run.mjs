@@ -125,6 +125,22 @@ async function waitFor(box, from, pred, label) {
   fail(label + " missing: " + JSON.stringify(box.slice(from)));
 }
 
+// A round is a tunable (config/game.json -> roundSeconds), so anything that waits for the
+// shipped clock uses the configured length instead of the 2 s message cap.
+async function waitUntil(box, from, pred, label, deadlineMs) {
+  const start = Date.now();
+  while (Date.now() - start < deadlineMs) {
+    const hit = box.slice(from).find(pred);
+    if (hit) return hit;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  fail(label + " missing within " + deadlineMs + "ms: " + JSON.stringify(
+    box.slice(from).map((m) => (m.op === "room" && m.room
+      ? { op: m.op, id: m.room.id, clock: m.room.clock, round: m.room.round }
+      : m.op))
+  ));
+}
+
 function openSocket(base, token) {
   return new WebSocket(base.replace("http", "ws") + "/ws", {
     headers: { cookie: "openchq_session=" + token },
@@ -445,6 +461,22 @@ async function main() {
   // ---- a dropped client pauses the game, it does not end it ----------------------------
   const survivedId = human.room.id;
   if (!survivedId) fail("human room has no id");
+  const roundMs = Math.max(1, Number(JSON.parse(readFileSync(path.join(root, "config", "game.json"), "utf8")).roundSeconds) || 5) * 1000;
+
+  // Red queues a standing order before it drops, on the cell beside Moscow. A human room runs
+  // no bot, so this path can only have come from red's own socket.
+  const RED_CAPITAL = { x: 183, y: 25 };
+  const RED_STEP = { x: 184, y: 25 };
+  const beforeGusOrder = gusBox.length;
+  wsGus.send(JSON.stringify({ op: "order", piece: "red:land", x: RED_STEP.x, y: RED_STEP.y }));
+  const redQueued = await waitFor(gusBox, beforeGusOrder, (m) => {
+    if (m.op !== "room" || !m.room || m.room.id !== survivedId) return false;
+    const red = (m.room.pieces || []).find((piece) => piece.id === "red:land");
+    return red && red.path.length > 0;
+  }, "red standing order");
+  const queuedRed = (redQueued.room.pieces || []).find((piece) => piece.id === "red:land");
+  if (queuedRed.x !== RED_CAPITAL.x || queuedRed.y !== RED_CAPITAL.y) fail("red moved before the clock ran: " + JSON.stringify(queuedRed));
+
   wsAda.send(JSON.stringify({ op: "run" }));
   const runningHuman = await waitFor(
     adaBox,
@@ -475,12 +507,72 @@ async function main() {
   if (keptSeats.blue.username !== "Ada" || keptSeats.red.username !== "Gus") {
     fail("stored seats after a drop " + JSON.stringify(keptSeats));
   }
+  // The standing order was in the row the drop wrote: a pause is not a cancel.
+  const keptRed = (JSON.parse(kept.state).match.pieces || []).find((piece) => piece.id === "red:land");
+  if (!keptRed || !Array.isArray(keptRed.path) || keptRed.path.length === 0) {
+    fail("a drop dropped the absent seat's standing order: " + JSON.stringify(keptRed));
+  }
   store.close();
 
-  // the seat that is still connected can pick the game back up
+  // ---- red comes back before anyone touches the clock ----------------------------------
+  // The socket is closed and a new one is opened as the same account while the server is
+  // still up: a returning player, not a process restart. The seat is handed back with the
+  // same filtered view and the same board; the clock stays held, and the note a drop wrote
+  // does not survive the return.
+  const wsRed = openSocket(base, gus.token);
+  const redBox = listen(wsRed);
+  await new Promise((resolve) => wsRed.addEventListener("open", resolve));
+  const back = await waitFor(redBox, 0, (m) => m.op === "welcome", "welcome after a reconnect");
+  if (!back.room) fail("a returning socket got no room");
+  if (back.room.id !== survivedId) fail("a returning socket landed in room " + back.room.id + " not " + survivedId);
+  if (back.room.you !== "red") fail("a returning socket lost its side: " + back.room.you);
+  if (back.room.clock !== "held") fail("a reconnect resumed the clock: " + back.room.clock);
+  if (/disconnected/.test(String(back.room.note || ""))) fail("the drop note outlived the reconnect: " + back.room.note);
+  const backPieces = Array.isArray(back.room.pieces) ? back.room.pieces : [];
+  if (!backPieces.some((piece) => piece.id === "red:land")) {
+    fail("a returning seat did not get its own pieces: " + JSON.stringify(backPieces.map((piece) => piece.id)));
+  }
+  if (backPieces.some((piece) => piece.side !== "red")) {
+    fail("a returning seat's view leaked the other side: " + JSON.stringify(backPieces.map((piece) => piece.id)));
+  }
+  // The view is filtered, not the match: a returning seat sees what any seat sees.
+  if (JSON.stringify(back.room).includes("hidden")) fail("a returning seat was sent a hidden flag");
+  // The order queued before the drop is still on the piece, untouched by the return.
+  const backQueued = backPieces.find((piece) => piece.id === "red:land");
+  if (backQueued.path.length === 0) fail("a return lost the seat's standing order: " + JSON.stringify(backQueued));
+  // ... and the seat that stayed is told the game is whole again.
+  await waitUntil(adaBox, 0, (m) => m.op === "room" && m.room && m.room.id === survivedId &&
+    !/disconnected/.test(String(m.room.note || "")), "the waiting seat was told the player is back", 2000);
+
+  // Red drops a second time and stays away while blue runs a round: the standing order
+  // executes with nobody in the seat.
+  wsRed.close();
+  const pausedAgain = await waitUntil(adaBox, 0, (m) => m.op === "room" && m.room && m.room.id === survivedId &&
+    m.room.clock === "held" && /disconnected/.test(String(m.room.note || "")), "red dropped again", 2000);
+  const pausedRound = pausedAgain.room.round;
+  const beforeResume = adaBox.length;
   wsAda.send(JSON.stringify({ op: "run" }));
-  const resumed = await waitFor(adaBox, 0, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "running", "resume after a drop");
+  const resumed = await waitUntil(adaBox, beforeResume, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "running", "resume after a drop", roundMs + 2000);
   if (resumed.room.red.username !== "Gus") fail("resume lost the other seat");
+  await waitUntil(adaBox, beforeResume, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.round > pausedRound, "a round with red away", roundMs + 4000);
+  const afterRound = adaBox.length;
+  wsAda.send(JSON.stringify({ op: "hold" }));
+  await waitUntil(adaBox, afterRound, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "held", "hold after the absent round", roundMs + 2000);
+
+  // ---- red comes back to a board that moved while it was gone --------------------------
+  const wsRed2 = openSocket(base, gus.token);
+  const redBox2 = listen(wsRed2);
+  await new Promise((resolve) => wsRed2.addEventListener("open", resolve));
+  const backAgain = await waitFor(redBox2, 0, (m) => m.op === "welcome", "welcome after the second reconnect");
+  if (!backAgain.room) fail("a returning socket got no room the second time");
+  if (backAgain.room.id !== survivedId) fail("a returning socket landed in room " + backAgain.room.id);
+  if (backAgain.room.you !== "red") fail("a returning socket lost its side: " + backAgain.room.you);
+  const moved = (backAgain.room.pieces || []).find((piece) => piece.id === "red:land");
+  if (!moved) fail("a returning seat did not get its army back");
+  if (moved.x !== RED_STEP.x || moved.y !== RED_STEP.y || moved.path.length !== 0) {
+    fail("the absent seat's standing order did not execute: " + JSON.stringify(moved));
+  }
+  wsRed2.close();
 
   // ---- and the game outlives the process ----------------------------------------------
   await stopServer();

@@ -1,10 +1,10 @@
 {
-  "iteration": 5,
+  "iteration": 6,
   "cap": 40,
   "current": null,
-  "lastNodeId": "load_test",
+  "lastNodeId": "reconnect",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-06T21:05:31.161Z",
+  "lastRunAt": "2026-11-06T21:50:46.931Z",
   "history": [
     {
       "node": "board_paint",
@@ -35,6 +35,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-06T21:05:31.161Z"
+    },
+    {
+      "node": "reconnect",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-06T21:50:46.931Z"
     }
   ]
 }

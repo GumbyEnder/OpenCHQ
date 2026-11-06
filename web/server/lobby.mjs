@@ -109,9 +109,10 @@ export function createLobby() {
     };
   }
 
-  function tellRoom(room) {
+  function tellRoom(room, skip = "") {
     for (const seat of [room.seats.blue, room.seats.red]) {
       if (seat.kind !== "human") continue;
+      if (seat.username === skip) continue;
       const peer = sockets.get(seat.username);
       if (peer) peer.send({ op: "room", room: roomView(room, seat.username) });
     }
@@ -140,6 +141,26 @@ export function createLobby() {
     sendPresence();
   }
 
+  // A returning socket lands back in the seat that was reserved for it, with the same
+  // filtered view it had before it dropped: its own pieces and full routes, sight drawn from
+  // those pieces, and the enemy's first enemyRouteSteps steps. The view comes from the same
+  // `forSeat` the live rooms use, so a reconnect cannot be a second, looser view.
+  //
+  // The clock stays held. A game resumes on an explicit `run`, never on a connect: a player
+  // who comes back may not want the clock moving yet, and nothing may run a game nobody asked
+  // to resume. What does not change is the board: the seat's standing orders were never
+  // dropped (holdRoom stored the whole match, routes included), so a route queued before the
+  // drop is still on the piece and still steps on the next running round.
+  function seatView(room, username) {
+    if (!room) return null;
+    // The seat is occupied again, so the note the drop left behind is stale.
+    if (/disconnected/.test(String(room.note || ""))) {
+      room.note = "Both seats are present. The clock is still held.";
+      saveRoom(room);
+    }
+    return roomView(room, username);
+  }
+
   function join(username, peer) {
     const previous = sockets.get(username);
     sockets.set(username, peer);
@@ -158,12 +179,15 @@ export function createLobby() {
     };
     const roomId = seatOf.get(username);
     const room = roomId ? rooms.get(roomId) : null;
+    const view = seatView(room, username);
     peer.send({
       op: "welcome",
       username,
       users: presence(),
-      room: room ? roomView(room, username) : null,
+      room: view,
     });
+    // The seat beside a returning player is told the game is whole again.
+    if (room && view) tellRoom(room, username);
     sendPresence();
   }
 
