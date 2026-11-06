@@ -95,6 +95,8 @@ function seatPieces(match, side) {
 }
 
 function visibleEnemy(unit, ownPieces, match) {
+  // Intel and a satellite pass reveal a piece for the round they were used, submarines included.
+  if (Number(unit.revealedRound) >= Number(match.round) && Number(unit.revealedRound) >= 0) return true;
   if (unit.kind === "submarine" && !movedThisRound(unit, match) && !unit.fighting) return false;
   return ownPieces.some((own) => withinSight(own, unit));
 }
