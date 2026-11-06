@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { closeSession, login, openSession, register, userForToken } from "./db.mjs";
+import { boardPayload } from "./board.mjs";
 import { createLobby } from "./lobby.mjs";
 import { acceptWebSocket } from "./ws.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(here, "..", "public");
-const port = Number(process.env.OPENCHQ_WEB_PORT || 8094);
+const port = Number(process.env.PORT || process.env.OPENCHQ_WEB_PORT || 8094);
 const host = process.env.OPENCHQ_WEB_HOST || "127.0.0.1";
 const lobby = createLobby();
 
@@ -38,8 +39,17 @@ function send(res, status, body, extra = {}) {
   res.end(raw);
 }
 
-function cookie(token, maxAge) {
-  return `openchq_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}`;
+function isSecure(req) {
+  const flag = process.env.OPENCHQ_SECURE_COOKIE;
+  if (flag === "1") return true;
+  if (flag === "0") return false;
+  const proto = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
+  return proto === "https";
+}
+
+function cookie(req, token, maxAge) {
+  const secure = isSecure(req) ? "; Secure" : "";
+  return `openchq_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
 function readBody(req) {
@@ -98,6 +108,14 @@ const server = createServer(async (req, res) => {
     send(res, 200, { user });
     return;
   }
+  if (req.method === "GET" && url.pathname === "/api/board") {
+    try {
+      send(res, 200, boardPayload());
+    } catch (err) {
+      send(res, 500, { error: String(err && err.message ? err.message : err) });
+    }
+    return;
+  }
   if (req.method === "POST" && (url.pathname === "/api/register" || url.pathname === "/api/login")) {
     let body;
     try {
@@ -114,12 +132,12 @@ const server = createServer(async (req, res) => {
       return;
     }
     const token = openSession(result.user.id);
-    send(res, 200, { user: result.user }, { "set-cookie": cookie(token, 60 * 60 * 24 * 14) });
+    send(res, 200, { user: result.user }, { "set-cookie": cookie(req, token, 60 * 60 * 24 * 14) });
     return;
   }
   if (req.method === "POST" && url.pathname === "/api/logout") {
     closeSession(tokenFrom(req));
-    send(res, 200, { ok: true }, { "set-cookie": cookie("", 0) });
+    send(res, 200, { ok: true }, { "set-cookie": cookie(req, "", 0) });
     return;
   }
   if (req.method === "GET") {

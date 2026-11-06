@@ -1,120 +1,116 @@
-# OPENCHQ_WEB_LOOP
+# OPENCHQ_WEB_LOOP (hands-free)
 
-You cannot see the parent chat. This is one fire of a loop. The game is a web browser game. Godot is the archive on branch `desktop-godot`. Do not start Godot, embed Godot, or export Godot.
+The loop runs itself. Nobody pastes a fire. A scheduled Hermes job in the `game` profile
+fires on a timer, does one node, and stops. The job's prompt is fixed and short; the graph
+and this file are the authority.
 
-## Where we are
+The game is the browser game in `/mnt/nas/projects/OpenCHQ` on branch `web`. Godot is the
+archive on branch `desktop-godot`. Do not start, embed, or export Godot.
 
-Checked 2026-11-06 on branch `web`. The loop is paused between fires. It is not stuck on a red test. The handoff for a new agent is `docs/WEB_HANDOFF.md`.
-
-A fire does one ready node, requires `node web/test/run.mjs` to print `WEB_OK`, marks that node done, and stops. The fire prompt forbids commit, push, and creating a scheduler. After `harness` finished, nothing pasted the next fire, so `board_data` never started. The loop docs and `web/test/` stayed untracked until this checkpoint was committed by hand.
-
-Iteration on this machine is 1/40, in `/tmp/openchq-web-iteration`. That file is not in git.
-
-Done: `accounts`, `lobby`, `bot_room`, `human_room`, `clock`, `harness`. Proof: `node web/test/run.mjs` printed `WEB_OK` and exited 0. The server under test used a temporary `OPENCHQ_WEB_DATA` and a free port. It did not use port 8787 or `~/.local/share/openchq`.
-
-Next ready node: `board_data` (order 70). Seventeen nodes after that are still `todo`, through `drop_godot`. The graph file is the authority if this paragraph and the file disagree.
-
-What runs today: register, login, presence, a bot room, an invite, hold, and run. The clock flag changes. Pieces do not move. The page does not draw terrain cells yet.
-
-## Graph
-
-The work is the directed graph in `docs/web-loop.graph.json`. A node may start when every id in `depends` has `"status": "done"`. Among those ready nodes, do the one with the smallest `order`. Do that one node. Prove it. Stop. Do not start the next node in the same fire.
-
-```mermaid
-flowchart TD
-  accounts --> lobby
-  accounts --> bot_room
-  lobby --> human_room
-  bot_room --> clock
-  human_room --> clock
-  clock --> harness
-  harness --> board_data
-  board_data --> board_paint
-  board_paint --> pieces
-  pieces --> tick
-  pieces --> buy
-  tick --> orders
-  tick --> combat
-  tick --> oil
-  tick --> win
-  orders --> lanes
-  orders --> human_orders
-  lanes --> bot
-  bot --> sight
-  human_orders --> sight
-  oil --> income
-  oil --> fuel
-  sight --> reconnect
-  human_orders --> reconnect
-  win --> drop_godot
-  buy --> drop_godot
-  oil --> drop_godot
-  income --> drop_godot
-  fuel --> drop_godot
-  sight --> drop_godot
-  combat --> drop_godot
-  lanes --> drop_godot
-  bot --> drop_godot
-```
-
-`accounts`, `lobby`, `bot_room`, `human_room`, `clock`, and `harness` are done. The next fire starts at `board_data`.
-
-## Where to work
-
-Work only in `/mnt/nas/projects/OpenCHQ` on branch `web`. Do not commit or push. Do not switch to `main` or `desktop-godot`. Do not build in `/mnt/nas/projects/Command HQ/modern/game/`.
-
-Read behavior from `docs/WEB_PLAN.md` and, as reference only, from `scripts/match_state.gd` and `scripts/terrain_map.gd`. Implement the behavior in `web/`. Do not copy guessed formulas from `docs/re/ECONOMY.md` or `docs/re/COMBAT.md`. Do not copy ratings from `resources_oil.json`. Do not put the unpacked executable, `WORLD_MAP.png`, or the unit stills in a browser response.
-
-The live server port is 8094. Port 8787 belongs to another program. Tests bind `127.0.0.1` on a free port and set `OPENCHQ_WEB_DATA` to a temporary directory. Do not point tests at `~/.local/share/openchq`.
-
-## Each fire
-
-Create `/tmp/openchq-web-iteration` if it is missing, with contents `0`. Read it, add 1, and write the new number back. If that number is greater than 40, report `CAP 40 reached` and stop. Do not touch `/tmp/openchq-polish-iteration`.
-
-If the chosen node is already satisfied in the tree, set its `status` to `done` in `docs/web-loop.graph.json`, name the evidence, and stop. That counts as the fire. Do not implement a second node.
-
-Implement only the chosen node. Extend `web/test/run.mjs` in that same fire so the new proof runs with every earlier proof. A comment is not a proof.
-
-Then run:
+## What a fire does
 
 ```
-node web/test/run.mjs
+node tools/loopctl.mjs next
 ```
 
-The run must print `WEB_OK` and exit 0. Tests call the match tick function directly. They do not sleep 0.14 seconds per round.
+That claims the single ready node with the smallest `order` and bumps the iteration. It
+prints `NODE <id>` plus that node's `WORK` and `PROVE` text. Then the fire implements only
+that node, extends `web/test/run.mjs` in the same pass, and runs the mechanical half:
 
-If `WEB_OK` is missing, leave the node `todo`, report the failing line, and stop. Do not start another node.
+```
+bash tools/fire.sh
+```
 
-If `WEB_OK` printed, set that node's `status` to `done` and stop.
+`tools/fire.sh` runs `node web/test/run.mjs`, and:
 
-When every node is `done`, report the closing block and stop.
+- **red** — no `WEB_OK`: the node is recorded as `todo`, nothing is committed, the failing
+  line is printed, exit 1.
+- **green** — `WEB_OK`: the node is marked `done` in `docs/web-loop.graph.json`, the pass is
+  committed on `web`, pushed to `origin/web`, and deployed to Railway (`railway up`, detached).
 
-If a scheduler task exists whose prompt contains `OPENCHQ_WEB_LOOP` and this fire hit the cap, a red test, or a finished graph, delete that task and stop. If no such task exists, do not create one.
+There is nothing else to remember. Do not hand-edit the graph, do not hand-edit the counter,
+do not add a second test entry point, and do not claim two nodes in one fire.
 
-## Report
+## State
 
-After a finished node, one line: iteration N/40, the node id, `WEB_OK`, and the next ready node id.
+`docs/loop-state.json` is committed, so the counter survives reboots:
 
-The closing block lists nodes done, nodes still todo, files changed, and `WEB_OK` or the failing line.
+```json
+{ "iteration": 0, "cap": 40, "current": null, "lastNodeId": null,
+  "lastResult": "", "lastRunAt": "", "history": [] }
+```
 
-## Rules the nodes must keep
+`node tools/loopctl.mjs status` prints one line: iteration, done/total, ready node, current
+claim, last result. That line is the loop's heartbeat.
+
+Exit codes from `loopctl.mjs`: `0` ok, `2` nothing to claim (`COMPLETE`, `CAP`, `BLOCKED`,
+`CLAIMED_ALREADY`), `1` misuse. A fire that gets `2` implements nothing, reports the reason,
+and stops.
+
+## Fire shape (what the scheduled job is told)
+
+1. `cd /mnt/nas/projects/OpenCHQ`, confirm branch is `web`.
+2. `node tools/loopctl.mjs next`.
+   - Exit 2: report the printed line (`COMPLETE` / `CAP` / `BLOCKED`) and stop. No code.
+3. Read `docs/WEB_PLAN.md` and, as reference only, the `.gd` scripts. Implement the one
+   claimed node in `web/`. Extend `web/test/run.mjs` with a real assertion, not a comment.
+4. `bash tools/fire.sh`.
+5. Report one line: `iteration N/40, <node id>, WEB_OK|red + failing line, next ready node`.
+6. Stop. Never start the next node in the same fire.
+
+## Hosting
+
+Railway project `OpenCHQ`, service `openchq-web`. Every green fire deploys. See
+`docs/RAILWAY.md` for the exact variables, the volume, and the live URL.
+
+The public host has no game extract. `GET /api/board` answers `source: "missing"` there and
+the page must fall back to the schematic. That is by design: the extract, `WORLD_MAP.png`,
+the stills, and `CHQ_unpacked.EXE` never leave this machine.
+
+## Rules a node must keep
 
 - Two sides only. Blue and Red. Washington and Moscow. Holding both capitals wins.
 - The server owns the clock and the pieces. The page sends orders for its own seat.
-- One running round is 0.14 seconds on the live clock. Hold stops the clock. Tests do not wait for that interval.
-- A human room never runs bot orders. A bot room marches the empty army toward the player capital and sails the empty ship once.
-- Sight is 8 cells, Chebyshev, X wraps. Enemy routes in a view are the first three steps. Hidden pieces are omitted.
-- City income is 1 billion per city. Oil income is 1 billion per owned well. Both are added on every 25th round. Capitals are not cities.
-- Each side has its own fuel reserve of 10000, burning 1 off a well. A dry side stops. The other side does not.
-- A tank costs twice an infantry. A nuke is refused. Do not invent a damage number or an oil production rate.
-- Player-facing match text must not contain `$`, `production`, `Command HQ`, `beats`, or `one extra`.
+- One running round is 0.14 seconds. Hold stops the clock. Tests call the tick function
+  directly and never sleep.
+- A human room never runs bot orders. A bot room marches on the player capital, sails once.
+- Sight 8 cells, Chebyshev, X wraps. Enemy routes in a view are the first three steps. Hidden
+  pieces are omitted from the JSON, not flagged.
+- Income 1 billion per city and per owned well every 25th round. Capitals are not cities.
+  Each side has its own fuel reserve (10000, burn 1 off a well). A dry side stops; the other
+  does not.
+- A tank costs twice an infantry. A nuke is refused. No damage number, no oil production
+  rate, no movement-time ratio — they were never recovered and inventing them is the failure.
+- Player-facing match text must not contain `$`, the 1990 product name, `production`, `beats`,
+  or `one extra`. The oil card says "Rate unknown."
+- Zero npm dependencies in `web/`.
 
-## Paste this as the loop fire
+## Guardrails
 
-```
-OPENCHQ_WEB_LOOP. You cannot see the parent chat. This is one fire.
+- Branch is `web`. Never `main` (stays at the `e2d5f86` demo), never `desktop-godot`.
+  No force-push, ever. `tools/fire.sh` refuses to run off-branch.
+- Live server port 8094 locally. Port 8787 belongs to another program. Tests bind a free port
+  on 127.0.0.1 with a throwaway `OPENCHQ_WEB_DATA`; never `~/.local/share/openchq`.
+- SQLite returns `database is locked` on the CIFS share, so accounts never live in the repo
+  tree. Local default: `~/.local/share/openchq`. On Railway: the `/data` volume.
+- Cap 40 iterations. At the cap the loop reports `CAP` and stops; raise `cap` in the graph
+  file deliberately, in its own commit, if more passes are wanted.
+- When every node is `done` the loop reports `COMPLETE` and stops. `drop_godot` is last and
+  deletes the Godot tree from `web` only.
 
-The game is the browser game in /mnt/nas/projects/OpenCHQ on branch web. Read docs/WEB_LOOP.md and docs/web-loop.graph.json. Do not start Godot.
+## If something is wrong
 
-Pick the single ready graph node with the smallest order. Implement only that node. Extend web/test/run.mjs. Run node web/test/run.mjs. Require WEB_OK. Mark that node done only after WEB_OK. Stop. Do not commit. Do not push. Do not use port 8787. Do not spend the user's real account database.
-```
+- Red twice on the same node: the fire reports the failing line and leaves the node `todo`.
+  A third pass on the same node with no new information is a defect — change approach or
+  escalate, do not re-run the same attempt.
+- Push fails: the commit stands locally, `LOOP_PUSH_FAILED` is printed, the deploy is marked
+  failed, and the next green fire pushes both commits.
+- Deploy fails: `LOOP_DEPLOY_FAILED` with the tail of the Railway output. The commit still
+  stands; hosting catches up on the next green fire.
+- Stale claim (`CLAIMED_ALREADY`): the previous fire died mid-pass. Inspect the working tree
+  and the node's test, then either finish it or `node tools/loopctl.mjs fail <id> "reason"`.
+
+## Closing block
+
+When the graph is complete, report: nodes done, files changed since the first fire, the last
+`WEB_OK`, and the live URL. Then the loop is finished and the host job should be paused.

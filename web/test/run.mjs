@@ -157,6 +157,43 @@ async function main() {
   await startServer(port);
   const base = "http://127.0.0.1:" + port;
 
+  const boardRes = await fetch(base + "/api/board");
+  if (boardRes.status !== 200) fail("board status " + boardRes.status);
+  const boardText = await boardRes.text();
+  const board = JSON.parse(boardText);
+  if (board.source !== "extract") {
+    fail("board needs the local extract beside this project; got source " + board.source);
+  }
+  if (board.width !== 320 || board.height !== 136) fail("board size " + board.width + "x" + board.height);
+  if (board.stride !== 162) fail("board stride " + board.stride);
+  if (!Array.isArray(board.cells)) fail("board cells missing");
+  if (board.cells.length !== 320 * 136) fail("board cell count " + board.cells.length);
+  for (let i = 0; i < board.cells.length; i++) {
+    const id = board.cells[i];
+    if (!Number.isInteger(id) || id < 0 || id > 15) fail("cell " + i + " is " + JSON.stringify(id));
+  }
+  if (!Array.isArray(board.terrain) || board.terrain.length !== 16) fail("terrain table " + JSON.stringify(board.terrain));
+  if (board.terrain[0] !== "ocean" || board.terrain[14] !== "wasteland" || board.terrain[15] !== "facility") {
+    fail("terrain names moved: " + JSON.stringify(board.terrain));
+  }
+  const blue = board.capitals && board.capitals.blue;
+  const red = board.capitals && board.capitals.red;
+  if (!blue || !red) fail("board capitals missing " + JSON.stringify(board.capitals));
+  if (blue.name !== "Washington" || blue.x !== 79 || blue.y !== 44) fail("blue capital " + JSON.stringify(blue));
+  if (red.name !== "Moscow" || red.x !== 183 || red.y !== 25) fail("red capital " + JSON.stringify(red));
+  const sites = Array.isArray(board.sites) ? board.sites : [];
+  const named = (name) => sites.find((site) => site.name === name);
+  if (!named("Washington") || named("Washington").kind !== "capital") fail("Washington is not a capital site");
+  if (!named("Moscow") || named("Moscow").kind !== "capital") fail("Moscow is not a capital site");
+  if (sites.filter((site) => site.kind === "capital").length !== 2) fail("capital count " + sites.filter((s) => s.kind === "capital").length);
+  const capIndex = (x, y) => y * 320 + x;
+  if (board.cells[capIndex(79, 44)] !== 4) fail("Washington cell id " + board.cells[capIndex(79, 44)]);
+  if (board.cells[capIndex(183, 25)] !== 4) fail("Moscow cell id " + board.cells[capIndex(183, 25)]);
+  const forbidden = ["WORLD_MAP", ".png", ".PNG", ".exe", ".EXE", "stills", "unpacked", "base64", "iVBOR", "/mnt/nas"];
+  for (const token of forbidden) {
+    if (boardText.includes(token)) fail("board payload leaks " + token);
+  }
+
   const shortPass = await post(base, "/api/register", { username: "Ada", password: "short" });
   if (shortPass.status !== 400) fail("short password was accepted");
 

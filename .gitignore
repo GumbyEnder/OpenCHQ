@@ -11,3 +11,6 @@ export/
 *.tmp
 
 .DS_Store
+
+# Railway CLI link state
+.railway/

@@ -57,9 +57,12 @@ Six nodes are done: `accounts`, `lobby`, `bot_room`, `human_room`, `clock`, `har
 
 ## How to take the next step
 
-Do `board_data` and nothing after it in the same turn.
+The loop is hands-free as of 2026-11-06. A scheduled Hermes job in the `game` profile fires
+`docs/WEB_LOOP.md` on a timer; nobody pastes a fire and the fire commits, pushes and deploys
+on green. `board_data` (order 70) is done. The next ready node is `board_paint`.
 
-1. Work only in `/mnt/nas/projects/OpenCHQ` on branch `web`.
+1. Work only in `/mnt/nas/projects/OpenCHQ` on branch `web`. Claim the node with
+   `node tools/loopctl.mjs next` and finish the pass with `bash tools/fire.sh`.
 2. Read the extract the way the desktop archive did: `OPENCHQ_DATA`, then `local/data_root.txt`, then `data/`. On this machine `local/data_root.txt` points at the extract beside the old research tree. That folder is gitignored.
 3. Load `data/tmap.bin` as 320 by 136 nibbles with row stride 162, and `data/sites.json`.
 4. Add `GET /api/board`. Return width, height, cell ids, and sites. Washington and Moscow are the capitals.
@@ -68,9 +71,11 @@ Do `board_data` and nothing after it in the same turn.
 7. Run `node web/test/run.mjs`. Require the line `WEB_OK` and exit 0. The test binds `127.0.0.1` on a free port and sets `OPENCHQ_WEB_DATA` to a temporary directory.
 8. Mark `board_data` as `done` in `docs/web-loop.graph.json` only after that run. If the run fails, leave the node `todo`.
 
-The loop prompt tells a fire not to commit and not to push. This repository's last human instruction was to commit the checkpoint. Ask before the next commit or push. Do not push `main`. Do not force-push.
-
-If you are running the pasted `OPENCHQ_WEB_LOOP` fire, also read `/tmp/openchq-web-iteration`, add 1, and stop above 40. Do not touch `/tmp/openchq-polish-iteration`. Do not create a scheduler.
+A green pass is committed, pushed and deployed by `tools/fire.sh`; that is the standing rule now,
+not a per-session permission. Commit only on `web`, never on `main`, never force-push.
+The iteration counter moved into the repo at `docs/loop-state.json` (cap 40); the old
+`/tmp/openchq-web-iteration` file is retired and `/tmp/openchq-polish-iteration` is not touched.
+The scheduler exists by design now — see `docs/WEB_LOOP.md`.
 
 ## Rules the port must keep
 

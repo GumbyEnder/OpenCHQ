@@ -1,0 +1,13 @@
+{
+  "name": "openchq",
+  "private": true,
+  "type": "module",
+  "description": "Deploy target for the OpenCHQ browser game. The app itself lives in web/ and has no dependencies.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node web/server/main.mjs",
+    "test": "node web/test/run.mjs"
+  }
+}
