@@ -3,7 +3,7 @@ import { deleteRoom, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
 import { tickMatch } from "./tick.mjs";
 import { forSeat } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
-import { boardPayload } from "./board.mjs";
+import { matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { issueOrder } from "./move.mjs";
 
@@ -39,10 +39,11 @@ export function createLobby() {
   const rooms = new Map();
   const seatOf = new Map();
 
-  // The asset list the economy needs. Missing extract -> no sites, which is the hosted case.
-  function sitesForMatch() {
+  // The site list a match plays on: cities and capitals from the asset list, docks from the
+  // painted terrain, wells from the oil layer. Missing extract -> no sites, the hosted case.
+  function sitesForMatch(era) {
     try {
-      return boardPayload().sites || [];
+      return matchSites(era);
     } catch {
       return [];
     }
@@ -55,7 +56,7 @@ export function createLobby() {
     // A stored room from before the match module has seats but no match. Open one for its
     // era so an old row still shows its side's opening pieces.
     if (!room.match) {
-      room.match = openMatch(room.era, sitesForMatch());
+      room.match = openMatch(room.era, sitesForMatch(room.era));
       saveRoom(room);
     }
     stampSeats(room);
@@ -186,7 +187,7 @@ export function createLobby() {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
       },
-      match: openMatch(eraOf(era), sitesForMatch()),
+      match: openMatch(eraOf(era), sitesForMatch(eraOf(era))),
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
@@ -240,7 +241,7 @@ export function createLobby() {
       clock: "held",
       note: "Clock held. The board is waiting for orders.",
       seats: { blue: null, red: null },
-      match: openMatch(inviteRow.era, sitesForMatch()),
+      match: openMatch(inviteRow.era, sitesForMatch(inviteRow.era)),
     };
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
     room.seats[other] = { username, kind: "human" };

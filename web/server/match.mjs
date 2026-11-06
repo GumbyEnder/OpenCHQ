@@ -65,7 +65,18 @@ export function openMatch(era, sites = []) {
       red: { x: SEATS.red.x, y: SEATS.red.y },
     },
     sides: { blue: sideState(year), red: sideState(year) },
-    sites: sites.map((site) => ({ id: site.id, name: site.name, x: site.x, y: site.y, kind: site.kind, owner: null })),
+    sites: sites.map((site) => ({
+      id: site.id,
+      name: site.name,
+      x: site.x,
+      y: site.y,
+      kind: site.kind,
+      owner: null,
+      // A dock or a well carries the country or region the asset list named, so ownership
+      // seeds from the board rather than from a guess.
+      ...(site.country_id === undefined ? {} : { country_id: site.country_id }),
+      ...(site.region === undefined ? {} : { region: site.region }),
+    })),
     foughtRound: -1,
     winner: null,
     over: false,

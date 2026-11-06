@@ -123,6 +123,117 @@ function sortedSites(sites) {
   return [...sites].sort((a, b) => Number(a.id ?? 0) - Number(b.id ?? 0));
 }
 
+// The extract's oil layer. Only what the list actually says travels: the id, the name, the
+// map position and the region. Its production rating is never copied, because no browser
+// rule reads it and the panel says "Rate unknown."
+function oilWells(root) {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path.join(root, "data", "resources_oil.json"), "utf8"));
+  } catch {
+    return [];
+  }
+  const fields = Array.isArray(parsed) ? parsed : Array.isArray(parsed.fields) ? parsed.fields : [];
+  const out = [];
+  for (const field of fields) {
+    if (!field) continue;
+    const x = Number(field.map_x);
+    const y = Number(field.map_y);
+    if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
+    if (x < 0 || x >= CELL_W || y < 0 || y >= CELL_H) continue;
+    out.push({
+      id: String(field.id ?? `${x}:${y}`),
+      name: field.name ?? null,
+      x,
+      y,
+      kind: field.kind ?? "oilfield",
+      region: field.region ?? null,
+      era_min: Number.isFinite(Number(field.era_min)) ? Number(field.era_min) : 0,
+    });
+  }
+  return out;
+}
+
+// A cell's own neighbour site, so a painted dock inherits the country of the port it serves.
+function neighbourSite(sites, x, y) {
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const ny = y + dy;
+      if (ny < 0 || ny >= CELL_H) continue;
+      const nx = ((x + dx) % CELL_W + CELL_W) % CELL_W;
+      const hit = sites.find((site) => Number(site.x) === nx && Number(site.y) === ny);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+// The full site list a match plays on: the asset list's cities, capitals and facilities,
+// every docks cell the terrain painter laid down (id 1), and the oil fields the resource
+// list places on this board. A dock takes its port's country; a well keeps the region the
+// oil list names. Unknown kinds pass through untouched. Ids stay stable per cell.
+export function matchSites(era = "1986", board = boardPayload()) {
+  if (!board || board.source !== "extract" || !Array.isArray(board.sites)) return [];
+  const base = board.sites.map((site) => ({
+    id: site.id,
+    name: site.name,
+    x: site.x,
+    y: site.y,
+    kind: site.kind,
+    country_id: site.country_id,
+  }));
+
+  const docks = [];
+  if (Array.isArray(board.cells)) {
+    for (let y = 0; y < CELL_H; y++) {
+      for (let x = 0; x < CELL_W; x++) {
+        if (board.cells[y * CELL_W + x] !== 1) continue;
+        const port = neighbourSite(base, x, y);
+        docks.push({
+          id: `dock:${x}:${y}`,
+          name: `Dock ${x},${y}`,
+          x,
+          y,
+          kind: "dock",
+          country_id: port ? port.country_id : null,
+        });
+      }
+    }
+  }
+
+  const year = Number(era);
+  const limit = Number.isFinite(year) ? year : Number.POSITIVE_INFINITY;
+  const wells = [];
+  const at = new Map();
+  for (const field of Array.isArray(board.wells) ? board.wells : []) {
+    if (!field) continue;
+    if (Number(field.era_min) > limit) continue;
+    const key = `${field.x}:${field.y}`;
+    const seen = at.get(key);
+    // Two names for one field: the later discovery wins and the old name is dropped, so one
+    // cell never carries two wells.
+    if (seen) {
+      if (Number(field.era_min) > Number(seen.era_min)) {
+        wells[wells.indexOf(seen)] = field;
+        at.set(key, field);
+      }
+      continue;
+    }
+    at.set(key, field);
+    wells.push(field);
+  }
+
+  return [...base, ...docks, ...wells.map((field) => ({
+    id: field.id,
+    name: field.name,
+    x: field.x,
+    y: field.y,
+    kind: field.kind,
+    region: field.region,
+  }))];
+}
+
 // Paints site centers, and neighbors for a site that also covers its block.
 // A water neighbor becomes docks, any other neighbor becomes city.
 function paintSites(grid, sites) {
@@ -182,6 +293,7 @@ export function boardPayload(env = process.env) {
       stride: ROW_STRIDE,
       cells: null,
       sites: [],
+      wells: [],
       capitals: { blue: { ...SEATS.blue }, red: { ...SEATS.red } },
       terrain: TERRAIN,
       paint: "schematic",
@@ -195,6 +307,7 @@ export function boardPayload(env = process.env) {
   }
   const parsed = JSON.parse(readFileSync(path.join(root, "data", "sites.json"), "utf8"));
   const sites = Array.isArray(parsed) ? parsed : Array.isArray(parsed.sites) ? parsed.sites : [];
+  const wells = oilWells(root);
   const { grid, paint, counts } = buildGrid(rawBytes, sites);
   const cells = new Array(CELL_W * CELL_H);
   for (let y = 0; y < CELL_H; y++) {
@@ -225,6 +338,7 @@ export function boardPayload(env = process.env) {
       country_id: place.country_id,
       kind: place.kind,
     })),
+    wells,
     capitals,
     terrain: TERRAIN,
     paint,
