@@ -44,11 +44,21 @@ const { db } = await import("../web/server/db.mjs");
 // The server's durability window for a 0.14 s round.
 const WINDOW = flushWindow(ROUND_SECONDS);
 
-function timePass(fn, iterations) {
+// A single pass on a shared NAS host measures the machine's mood as much as the code: the same
+// tick read 9.6x and 11.3x headroom within an hour. Take the median of several passes so a
+// build or a browser in another shell does not turn a passing bench red.
+function once(fn, iterations) {
   fn(0); // warm
   const t0 = process.hrtime.bigint();
   for (let i = 0; i < iterations; i++) fn(i);
   return Number(process.hrtime.bigint() - t0) / 1e6 / iterations;
+}
+
+function timePass(fn, iterations, passes = 5) {
+  const samples = [];
+  for (let p = 0; p < passes; p++) samples.push(once(fn, iterations));
+  samples.sort((a, b) => a - b);
+  return samples[Math.floor(samples.length / 2)];
 }
 
 // The board's own sites, so site scans (income, fuel, capitals) cost what they cost in a
