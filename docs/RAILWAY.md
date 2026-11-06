@@ -118,10 +118,21 @@ local mount — it would not be safe on the CIFS share.
 ### Room persistence (added 2026-11-06)
 
 A game is a row. `web/server/rooms.mjs` writes `rooms(id, mode, era, clock, note, state,
-created_at, saved_at)` on create and on every clock change, deletes only when a room really
-ends, and restores every stored room **paused** at boot with its humans seated again. Idle
-rooms older than 24 h are pruned at boot. A restart never resumes a clock — the server owns
-the clock, and a fresh process must not run rounds nobody asked for.
+created_at, saved_at)` on create and on every player action (order, run, hold, leave, a win),
+deletes only when a room really ends, and restores every stored room **paused** at boot with
+its humans seated again. Idle rooms older than 24 h are pruned at boot. A restart never
+resumes a clock — the server owns the clock, and a fresh process must not run rounds nobody
+asked for.
+
+A running round marks its room dirty and the store takes a slice of the dirty rooms each
+round (`rooms.flushRooms`), inside one transaction. The slice is sized so no room waits more
+than `FLUSH_SECONDS` (2 s) of rounds: at a 5 s round every dirty room is written each round,
+at 0.14 s it is about a fifteenth per round. Player actions are still saved immediately.
+
+The row does not repeat the board's static site table — only which side owns which site and
+which site is unready; the full site list is rebuilt from `board.mjs` on load. Routes are
+stored in full. A round-trip probe in `tools/bench-rooms.mjs` restores a room and compares
+every route step and site owner.
 
 Proved in the harness by killing the server mid-game and booting it again on the same data
 directory: the room id, the seat and a `held` clock all come back. Removing the store write
@@ -129,18 +140,23 @@ makes that assertion fail, so the proof is not vacuous.
 
 ### Scale probe (tools/bench-rooms.mjs, this host, one core)
 
+These are the numbers after the store was measured honestly: real `tickMatch`, real
+`saveRoom`, board sites, and routes of 60 steps per land piece.
+
 | Measure, 1000 rooms x 8 pieces | Cost | Budget (0.14 s round) | Headroom |
 | --- | --- | --- | --- |
-| tick pass, all rooms | 0.15 ms | 140 ms | ~920x |
-| snapshot all rooms, one transaction | 1.65 ms | 140 ms | ~85x |
-| snapshot all rooms, one transaction each | 3.23 ms | 140 ms | ~43x |
-| 2000 seat views built + JSON | 7.1 ms (2.6 MB) | 140 ms | ~20x |
-| 5000 rooms: tick / snapshot | 0.59 / 9.24 ms | 140 ms | ~236x / ~15x |
+| tick pass, all rooms | 4.3 ms | 140 ms | ~33x |
+| round passed (tick + store slice, 1/15 of dirty rooms) | 7.2 ms | 140 ms | ~19x |
+| full snapshot, every room in one transaction (pause/shutdown, not a round) | 25–37 ms | 140 ms | ~4–5x |
+| held pass, 1000 held rooms | 0.04 ms, 0 writes, 0 rows changed | — | — |
 
-Read: the database is not the bottleneck at 1000 concurrent games. The expensive part is
-sending a full view to every seat every round (~2.6 MB per round, ~18 MB/s at 2000 players),
-so the scale work that matters later is view deltas, not a bigger database. Idle games cost
-nothing because a held room does not tick or write.
+The earlier table (0.15 ms tick, 1.65 ms snapshot) was measured against a stand-in bench
+whose tick had already drained every route before the snapshot, so it stored empty rooms.
+With real routes and the real store, writing every running room every round is 3–5x the
+budget, not 85x. That is why the round's store work is a slice with a bounded durability
+window instead of a full write: the tick has 33x headroom, and the round including its store
+work has 19x. The one-off full snapshot is not on the round path; it happens when the clock
+stops.
 
 ### Why not Postgres yet
 

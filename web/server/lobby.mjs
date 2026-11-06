@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { deleteRoom, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
+import { deleteRoom, flushRooms, flushWindow, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
 import { tickMatch } from "./tick.mjs";
 import { forSeat } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { issueOrder } from "./move.mjs";
+import { roundSeconds } from "./rules.mjs";
 
 function sideOf(value) {
   return value === "red" ? "red" : "blue";
@@ -298,8 +299,11 @@ export function createLobby() {
   }
 
   // The server owns the clock. main.mjs calls this once per configured round; every room whose
-  // clock is running advances exactly one round and is stored. A held or finished room is not
-  // touched, so an unwatched game costs nothing.
+  // clock is running advances exactly one round and is marked dirty. The store takes a slice
+  // of the dirty rooms each round (rooms.flushRooms), so 1000 running rooms are all durable
+  // within a few rounds without any single round paying for all of them. A held, finished or
+  // unwatched room costs nothing.
+  let flushCursor = 0;
   function tickRooms() {
     const events = [];
     for (const room of rooms.values()) {
@@ -318,13 +322,14 @@ export function createLobby() {
       }
       const result = tickMatch(room.match);
       room.match = result.match;
-      saveRoom(room);
+      room.dirty = true;
       tellRoom(room);
       if (result.events && result.events.length) events.push({ roomId: room.id, events: result.events });
       if (room.match.over) {
         room.clock = "held";
         room.note = "The match is over.";
         saveRoom(room);
+        room.dirty = false;
         tellRoom(room);
         const winner = room.match.winner;
         for (const seat of [room.seats.blue, room.seats.red]) {
@@ -334,6 +339,10 @@ export function createLobby() {
         }
       }
     }
+    // The round's store work is one bounded slice, not every room that moved. The window is
+    // a couple of seconds of rounds, so a 5 s round writes everything and a 0.14 s round
+    // writes a slice; no room waits longer than that to be durable.
+    flushCursor = flushRooms([...rooms.values()], flushCursor, flushWindow(roundSeconds())).cursor;
     return events;
   }
 

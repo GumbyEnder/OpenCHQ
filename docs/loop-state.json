@@ -1,10 +1,10 @@
 {
-  "iteration": 4,
+  "iteration": 5,
   "cap": 40,
   "current": null,
-  "lastNodeId": "site_assets",
+  "lastNodeId": "load_test",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-06T20:12:37.762Z",
+  "lastRunAt": "2026-11-06T21:05:31.161Z",
   "history": [
     {
       "node": "board_paint",
@@ -29,6 +29,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-06T20:12:37.762Z"
+    },
+    {
+      "node": "load_test",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-06T21:05:31.161Z"
     }
   ]
 }

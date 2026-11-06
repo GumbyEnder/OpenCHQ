@@ -233,7 +233,7 @@
     {
       "id": "site_assets",
       "order": 195,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "oil",
         "pieces"
@@ -281,7 +281,7 @@
     {
       "id": "load_test",
       "order": 215,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "tick",
         "room_store"
