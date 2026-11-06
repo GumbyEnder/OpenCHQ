@@ -1,0 +1,216 @@
+{
+  "name": "OPENCHQ_WEB_LOOP",
+  "branch": "web",
+  "cap": 40,
+  "pass_token": "WEB_OK",
+  "test": "node web/test/run.mjs",
+  "nodes": [
+    {
+      "id": "accounts",
+      "order": 10,
+      "status": "done",
+      "depends": [],
+      "title": "Register and sign in",
+      "work": "Already in web/server. Hashed passwords, cookie sessions, ~/.local/share/openchq or OPENCHQ_WEB_DATA.",
+      "prove": "Covered by the harness node."
+    },
+    {
+      "id": "lobby",
+      "order": 20,
+      "status": "done",
+      "depends": ["accounts"],
+      "title": "Online lobby",
+      "work": "Already in web/server. Signed-in sockets see who is online.",
+      "prove": "Covered by the harness node."
+    },
+    {
+      "id": "bot_room",
+      "order": 30,
+      "status": "done",
+      "depends": ["accounts"],
+      "title": "Bot room",
+      "work": "Already in web/server. Play a bot opens one room. The player sits on the chosen side. The other seat is Bot.",
+      "prove": "Covered by the harness node."
+    },
+    {
+      "id": "human_room",
+      "order": 40,
+      "status": "done",
+      "depends": ["lobby"],
+      "title": "Human room",
+      "work": "Already in web/server. Invite, decline, and accept. Accept opens one room with two human seats.",
+      "prove": "Covered by the harness node."
+    },
+    {
+      "id": "clock",
+      "order": 50,
+      "status": "done",
+      "depends": ["bot_room", "human_room"],
+      "title": "Shared clock flag",
+      "work": "Already in web/server. Hold and Run are visible to every seat in the room. Pieces do not move yet.",
+      "prove": "Covered by the harness node."
+    },
+    {
+      "id": "harness",
+      "order": 60,
+      "status": "done",
+      "depends": ["clock"],
+      "title": "Lock the scaffold with WEB_OK",
+      "work": "Add web/test/run.mjs. It starts the server on 127.0.0.1 with a temporary OPENCHQ_WEB_DATA and a free port. It must not use port 8787. It registers two users, rejects a short password, rejects a wrong password, rejects a duplicate name, opens a bot room, runs and holds the clock, leaves, invites, declines, accepts, and sees the room end when the other socket closes. A socket with no cookie gets HTTP 401. The process prints WEB_OK and exits 0. It kills only the server it started.",
+      "prove": "node web/test/run.mjs prints WEB_OK."
+    },
+    {
+      "id": "board_data",
+      "order": 70,
+      "status": "todo",
+      "depends": ["harness"],
+      "title": "Terrain and sites on the server",
+      "work": "Read the extract the way the desktop archive did: OPENCHQ_DATA, then local/data_root.txt, then data/. Load data/tmap.bin as 320 by 136 nibbles with row stride 162, and data/sites.json. GET /api/board returns width, height, cell ids, and sites. Washington and Moscow are the capitals. The JSON has no image bytes and no path to WORLD_MAP.png, the stills, or the unpacked executable.",
+      "prove": "The harness requests /api/board and requires 320 by 136, both capitals, and no forbidden payload. WEB_OK."
+    },
+    {
+      "id": "board_paint",
+      "order": 80,
+      "status": "todo",
+      "depends": ["board_data"],
+      "title": "Paint the cell grid in the page",
+      "work": "The match canvas draws cell ids from /api/board. Ocean, shallows, land, city, and capital are distinct colors. The schematic remains only when the extract is missing, and the page says the extract is missing. Do not draw the original picture.",
+      "prove": "A pure painter test checks the color of ocean, shallows, city, and capital. The harness still prints WEB_OK."
+    },
+    {
+      "id": "pieces",
+      "order": 90,
+      "status": "todo",
+      "depends": ["board_paint"],
+      "title": "Opening pieces",
+      "work": "A match module in JavaScript places Blue at Washington and Red at Moscow, plus one ship each, for 1918, 1942, 1986, and the concealed era. 2023 places no pieces. Creating a bot or human room attaches this match. The room view includes the caller's pieces.",
+      "prove": "The harness opens a 1986 bot room and sees four pieces, then a 2023 bot room and sees none. WEB_OK."
+    },
+    {
+      "id": "tick",
+      "order": 100,
+      "status": "todo",
+      "depends": ["pieces"],
+      "title": "Server tick",
+      "work": "The server advances a running room one round at a time. Tests call the tick function directly and do not sleep. A held clock does not move pieces. One running round is the same 0.14 second live interval, and tests do not wait that interval.",
+      "prove": "The harness holds a room for five direct ticks and sees no movement, then runs it for one tick. WEB_OK."
+    },
+    {
+      "id": "orders",
+      "order": 110,
+      "status": "todo",
+      "depends": ["tick"],
+      "title": "Land orders",
+      "work": "A seat orders its own land piece to a cell. The piece walks one cell per running round. X wraps. Y does not. Wasteland is refused. Ocean and lake are transport. Forest, mountain, polar, jungle, and shallows take longer than open ground. The pace ratio stays unnamed.",
+      "prove": "The harness orders the Blue army one open step and sees that cell after one running tick. A wasteland order is refused. WEB_OK."
+    },
+    {
+      "id": "lanes",
+      "order": 120,
+      "status": "todo",
+      "depends": ["orders"],
+      "title": "Sea lanes",
+      "work": "Ships move on the lane graph. The server may read the unpacked executable on the machine that hosts the server and cache waypoints it computed. The browser never receives that file. A land piece ordered from sea to sea follows the lanes. A land-to-land order stays on land.",
+      "prove": "The harness sails the Blue ship one lane step and checks the land-to-land order did not become a sea route. WEB_OK."
+    },
+    {
+      "id": "bot",
+      "order": 130,
+      "status": "todo",
+      "depends": ["lanes"],
+      "title": "Bot seat",
+      "work": "In a bot room the empty seat marches its army toward the player's capital and sails its ship once when the path is empty. It does not repath the ship every round.",
+      "prove": "The harness runs a bot room and sees the bot army take a path toward the player capital and the bot ship take one path. WEB_OK."
+    },
+    {
+      "id": "human_orders",
+      "order": 140,
+      "status": "todo",
+      "depends": ["orders"],
+      "title": "Two human seats",
+      "work": "In a human room neither seat is given bot orders. Each socket may order only its own side. A forged side is refused.",
+      "prove": "The harness accepts an invite, orders each side, and proves a forged side does not move the other army. WEB_OK."
+    },
+    {
+      "id": "combat",
+      "order": 150,
+      "status": "todo",
+      "depends": ["tick"],
+      "title": "Stop short and fight",
+      "work": "Two pieces never stop on the same cell. They stop one cell short. A shot happens every other round of one continuous fight. No damage number is stored or shown. Removal waits until a later measured hit count. Do not invent that count in this node.",
+      "prove": "The harness places two hostile armies on adjacent cells, ticks, and sees them still on those cells with a shot note that has no digit. WEB_OK."
+    },
+    {
+      "id": "sight",
+      "order": 160,
+      "status": "todo",
+      "depends": ["bot", "human_orders"],
+      "title": "Per-seat view",
+      "work": "A seat sees its own pieces, enemy pieces within Chebyshev 8 with X wrapping, and only the first three steps of an enemy route. A still submarine is omitted. In the concealed era the other side is omitted until its capital is found. Hidden pieces are absent from the JSON.",
+      "prove": "The harness puts an enemy army 9 cells away and asserts it is missing from the view, then moves it to 8 cells and asserts it is present. WEB_OK."
+    },
+    {
+      "id": "buy",
+      "order": 170,
+      "status": "todo",
+      "depends": ["pieces"],
+      "title": "Buying",
+      "work": "Land and aircraft buy on a friendly city. Ships buy on a friendly dock. Before the clock has ever run, the purchase does not spend the pool. After the match is running, it spends the stand-in price and marks that city unready with no duration. Infantry is 1 billion. A tank is 2. Ships, submarines, and aircraft are 2. A nuke is refused. Two pieces cannot share a cell.",
+      "prove": "The harness buys a tank after the clock has run and sees the pool fall by 2, then sees a nuke refused. WEB_OK."
+    },
+    {
+      "id": "oil",
+      "order": 180,
+      "status": "todo",
+      "depends": ["pieces", "tick"],
+      "title": "Oil ownership",
+      "work": "Wells start with the country they are in. USA is Blue. Russia matches USSR and is Red. Any other named region stays that name. A unit standing on a well captures it. Do not copy production ratings. The well rate stays unknown.",
+      "prove": "The harness steps a Blue unit onto a Red well and sees the owner become Blue. The payload does not contain the word production. WEB_OK."
+    },
+    {
+      "id": "income",
+      "order": 190,
+      "status": "todo",
+      "depends": ["oil", "tick"],
+      "title": "Income into the pool",
+      "work": "City income is one billion per city held. Oil income is one billion per well the side holds. On rounds 25, 50, 75, and so on, add both levels to that side's pool. Capitals are not cities. A shortage does not pay. A finished match does not keep paying.",
+      "prove": "The harness ticks to round 25 with a known city count and well count and checks the pool. Round 24 does not pay. WEB_OK."
+    },
+    {
+      "id": "fuel",
+      "order": 200,
+      "status": "todo",
+      "depends": ["oil", "tick"],
+      "title": "Fuel per side",
+      "work": "Each side has its own reserve, starting at 10000 and burning 1 on each running round that side has no unit on a well. Zero stops that side only. The other side still moves, buys, and collects income. Standing on any well refills that side's reserve.",
+      "prove": "The harness sets Blue's reserve to 1, ticks once, and sees Blue stopped while Red still moves. WEB_OK."
+    },
+    {
+      "id": "win",
+      "order": 210,
+      "status": "todo",
+      "depends": ["tick", "pieces"],
+      "title": "Hold both capitals",
+      "work": "The match ends when one side owns both capitals. Further ticks do not move pieces, pay income, or burn fuel. The room tells both seats who won.",
+      "prove": "The harness gives one side both capitals, ticks, and sees the winner and a frozen board on the next tick. WEB_OK."
+    },
+    {
+      "id": "reconnect",
+      "order": 220,
+      "status": "todo",
+      "depends": ["sight", "human_orders"],
+      "title": "Reconnect",
+      "work": "A dropped socket does not delete the room immediately. The same account can open a new socket and receive a fresh view of its seat. The other seat keeps its path.",
+      "prove": "The harness closes one socket, connects again as the same user, and sees the same room id and its own pieces. WEB_OK."
+    },
+    {
+      "id": "drop_godot",
+      "order": 230,
+      "status": "todo",
+      "depends": ["win", "buy", "oil", "income", "fuel", "sight", "combat", "lanes", "bot"],
+      "title": "Remove the Godot tree from this branch",
+      "work": "Delete the Godot project files from the web branch only after every dependency is done and WEB_OK still passes. Do not delete the desktop-godot branch. Do not touch github main.",
+      "prove": "The harness still prints WEB_OK. project.godot is gone on this branch. origin/desktop-godot still exists."
+    }
+  ]
+}
