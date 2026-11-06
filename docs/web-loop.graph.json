@@ -306,7 +306,7 @@
     {
       "id": "drop_godot",
       "order": 230,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "win",
         "buy",
