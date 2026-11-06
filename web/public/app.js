@@ -1,4 +1,7 @@
-import { capitalMarkers, fitViewport, legendEntries, paintMatch, statusLine } from "./render.mjs";
+import {
+  capitalMarkers, centerOn, clampZoom, fitViewport, legendEntries, paintMatch, panBy,
+  rememberSeen, sightTable, statusLine, zoomAt,
+} from "./render.mjs";
 import {
   PICK_HINT,
   ackText,
@@ -70,10 +73,33 @@ function send(message) {
   socket.send(JSON.stringify(message));
 }
 
-// Canvas is sized to whole cells: 320x136 at scale 2 is 640x272.
+// Canvas is sized to whole cells: 320x136 at scale 2 is 640x272. The camera zooms and pans on
+// top of that fit; it starts at the fit and follows the selected piece.
+let camera = null;
+let fogSeen = null;
+let fogKey = "";
+
 function viewForCanvas() {
   const canvas = board;
-  return fitViewport(canvas.width, canvas.height, boardPayload.width || 320, boardPayload.height || 136);
+  const fit = fitViewport(canvas.width, canvas.height, boardPayload.width || 320, boardPayload.height || 136);
+  if (!camera) camera = { ...fit, scale: clampZoom(fit.scale * 2) };
+  return camera;
+}
+
+// The sight table is rebuilt when the round or the seat's own pieces change, and the memory of
+// what has been seen accumulates across rounds.
+function fogFor(view) {
+  if (!room || !Array.isArray(room.pieces)) return null;
+  const sight = Number(boardPayload.sightCells || 8);
+  const key = String(room.round) + "|" + room.pieces.map((piece) => piece.id + piece.x + "," + piece.y).join(";");
+  if (key !== fogKey) {
+    fogKey = key;
+    const lit = sightTable(boardPayload, room.pieces.filter((piece) => piece.side === room.you), sight);
+    fogSeen = rememberSeen(fogSeen, lit);
+    fogKey = key;
+    fogFor.lit = lit;
+  }
+  return { lit: fogFor.lit, seen: fogSeen };
 }
 
 function renderLegend() {
@@ -102,10 +128,14 @@ function renderLegend() {
 // only ever the ones the server put in `room.pieces`; nothing is inferred.
 function drawMatch() {
   const ctx = board.getContext("2d");
+  const view = viewForCanvas();
   const result = paintMatch(ctx, boardPayload, room, {
-    view: viewForCanvas(),
+    view,
     own: room && room.you,
     preview,
+    fog: fogFor(view),
+    sight: Number(boardPayload.sightCells || 8),
+    sightAt: selected,
   });
   boardNote.textContent = previewLine(preview) || statusLine(boardPayload, room, result);
   renderLegend();
@@ -115,6 +145,8 @@ function clearCommand() {
   selected = null;
   preview = null;
   hoverKey = "";
+  fogSeen = null;
+  fogKey = "";
   drawMatch();
 }
 
@@ -137,6 +169,7 @@ board.addEventListener("click", (event) => {
     selected = mine;
     preview = null;
     hoverKey = mine.id + ":" + mine.x + "," + mine.y;
+    camera = centerOn(mine, viewForCanvas());
     say(PICK_HINT + " Then pick a destination.");
     drawMatch();
     return;
@@ -158,6 +191,51 @@ board.addEventListener("mouseleave", () => {
   if (!preview) return;
   preview = null;
   hoverKey = "";
+  drawMatch();
+});
+
+// --- camera: wheel zooms about the cursor, right-drag pans, arrows nudge -------------------
+// At 2x a piece is about four pixels, so the board is unreadable without this. Zoom is whole
+// cells and the X pan may run past the edge: the painter tiles the board across the seam.
+function screenPoint(event) {
+  const rect = board.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * (board.width / Math.max(1, rect.width)),
+    y: (event.clientY - rect.top) * (board.height / Math.max(1, rect.height)),
+  };
+}
+
+board.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  const at = screenPoint(event);
+  camera = zoomAt(viewForCanvas(), event.deltaY < 0 ? 1.25 : 0.8, at.x, at.y);
+  drawMatch();
+}, { passive: false });
+
+let panFrom = null;
+board.addEventListener("contextmenu", (event) => event.preventDefault());
+board.addEventListener("pointerdown", (event) => {
+  if (event.button !== 2) return;
+  event.preventDefault();
+  panFrom = { x: event.clientX, y: event.clientY };
+  board.setPointerCapture?.(event.pointerId);
+});
+board.addEventListener("pointermove", (event) => {
+  if (!panFrom) return;
+  camera = panBy(viewForCanvas(), event.clientX - panFrom.x, event.clientY - panFrom.y);
+  panFrom = { x: event.clientX, y: event.clientY };
+  drawMatch();
+});
+board.addEventListener("pointerup", () => {
+  panFrom = null;
+});
+window.addEventListener("keydown", (event) => {
+  const step = 8 * viewForCanvas().scale;
+  const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+  const move = moves[event.key];
+  if (!move) return;
+  event.preventDefault();
+  camera = panBy(viewForCanvas(), move[0], move[1]);
   drawMatch();
 });
 

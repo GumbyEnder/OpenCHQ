@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { sightCells } from "./rules.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -298,6 +299,9 @@ export function boardPayload(env = process.env) {
       terrain: TERRAIN,
       paint: "schematic",
       counts: { capitals: 0, docks: 0, cities: 0 },
+      // The sight radius travels with the board so the page draws the same rule the server
+      // applied instead of guessing a number.
+      sightCells: sightCells(),
     };
     return cached;
   }
@@ -343,6 +347,7 @@ export function boardPayload(env = process.env) {
     terrain: TERRAIN,
     paint,
     counts,
+    sightCells: sightCells(),
   };
   return cached;
 }

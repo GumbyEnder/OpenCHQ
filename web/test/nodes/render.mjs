@@ -18,6 +18,15 @@ import {
   pixelToCell,
   statusLine,
   tileLefts,
+  sightTable,
+  rememberSeen,
+  centerOn,
+  clampZoom,
+  panBy,
+  zoomAt,
+  paintFog,
+  MIN_ZOOM,
+  MAX_ZOOM,
   visibleColumns,
   visibleRows,
   wrapDelta,
@@ -257,6 +266,56 @@ export async function run(ctx) {
   ok(fail, "grid note names the extract", line.includes("map extract"));
   ok(fail, "grid note counts the pieces", line.includes("4 pieces"));
   ok(fail, "grid note shows the round", line.includes("round 0"));
+
+  // ---- fog: the sight rule must be drawable, not implied -------------------------------
+  // A cell table from the seat's own pieces, Chebyshev with the X wrap - the same rule the
+  // server applied when it decided which enemy pieces to send.
+  const fogBoard = { width: 320, height: 136, cells: null };
+  const lit = sightTable(fogBoard, [{ x: 79, y: 44 }], 8);
+  if (lit.length !== 320 * 136) fail("the sight table is not one entry per cell");
+  if (lit[44 * 320 + 79] !== 1) fail("a piece's own cell is not lit");
+  if (lit[44 * 320 + 87] !== 1) fail("a cell 8 away is not lit");
+  if (lit[44 * 320 + 88] !== 0) fail("a cell 9 away is lit, which breaks the radius");
+  if (lit[36 * 320 + 79] !== 1 || lit[35 * 320 + 79] !== 0) fail("the radius is not Chebyshev vertically");
+  if (lit[0 * 320 + 79] !== 0) fail("sight wrapped in Y, which it must not");
+  const seam = sightTable(fogBoard, [{ x: 0, y: 70 }], 8);
+  if (seam[70 * 320 + 319] !== 1) fail("sight does not wrap across the seam (319 is one step west of 0)");
+  if (seam[70 * 320 + 8] !== 1 || seam[70 * 320 + 9] !== 0) fail("the wrapped radius is the wrong size");
+
+  // Memory: what was once lit stays remembered; what was never lit stays unknown.
+  const fogSeen = rememberSeen(null, lit);
+  if (fogSeen[44 * 320 + 79] !== 1) fail("a lit cell was not remembered");
+  const later = sightTable(fogBoard, [{ x: 150, y: 44 }], 8);
+  const remembered = rememberSeen(fogSeen, later);
+  if (remembered[44 * 320 + 79] !== 1) fail("a remembered cell was forgotten");
+  if (remembered[44 * 320 + 150] !== 1) fail("the new sight did not enter memory");
+
+  // The two darkness levels are different: remembered ground is lighter than unknown ground.
+  const view = makeView({ scale: 4, viewW: 320 * 4, viewH: 136 * 4 });
+  const rec = recorder();
+  const fogged = paintFog(rec.ctx, view, later, remembered);
+  const styles = new Set(rec.fills.map((fill) => fill.color));
+  if (fogged <= 0) fail("nothing was fogged");
+  if (!styles.has("rgba(6, 12, 22, 0.45)")) fail("remembered ground is not drawn at its own level: " + [...styles].join(","));
+  if (!styles.has("rgba(4, 8, 15, 0.82)")) fail("unknown ground is not drawn at its own level");
+  if (styles.size < 2) fail("fog uses one level for everything, so memory is invisible");
+
+  // ---- camera: 2x is unreadable, so zoom is whole cells and pan may cross the seam -----
+  if (clampZoom(1) !== MIN_ZOOM) fail("the camera zoomed below the readable floor");
+  if (clampZoom(99) !== MAX_ZOOM) fail("the camera zoomed past its ceiling");
+  const fit = makeView({ scale: 2, left: 0, top: 0, viewW: 640, viewH: 272 });
+  const centred = centerOn({ x: 79, y: 44 }, fit);
+  if (centred.scale !== 2) fail("centring changed the zoom");
+  const worldX = centred.left + (79 + 0.5) * centred.scale;
+  if (Math.abs(worldX - centred.viewW / 2) > centred.scale) fail("the cell is not centred: " + worldX);
+  const zoomed = zoomAt(fit, 2, 100, 100);
+  if (zoomed.scale !== 4) fail("a zoom step did not double the scale: " + zoomed.scale);
+  const beforeX = (100 - fit.left) / fit.scale;
+  const afterX = (100 - zoomed.left) / zoomed.scale;
+  if (Math.abs(beforeX - afterX) > 0.51) fail("zoom did not keep the cell under the cursor");
+  const panned = panBy(fit, -37, 12);
+  if (panned.left !== -37 || panned.top !== 12) fail("pan is not a whole-pixel shift");
+  if (panned.scale !== fit.scale) fail("panning changed the zoom");
 }
 
 // A browser-only change cannot be proved here: that the served app.js imports

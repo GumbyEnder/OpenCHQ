@@ -418,7 +418,7 @@
         "fuel"
       ],
       "title": "The screen must show what the rules are doing",
-      "work": "The room view carries no cash, fuel or income state, and the canvas draws a 320x136 map at 2x so a piece is about four pixels. Add cash, per-side fuel, rounds until the next payment and owned city/well counts to the view; show them in a HUD. Add camera zoom (4x) with follow on the selected piece and drag/arrow panning, keeping the wrap seam continuous.",
+      "work": "The room view carries no cash, fuel or income state, and the canvas draws a 320x136 map at 2x so a piece is about four pixels. Add cash, per-side fuel, rounds until the next payment and owned city/well counts to the view; show them in a HUD. Camera zoom, follow and panning are shipped under the `camera` node; this node is the cash, fuel and countdown HUD only.",
       "prove": "Harness: the room view reports cash and fuel that change when the economy does. Browser: with the extract present, a piece is visibly a piece at 4x, the HUD shows cash and the countdown, and panning across x=0 does not tear."
     },
     {
@@ -437,14 +437,14 @@
     {
       "id": "sight_render",
       "order": 260,
-      "status": "todo",
+      "status": "done",
       "depends": [
-        "sight",
-        "hud"
+        "sight"
       ],
       "title": "Fog of war has to look like fog",
       "work": "The server filters the view but the page draws an evenly lit map, so the fog is invisible and the sight rule teaches nothing. Draw seen terrain lit, remembered-but-unseen terrain dimmed, and never-seen terrain darker still; outline the sight radius of the selected piece. Hidden enemy pieces stay absent - do not draw a placeholder where one might be.",
-      "prove": "Harness: pure helper maps a visibility class per cell for a given sight set. Browser: moving a piece reveals a ring and the map is visibly darker outside it; no enemy marker appears outside the radius."
+      "prove": "Harness: pure helper maps a visibility class per cell for a given sight set. Browser: moving a piece reveals a ring and the map is visibly darker outside it; no enemy marker appears outside the radius.",
+      "evidence": "render.sightTable/rememberSeen/paintFog: lit, remembered and unknown ground at two darkness levels, Chebyshev with the X wrap, radius from the board payload. Tests in web/test/nodes/render.mjs."
     },
     {
       "id": "transports",
@@ -531,6 +531,18 @@
       "work": "Entrenchment is infantry only, its bonus was never recovered, and a move order clears it (docs/POLISH_LOOP.md). Repair is a state that holds while a piece stands on a friendly city or dock. Every piece carries one of the five words the unit list uses: moving, digging, repairing, inactive, idle.",
       "prove": "web/test/nodes/combat_depth.mjs pins the refusals, the state words, that an order clears digging, and that the seat view carries state, entrenched and transport.",
       "evidence": "move.pieceState/entrench/repair; view.viewPiece carries state; occupy rewritten to one path over pieces after the capacity bench fell to 9.6x (now 11.2x at 1000 rooms)."
+    },
+    {
+      "id": "camera",
+      "order": 252,
+      "status": "done",
+      "depends": [
+        "board_paint"
+      ],
+      "title": "A board you can read",
+      "work": "320x136 at 2x makes a piece four pixels. Whole-cell zoom from 2x to 8x about the cursor, pan by right-drag and arrow keys, follow the selected piece, and an X pan that runs past the edge because the painter tiles the seam.",
+      "prove": "render clampZoom/centerOn/panBy/zoomAt plus app.js wheel, pointer and key handlers; the seam stays continuous because paintCells wraps column lookups.",
+      "evidence": "render.mjs camera helpers + app.js wiring; render test pins the zoom floor/ceiling, that a zoom keeps the cell under the cursor, and that centring is exact."
     }
   ]
 }

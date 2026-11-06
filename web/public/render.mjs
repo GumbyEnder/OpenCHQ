@@ -138,6 +138,124 @@ export function tileLefts(left, boardPixelWidth, viewWidth) {
   return out.sort((a, b) => a - b);
 }
 
+
+// ---- fog and camera ---------------------------------------------------------------------
+
+// What a seat can see, as a cell table: 1 where one of its own pieces has line of sight.
+// Chebyshev with the X wrap, exactly the server's rule (rules.sightCells()), so the client is
+// drawing the same rule the server applied - not a guess at where the enemy might be.
+export function sightTable(board, pieces, sight) {
+  const width = Math.max(1, Number(board && board.width) || BOARD_W);
+  const height = Math.max(1, Number(board && board.height) || BOARD_H);
+  const table = new Uint8Array(width * height);
+  const reach = Math.max(0, Math.floor(Number(sight) || 0));
+  for (const piece of Array.isArray(pieces) ? pieces : []) {
+    if (!piece || !Number.isFinite(Number(piece.x)) || !Number.isFinite(Number(piece.y))) continue;
+    const px = wrapX(piece.x, width);
+    const py = Number(piece.y);
+    for (let dy = -reach; dy <= reach; dy++) {
+      const y = py + dy;
+      if (y < 0 || y >= height) continue;
+      for (let dx = -reach; dx <= reach; dx++) {
+        const x = wrapX(px + dx, width);
+        table[y * width + x] = 1;
+      }
+    }
+  }
+  return table;
+}
+
+// Memory: what has ever been in sight. Unknown ground is drawn darker than ground the seat has
+// looked at before and since lost, which is the difference the sight rule is supposed to teach.
+export function rememberSeen(seen, lit) {
+  const into = seen && seen.length === lit.length ? seen : new Uint8Array(lit.length);
+  for (let i = 0; i < lit.length; i++) if (lit[i]) into[i] = 1;
+  return into;
+}
+
+const FOG_REMEMBERED = "rgba(6, 12, 22, 0.45)";
+const FOG_UNKNOWN = "rgba(4, 8, 15, 0.82)";
+
+export function paintFog(ctx, view, lit, seen) {
+  if (!lit || lit.length === 0) return 0;
+  const cols = visibleColumns(view);
+  const rows = visibleRows(view);
+  let drawn = 0;
+  for (let y = rows.first; y <= rows.last; y++) {
+    const row = y * view.boardW;
+    for (let sx = cols.first; sx <= cols.last; sx++) {
+      const index = row + wrapX(sx, view.boardW);
+      if (lit[index]) continue;
+      const known = seen && seen[index];
+      ctx.fillStyle = known ? FOG_REMEMBERED : FOG_UNKNOWN;
+      ctx.fillRect(view.left + sx * view.scale, view.top + y * view.scale, view.scale, view.scale);
+      drawn++;
+    }
+  }
+  return drawn;
+}
+
+// The sight ring of the selected piece: the same Chebyshev box, drawn as an outline so the rule
+// is visible rather than implied.
+export function paintSightRing(ctx, cell, view, sight, color) {
+  if (!cell || !view) return null;
+  const reach = Math.max(0, Math.floor(Number(sight) || 0));
+  if (reach === 0) return null;
+  const scale = view.scale;
+  const left = view.left + (wrapX(cell.x, view.boardW) - reach) * scale;
+  const top = view.top + (cell.y - reach) * scale;
+  const size = (reach * 2 + 1) * scale;
+  ctx.strokeStyle = color || "rgba(242, 247, 255, 0.28)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(left + 0.5, top + 0.5, size, size);
+  return { left, top, size };
+}
+
+// ---- camera -----------------------------------------------------------------------------
+//
+// The board is 320x136; at 2x a piece is four pixels. The camera is whole-cell zoom plus a
+// pan, and the pan is unbounded in X because the painter tiles the board across the seam.
+export const MIN_ZOOM = 2;
+export const MAX_ZOOM = 8;
+
+export function clampZoom(scale) {
+  const zoom = Math.round(Number(scale) || MIN_ZOOM);
+  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+}
+
+// Centre a cell in the viewport. `left` may be negative: the seam is handled by tiling.
+export function centerOn(cell, view) {
+  const scale = clampZoom(view.scale);
+  const cx = wrapX(cell.x, view.boardW);
+  const cy = Math.max(0, Math.min(view.boardH - 1, Number(cell.y)));
+  return {
+    ...view,
+    scale,
+    left: Math.round(view.viewW / 2 - (cx + 0.5) * scale),
+    top: Math.round(view.viewH / 2 - (cy + 0.5) * scale),
+  };
+}
+
+export function panBy(view, dx, dy) {
+  return { ...view, left: Math.round(Number(view.left || 0) + Number(dx || 0)), top: Math.round(Number(view.top || 0) + Number(dy || 0)) };
+}
+
+// Zoom about a screen point, so the cell under the cursor stays under the cursor.
+export function zoomAt(view, factor, screenX, screenY) {
+  const next = clampZoom(view.scale * Number(factor || 1));
+  if (next === view.scale) return view;
+  const ax = Number(screenX);
+  const ay = Number(screenY);
+  const worldX = (ax - view.left) / view.scale;
+  const worldY = (ay - view.top) / view.scale;
+  return {
+    ...view,
+    scale: next,
+    left: Math.round(ax - worldX * next),
+    top: Math.round(ay - worldY * next),
+  };
+}
+
 // ---- palette ---------------------------------------------------------------
 
 // Terrain name -> color, exactly the painter's table. Unknown names stay null.
@@ -329,9 +447,11 @@ export function paintMatch(ctx, board, room, opts = {}) {
   let mode = "cells";
   let painted = 0;
 
+  let fogged = 0;
   if (!schematic) {
     painted = paintCells(ctx, board, view);
     if (painted === 0) mode = "schematic";
+    else if (opts.fog) fogged = paintFog(ctx, view, opts.fog.lit, opts.fog.seen);
   } else {
     mode = "schematic";
   }
@@ -346,10 +466,13 @@ export function paintMatch(ctx, board, room, opts = {}) {
     return { mode, painted: 0, pieces, capitals, preview, message: EXTRACT_MISSING, view: flat };
   }
 
+  if (opts.sightAt && Number(opts.sight) > 0) {
+    paintSightRing(ctx, opts.sightAt, view, opts.sight, opts.ringColor);
+  }
   const preview = paintPreview(ctx, opts.preview, view, opts);
   const pieces = paintPieces(ctx, room && room.pieces, view, opts);
   const capitals = paintCapitals(ctx, capitalMarkers(board), view);
-  return { mode, painted, pieces, capitals, preview, message: "", view };
+  return { mode, painted, fogged, pieces, capitals, preview, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.
