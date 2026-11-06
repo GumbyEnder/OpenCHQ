@@ -1,0 +1,107 @@
+// Stop short and fight. Owner: A4. See docs/CONTRACTS.md.
+//
+// Movement (move.mjs) refuses to let two opposing pieces share a cell: the walker stops one
+// cell short. This module is what happens next. Two hostile pieces on adjacent cells are
+// engaged; they do not move, they trade fire. A shot falls on every other round of one
+// continuous fight - never twice in a row, never a second shot in the same round for the
+// same piece.
+//
+// What is deliberately NOT here: a damage number. The archive's HITS is 6 and stays 6 in
+// config/game.json, but no shot carries a hit count, a health value or a kill. Removal waits
+// on a measured hit count that has not been recovered; this node must not invent one. A
+// shot is recorded as a fact ("these two pieces fired this round"), nothing more.
+
+import { CELL_W } from "./board.mjs";
+
+// The desktop archive's voice, kept verbatim. It carries no digit on purpose: there is no
+// damage figure to report yet.
+export const SHOT_NOTE = "Stand-in fight. The shot has no damage yet.";
+
+// Chebyshev distance 1, X wraps around the board edge, Y does not.
+export function adjacent(a, b) {
+  if (!a || !b) return false;
+  const dx = Math.abs(Number(a.x) - Number(b.x));
+  const wrap = Math.min(dx, CELL_W - dx);
+  const dy = Math.abs(Number(a.y) - Number(b.y));
+  return Math.max(wrap, dy) === 1;
+}
+
+function keyOf(a, b) {
+  return a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
+}
+
+// Every unordered pair of hostile pieces that is adjacent this round.
+function engagements(pieces) {
+  const pairs = [];
+  for (let i = 0; i < pieces.length; i++) {
+    for (let j = i + 1; j < pieces.length; j++) {
+      const a = pieces[i];
+      const b = pieces[j];
+      if (a.side === b.side) continue;
+      if (!adjacent(a, b)) continue;
+      pairs.push([a, b]);
+    }
+  }
+  return pairs;
+}
+
+// One round of fire. Mutates only the fight bookkeeping (`fighting`, `shots`) and
+// `match.foughtRound`; never a position, never a piece's existence.
+export function resolve(match) {
+  if (!match || match.over) return [];
+  if (!Array.isArray(match.pieces)) return [];
+
+  const round = Number(match.round) || 0;
+  const events = [];
+  const pairs = engagements(match.pieces);
+  const engaged = new Set(); // piece ids that are in a fight this round
+  const shotThisRound = new Set(); // one shot per piece per round
+
+  // A shot landed last round means this round is the quiet half of the alternation.
+  // `foughtRound` is the last round any shot resolved, so a new fight also falls on the
+  // same beat as every other fight: a shared front, not a per-pair timer.
+  const canFire = round - Number(match.foughtRound ?? -1) >= 2;
+  let firedRound = -1;
+
+  for (const [a, b] of pairs) {
+    // A piece trades fire with one enemy at a time; a second adjacent enemy waits its turn
+    // rather than thrashing the `fighting` field every round.
+    if (engaged.has(a.id) || engaged.has(b.id)) continue;
+    engaged.add(a.id);
+    engaged.add(b.id);
+
+    const continuous = a.fighting === b.id && b.fighting === a.id;
+    if (!continuous) {
+      // Contact, or a different enemy: this is a new continuous fight. Shots restart at
+      // zero, so an interrupted and resumed fight is not credited with old volleys.
+      a.fighting = b.id;
+      b.fighting = a.id;
+      a.shots = 0;
+      b.shots = 0;
+    }
+
+    if (!canFire) continue;
+    if (shotThisRound.has(a.id) || shotThisRound.has(b.id)) continue;
+
+    a.shots = Number(a.shots || 0) + 1;
+    b.shots = Number(b.shots || 0) + 1;
+    shotThisRound.add(a.id);
+    shotThisRound.add(b.id);
+    firedRound = round;
+
+    // Each side fires; the shot lands on the other piece's cell. `at` is a place, not a
+    // quantity - there is no damage figure to attach.
+    events.push({ type: "shot", side: a.side, pieceId: a.id, at: { x: b.x, y: b.y }, round, note: SHOT_NOTE });
+    events.push({ type: "shot", side: b.side, pieceId: b.id, at: { x: a.x, y: a.y }, round, note: SHOT_NOTE });
+  }
+
+  // Pieces no longer in contact forget the fight; a later meeting starts fresh.
+  for (const unit of match.pieces) {
+    if (engaged.has(unit.id)) continue;
+    if (unit.fighting !== null && unit.fighting !== undefined) unit.fighting = null;
+    if (Number(unit.shots || 0) !== 0) unit.shots = 0;
+  }
+
+  if (firedRound >= 0) match.foughtRound = firedRound;
+  return events;
+}

@@ -1,5 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { deleteRoom, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
+import { tickMatch } from "./tick.mjs";
+import { forSeat } from "./view.mjs";
+import { ordersFor as botOrders } from "./bot.mjs";
+import { boardPayload } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 
 function sideOf(value) {
@@ -12,6 +16,15 @@ export function createLobby() {
   const rooms = new Map();
   const seatOf = new Map();
 
+  // The asset list the economy needs. Missing extract -> no sites, which is the hosted case.
+  function sitesForMatch() {
+    try {
+      return boardPayload().sites || [];
+    } catch {
+      return [];
+    }
+  }
+
   // Rooms outlive the process. Restore every stored game paused, and seat its humans again so
   // a returning player lands back in their own match. Games nobody touched for a day go away.
   pruneRooms();
@@ -19,7 +32,7 @@ export function createLobby() {
     // A stored room from before the match module has seats but no match. Open one for its
     // era so an old row still shows its side's opening pieces.
     if (!room.match) {
-      room.match = openMatch(room.era);
+      room.match = openMatch(room.era, sitesForMatch());
       saveRoom(room);
     }
     rooms.set(room.id, room);
@@ -50,6 +63,7 @@ export function createLobby() {
 
   function roomView(room, username) {
     const you = room.seats.blue.username === username ? "blue" : "red";
+    const seen = room.match ? forSeat(room.match, you) : null;
     return {
       id: room.id,
       mode: room.mode,
@@ -59,7 +73,12 @@ export function createLobby() {
       blue: { username: room.seats.blue.username, kind: room.seats.blue.kind },
       red: { username: room.seats.red.username, kind: room.seats.red.kind },
       round: room.match ? room.match.round : 0,
-      pieces: piecesFor(room.match),
+      pieces: seen ? seen.pieces : piecesFor(room.match),
+      routes: seen ? seen.routes : {},
+      sites: seen ? seen.sites : [],
+      capitals: seen ? seen.capitals : null,
+      over: room.match ? Boolean(room.match.over) : false,
+      winner: room.match ? room.match.winner : null,
       note: room.note,
     };
   }
@@ -76,6 +95,7 @@ export function createLobby() {
   // account, the room stays in the store, and the clock stops so nothing runs unwatched.
   function holdRoom(room, note) {
     room.clock = "held";
+    if (room.match) room.match.clock = "held";
     room.note = note;
     saveRoom(room);
     tellRoom(room);
@@ -142,7 +162,7 @@ export function createLobby() {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
       },
-      match: openMatch(eraOf(era)),
+      match: openMatch(eraOf(era), sitesForMatch()),
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
@@ -195,7 +215,7 @@ export function createLobby() {
       clock: "held",
       note: "Clock held. Pieces do not move yet. The match will run here, in the browser game.",
       seats: { blue: null, red: null },
-      match: openMatch(inviteRow.era),
+      match: openMatch(inviteRow.era, sitesForMatch()),
     };
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
     room.seats[other] = { username, kind: "human" };
@@ -213,12 +233,53 @@ export function createLobby() {
     const room = roomId ? rooms.get(roomId) : null;
     if (!room) return { error: "You are not in a match." };
     room.clock = running ? "running" : "held";
+    if (room.match) room.match.clock = room.clock;
     room.note = running
       ? "Clock running. Pieces do not move yet. The match will run here, in the browser game."
       : "Clock held. Pieces do not move yet. The match will run here, in the browser game.";
     saveRoom(room);
     tellRoom(room);
     return { ok: true };
+  }
+
+  // The server owns the clock. main.mjs calls this once per configured round; every room whose
+  // clock is running advances exactly one round and is stored. A held or finished room is not
+  // touched, so an unwatched game costs nothing.
+  function tickRooms() {
+    const events = [];
+    for (const room of rooms.values()) {
+      if (!room.match || room.match.over || room.clock !== "running") continue;
+      if (room.mode === "bot") {
+        for (const side of ["blue", "red"]) {
+          const seat = room.seats[side];
+          if (seat && seat.kind === "bot") {
+            try {
+              botOrders(room.match, side);
+            } catch (err) {
+              console.error("bot orders failed:", err && err.message ? err.message : err);
+            }
+          }
+        }
+      }
+      const result = tickMatch(room.match);
+      room.match = result.match;
+      saveRoom(room);
+      tellRoom(room);
+      if (result.events && result.events.length) events.push({ roomId: room.id, events: result.events });
+      if (room.match.over) {
+        room.clock = "held";
+        room.note = "The match is over.";
+        saveRoom(room);
+        tellRoom(room);
+        const winner = room.match.winner;
+        for (const seat of [room.seats.blue, room.seats.red]) {
+          if (seat.kind !== "human") continue;
+          const peer = sockets.get(seat.username);
+          if (peer) peer.send({ op: "over", roomId: room.id, winner });
+        }
+      }
+    }
+    return events;
   }
 
   function handle(username, message) {
@@ -232,7 +293,7 @@ export function createLobby() {
     return { error: "Unknown request." };
   }
 
-  return { join, handle, presence };
+  return { join, handle, presence, tickRooms };
 }
 
 function publicInvite(invite) {

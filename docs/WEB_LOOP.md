@@ -121,3 +121,70 @@ the stills, and `CHQ_unpacked.EXE` never leave this machine.
 
 When the graph is complete, report: nodes done, files changed since the first fire, the last
 `WEB_OK`, and the live URL. Then the loop is finished and the host job should be paused.
+
+---
+
+# Standing order (long-lived)
+
+This file is the operating model for however long the project runs. Two ways to work; both end
+in the same place — `node web/test/run.mjs` printing `WEB_OK`, one node marked done, one commit.
+
+## Mode A — one fire at a time (the default)
+
+The scheduled job, or a human, runs the fire shape above. That is the safe default and it is
+what runs overnight.
+
+## Mode B — a parallel sprint (accelerated)
+
+When several nodes are wanted at once, a sprint replaces the fire, not the rules:
+
+1. The integrator (the agent holding the session, not a subagent) writes the contracts first:
+   module boundaries and signatures in `docs/CONTRACTS.md`, plus neutral stubs for every module
+   the sprint will touch, so the suite stays green while work is in flight.
+2. One agent, one node, one module, one test file. File ownership is absolute — an agent edits
+   its own module and its own `web/test/nodes/<node>.mjs` and nothing else. Never
+   `web/test/run.mjs`, `main.mjs`, `lobby.mjs`, `config/game.json`, `rules.mjs`, the graph, or
+   another agent's module.
+3. Agents never run git, railway, `loopctl`, or package installs. The integrator commits.
+4. Each test lives in `web/test/nodes/*.mjs` exporting `{ name, run(ctx) }`; the harness loads
+   every file in that directory. Parallel tests never collide in one file.
+5. When a sprint starts, pause the cron job; when it ends, run the suite, mark nodes done,
+   commit once, resume the job. A sprint that leaves the tree red is a failed sprint.
+
+## Ownership map
+
+| Path | Owner |
+| --- | --- |
+| `web/server/main.mjs`, `lobby.mjs`, `rooms.mjs`, `match.mjs`, `board.mjs`, `rules.mjs`, `db.mjs` | integrator |
+| `web/server/tick.mjs` | tick / win nodes |
+| `web/server/move.mjs` | orders node |
+| `web/server/lanes.mjs` | lanes node |
+| `web/server/combat.mjs` | combat node |
+| `web/server/view.mjs` | sight node |
+| `web/server/economy.mjs` | buy / oil / income / fuel nodes |
+| `web/server/bot.mjs` | bot node |
+| `web/public/render.mjs`, `app.js` | client |
+| `web/test/run.mjs` | integrator only |
+| `web/test/nodes/*.mjs` | one file per node, owned by that node's implementer |
+
+## Adding work
+
+A node needs an `id`, an `order`, `depends`, `work` (what to build, in behaviour terms) and
+`prove` (the assertion that fails if it is missing). Add it to the graph, then say what it
+depends on. Do not add a node whose "prove" is a comment or a screenshot nobody re-takes.
+
+## What "done" means
+
+`WEB_OK` on the whole suite, the node marked `done` in the graph in the same commit, and the
+proof able to fail — break the feature, watch the assertion go red, restore it. A node whose
+test passes with the feature removed is not done; it is decoration.
+
+## Non-negotiables that survive every mode
+
+- The server owns the clock, the pieces and the filtered view.
+- Unknown 1990 numbers stay unnamed. Stand-ins live in `config/game.json` and are labelled.
+- A dropped client pauses a game; only an explicit leave deletes one.
+- Two sides only; X wraps, Y does not; wasteland is refused; both capitals wins.
+- No original art, stills, or executable bytes in a browser response.
+- `web/` has zero npm dependencies.
+

@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { connect, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { colorForTerrain, PALETTE, paintBoard, SCHEMATIC } from "../public/paint.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -150,6 +150,61 @@ function expect401(port) {
     });
     client.on("error", reject);
   });
+}
+
+// ---- per-node test modules ---------------------------------------------------------------
+// Every web/test/nodes/*.mjs exports { name, run(ctx) }. Parallel work adds files here, never
+// edits this harness. A throwing module fails the suite.
+async function runNodeTests(ctx) {
+  const nodesDir = path.join(root, "web", "test", "nodes");
+  let files = [];
+  try {
+    files = readdirSync(nodesDir).filter((file) => file.endsWith(".mjs")).sort();
+  } catch {
+    return;
+  }
+  for (const file of files) {
+    const mod = await import(pathToFileURL(path.join(nodesDir, file)).href);
+    const label = String(mod.name || file.replace(/\.mjs$/, ""));
+    if (typeof mod.run !== "function") fail("node test " + file + " has no run(ctx)");
+    try {
+      await mod.run(ctx);
+      console.log("node test ok: " + label);
+    } catch (err) {
+      fail("node test " + label + ": " + (err && err.message ? err.message : err));
+    }
+  }
+}
+
+function makeContext(base, port) {
+  const config = JSON.parse(readFileSync(path.join(root, "config", "game.json"), "utf8"));
+  let serial = 0;
+  return {
+    base,
+    port,
+    dataDir,
+    config,
+    fail,
+    waitFor,
+    sqlite: () => new DatabaseSync(path.join(dataDir, "openchq.sqlite")),
+    async register(name) {
+      const user = name || "NodeTest" + (++serial) + Math.floor(Math.random() * 1000);
+      const res = await post(base, "/api/register", { username: user, password: "node-test-pass" });
+      if (res.status !== 200) fail("node test register " + user + ": " + JSON.stringify(res.data));
+      return { token: res.token, user: res.data.user };
+    },
+    socket(token) {
+      const ws = openSocket(base, token);
+      const box = listen(ws);
+      return {
+        ws,
+        box,
+        send: (value) => ws.send(JSON.stringify(value)),
+        wait: (pred, label, from = 0) => waitFor(box, from, pred, label),
+        close: () => ws.close(),
+      };
+    },
+  };
 }
 
 async function main() {
@@ -302,12 +357,11 @@ async function main() {
     fail("bot room shape " + JSON.stringify(botRoom.room));
   }
 
-  // --- pieces: a match opens with a land piece on each capital and one ship per side.
+  // --- pieces + sight: the match opens with 4 pieces, and a seat sees only its own.
   const opening = botRoom.room;
   if (opening.era !== "1986") fail("opening era " + opening.era);
   if (opening.round !== 0) fail("a new match starts at round " + opening.round);
   if (!Array.isArray(opening.pieces)) fail("the room view has no pieces: " + JSON.stringify(opening));
-  if (opening.pieces.length !== 4) fail("1986 opened with " + opening.pieces.length + " pieces");
   const unit = (id) => opening.pieces.find((piece) => piece.id === id);
   const expectUnit = (id, side, domain, x, y) => {
     const found = unit(id);
@@ -317,14 +371,15 @@ async function main() {
     }
     if (found.side !== "blue" && found.side !== "red") fail("piece on no side: " + JSON.stringify(found));
   };
+  if (opening.pieces.length !== 2) fail("a blue seat saw " + opening.pieces.length + " pieces at the opening, expected its own 2");
   expectUnit("blue:land", "blue", "land", 79, 44);
   expectUnit("blue:sea", "blue", "sea", 0, 15);
-  expectUnit("red:land", "red", "land", 183, 25);
-  expectUnit("red:sea", "red", "sea", 300, 70);
+  if (unit("red:land") || unit("red:sea")) fail("the other seat's pieces were sent to blue: " + JSON.stringify(opening.pieces));
+  if (JSON.stringify(opening).includes("hidden")) fail("a hidden piece was flagged instead of omitted");
   const cellAt = (x, y) => board.cells[y * 320 + x];
   if (cellAt(79, 44) !== 4 || cellAt(183, 25) !== 4) fail("the land pieces are not on the capitals");
   if (cellAt(0, 15) !== 0 || cellAt(300, 70) !== 0) fail("the ships are not on ocean cells");
-  if (new Set(opening.pieces.map((piece) => piece.id)).size !== 4) fail("piece ids are not unique");
+  if (new Set(opening.pieces.map((piece) => piece.id)).size !== 2) fail("piece ids are not unique");
 
   const afterBot = adaBox.length;
   wsAda.send(JSON.stringify({ op: "run" }));
@@ -374,12 +429,17 @@ async function main() {
   }
   const gusHuman = await waitFor(gusBox, 0, (message) => message.op === "room" && message.room && message.room.mode === "human", "gus room");
   if (gusHuman.room.you !== "red") fail("gus side " + gusHuman.room.you);
-  // A human room opens the same match: 1942 places four pieces, and each seat's view carries them.
-  if (!Array.isArray(human.room.pieces) || human.room.pieces.length !== 4) {
-    fail("1942 human room pieces " + JSON.stringify(human.room.pieces));
+  // A human room opens the same match, and each seat gets its own two pieces plus nothing of
+  // the other side's.
+  if (!Array.isArray(human.room.pieces) || human.room.pieces.length !== 2) {
+    fail("1942 blue seat pieces " + JSON.stringify(human.room.pieces));
   }
-  if (human.room.pieces.filter((piece) => piece.side === "red").length !== 2) {
-    fail("the human room lost a side's opening pieces: " + JSON.stringify(human.room.pieces));
+  if (human.room.pieces.filter((piece) => piece.side !== "blue").length !== 0) {
+    fail("the human room leaked the other seat's pieces: " + JSON.stringify(human.room.pieces));
+  }
+  if (!Array.isArray(gusHuman.room.pieces) || gusHuman.room.pieces.length !== 2 ||
+      gusHuman.room.pieces.filter((piece) => piece.side !== "red").length !== 0) {
+    fail("gus's seat view " + JSON.stringify(gusHuman.room.pieces));
   }
 
   // ---- a dropped client pauses the game, it does not end it ----------------------------
@@ -436,6 +496,9 @@ async function main() {
   if (welcome.room.you !== "blue") fail("seat was lost across the restart: " + welcome.room.you);
   if (welcome.room.red.username !== "Gus") fail("the other seat was lost across the restart");
   wsAfter.close();
+
+  // ---- the node tests, one file per graph node ------------------------------------------
+  await runNodeTests(makeContext(base, port));
 }
 
 try {

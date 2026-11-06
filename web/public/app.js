@@ -1,4 +1,4 @@
-import { paintBoard } from "./paint.mjs";
+import { capitalMarkers, fitViewport, legendEntries, paintMatch, statusLine } from "./render.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -9,12 +9,23 @@ const roomBox = document.querySelector("#room");
 const flash = document.querySelector("#flash");
 const board = document.querySelector("#board");
 const boardNote = document.querySelector("#boardNote");
+const legendBox = document.querySelector("#legend");
 
 let socket = null;
 let me = "";
 let users = [];
 let pending = [];
 let room = null;
+// The last /api/board payload. A missing extract is a normal state here: the
+// hosted build never has one, and the page draws the schematic instead.
+let boardPayload = {
+  source: "missing",
+  cells: null,
+  width: 320,
+  height: 136,
+  capitals: null,
+  terrain: [],
+};
 
 function say(text) {
   flash.textContent = text || "";
@@ -44,39 +55,52 @@ function send(message) {
   socket.send(JSON.stringify(message));
 }
 
-function drawBoard(payload) {
-  const ctx = board.getContext("2d");
-  const painted = paintBoard(ctx, payload, { scale: 2 });
-  mark(ctx, 79, 44, "#3d7ec9", "Washington");
-  mark(ctx, 183, 25, "#c4473a", "Moscow");
-  if (painted.mode === "schematic") {
-    boardNote.textContent = painted.message;
-    return;
+// Canvas is sized to whole cells: 320x136 at scale 2 is 640x272.
+function viewForCanvas() {
+  const canvas = board;
+  return fitViewport(canvas.width, canvas.height, boardPayload.width || 320, boardPayload.height || 136);
+}
+
+function renderLegend() {
+  if (!legendBox) return;
+  legendBox.textContent = "";
+  for (const entry of legendEntries()) {
+    const item = document.createElement("span");
+    item.className = "swatch";
+    const chip = document.createElement("i");
+    chip.style.background = entry.color;
+    const label = document.createElement("span");
+    label.textContent = entry.label;
+    item.append(chip, label);
+    legendBox.append(item);
   }
-  boardNote.textContent =
-    "Cell grid drawn from the map extract on the server. Washington and Moscow are marked.";
+  const side = room && room.you ? room.you : "";
+  if (side) {
+    const item = document.createElement("span");
+    item.className = "swatch you";
+    item.textContent = "you are " + side;
+    legendBox.append(item);
+  }
+}
+
+// Redraws the board and every piece the room view carries. Enemy pieces are
+// only ever the ones the server put in `room.pieces`; nothing is inferred.
+function drawMatch() {
+  const ctx = board.getContext("2d");
+  const result = paintMatch(ctx, boardPayload, room, { view: viewForCanvas(), own: room && room.you });
+  boardNote.textContent = statusLine(boardPayload, room, result);
+  renderLegend();
 }
 
 async function loadBoard() {
   try {
     const res = await fetch("/api/board", { credentials: "same-origin" });
     const payload = await res.json();
-    drawBoard(payload);
+    boardPayload = payload && typeof payload === "object" ? payload : boardPayload;
   } catch (err) {
-    drawBoard({ source: "missing", cells: null, width: 320, height: 136 });
+    boardPayload = { ...boardPayload, source: "missing", cells: null };
   }
-}
-
-function mark(ctx, x, y, color, label) {
-  const px = x * 2;
-  const py = y * 2;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(px, py, 6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#e4ecff";
-  ctx.font = "14px Palatino, Georgia, serif";
-  ctx.fillText(label, px + 10, py - 8);
+  drawMatch();
 }
 
 function renderAccount() {
@@ -207,6 +231,7 @@ function connect() {
       showPlay(true);
       renderPeople();
       renderRoom();
+      drawMatch();
     } else if (message.op === "presence") {
       users = message.users || [];
       renderPeople();
@@ -226,6 +251,7 @@ function connect() {
       renderInvites();
       renderPeople();
       renderRoom();
+      drawMatch();
     } else if (message.op === "error") {
       say(message.error);
     }
@@ -243,6 +269,7 @@ async function signOut() {
   users = [];
   pending = [];
   showPlay(false);
+  drawMatch();
   say("");
 }
 
@@ -273,6 +300,9 @@ document.querySelector("#launch").addEventListener("submit", (event) => {
   const fields = new FormData(event.target);
   send({ op: "bot", era: fields.get("era"), side: fields.get("side") });
 });
+
+// Keep the capitals labelled even before a room exists.
+renderLegend();
 
 loadBoard();
 

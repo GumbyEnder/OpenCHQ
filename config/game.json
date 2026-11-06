@@ -1,0 +1,31 @@
+{
+  "_comment": "Player-facing tunables. Nothing here was recovered from the 1990 binary. Every value is a stand-in the owner accepted or set, and every one is meant to be changed by editing this file, not by editing code.",
+  "roundSeconds": 5,
+  "payEvery": 25,
+  "startPool": {
+    "early": 9,
+    "2023": 40
+  },
+  "prices": {
+    "infantry": 1,
+    "tank": 2,
+    "ship": 2,
+    "submarine": 2,
+    "aircraft": 2,
+    "nuke": 10
+  },
+  "fuel": {
+    "reserve": 10000,
+    "burn": 1
+  },
+  "sightCells": 8,
+  "enemyRouteSteps": 3,
+  "hits": 6,
+  "notes": {
+    "roundSeconds": "5 s chosen 2026-11-06 by the owner. At 1 cell per round the Washington-Moscow march is ~104 cells, about 8.7 minutes. The original felt like a campaign, not a 24-second war, and 0.14 s made income land every 3.5 s.",
+    "payEvery": "Rounds between income payments. 25 rounds at 5 s is just over two minutes.",
+    "prices": "Only two relations were recovered: a tank is twice an infantry, a nuke is 10. The rest are stand-ins.",
+    "fuel": "Per side, deliberately not the desktop archive's single shared reserve.",
+    "hits": "The archive's HITS is 6. Do not raise it: the desktop Washington-to-Moscow march meets one cell short and Red holds both capitals."
+  }
+}

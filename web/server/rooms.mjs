@@ -77,6 +77,9 @@ export function loadRooms() {
     } catch {
       state = {};
     }
+    const match = state.match ?? null;
+    // A restored game is paused, and so is its match: one clock, never two.
+    if (match && typeof match === "object") match.clock = "held";
     return {
       id: row.id,
       mode: row.mode,
@@ -84,7 +87,7 @@ export function loadRooms() {
       clock: "held",
       note: String(row.note || ""),
       seats: state.seats ?? {},
-      match: state.match ?? null,
+      match,
       savedAt: row.saved_at,
     };
   });

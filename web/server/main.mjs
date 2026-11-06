@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { closeSession, login, openSession, register, userForToken } from "./db.mjs";
 import { boardPayload } from "./board.mjs";
+import { roundSeconds } from "./rules.mjs";
 import { createLobby } from "./lobby.mjs";
 import { acceptWebSocket } from "./ws.mjs";
 
@@ -183,3 +184,16 @@ server.on("error", (err) => {
 server.listen(port, host, () => {
   console.log(`OpenCHQ web shell http://${host}:${port}`);
 });
+
+// The one clock. Round length is a tunable, not a constant: config/game.json -> roundSeconds.
+// Every running room advances one round per beat; held and finished rooms are skipped, so
+// nothing ticks for a game nobody is playing.
+const beat = Math.max(1, Math.round(roundSeconds() * 1000));
+setInterval(() => {
+  try {
+    lobby.tickRooms();
+  } catch (err) {
+    console.error("tick failed:", err && err.message ? err.message : err);
+  }
+}, beat).unref();
+console.log(`round length ${roundSeconds()} s (${beat} ms)`);

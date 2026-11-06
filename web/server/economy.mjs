@@ -1,0 +1,338 @@
+// Buying, oil ownership, income and per-side fuel. Owner: A6.
+//
+// Every function here mutates the match it is given, in place: `match.sites` owners,
+// `match.sides[side].cash`, `.fuel`, `.dry`, and the piece list for a purchase. No disk,
+// no network, no timers, no randomness.
+//
+// Every figure comes from config/game.json through rules.mjs. The only literals in this
+// file are side names, site kinds, the two country names the extract's own country list
+// starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
+// because no duration was recovered.
+
+import { payEvery, priceOf, rules } from "./rules.mjs";
+
+const SIDES = Object.freeze(["blue", "red"]);
+
+// Site kinds. Cities and capitals come from the board payload; docks and oilfields are
+// the same asset list with other kinds.
+const CITY_KINDS = new Set(["city"]);
+const DOCK_KINDS = new Set(["dock", "docks"]);
+const WELL_KINDS = new Set(["oilfield", "well"]);
+
+// A unit's domain. The match's piece shape names land and sea only, so aircraft are
+// bought at a city and travel with the land walkers.
+const DOMAIN_BY_KIND = Object.freeze({
+  infantry: "land",
+  tank: "land",
+  aircraft: "land",
+  ship: "sea",
+  submarine: "sea",
+});
+
+// A nuke stays refused: not at any round, not with any pool, not before the clock runs.
+const REFUSED_KINDS = new Set(["nuke"]);
+
+// A site's country, when the asset list names one. USA is Blue. Russia matches USSR and
+// is Red. Every other named region (and every unnamed site) starts neutral.
+const HOME_SIDE = Object.freeze({
+  usa: "blue",
+  "u.s.a.": "blue",
+  us: "blue",
+  america: "blue",
+  "united states": "blue",
+  "united states of america": "blue",
+  ussr: "red",
+  "u.s.s.r.": "red",
+  "soviet union": "red",
+  russia: "red",
+  "russian federation": "red",
+});
+
+function isSide(value) {
+  return SIDES.includes(value);
+}
+
+function seatOf(match, side) {
+  const sides = match && match.sides;
+  return sides && isSide(side) ? sides[side] : null;
+}
+
+function regionOf(site) {
+  if (!site) return null;
+  for (const key of ["region", "countryName", "country_name", "country"]) {
+    const value = site[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  const id = site.country_id ?? site.countryId ?? (typeof site.country === "number" ? site.country : null);
+  // The extract's country list begins USA, USSR; a bare index 0 or 1 means those two.
+  // Any other index is a country whose side this module cannot name, so it stays neutral.
+  if (Number.isInteger(id)) return id === 0 ? "USA" : id === 1 ? "USSR" : null;
+  return null;
+}
+
+function sideOfRegion(region) {
+  if (region === null || region === undefined) return null;
+  const key = String(region).trim().toLowerCase();
+  return Object.hasOwn(HOME_SIDE, key) ? HOME_SIDE[key] : null;
+}
+
+// Sites that a side can own: the countries' cities, their docks, and the oilfields.
+// Capitals are not on this list; they are the win condition, not income.
+function ownable(kind) {
+  return CITY_KINDS.has(kind) || DOCK_KINDS.has(kind) || WELL_KINDS.has(kind);
+}
+
+// Ownership is seeded once per match object: a city, dock or well starts with the country
+// it is in, and nothing re-seeds a site that already carries an owner, so a capture made
+// later in the match is never undone here.
+const seeded = new WeakSet();
+
+function seedOwners(match) {
+  if (!match || !Array.isArray(match.sites) || seeded.has(match)) return;
+  seeded.add(match);
+  for (const site of match.sites) {
+    if (!site || !ownable(site.kind)) continue;
+    if (site.owner === "blue" || site.owner === "red") continue;
+    const side = sideOfRegion(regionOf(site));
+    site.owner = side; // null when the country is not one of the two sides
+  }
+}
+
+function siteAt(match, x, y) {
+  const cx = Number(x);
+  const cy = Number(y);
+  if (!Number.isInteger(cx) || !Number.isInteger(cy)) return null;
+  return match.sites.find((site) => site && Number(site.x) === cx && Number(site.y) === cy) || null;
+}
+
+function wellAt(match, x, y) {
+  const site = siteAt(match, x, y);
+  return site && WELL_KINDS.has(site.kind) ? site : null;
+}
+
+function listOf(seat, key) {
+  if (!seat) return [];
+  if (!Array.isArray(seat[key])) seat[key] = [];
+  return seat[key];
+}
+
+function holds(seat, site) {
+  const id = site.id;
+  return listOf(seat, "cities").includes(id) || listOf(seat, "wells").includes(id);
+}
+
+// A site is friendly to a side when that side owns it outright, or when the side's own
+// list names it. Country seeding is what normally sets the owner.
+function friendly(match, side, site) {
+  if (!site) return false;
+  if (site.owner === side) return true;
+  return holds(seatOf(match, side), site);
+}
+
+function pushOnce(list, value) {
+  if (!list.includes(value)) list.push(value);
+}
+
+function dropValue(list, value) {
+  const at = list.indexOf(value);
+  if (at >= 0) list.splice(at, 1);
+}
+
+// --- buying ------------------------------------------------------------------------------
+
+export function buy(match, side, kind, x, y) {
+  if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) {
+    return { error: "There is no match to buy into." };
+  }
+  const seat = seatOf(match, side);
+  if (!seat) return { error: `Unknown side: ${side}.` };
+  if (match.over) return { error: "The match is over." };
+
+  const unitKind = String(kind ?? "");
+  if (REFUSED_KINDS.has(unitKind)) return { error: "A nuke is refused." };
+  const domain = Object.hasOwn(DOMAIN_BY_KIND, unitKind) ? DOMAIN_BY_KIND[unitKind] : null;
+  if (!domain) return { error: `No such unit: ${unitKind || "(none)"}.` };
+  const price = priceOf(unitKind);
+  if (price === null) return { error: `No price for a ${unitKind}.` };
+
+  seedOwners(match);
+
+  const site = siteAt(match, x, y);
+  if (!site) return { error: `Nothing to buy at ${x},${y}.` };
+  const wanted = domain === "sea" ? DOCK_KINDS : CITY_KINDS;
+  if (!wanted.has(site.kind)) {
+    return {
+      error:
+        domain === "sea"
+          ? "Ships are bought at a friendly dock."
+          : "Land and aircraft are bought at a friendly city.",
+    };
+  }
+  if (!friendly(match, side, site)) {
+    return { error: `${site.name || site.id} is not ${side}'s.` };
+  }
+  if (match.pieces.some((piece) => Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y))) {
+    return { error: "Two pieces cannot share a cell." };
+  }
+
+  // Before the clock has ever run, the purchase places the piece and does not spend the
+  // pool. After that, it spends the stand-in price and the site goes unready.
+  const clockHasRun = Number(match.round) > 0 || match.clock === "running";
+  if (clockHasRun) {
+    if (!Number.isFinite(seat.cash) || seat.cash < price) {
+      return { error: `Not enough in ${side}'s pool for a ${unitKind}.` };
+    }
+    seat.cash -= price;
+    // Unready, with no recovered recovery time: the flag is set and nothing counts down.
+    site.unready = true;
+  }
+
+  seat.bought = Number(seat.bought || 0) + 1;
+  let serial = seat.bought;
+  let id = `${side}:${unitKind}:${serial}`;
+  while (match.pieces.some((piece) => piece.id === id)) {
+    serial += 1;
+    seat.bought = serial;
+    id = `${side}:${unitKind}:${serial}`;
+  }
+
+  const piece = {
+    id,
+    side,
+    domain,
+    kind: unitKind,
+    x: Number(site.x),
+    y: Number(site.y),
+    path: [],
+    pace: 1,
+    facing: null,
+    fighting: null,
+    shots: 0,
+  };
+  match.pieces.push(piece);
+  return { ok: true, piece };
+}
+
+// --- oil capture -------------------------------------------------------------------------
+
+function syncWellLists(match, siteId, side) {
+  for (const other of SIDES) {
+    const seat = seatOf(match, other);
+    if (!seat) continue;
+    if (other === side) pushOnce(listOf(seat, "wells"), siteId);
+    else dropValue(listOf(seat, "wells"), siteId);
+  }
+}
+
+export function capture(match, side, x, y) {
+  if (!match || !Array.isArray(match.sites) || !isSide(side)) return [];
+  seedOwners(match);
+  const well = wellAt(match, x, y);
+  if (!well) return [];
+  if (well.owner === side) return [];
+  const from = well.owner ?? null;
+  well.owner = side;
+  syncWellLists(match, well.id, side);
+  return [{ type: "capture", site: well.id, name: well.name, side, from }];
+}
+
+// --- income ------------------------------------------------------------------------------
+
+function ownedCities(match, side) {
+  const seat = seatOf(match, side);
+  const listed = new Set(listOf(seat, "cities"));
+  const ids = new Set();
+  for (const site of match.sites) {
+    if (!site || !CITY_KINDS.has(site.kind)) continue; // capitals are not cities
+    if (site.owner === side || listed.has(site.id)) ids.add(site.id);
+  }
+  return ids;
+}
+
+function ownedWells(match, side) {
+  const ids = new Set();
+  for (const site of match.sites) {
+    if (site && WELL_KINDS.has(site.kind) && site.owner === side) ids.add(site.id);
+  }
+  return ids;
+}
+
+function payoutFor(match, side) {
+  const cities = ownedCities(match, side).size;
+  const wells = ownedWells(match, side).size;
+  return { cities, wells, amount: cities + wells };
+}
+
+// Income lands on every payEvery-th round: one per city held plus one per owned well.
+// Capitals are not cities. A finished match pays nothing. A side whose pool was never
+// funded - cash not a number, or already short (negative) - is not paid.
+export function pay(match) {
+  if (!match || !Array.isArray(match.sites) || !match.sides) return [];
+  seedOwners(match);
+  if (match.over) return [];
+  const round = Number(match.round);
+  const every = Number(payEvery());
+  if (!Number.isInteger(round) || !Number.isFinite(every) || every <= 0) return [];
+  if (round <= 0 || round % every !== 0) return [];
+
+  const events = [];
+  for (const side of SIDES) {
+    const seat = seatOf(match, side);
+    if (!seat) continue;
+    if (!Number.isFinite(seat.cash) || seat.cash < 0) {
+      events.push({ type: "income_skipped", side, reason: "short", round });
+      continue;
+    }
+    const { cities, wells, amount } = payoutFor(match, side);
+    seat.cash += amount;
+    events.push({ type: "income", side, round, cities, wells, amount });
+  }
+  return events;
+}
+
+// --- fuel --------------------------------------------------------------------------------
+
+// One running round for both sides, in place: a unit standing on a well takes it for its
+// side; standing on any well refills that side's reserve; a side with no unit on a well
+// burns `burn`. A dry side is flagged and stops; it never goes below zero and the other
+// side is untouched by it.
+export function upkeep(match) {
+  if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) return [];
+  seedOwners(match);
+  const fuel = (rules() && rules().fuel) || {};
+  const reserve = Number(fuel.reserve);
+  const burn = Number(fuel.burn);
+  if (!Number.isFinite(reserve) || !Number.isFinite(burn)) return [];
+  const events = [];
+
+  for (const side of SIDES) {
+    const seat = seatOf(match, side);
+    if (!seat) continue;
+    // Each side has its own reserve; null means it has not been touched yet.
+    if (seat.fuel === null || seat.fuel === undefined) seat.fuel = reserve;
+
+    for (const piece of match.pieces) {
+      if (piece.side !== side) continue;
+      const well = wellAt(match, piece.x, piece.y);
+      if (well && well.owner !== side) events.push(...capture(match, side, piece.x, piece.y));
+    }
+
+    const standing = match.pieces.some((piece) => piece.side === side && wellAt(match, piece.x, piece.y));
+    if (standing) {
+      const wasShort = seat.dry === true || Number(seat.fuel) < reserve;
+      seat.fuel = reserve;
+      seat.dry = false;
+      if (wasShort) events.push({ type: "refuel", side, fuel: seat.fuel });
+    } else {
+      const left = Math.max(0, Number(seat.fuel) - burn);
+      seat.fuel = left;
+      if (left <= 0) {
+        if (seat.dry !== true) events.push({ type: "dry", side });
+        seat.dry = true;
+      } else {
+        seat.dry = false;
+      }
+    }
+  }
+  return events;
+}
