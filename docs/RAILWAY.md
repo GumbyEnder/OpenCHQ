@@ -77,6 +77,17 @@ Container log: `OpenCHQ web shell http://0.0.0.0:8080`. Volume contents:
 
 Reproduce with `bash local/verify-live.sh` (gitignored, machine-local).
 
+Live durability check (2026-11-06): a bot room on the live host was put on a running clock with
+its socket held open, the container was killed with `railway redeploy`, and the same account
+reconnected through `local/ws-room.mjs check`:
+
+```
+{"survived":true,"roomId":"e48ea51193e023a7","expected":"e48ea51193e023a7","clock":"held","you":"blue"}
+```
+
+Same room, same seat, clock paused by the restart. Note this is the *crash* path: a graceful
+socket close still ends the room until node `reconnect` (order 220) flips it to pause-and-keep.
+
 Two throwaway accounts now exist on the live database (`Verifier*`) from the auth check.
 There is no delete-account route yet; they are harmless.
 
