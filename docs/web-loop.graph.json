@@ -401,18 +401,19 @@
     {
       "id": "buy_wire",
       "order": 245,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "buy"
       ],
       "title": "Buying exists, so 2023 is playable",
       "work": "economy.buy is implemented and unreachable: there is no \"buy\" op and no panel. Add the op with the same seat checks as \"order\", and a panel listing the era's units with prices read from config/game.json, disabled when the seat cannot pay or has no friendly city/dock for that kind. 2023 opens with no army, so without this the empty era cannot be played at all. A nuke stays refused and says so.",
-      "prove": "Harness: in a 2023 room, buy an infantry at a friendly city - cash falls by the configured price and the piece appears; a nuke is refused with a reason; a second purchase in an occupied cell is refused. Browser: the panel shows prices and the piece appears on the board."
+      "prove": "Harness: in a 2023 room, buy an infantry at a friendly city - cash falls by the configured price and the piece appears; a nuke is refused with a reason; a second purchase in an occupied cell is refused. Browser: the panel shows prices and the piece appears on the board.",
+      "evidence": "lobby 'buy' op with the same seat checks as 'order'; shopFor(era) serves prices from config. Two real bugs found on the way: ownership was seeded lazily inside economy.buy so a 2023 board had no friendly city at all, and purchases were free until the clock first ran (fill the board, then press Run). Now seeded at open and always charged. Harness covers price, occupied-cell refusal and the nuke refusal; browser verified: 'Bought an infantry at 39,35. Pool 39.' with 1 piece on the board."
     },
     {
       "id": "hud",
       "order": 250,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "buy_wire",
         "income",
@@ -420,7 +421,8 @@
       ],
       "title": "The screen must show what the rules are doing",
       "work": "The room view carries no cash, fuel or income state, and the canvas draws a 320x136 map at 2x so a piece is about four pixels. Add cash, per-side fuel, rounds until the next payment and owned city/well counts to the view; show them in a HUD. Camera zoom, follow and panning are shipped under the `camera` node; this node is the cash, fuel and countdown HUD only.",
-      "prove": "Harness: the room view reports cash and fuel that change when the economy does. Browser: with the extract present, a piece is visibly a piece at 4x, the HUD shows cash and the countdown, and panning across x=0 does not tear."
+      "prove": "Harness: the room view reports cash and fuel that change when the economy does. Browser: with the extract present, a piece is visibly a piece at 4x, the HUD shows cash and the countdown, and panning across x=0 does not tear.",
+      "evidence": "The room panel draws pool, fuel and 'payment in N rounds' from seat {cash, fuel, payIn, payEvery}; the shop row shows every era unit at its config price, disabled when unaffordable, with the nuke's refusal written on the button. Browser-verified in a 2023 match."
     },
     {
       "id": "feedback",

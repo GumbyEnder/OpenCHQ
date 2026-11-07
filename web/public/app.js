@@ -179,7 +179,7 @@ board.addEventListener("click", (event) => {
   if (buying) {
     const site = (room.sites || []).find((place) => place.x === cell.x && place.y === cell.y);
     if (!site) {
-      say("Buy a " + buying + ": that cell is not a site. Click one of your cities.");
+      say("Buy " + buying + ": " + cell.x + "," + cell.y + " is not a site. Click one of your cities.");
       return;
     }
     send(buyMessage(buying, cell));
@@ -414,7 +414,7 @@ function renderRoom() {
         buying = entry.kind;
         selected = null;
         preview = null;
-        say("Buy a " + entry.kind + ": click one of your " + (entry.domain === "sea" ? "docks" : "cities") + ".");
+        say("Buy " + entry.kind + ": click one of your " + (entry.domain === "sea" ? "docks" : "cities") + ".");
         renderRoom();
       });
       if (buying === entry.kind) button.className += " armed";
