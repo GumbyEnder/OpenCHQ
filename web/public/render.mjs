@@ -274,9 +274,11 @@ export function pieceColor(piece) {
   return sideColor(piece && piece.side);
 }
 
-// Sea is a disc, aircraft a triangle, everything else a square.
+// Sea is a disc, aircraft a triangle, everything else a square. A land piece in the water is a
+// transport, and it draws as a ring: cargo, not a warship.
 export function pieceShape(piece) {
   if (piece && piece.kind === "aircraft") return "triangle";
+  if (piece && piece.transport === true) return "ring";
   if (piece && piece.domain === "sea") return "circle";
   return "square";
 }
@@ -304,6 +306,7 @@ export function legendEntries() {
     .filter((entry) => entry.color);
   entries.push({ label: "blue piece", color: SCHEMATIC.blue });
   entries.push({ label: "red piece", color: SCHEMATIC.red });
+  entries.push({ label: "transport (cargo)", color: SCHEMATIC.blue });
   return entries;
 }
 
@@ -338,6 +341,21 @@ export function paintPiece(ctx, piece, view, opts = {}) {
   const shape = pieceShape(piece);
   ctx.fillStyle = pieceColor(piece);
   ctx.beginPath();
+  if (shape === "ring") {
+    // A transport is cargo: the hull is drawn as a ring, not a filled block, so an unescorted
+    // crossing reads as the risk it is.
+    ctx.lineWidth = Math.max(1.5, view.scale * 0.9);
+    ctx.strokeStyle = pieceColor(piece);
+    ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    const ownRing = Boolean(opts.own) && String(piece.side) === String(opts.own);
+    ctx.strokeStyle = ownRing ? PIECE_INK.own : PIECE_INK.enemy;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(at.x, at.y, r + Math.max(1, view.scale * 0.5), 0, Math.PI * 2);
+    ctx.stroke();
+    return at;
+  }
   if (shape === "circle") {
     ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
   } else if (shape === "triangle") {

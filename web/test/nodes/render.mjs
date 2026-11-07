@@ -16,6 +16,7 @@ import {
   paintPiece,
   paletteFor,
   pixelToCell,
+  pieceShape,
   statusLine,
   tileLefts,
   sightTable,
@@ -32,6 +33,7 @@ import {
   wrapDelta,
   wrapX,
 } from "../../public/render.mjs";
+import { cargoNote } from "../../public/command.mjs";
 import { EXTRACT_MISSING, PALETTE, SCHEMATIC } from "../../public/paint.mjs";
 
 function recorder() {
@@ -160,8 +162,15 @@ export async function run(ctx) {
   eq(fail, "ocean, shallows, city and capital are distinct", new Set(four).size, 4);
   eq(fail, "unknown terrain stays unnamed", paletteFor("nonsense"), null);
   const legend = legendEntries();
-  eq(fail, "legend names the five marks", legend.length, 6);
+  eq(fail, "legend names the marks, transport included", legend.length, 7);
+  eq(fail, "the legend names a transport", legend[6].label, "transport (cargo)");
   eq(fail, "legend carries both side colors", [legend[4].color, legend[5].color], [SCHEMATIC.blue, SCHEMATIC.red]);
+
+  // --- a transport is a ring, and the page says what that means --------------
+  eq(fail, "a land piece at sea is a ring", pieceShape({ domain: "land", transport: true }), "ring");
+  eq(fail, "a land piece on land is a square", pieceShape({ domain: "land" }), "square");
+  eq(fail, "cargo is explained", /cannot fight back/.test(cargoNote({ transport: true })), true);
+  eq(fail, "a land piece is not cargo", cargoNote({ transport: false }), "");
 
   // --- capitals --------------------------------------------------------------
   const fallbackCaps = capitalMarkers(null);

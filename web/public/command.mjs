@@ -104,6 +104,13 @@ export function purseText(seat) {
   return parts.join(" · ");
 }
 
+// A piece at sea is cargo: it cannot fight back, and the first enemy ship that catches it sinks
+// it. That is the whole reason an escort matters, and the page should say it out loud.
+export function cargoNote(piece) {
+  if (!piece || piece.transport !== true) return "";
+  return "At sea as a transport: it cannot fight back, and an enemy ship that catches it sinks it.";
+}
+
 // The alarm strip: the one sentence a player needs when the enemy is closing on a capital. The
 // server sends {name, distance}; nothing here invents a number.
 export function alarmText(alarm) {
