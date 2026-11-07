@@ -622,6 +622,39 @@
       "title": "A disassembler that actually runs",
       "work": "unit_icons is blocked on one fact that only CHQ_unpacked.EXE holds: which marker the game draws for each unit type and side. The REA MCP provider is not present in-session, but Ghidra 12.1.4 is installed at ~/tools/ghidra_12.1.4_PUBLIC and binutils objdump handles 16-bit DOS. Get a usable 16-bit disassembly of CHQ_unpacked.EXE (Ghidra analyzeHeadless with the x86:LE:16 real-mode language, or objdump -b binary -m i8086), locate the code that draws a unit marker on the world map, and write the table it reads (unit type -> marker bitmap, per side) to Command HQ/modern/extracted/data/unit_markers.json. If the table cannot be found, record what the routine does instead and say so.",
       "prove": "web/test/nodes/disasm.mjs asserts a real artifact exists: either unit_markers.json with one entry per unit type and side plus the address the table was read from, or a written finding naming the routine and the instruction that draws the marker. The test fails if the artifact is a guess: it checks every marker entry decodes to a bitmap of the game's map scale (1-5 px per side) and that both sides differ."
+    },
+    {
+      "id": "city_labels",
+      "order": 390,
+      "status": "todo",
+      "depends": [
+        "fonts"
+      ],
+      "title": "Names on the board",
+      "work": "The original kept place names in its panels; this page puts them on the map once the camera is close enough to read them. Add LABEL_ZOOM (4 px/cell), visibleLabels(sites, view) returning only cities on screen with a label box clamped inside the viewport, and paintLabels(ctx, atlas, labels) drawing from the decoded FONTS.CHQ atlas at whole-pixel scales with a one-pixel shadow. No atlas, no labels.",
+      "prove": "web/test/nodes/labels.mjs asserts nothing is labelled at the whole-earth fit, that labels appear at zoom with one per city and none for unnamed sites, that every label box stays inside the viewport, that a city off screen is dropped, and that without an atlas paintLabels draws zero pixels."
+    },
+    {
+      "id": "political_map",
+      "order": 400,
+      "status": "todo",
+      "depends": [
+        "city_labels"
+      ],
+      "title": "Whose ground is it",
+      "work": "The original shipped two views of the same earth: terrain (WORLD.PIC) and political (OMAP.PIC). CBR-REGN.DT0..DT4 hold the region controller per era and CBR-SET.DAT the 84 sites; read what they actually encode before drawing anything. Add a terrain/political toggle to the page that colours a city's ground by who holds it and says what the colours mean; if the region geometry cannot be read, say so in the code and keep the toggle to cities only rather than inventing borders.",
+      "prove": "web/test/nodes/political.mjs asserts the two views differ, that every political colour is one of the measured ones, that a site with no controller stays neutral, and that the toggle returns to the terrain palette unchanged."
+    },
+    {
+      "id": "transport_escort",
+      "order": 410,
+      "status": "todo",
+      "depends": [
+        "transports"
+      ],
+      "title": "Crossing with an escort",
+      "work": "A transport that meets a warship sinks; the player has no way to screen one. Add an order that puts a warship on the same route as a transport (an escort), so the transport stops being alone, and have the seat view and the round log say when a transport is crossing unscreened. No new numbers: the sink rule and the movement rules already exist.",
+      "prove": "web/test/nodes/escort.mjs asserts an escorted transport is not reported as unscreened, an unescorted one is, that the escort order is refused for a non-warship or a non-transport target, and that the log names the escort when it forms."
     }
   ]
 }
