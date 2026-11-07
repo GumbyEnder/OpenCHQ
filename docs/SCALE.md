@@ -63,33 +63,32 @@ The path, with the parts that exist marked:
   lets a page rebuild its board from a full frame, so a re-route costs one frame, not a match.
 - Keep the drain we built: it is the same operation that makes a rolling deploy safe.
 
-## The order is the cost
+## The order is the cost (and the harness was the cost before that)
 
 Played for real — two accounts, two sockets, the same ops the page sends, 0.12 s rounds
-(`local/two-seat-play.mjs`): the room reached **98 rounds in 190 s**, about 2 s a round, when the
-clock asked for 0.12 s. The tick was not the problem; the orders were.
+(`local/two-seat-play.mjs`). The first version of that harness asked for a whole frame every round
+(`{op:"fullframes", on:true}`) so it could plan from the pieces. At sixteen orders a round that is
+thirty-two serialisations of a 400-piece match per round, and the room fell to **0.5 rounds/s while
+the clock asked for 8.3**. That number was measured, published here, and wrong: it was the harness.
 
-| measured | before | after |
-| --- | --- | --- |
-| one `planOrder`, 60 orders across the board | 5.22 ms | **1.82 ms** |
-| one order to a nearby cell | — | 0.013 ms |
-| a round at 1,000 rooms x 2 seats x 3 orders | 34 s of CPU | **11 s** |
-| the two-seat played room, real ops | 0.5 rounds/s | **0.9 rounds/s** |
+| measured | result |
+| --- | --- |
+| an idle room (two seats, clock running, nobody clicking) | **8.00 rounds/s** — 360 rounds in 45 s, exactly the configured rate |
+| a played room at human tempo (8 orders a seat a round, deltas) | **8.3 rounds/s** — 100 rounds in 12 s |
+| `tickMatch`, 169 pieces | 0.96 ms |
+| both seat views, 169 pieces | 2.53 ms |
+| one `planOrder` across the board | 5.22 ms -> **1.82 ms** (A*) |
+| one `planOrder` to a nearby cell | 0.013 ms |
 
-The search is A* now: a wrap-aware Manhattan lower bound (every cell costs at least a round, so the
-cell distance never overestimates), a flat-array binary heap instead of per-node objects, and the
-three 43,520-entry work arrays are reused with a generation stamp instead of allocated and filled
-per order. All 60 orders in `local/route-bench.mjs` return the same cost as the old search — the
-walks changed shape in places, never in price.
+Two lessons worth keeping:
 
-So the ceiling for 1,000 concurrent games is not memory (111 MB) and not egress (4 MB/s): it is the
-route, which is a breadth-first search of all 43,520 cells, run once per order, every order.
-
-One thing changed here: a player action during a running clock now marks the room dirty instead of
-committing it (the tick flushes dirty rooms within 2 s), which took the room from 3.2 s to 2.0 s a
-round — a commit per order cost more than the order did. The route itself is the next fix: a bounded
-or heuristic search, or a cached path per (side, from, to), before a second instance is worth
-talking about.
+- **The route was still worth its speedup.** 5.22 ms an order was real, and a busy round at 1,000
+  rooms sends thousands of them. A* with a wrap-aware Manhattan bound, a flat-array heap and reused
+  work arrays took it to 1.82 ms average and 0.013 ms for the short walks players actually give,
+  with the same cost on all 60 benchmarked orders.
+- **A test that changes the load is not measuring the game.** A whole frame every round is exactly
+  what a page does *not* do: `frameFor` already sends a full frame every `FULL_EVERY` rounds and a
+  delta otherwise. Ask for what the page asks for, or measure the harness.
 
 ## What is deliberately not measured yet
 
