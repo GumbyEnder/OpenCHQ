@@ -19,6 +19,7 @@ import {
   shopDisabled,
   shopLabel,
 } from "./command.mjs";
+import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -228,6 +229,46 @@ function renderLegend() {
 
 // Redraws the board and every piece the room view carries. Enemy pieces are
 // only ever the ones the server put in `room.pieces`; nothing is inferred.
+// The bottom band is the original's, sized from the map: 87/320 of the map width wide, 50/320 tall.
+// The bar runs down with the round the server reports, so the clock stops being dead time.
+let roundStartedAt = Date.now();
+let paintedRound = -1;
+
+function paintChrome(view) {
+  const box = document.getElementById("timebox");
+  const bar = document.getElementById("timeFill");
+  const text = document.getElementById("timeText");
+  if (!box || !bar || !text) return;
+  if (!room || !room.round) {
+    document.getElementById("chrome").classList.add("hidden");
+    return;
+  }
+  document.getElementById("chrome").classList.remove("hidden");
+  const mapWidthPx = (Number(boardPayload.width) || 320) * (view ? view.scale : 1);
+  const geometry = chromeGeometry(mapWidthPx);
+  box.style.width = geometry.boxWidth + "px";
+  box.style.height = geometry.boxHeight + "px";
+  box.style.left = geometry.boxLeft + "px";
+  const label = document.getElementById("timeLabel");
+  if (label) label.textContent = geometry.label;
+  text.textContent = timeLeftText(room.seat, room.roundSeconds);
+  const running = room.clock && room.clock !== "held";
+  const fraction = running ? roundFraction(room.roundSeconds, Date.now() - roundStartedAt) : 1;
+  bar.style.width = Math.round(fraction * 100) + "%";
+  bar.style.background = fraction < 0.2 ? "#ff5555" : "#55ffff";
+}
+
+function tickChrome() {
+  if (!room || !room.round) return;
+  if (paintedRound !== room.round) {
+    paintedRound = room.round;
+    roundStartedAt = Date.now();
+  }
+  paintChrome(camera);
+}
+
+setInterval(tickChrome, 100);
+
 function drawMatch() {
   const ctx = board.getContext("2d");
   let view = viewForCanvas();
@@ -245,6 +286,7 @@ function drawMatch() {
     sight: Number(boardPayload.sightCells || 8),
     sightAt: selected,
   });
+  paintChrome(view);
   const camNote = document.getElementById("camNote");
   if (camNote) {
     camNote.textContent = "cell " + (view.scale / dpr()).toFixed(0) + " px · " +

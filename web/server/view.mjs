@@ -14,7 +14,7 @@
 // pulling the scout back does not un-discover the enemy.
 
 import { CELL_W, SEATS } from "./board.mjs";
-import { enemyRouteSteps, payEvery, sightCells } from "./rules.mjs";
+import { enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
 import { metersFor } from "./resources.mjs";
 import { inactiveRounds } from "./air.mjs";
 
@@ -182,6 +182,7 @@ export function forSeat(match, side) {
       },
       seat: null,
       notes: [],
+      roundSeconds: roundLength(),
     };
   }
 
@@ -237,5 +238,10 @@ export function forSeat(match, side) {
   const over = Boolean(match.over);
   const winner = match.winner || null;
 
-  return { pieces, routes, sites, capitals, seat, notes, alarm, over, winner };
+  // The round the server is actually running, so the page can draw the same clock. A page that
+  // keeps its own copy of the round length is a second source of truth for a tunable.
+  return {
+    pieces, routes, sites, capitals, seat, notes, alarm, over, winner,
+    roundSeconds: roundLength(),
+  };
 }

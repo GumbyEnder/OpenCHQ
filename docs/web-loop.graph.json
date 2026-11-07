@@ -582,7 +582,7 @@
     {
       "id": "bottom_chrome",
       "order": 350,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "hud"
       ],

@@ -214,6 +214,47 @@ button.ghost {
   font-size: 12px;
 }
 
+/* The original's bottom band: black, with one bevelled TIME LEFT box measured off WORLD.PIC
+   (87x50 at 1,142 on a 320x200 screen). Sized by app.js from the map width, never by CSS alone. */
+.chrome {
+  position: relative;
+  background: #000;
+  border-top: 2px solid #aaaaaa;
+  border-bottom: 2px solid #555555;
+  height: 56px;
+  overflow: hidden;
+}
+.chrome.hidden { display: none; }
+.timebox {
+  position: absolute;
+  left: 2px;
+  top: 3px;
+  border: 2px solid;
+  border-color: #aaaaaa #555555 #555555 #aaaaaa;
+  background: #000;
+  padding: 2px 4px;
+  box-sizing: border-box;
+  color: #ffffff;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  line-height: 1.25;
+}
+.timelabel { display: block; color: #ffffff; }
+.timetext { display: block; color: #aaaaaa; font-size: 10px; }
+.timebar {
+  height: 6px;
+  margin: 2px 0;
+  background: #000;
+  border: 1px solid #555555;
+}
+.timebar > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: #55ffff;
+}
+
 .alarm {
   margin: 6px 0 0;
   padding: 6px 10px;
