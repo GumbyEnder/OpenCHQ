@@ -578,6 +578,39 @@
       "work": "Measured: with the shipped bot on both sides a 1200-round match produces one even line, 27 kills and no winner. Overrun cannot fire on an even line. The bot sends every piece at the enemy capital, so it never has surplus anywhere. Teach it to pick one point of the enemy line, gather the pieces that can reach it, and push there - concentration is a behaviour, not a rule, so it costs no fidelity.",
       "prove": "A bot-vs-bot match ends inside 600 rounds with a winner, and the timeline shows a breakthrough (a round where one side loses 3+ pieces and the other loses none).",
       "evidence": "bot.focusTarget: the army masses on the weakest enemy cell. A bot-vs-bot match now ends - red at round 441 (36.8 min at 5 s), first contact round 41, 44 destroyed, 42 captures - against no winner in 1200 rounds before. Reproducible across three runs. bot test rewritten to check the path closes on the chosen target, not the capital."
+    },
+    {
+      "id": "bottom_chrome",
+      "order": 350,
+      "status": "todo",
+      "depends": [
+        "hud"
+      ],
+      "title": "The original's bottom bar",
+      "work": "WORLD.PIC is 320x200: the map is 320x136 starting at y=6, rows 0-5 are black, and the chrome is a black band from y=142 with a bevelled box 87x50 at (1,142) that says TIME LEFT over a bar. Rebuild that band in HTML/CSS at the original's proportions (87/320 of the map width, 50/320 of it tall), drive the bar from the round clock, and put the payment countdown in it. Measured geometry, not remembered.",
+      "prove": "web/test/nodes/chrome.mjs asserts the box is 87/320 of the map width and 50/320 tall at every scale, that the label is TIME LEFT, and that the bar goes from full to empty as a round runs down and that the payment countdown matches rounds until the next payday."
+    },
+    {
+      "id": "fonts",
+      "order": 360,
+      "status": "todo",
+      "depends": [
+        "board_paint"
+      ],
+      "title": "The original's lettering",
+      "work": "FONTS.CHQ is in COMMAND/ and has never been decoded. Decode it into a glyph atlas (or prove what it is and say so), serve it only where the extract exists, and use it for the chrome label and the round log at whole-pixel sizes.",
+      "prove": "web/test/nodes/fonts.mjs asserts the decoded atlas has the glyph count the file implies and that a known string renders to distinct non-empty bitmaps; the page falls back to a system font when the extract is absent."
+    },
+    {
+      "id": "unit_icons",
+      "order": 370,
+      "status": "todo",
+      "depends": [
+        "board_paint"
+      ],
+      "title": "Units that look like the original's",
+      "work": "BLOCKED until a disassembler is usable in-session: UNITS.PIC's top rows are editor art on a ~12 px pitch, and the on-map marker glyphs are not obviously there - the table that maps a unit to its marker is in the draw routine inside CHQ_unpacked.EXE. With REA's Ghidra provider working (GHIDRA_INSTALL_DIR is now in the profile config), read that routine, cut the markers, and draw them per domain and side.",
+      "prove": "web/test/nodes/unit_icons.mjs asserts each domain (infantry, armour, sea, submarine, aircraft) and each side resolves to a distinct marker bitmap cut from the sheet, with the shapes fallback when the extract is absent."
     }
   ]
 }
