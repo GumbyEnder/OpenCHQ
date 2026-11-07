@@ -26,6 +26,11 @@ function holderOf(match, cell) {
   for (const piece of match.pieces || []) {
     if (!piece) continue;
     if (piece.x !== cell.x || piece.y !== cell.y) continue;
+    // A capital is taken by troops on the ground. A ship in the harbour is not holding the
+    // capital: a played match ended at round 27 because a blue destroyer sailed onto Moscow and
+    // checkWin counted it as the red capital changing hands.
+    if (piece.domain !== "land") continue;
+    if (piece.embarked) continue;
     if (SIDES.includes(piece.side)) standing.add(piece.side);
   }
   if (standing.size === 1) return [...standing][0];

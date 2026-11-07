@@ -265,6 +265,9 @@ export function planOrder(match, side, pieceId, toX, toY) {
   if (piece.repairing === true) piece.repairing = false;
 
   if (piece.domain === "sea") {
+    // A ship ends on water. Without this a destroyer could be ordered onto Moscow's cell, and a
+    // ship standing on a capital cell used to count as holding it.
+    if (!isWater(x, y)) return { error: "A ship cannot end on land." };
     const holder = pieceAt(match, x, y, piece.id);
     if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
     let route = null;

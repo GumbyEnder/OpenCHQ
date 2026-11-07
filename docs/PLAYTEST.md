@@ -81,11 +81,35 @@ Three times the income buys about a tenth more units and settles nothing; the pu
 shape was wrong for this reason: the slope was never the binding constraint. What a side cannot do
 is spend, because at a frontier of empty cities there is nothing worth buying.
 
+
+## Round three: a match can be won (wakeup 27)
+
+The first played match that ended: **red, round 259**, "the enemy holds both capitals" — 32 s of
+play at 0.12 s rounds, which is 22 minutes at the real 5 s clock. Blue 71 cities, red 79, neutral
+119, and red took Washington with troops on the ground.
+
+Two defects stood between the game and that sentence.
+
+1. **A ship could win the war.** `checkWin` counted *any* piece standing on a capital cell, so a
+   blue destroyer that sailed onto Moscow took the red capital at round 27 — the match ended with
+   7 pieces on the board and the log line "you hold both capitals". A capital is held by troops on
+   the ground: land domain, not embarked. A ship also can no longer be ordered to end on land
+   ("A ship cannot end on land."), which is what let it sail inland in the first place.
+2. **A player who is ahead had no reason to finish.** The policy took every city it could see and
+   never marched on the capital, so 1,500 rounds passed with 527 kills and no winner. A leading
+   side now goes for the enemy capital, because holding both capitals is the win.
+
+`web/test/nodes/capital.mjs` proves the endgame directly: a piece standing on a capital takes it,
+holding both capitals wins, and a ship on a capital does not.
+
+The endgame is now reachable, and it takes about 250 rounds — 21 minutes at the real 5 s clock.
+Whether that is the right length is the next design question, and it is finally a question about
+the game rather than about a missing rule.
+
 ## Next, in order
 
-1. The endgame: nobody can win. 162 cities against 69, 171 kills, and the capitals never fall. Find
-   out what the win condition actually requires (probing the capital's ring and its garrison), then
-   make the last ten rounds of a match legible to the player.
+1. The last ten rounds: a match now ends, but nothing in the page announces a capital under
+   threat. The player should be able to see the enemy closing on their capital before it falls.
 2. Make the frontier legible: a target that cannot be reached should say so at the moment it is
    chosen ("no lane from here to there"), not after the order is refused. That alone turns the
    deadlock into a decision: build a lane, take a coast, or go somewhere else.
