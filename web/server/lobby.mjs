@@ -6,7 +6,8 @@ import { ordersFor as botOrders } from "./bot.mjs";
 import { matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { issueOrder, planOrder } from "./move.mjs";
-import { roundSeconds } from "./rules.mjs";
+import { buy, seedOwners } from "./economy.mjs";
+import { roundSeconds, rules } from "./rules.mjs";
 
 function sideOf(value) {
   return value === "red" ? "red" : "blue";
@@ -45,7 +46,13 @@ export function createLobby() {
   function sitesForMatch(era) {
     try {
       return matchSites(era);
-    } catch {
+    } catch (err) {
+      // A silent [] here is a board with no cities: nothing to own, nothing to capture, and a
+      // 2023 match nobody can buy into. Say so once instead of hiding it in the room.
+      if (!sitesForMatch.warned) {
+        sitesForMatch.warned = true;
+        console.error("sitesForMatch(" + era + ") failed:", err && err.stack ? err.stack : err);
+      }
       return [];
     }
   }
@@ -57,7 +64,7 @@ export function createLobby() {
     // A stored room from before the match module has seats but no match. Open one for its
     // era so an old row still shows its side's opening pieces.
     if (!room.match) {
-      room.match = openMatch(room.era, sitesForMatch(room.era));
+      room.match = opened(room.era, sitesForMatch(room.era));
       saveRoom(room);
     }
     stampSeats(room);
@@ -103,6 +110,9 @@ export function createLobby() {
       routes: seen ? seen.routes : {},
       sites: seen ? seen.sites : [],
       capitals: seen ? seen.capitals : null,
+      // The shop: what this era sells and at what price. Prices come from config, never from
+      // the page, so the panel cannot disagree with what economy.buy charges.
+      shop: shopFor(room.era),
       // Cash, fuel and the rounds until the next payment. The page needs them to draw a
       // countdown; without them the clock is dead time and a player cannot plan a purchase.
       seat: seen ? seen.seat : null,
@@ -215,7 +225,7 @@ export function createLobby() {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
       },
-      match: openMatch(eraOf(era), sitesForMatch(eraOf(era))),
+      match: opened(era, sitesForMatch(eraOf(era))),
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
@@ -269,7 +279,7 @@ export function createLobby() {
       clock: "held",
       note: "Clock held. The board is waiting for orders.",
       seats: { blue: null, red: null },
-      match: openMatch(inviteRow.era, sitesForMatch(inviteRow.era)),
+      match: opened(inviteRow.era, sitesForMatch(inviteRow.era)),
     };
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
     room.seats[other] = { username, kind: "human" };
@@ -407,12 +417,48 @@ export function createLobby() {
     return events;
   }
 
+  // Buying is an order with a price: the same seat checks as "order", then economy.buy does the
+  // rules. A purchase answers with the new cash so the page can redraw without guessing.
+  function buyOp(username, message) {
+    const roomId = seatOf.get(username);
+    const room = roomId ? rooms.get(roomId) : null;
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const claimed = message.side === undefined || message.side === null ? mine : String(message.side);
+    if (claimed !== mine) {
+      return { error: "That side is not yours. You hold " + mine + "." };
+    }
+    const at = destinationOf(message);
+    let result;
+    try {
+      result = buy(room.match, mine, message.kind, at.x, at.y);
+    } catch (err) {
+      return { error: err && err.message ? err.message : String(err) };
+    }
+    if (!result || result.error) return { error: (result && result.error) || "The purchase was refused." };
+    saveRoom(room);
+    tellRoom(room);
+    const peer = sockets.get(username);
+    if (peer) {
+      peer.send({
+        op: "bought",
+        kind: result.piece.kind,
+        piece: result.piece.id,
+        at: { x: result.piece.x, y: result.piece.y },
+        cash: room.match.sides && room.match.sides[mine] ? room.match.sides[mine].cash : null,
+      });
+    }
+    return { ok: true };
+  }
+
   function handle(username, message) {
     const op = String(message.op ?? "");
     if (op === "bot") return startBot(username, message.era, message.side);
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
     if (op === "order") return order(username, message);
+    if (op === "buy") return buyOp(username, message);
     if (op === "route") return routeFor(username, message);
     if (op === "run") return setClock(username, true);
     if (op === "hold") return setClock(username, false);
@@ -421,6 +467,40 @@ export function createLobby() {
   }
 
   return { join, handle, presence, tickRooms };
+}
+
+// What an era sells. The prices are config; the era gates are the archive's - aircraft exist
+// from 1942 on, and a nuke is never on the shelf (economy refuses it and says so).
+const LAND_KINDS = ["infantry", "tank"];
+const SEA_KINDS = ["ship", "submarine"];
+
+export function shopFor(era) {
+  const key = String(era ?? "1986");
+  const seats = (rules().prices || {});
+  const kinds = [...LAND_KINDS];
+  if (key !== "1918") kinds.push("aircraft");
+  const all = [...kinds, ...SEA_KINDS];
+  const shop = [];
+  for (const kind of all) {
+    if (!Object.hasOwn(seats, kind)) continue;
+    shop.push({
+      kind,
+      price: Number(seats[kind]),
+      domain: kind === "ship" || kind === "submarine" ? "sea" : "land",
+    });
+  }
+  shop.push({ kind: "nuke", price: Object.hasOwn(seats, "nuke") ? Number(seats.nuke) : null, domain: "land", refused: "A nuke is refused." });
+  return shop;
+}
+
+// A match opens with its countries already owned. Ownership used to be seeded lazily on the
+// first purchase, which meant a 2023 board showed no friendly city at all and the empty era
+// could not be played: there was nothing to click. Seeding at open is the same rule, applied
+// early enough for the view to carry it.
+function opened(era, sites) {
+  const match = openMatch(eraOf(era), sites);
+  seedOwners(match);
+  return match;
 }
 
 function publicInvite(invite) {

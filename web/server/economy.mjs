@@ -38,6 +38,7 @@ const DOMAIN_BY_KIND = Object.freeze({
 
 // A nuke stays refused: not at any round, not with any pool, not before the clock runs.
 const REFUSED_KINDS = new Set(["nuke"]);
+const REFUSED_NUKE = "A nuke is refused.";
 
 // A site's country, when the asset list names one. USA is Blue. Russia matches USSR and
 // is Red. Every other named region (and every unnamed site) starts neutral.
@@ -94,7 +95,7 @@ function ownable(kind) {
 // later in the match is never undone here.
 const seeded = new WeakSet();
 
-function seedOwners(match) {
+export function seedOwners(match) {
   if (!match || !Array.isArray(match.sites) || seeded.has(match)) return;
   seeded.add(match);
   for (const site of match.sites) {
@@ -156,7 +157,7 @@ export function buy(match, side, kind, x, y) {
   if (match.over) return { error: "The match is over." };
 
   const unitKind = String(kind ?? "");
-  if (REFUSED_KINDS.has(unitKind)) return { error: "A nuke is refused." };
+  if (REFUSED_KINDS.has(unitKind)) return { error: REFUSED_NUKE };
   const domain = Object.hasOwn(DOMAIN_BY_KIND, unitKind) ? DOMAIN_BY_KIND[unitKind] : null;
   if (!domain) return { error: `No such unit: ${unitKind || "(none)"}.` };
   const price = priceOf(unitKind);
@@ -182,10 +183,10 @@ export function buy(match, side, kind, x, y) {
     return { error: "Two pieces cannot share a cell." };
   }
 
-  // Before the clock has ever run, the purchase places the piece and does not spend the
-  // pool. After that, it spends the stand-in price and the site goes unready.
-  const clockHasRun = Number(match.round) > 0 || match.clock === "running";
-  if (clockHasRun) {
+  // A purchase always spends the pool. It used to be free until the clock first ran, which
+  // made a 2023 start a free army: a player could fill the board and then press Run. The
+  // start pool is what the setup phase spends.
+  {
     if (!Number.isFinite(seat.cash) || seat.cash < price) {
       return { error: `Not enough in ${side}'s pool for a ${unitKind}.` };
     }

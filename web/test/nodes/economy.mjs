@@ -71,14 +71,17 @@ export async function run(ctx) {
   eq(match.sides.red.dry, false, "red is not dry yet");
   must(Array.isArray(first), "upkeep returns an events list");
 
-  // ---- buy: before the clock has run a purchase does not spend -------------------------
-  const freeBuy = buy(match, "blue", "infantry", 80, 40);
-  must(freeBuy && freeBuy.ok === true, "a purchase before the clock ran was refused: " + JSON.stringify(freeBuy));
-  eq(freeBuy.piece.kind, "infantry", "bought piece kind");
-  eq(freeBuy.piece.side, "blue", "bought piece side");
-  eq(freeBuy.piece.domain, "land", "infantry domain");
-  eq(match.sides.blue.cash, startPool("1986"), "a purchase before the clock ran must not spend");
-  must(!siteOf(match, 10).unready, "a free purchase must not mark the city unready");
+  // ---- buy: the setup phase spends the start pool --------------------------------------
+  // A purchase used to be free until the clock first ran, which made a 2023 start a free
+  // army: fill the board, then press Run. The start pool is what the setup phase spends.
+  const firstBuy = buy(match, "blue", "infantry", 80, 40);
+  must(firstBuy && firstBuy.ok === true, "a setup purchase was refused: " + JSON.stringify(firstBuy));
+  eq(firstBuy.piece.kind, "infantry", "bought piece kind");
+  eq(firstBuy.piece.side, "blue", "bought piece side");
+  eq(firstBuy.piece.domain, "land", "infantry domain");
+  const infantryPrice = priceOf("infantry");
+  eq(match.sides.blue.cash, startPool("1986") - infantryPrice, "a setup purchase must spend its price");
+  must(siteOf(match, 10).unready, "a purchase must mark the city unready");
 
   // two pieces cannot share a cell
   const shared = buy(match, "blue", "infantry", 80, 40);

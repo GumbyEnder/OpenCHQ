@@ -5,12 +5,16 @@ import {
 import {
   PICK_HINT,
   ackText,
+  buyMessage,
   cellAtEvent,
   orderMessage,
   ownPieceAt,
   previewLine,
+  purseText,
   refusalText,
   routeRequest,
+  shopDisabled,
+  shopLabel,
 } from "./command.mjs";
 
 const gate = document.querySelector("#gate");
@@ -141,8 +145,13 @@ function drawMatch() {
   renderLegend();
 }
 
+// Which unit the player has put on the build cursor, if any. The next click on a friendly city
+// (or a dock, for a ship) buys it there; anything else cancels.
+let buying = null;
+
 function clearCommand() {
   selected = null;
+  buying = null;
   preview = null;
   hoverKey = "";
   fogSeen = null;
@@ -164,6 +173,21 @@ board.addEventListener("click", (event) => {
   if (!room || !room.you) return;
   const cell = cellAtEvent(event, board, viewForCanvas());
   if (!cell) return;
+
+  // A unit on the build cursor claims the click: the cell has to be one of the seat's own
+  // sites, and the server decides whether the purchase is legal.
+  if (buying) {
+    const site = (room.sites || []).find((place) => place.x === cell.x && place.y === cell.y);
+    if (!site) {
+      say("Buy a " + buying + ": that cell is not a site. Click one of your cities.");
+      return;
+    }
+    send(buyMessage(buying, cell));
+    buying = null;
+    renderRoom();
+    return;
+  }
+
   const mine = ownPieceAt(room.pieces, cell, room.you);
   if (mine) {
     selected = mine;
@@ -356,7 +380,52 @@ function renderRoom() {
   leave.textContent = "Leave";
   leave.addEventListener("click", () => send({ op: "leave" }));
   actions.append(run, leave);
+
+  // The wallet and the payment countdown: without them the clock is dead time, because a
+  // player cannot see that money is coming or when.
+  let purseEl = null;
+  let shopEl = null;
+  if (room.seat) {
+    const purse = document.createElement("p");
+    purse.className = "purse";
+    purse.textContent = purseText(room.seat);
+    purseEl = purse;
+  }
+
+  // The shop. Prices come from the server, so the panel cannot disagree with what it charges.
+  if (Array.isArray(room.shop) && room.shop.length) {
+    const shop = document.createElement("div");
+    shop.className = "shop";
+    const cash = room.seat && Number.isFinite(room.seat.cash) ? room.seat.cash : null;
+    for (const entry of room.shop) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "buy";
+      button.textContent = shopLabel(entry);
+      button.disabled = shopDisabled(entry, cash);
+      button.title = entry.refused || (button.disabled
+        ? "Not enough in the pool."
+        : "Click, then click a friendly " + (entry.domain === "sea" ? "dock" : "city") + ".");
+      button.addEventListener("click", () => {
+        if (entry.refused) {
+          say(entry.refused);
+          return;
+        }
+        buying = entry.kind;
+        selected = null;
+        preview = null;
+        say("Buy a " + entry.kind + ": click one of your " + (entry.domain === "sea" ? "docks" : "cities") + ".");
+        renderRoom();
+      });
+      if (buying === entry.kind) button.className += " armed";
+      shop.append(button);
+    }
+    shopEl = shop;
+  }
+
   roomBox.append(seats, meta, note, actions);
+  if (purseEl) roomBox.append(purseEl);
+  if (shopEl) roomBox.append(shopEl);
 }
 
 function showPlay(on) {
@@ -415,6 +484,8 @@ function connect() {
         error: message.error || "",
       };
       drawMatch();
+    } else if (message.op === "bought") {
+      say("Bought an " + message.kind + " at " + message.at.x + "," + message.at.y + (message.cash !== null && message.cash !== undefined ? ". Pool " + message.cash + "." : "."));
     } else if (message.op === "ordered") {
       say(ackText(message));
       clearCommand();

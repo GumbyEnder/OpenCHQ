@@ -82,6 +82,45 @@ export function refusalText(message) {
   return text || REFUSED;
 }
 
+// ---- the shop's half ---------------------------------------------------------------------
+// The panel draws only what the server sent: prices and the refusal sentence come from the
+// shop payload, and the player's own pool comes from the seat. No figure is invented here and
+// none is formatted as money - the archive's currency was never recovered.
+
+export function purseText(seat) {
+  if (!seat || (seat.cash === null && seat.fuel === null && seat.payIn === null)) return "";
+  const parts = [];
+  if (Number.isFinite(seat.cash)) parts.push("pool " + seat.cash);
+  if (Number.isFinite(seat.fuel)) parts.push("fuel " + seat.fuel);
+  if (Number.isFinite(seat.payIn)) {
+    parts.push("payment in " + seat.payIn + (seat.payIn === 1 ? " round" : " rounds"));
+  }
+  return parts.join(" · ");
+}
+
+// A shop row names the unit and, when the server priced it, the price. A refused row says
+// why instead of pretending it can be bought.
+export function shopLabel(entry) {
+  if (!entry || !entry.kind) return "";
+  if (entry.refused) return entry.kind + " - " + entry.refused;
+  return Number.isFinite(entry.price) ? entry.kind + " " + entry.price : entry.kind;
+}
+
+export function shopDisabled(entry, cash) {
+  if (!entry) return true;
+  if (entry.refused) return true;
+  if (!Number.isFinite(cash) || !Number.isFinite(entry.price)) return false;
+  return cash < entry.price;
+}
+
+// The order the page sends for a purchase. The server re-checks the site and the pool; this
+// only carries the player's intent.
+export function buyMessage(kind, target) {
+  const at = cell(target);
+  if (!kind || !at) return null;
+  return { op: "buy", kind: String(kind), x: at.x, y: at.y };
+}
+
 // The one line the board note carries while a destination is hovered.
 export function previewLine(preview) {
   if (!preview) return "";

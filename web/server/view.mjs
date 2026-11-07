@@ -134,8 +134,10 @@ function stateOf(unit, round) {
 function seatStatus(match, side) {
   const sides = match && match.sides;
   const entry = sides && typeof sides === "object" ? sides[side] : null;
-  const cash = Number(entry && entry.cash);
-  const fuel = Number(entry && entry.fuel);
+  // null means the economy has not touched this side yet; Number(null) would report 0 and the
+  // page would print a false "fuel 0".
+  const cash = entry && entry.cash !== null && entry.cash !== undefined ? Number(entry.cash) : NaN;
+  const fuel = entry && entry.fuel !== null && entry.fuel !== undefined ? Number(entry.fuel) : NaN;
   const every = Number(payEvery());
   const round = Number(match && match.round) || 0;
   const payIn = Number.isFinite(every) && every > 0 ? every - (round % every) : null;

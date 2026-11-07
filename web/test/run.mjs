@@ -6,6 +6,8 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { colorForTerrain, PALETTE, paintBoard, SCHEMATIC } from "../public/paint.mjs";
+import { buyMessage, purseText, shopDisabled, shopLabel } from "../public/command.mjs";
+import { priceOf } from "../server/rules.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const dataDir = mkdtempSync(path.join(tmpdir(), "openchq-web-"));
@@ -423,6 +425,55 @@ async function main() {
   );
   if (!Array.isArray(empty2023.room.pieces)) fail("the 2023 view has no pieces field");
   if (empty2023.room.pieces.length !== 0) fail("2023 opened with " + empty2023.room.pieces.length + " pieces");
+
+  // --- 2023 is the empty era, so the shop is the only way onto the board ----------------
+  const city = (empty2023.room.sites || []).find((site) => site.kind === "city" && site.owner === "blue");
+  if (!city) fail("2023 opened with no blue city, so the empty era cannot be bought into");
+  const shop = empty2023.room.shop || [];
+  const infantry = shop.find((entry) => entry.kind === "infantry");
+  if (!infantry) fail("the shop has no infantry: " + JSON.stringify(shop));
+  if (Number(infantry.price) !== priceOf("infantry")) fail("the shop price disagrees with config: " + infantry.price);
+
+  const cashBefore = Number(empty2023.room.seat && empty2023.room.seat.cash);
+  const beforeBuy = adaBox.length;
+  wsAda.send(JSON.stringify({ op: "buy", kind: "infantry", x: city.x, y: city.y }));
+  const bought = await waitFor(adaBox, beforeBuy, (message) => message.op === "bought", "buy");
+  if (bought.kind !== "infantry") fail("the purchase answered with " + bought.kind);
+  if (Number(bought.cash) !== cashBefore - Number(infantry.price)) {
+    fail("cash did not fall by the configured price: " + cashBefore + " -> " + bought.cash);
+  }
+  const afterBuyRoom = await waitFor(adaBox, beforeBuy, (message) => message.op === "room" && message.room && (message.room.pieces || []).length === 1, "room after buy");
+  if (afterBuyRoom.room.pieces[0].side !== "blue") fail("the bought piece is not the buyer's");
+
+  // A second purchase in the same cell is refused, and a nuke is refused with a reason.
+  wsAda.send(JSON.stringify({ op: "buy", kind: "infantry", x: city.x, y: city.y }));
+  const occupied = await waitFor(adaBox, beforeBuy, (message) => message.op === "error" || message.op === "refused", "second buy");
+  if (!/share|occupied/i.test(String(occupied.error || occupied.reason || ""))) fail("a second buy in one cell was allowed");
+  wsAda.send(JSON.stringify({ op: "buy", kind: "nuke", x: city.x, y: city.y }));
+  const nuked = await waitFor(adaBox, beforeBuy, (message) => (message.op === "error" || message.op === "refused") && /nuke/i.test(String(message.error || message.reason)), "nuke buy");
+  if (!nuked) fail("a nuke purchase was not refused with a reason");
+
+  // The panel's half: the wallet reads as a pool, never as money, and a row the server refused
+  // is disabled and explains itself. A price the server sent is what the row shows.
+  const purse = purseText(empty2023.room.seat);
+  if (!purse.includes("pool ")) fail("the wallet does not name the pool: " + purse);
+  if (purse.includes("$")) fail("the wallet is written as money: " + purse);
+  const nukeRow = shop.find((entry) => entry.kind === "nuke");
+  if (!nukeRow || !nukeRow.refused) fail("the shop does not refuse a nuke: " + JSON.stringify(nukeRow));
+  if (!shopLabel(nukeRow).includes(nukeRow.refused)) fail("a refused row does not say why: " + shopLabel(nukeRow));
+  if (shopLabel(infantry) !== "infantry " + infantry.price) fail("a shop row does not name its price: " + shopLabel(infantry));
+  if (!shopDisabled(infantry, Number(infantry.price) - 1)) fail("a row the seat cannot pay for is enabled");
+  if (shopDisabled(infantry, Number(infantry.price))) fail("a row the seat can pay for is disabled");
+  if (!shopDisabled(nukeRow, 1000000)) fail("a refused row is enabled with any pool");
+  const intent = buyMessage("infantry", city);
+  if (!intent || intent.op !== "buy" || intent.kind !== "infantry" || intent.x !== city.x || intent.y !== city.y) {
+    fail("the page's purchase message is malformed: " + JSON.stringify(intent));
+  }
+  // ... and the page actually draws that panel from these helpers rather than its own text.
+  const appText = readFileSync(path.join(root, "web", "public", "app.js"), "utf8");
+  for (const call of ["purseText(room.seat)", "shopLabel(entry)", "shopDisabled(entry, cash)", "buyMessage(buying, cell)"]) {
+    if (!appText.includes(call)) fail("the page does not use " + call);
+  }
   const after2023 = adaBox.length;
   wsAda.send(JSON.stringify({ op: "leave" }));
   await waitFor(adaBox, after2023, (message) => message.op === "room" && message.room === null, "leave 2023");

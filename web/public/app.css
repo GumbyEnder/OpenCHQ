@@ -127,6 +127,12 @@ button.ghost {
 .seat.red { border-color: var(--red); }
 
 .actions { display: flex; gap: 8px; margin: 12px 0; }
+/* The shop: one row of priced buttons, and the armed one says so. */
+.shop { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.shop button { font-size: 13px; padding: 6px 10px; }
+.shop button.armed { background: #2b6f7d; border-color: #7fd7e6; }
+.shop button:disabled { opacity: 0.45; cursor: not-allowed; }
+.purse { font-variant-numeric: tabular-nums; color: #9fe8d0; margin: 4px 0 0; }
 
 #board {
   width: 100%;
