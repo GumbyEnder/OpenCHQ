@@ -4,26 +4,39 @@
 // The cell ids come from /api/board. Terrain names come from the same payload.
 // Colors are ours; nothing here reads the original map picture.
 
+// These are the original game's colours, not a palette of our own.
+//
+// Recovered by matching the shipped art against the shipped terrain table: the map in WORLD.PIC is
+// 320x136 pixels and TMAP.DAT is one nibble per cell at the same size, so cell (x,y) is pixel
+// (x,y) of the picture. The picture's map area starts at y=6 (the six rows above it are black),
+// and at that offset the terrain table and the art agree on 85% of cells. The dominant colour per
+// terrain type, out of the 16-colour EGA default palette the game set:
+//
+//   ocean #55ffff · plain #00aa00 · forest #55ff55 · jungle #00aaaa
+//   mountain #aaaaaa · desert #ffff55 · polar #ffffff
+//
+// tools/sample_palette.py in the Command HQ reference tree reproduces the measurement.
 export const PALETTE = Object.freeze({
-  // The first palette was too dark to read: a screenshot of a played match looked like a black
-  // rectangle with a blue dot on it. These values keep the same colours, lifted enough that land
-  // and water separate at 8 px per cell and the world's shape survives the fog.
-  ocean: "#12293d",
-  shallows: "#2a6b8e",
-  lake: "#17445f",
-  docks: "#2d4f6e",
-  plain: "#4a5c3a",
-  forest: "#2e4527",
-  jungle: "#24492a",
-  mountain: "#5a5a52",
-  desert: "#6b5c3a",
-  polar: "#b8c3c9",
-  wasteland: "#2a2420",
-  city: "#8a7442",
-  oilfield: "#4a3b2a",
-  capital: "#c4473a",
-  base: "#4b5a7a",
-  facility: "#5a4a6a",
+  ocean: "#55ffff",
+  shallows: "#00aaaa",
+  lake: "#00aaaa",
+  docks: "#555555",
+  plain: "#00aa00",
+  forest: "#55ff55",
+  jungle: "#00aaaa",
+  mountain: "#aaaaaa",
+  desert: "#ffff55",
+  polar: "#ffffff",
+  wasteland: "#555555",
+  // A city is a black dot on the map, the way the original drew one.
+  city: "#000000",
+  oilfield: "#aa5500",
+  // A city is a black dot, as the original drew it. The capital's ground is yellow only so the
+  // legend can name it: the marker that actually identifies a capital is the ring the painter
+  // draws around it, and the label beside it.
+  capital: "#ffff55",
+  base: "#555555",
+  facility: "#555555",
 });
 
 export const SCHEMATIC = Object.freeze({

@@ -150,3 +150,36 @@ Now:
   panning, not for wallpaper;
 - **fog is the concealed era's rule, not the default.** The map is a map; the enemy is the secret,
   which the server's view already enforces. Only era 9999 darkens the ground.
+
+
+## The board in the original's colours (reverse-engineered, not invented)
+
+The palette in `web/public/paint.mjs` is no longer ours. It was recovered from the shipped game
+rather than guessed:
+
+- `WORLD.PIC` decodes to a 320x200 EGA image whose map area starts at **y = 6** (rows 0-5 are
+  black), and `TMAP.DAT` is one nibble per cell at 320x136 — so cell (x, y) is pixel (x, y+6).
+- At that offset the terrain table and the art agree on **85% of cells**. Slide the picture up or
+  down and the agreement falls away (0.708 at 0, 0.851 at 6, 0.575 at 38), which is what pins the
+  offset rather than assuming it.
+- The dominant colour per terrain type, out of the 16-colour EGA default the game sets:
+
+  | terrain | colour | share |
+  |---|---|---|
+  | ocean | `#55ffff` | 65% |
+  | plain | `#00aa00` | 51% |
+  | forest | `#55ff55` | 43% |
+  | jungle | `#00aaaa` | 58% |
+  | mountain | `#aaaaaa` | 37% |
+  | desert | `#ffff55` | 73% |
+  | polar | `#ffffff` | 90% |
+
+The 84 cities the board draws are `CBR-SET.DAT` — the original's own site table — so the dots are
+the original's dots, at the original's coordinates. The picture itself carries no dots: the game
+projected them at runtime, exactly as this page does.
+
+Measurement script: `Command HQ/modern/tools/sample_palette.py`; output
+`extracted/data/terrain_palette.json`. Side-by-side capture: `docs/compare-original.png`.
+
+One deliberate difference: the capital's ground is yellow so the legend can name it, while the
+marker that identifies a capital remains the ring and the label.
