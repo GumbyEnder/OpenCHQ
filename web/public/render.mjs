@@ -216,7 +216,10 @@ export function paintSightRing(ctx, cell, view, sight, color) {
 // The board is 320x136; at 2x a piece is four pixels. The camera is whole-cell zoom plus a
 // pan, and the pan is unbounded in X because the painter tiles the board across the seam.
 export const MIN_ZOOM = 2;
-export const MAX_ZOOM = 8;
+// Device pixels, not CSS pixels: the canvas is sized at the device pixel ratio, so a cell is
+// crisp only if the zoom is expressed in the same units. 32 device px is 16 CSS px on a retina
+// screen and 32 on a plain one.
+export const MAX_ZOOM = 32;
 
 export function clampZoom(scale) {
   const zoom = Math.round(Number(scale) || MIN_ZOOM);

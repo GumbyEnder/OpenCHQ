@@ -76,7 +76,14 @@
       <section class="panel match">
         <h1>Match</h1>
         <div id="room" class="room-empty">Start a bot match, or invite someone who is online.</div>
-        <canvas id="board" width="640" height="272"></canvas>
+        <div class="cam">
+          <button type="button" id="camOut" title="Zoom out (-)">-</button>
+          <button type="button" id="camIn" title="Zoom in (+)">+</button>
+          <button type="button" id="camFit" title="Whole map (0)">Fit</button>
+          <button type="button" id="camFollow" class="armed" title="Follow the selected piece (F)">Follow</button>
+          <span id="camNote" class="fine"></span>
+        </div>
+        <canvas id="board" width="960" height="600"></canvas>
         <div id="legend" class="legend" aria-label="Map legend"></div>
         <p id="boardNote" class="fine">Loading the cell grid.</p>
       </section>

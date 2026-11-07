@@ -89,11 +89,69 @@ let camera = null;
 let fogSeen = null;
 let fogKey = "";
 
+// The canvas is sized by the page, not by a number in the HTML: at 640x272 fixed, a cell was four
+// CSS pixels on a laptop and the map sat below the fold. It now takes the width it has and about
+// two thirds of the window height, at the device pixel ratio, and a cell is ~8 px by default.
+function dpr() {
+  return Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1));
+}
+
+function sizeCanvas() {
+  const availW = Math.max(320, Math.floor(board.parentElement ? board.parentElement.clientWidth : 640));
+  const availH = Math.max(240, Math.floor((window.innerHeight || 800) * 0.62));
+  const w = Math.round(availW * dpr());
+  const h = Math.round(availH * dpr());
+  if (board.width !== w || board.height !== h) {
+    board.width = w;
+    board.height = h;
+    board.style.height = Math.round(availH) + "px";
+    // A resize is a new viewport: keep the cell under the middle of the screen, not the old left.
+    const old = camera;
+    camera = null;
+    viewForCanvas();
+    if (old && camera) {
+      camera = { ...camera, scale: old.scale, left: Math.round(camera.viewW / 2 - ((camera.viewW / 2 - old.left) / old.scale + 0.5) * old.scale) };
+    }
+  }
+}
+
 function viewForCanvas() {
+  sizeCanvas();
   const canvas = board;
-  const fit = fitViewport(canvas.width, canvas.height, boardPayload.width || 320, boardPayload.height || 136);
-  if (!camera) camera = { ...fit, scale: clampZoom(fit.scale * 2) };
+  const fit = fitViewport(canvas.width, canvas.height, boardPayload.width || 320, boardPayload.height || 136, 64);
+  if (!camera) {
+    // Start legible, not whole-map: a piece is a mark at 2x and a unit at 6x.
+    camera = { ...fit, scale: clampZoom(Math.max(fit.scale, Math.round(8 * dpr()))) };
+    if (room && room.capitals && room.you && room.capitals[room.you]) {
+      camera = centerOn(room.capitals[room.you], camera);
+    }
+  }
   return camera;
+}
+
+// Follow: the selected piece stays in the middle as the clock runs. Without it, a zoomed view
+// walks off the piece every time it steps.
+let following = true;
+
+let sawRoom = false;
+
+function refit() {
+  camera = null;
+  viewForCanvas();
+  drawMatch();
+}
+
+function zoomStep(factor) {
+  const view = viewForCanvas();
+  camera = zoomAt(view, factor, view.viewW / 2, view.viewH / 2);
+  drawMatch();
+}
+
+function setFollow(on) {
+  following = Boolean(on);
+  const button = document.getElementById("camFollow");
+  if (button) button.classList.toggle("armed", following);
+  drawMatch();
 }
 
 // The sight table is rebuilt when the round or the seat's own pieces change, and the memory of
@@ -138,7 +196,13 @@ function renderLegend() {
 // only ever the ones the server put in `room.pieces`; nothing is inferred.
 function drawMatch() {
   const ctx = board.getContext("2d");
-  const view = viewForCanvas();
+  let view = viewForCanvas();
+  // Follow the selected piece: a zoomed view that leaves the piece behind is a worse camera than
+  // no zoom at all.
+  if (following && selected) {
+    camera = centerOn(selected, view);
+    view = camera;
+  }
   const result = paintMatch(ctx, boardPayload, room, {
     view,
     own: room && room.you,
@@ -147,6 +211,11 @@ function drawMatch() {
     sight: Number(boardPayload.sightCells || 8),
     sightAt: selected,
   });
+  const camNote = document.getElementById("camNote");
+  if (camNote) {
+    camNote.textContent = "cell " + (view.scale / dpr()).toFixed(0) + " px · " +
+      (following ? "following" : "free");
+  }
   boardNote.textContent = previewLine(preview) || statusLine(boardPayload, room, result);
   renderLegend();
 }
@@ -283,14 +352,26 @@ board.addEventListener("pointerup", () => {
   panFrom = null;
 });
 window.addEventListener("keydown", (event) => {
-  const step = 8 * viewForCanvas().scale;
+  const view = viewForCanvas();
+  const step = 8 * view.scale;
   const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+  if (event.key === "+" || event.key === "=") return zoomStep(1.4);
+  if (event.key === "-" || event.key === "_") return zoomStep(0.7);
+  if (event.key === "0") return refit();
+  if (event.key === "f" || event.key === "F") return setFollow(!following);
   const move = moves[event.key];
   if (!move) return;
   event.preventDefault();
-  camera = panBy(viewForCanvas(), move[0], move[1]);
+  camera = panBy(view, move[0], move[1]);
   drawMatch();
 });
+
+window.addEventListener("resize", () => refit());
+
+document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1.4));
+document.getElementById("camOut")?.addEventListener("click", () => zoomStep(0.7));
+document.getElementById("camFit")?.addEventListener("click", () => refit());
+document.getElementById("camFollow")?.addEventListener("click", () => setFollow(!following));
 
 async function loadBoard() {
   try {
@@ -455,6 +536,11 @@ function renderRoom() {
   roomBox.append(seats, meta, note, actions);
   if (purseEl) roomBox.append(purseEl);
   if (shopEl) roomBox.append(shopEl);
+  if (!sawRoom && room) {
+    // A match that opens below the fold is a match the player does not see open.
+    sawRoom = true;
+    setTimeout(() => document.getElementById("board")?.scrollIntoView({ block: "center" }), 60);
+  }
   const tools = toolRow(room);
   if (tools) roomBox.append(tools);
 
