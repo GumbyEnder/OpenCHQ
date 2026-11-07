@@ -200,6 +200,9 @@ export async function run(ctx) {
   try {
     await opened(sock.ws);
     await sock.wait((m) => m.op === "welcome", "welcome");
+    // This test reads a board by waiting for the frame that shows it, so it asks for whole
+    // frames instead of merging diffs.
+    sock.send({ op: "fullframes", on: true });
     sock.send({ op: "bot", era: "1986", side: "blue" });
     const start = await sock.wait((m) => m.op === "room" && m.room && m.room.mode === "bot", "bot room");
     const roomId = start.room.id;

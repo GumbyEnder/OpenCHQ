@@ -325,14 +325,15 @@
     {
       "id": "view_deltas",
       "order": 300,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "sight",
         "load_test"
       ],
       "title": "Send what changed, not the whole view",
       "work": "A full seat view every round measured at 2.6 MB per round for 2000 seats (~18 MB/s), which is the real cost of 1000 concurrent games. Send per-round deltas: changed pieces, new and cleared route steps, and a periodic full resync. Keep the payload honest - hidden pieces stay absent. Record before and after bytes per round in the harness.",
-      "prove": "tools/bench-rooms.mjs and the harness report bytes per round for a 1000-room tick before and after, and the delta payload is at least 5x smaller while a client that missed a delta still gets a correct view after the resync."
+      "prove": "tools/bench-rooms.mjs and the harness report bytes per round for a 1000-room tick before and after, and the delta payload is at least 5x smaller while a client that missed a delta still gets a correct view after the resync.",
+      "evidence": "lobby keeps a shadow of the last frame per seat and sends {op:'delta'} with only changed pieces, gone ids, changed routes and site ownership; a whole frame on connect, every 20 rounds, on a clock change, after a gap, or when half the board moved. The page merges deltas and asks {op:'sync'} when a round does not follow. Measured with local/delta-cost.mjs: 27,048 B/round whole frame vs 4,744 B/round delta = 5.7x. web/test/nodes/view_deltas.mjs merges the deltas a real socket received and asserts the merged board equals the server's own full frame."
     },
     {
       "id": "resources",

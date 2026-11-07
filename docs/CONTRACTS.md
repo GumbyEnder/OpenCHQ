@@ -54,6 +54,20 @@ match = {
 }
 ```
 
+## Wire frames: a round is a difference, not a room
+
+A seat's board arrives either as `{op:"room", room}` (the whole view) or as
+`{op:"delta", roomId, delta:{round, clock, note, pieces, gone, routes, sites, seat?, capitals?}}`.
+A delta names only what changed since the frame that seat was last sent, and `gone` lists ids that
+left the view (a sunk ship, a piece that slipped out of sight).
+
+A page that sees a round it cannot follow on from (a drop, a reload in the middle) sends
+`{op:"sync"}` and gets a whole room back. `{op:"fullframes", on:true}` asks for whole frames every
+round: tests read a board by waiting for the frame that shows it, and a debugger wants the same.
+
+A full frame is about 27 kB for a 1986 board and a delta about 4.7 kB, measured with
+`local/delta-cost.mjs` over ten rounds of the same room: 5.7x less on the wire.
+
 ## Modules, owners, and signatures
 
 Every module is pure JavaScript over `match`. No disk, no network, no sockets, no timers.

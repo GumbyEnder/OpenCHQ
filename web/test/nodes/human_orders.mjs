@@ -126,8 +126,10 @@ export async function run(ctx) {
     const roundMs = Math.max(1, Number(ctx.config.roundSeconds) || 5) * 1000;
     let mark = sa.box.length;
     sa.send({ op: "run" });
-    await waitUntil(sa.box, mark, (m) => m.op === "room" && m.room && m.room.id === roomId &&
-      m.room.clock === "running" && m.room.round >= 1, "a human round ran", roundMs + 3000, fail);
+    // A round may arrive as the whole room or as its difference; either one means it ran.
+    await waitUntil(sa.box, mark, (m) => (m.op === "room" && m.room && m.room.id === roomId &&
+      m.room.clock === "running" && m.room.round >= 1) ||
+      (m.op === "delta" && m.delta && m.delta.round >= 1), "a human round ran", roundMs + 3000, fail);
     mark = sa.box.length;
     sa.send({ op: "hold" });
     await ctx.waitFor(sa.box, mark, (m) => m.op === "room" && m.room && m.room.id === roomId &&

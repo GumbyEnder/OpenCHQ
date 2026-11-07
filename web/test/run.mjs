@@ -605,7 +605,9 @@ async function main() {
   wsAda.send(JSON.stringify({ op: "run" }));
   const resumed = await waitUntil(adaBox, beforeResume, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "running", "resume after a drop", roundMs + 2000);
   if (resumed.room.red.username !== "Gus") fail("resume lost the other seat");
-  await waitUntil(adaBox, beforeResume, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.round > pausedRound, "a round with red away", roundMs + 4000);
+  // A round arrives either as a whole room or as the difference; both mean the clock moved.
+  await waitUntil(adaBox, beforeResume, (m) => (m.op === "room" && m.room && m.room.id === survivedId && m.room.round > pausedRound) ||
+    (m.op === "delta" && m.delta && m.delta.round > pausedRound), "a round with red away", roundMs + 4000);
   const afterRound = adaBox.length;
   wsAda.send(JSON.stringify({ op: "hold" }));
   await waitUntil(adaBox, afterRound, (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.clock === "held", "hold after the absent round", roundMs + 2000);

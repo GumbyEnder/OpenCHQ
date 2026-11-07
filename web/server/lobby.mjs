@@ -126,12 +126,131 @@ export function createLobby() {
     };
   }
 
+  // A full frame per seat per round is what 1000 live rooms cost: the pieces, the site list and
+  // every route, sent again because one piece moved. What follows sends the difference instead,
+  // and a full frame only when the page could have lost its place: on connect, every
+  // FULL_EVERY rounds, when the clock changes, and when more than half the board moved anyway.
+  const FULL_EVERY = 20;
+  const shadows = new Map(); // room id -> seat -> last frame sent
+  // A seat may ask for whole frames: tests read a board by waiting for it, and a debugger wants
+  // the same. It costs this seat bandwidth, nobody else's.
+  const verbose = new Set();
+
+  function signature(value) {
+    return JSON.stringify(value);
+  }
+
+  // A seat that arrives fresh has no shadow: the next frame must be the whole room.
+  function forgetSeat(room, side) {
+    const perRoom = shadows.get(room.id);
+    if (perRoom) delete perRoom[side];
+  }
+
+  function seatShadow(room, side) {
+    let perRoom = shadows.get(room.id);
+    if (!perRoom) {
+      perRoom = {};
+      shadows.set(room.id, perRoom);
+    }
+    return perRoom[side] || null;
+  }
+
+  function setSeatShadow(room, side, view) {
+    let perRoom = shadows.get(room.id);
+    if (!perRoom) {
+      perRoom = {};
+      shadows.set(room.id, perRoom);
+    }
+    const pieces = {};
+    for (const piece of view.pieces || []) pieces[piece.id] = signature(piece);
+    const routes = {};
+    for (const [id, steps] of Object.entries(view.routes || {})) routes[id] = signature(steps);
+    const sites = {};
+    for (const site of view.sites || []) sites[site.id] = site.owner ?? null;
+    perRoom[side] = {
+      round: view.round,
+      clock: view.clock,
+      note: view.note,
+      seat: signature(view.seat),
+      capitals: signature(view.capitals),
+      pieces,
+      routes,
+      sites,
+    };
+  }
+
+  // The difference between the last frame this seat got and the view now.
+  function deltaFor(room, side, view) {
+    const last = seatShadow(room, side);
+    if (!last) return null;
+    const pieces = [];
+    const routes = {};
+    const gone = [];
+    const pieceSigs = {};
+    for (const piece of view.pieces || []) {
+      const sig = signature(piece);
+      pieceSigs[piece.id] = sig;
+      if (last.pieces[piece.id] !== sig) pieces.push(piece);
+    }
+    for (const id of Object.keys(last.pieces)) {
+      if (!(id in pieceSigs)) gone.push(id);
+    }
+    for (const [id, steps] of Object.entries(view.routes || {})) {
+      const sig = signature(steps);
+      if (last.routes[id] !== sig) routes[id] = steps;
+    }
+    for (const id of Object.keys(last.routes)) {
+      if (!(id in (view.routes || {}))) routes[id] = [];
+    }
+    const sites = [];
+    for (const site of view.sites || []) {
+      if (last.sites[site.id] !== (site.owner ?? null)) {
+        sites.push({ id: site.id, owner: site.owner ?? null, name: site.name, kind: site.kind });
+      }
+    }
+    const delta = {
+      round: view.round,
+      clock: view.clock,
+      note: view.note,
+      pieces,
+      gone,
+      routes,
+      sites,
+      seatChanged: last.seat !== signature(view.seat),
+      capitalsChanged: last.capitals !== signature(view.capitals),
+    };
+    if (delta.seatChanged) delta.seat = view.seat;
+    if (delta.capitalsChanged) delta.capitals = view.capitals;
+    return delta;
+  }
+
+  function frameFor(room, side, view, username) {
+    if (verbose.has(username)) return { op: "room", room: view };
+    const full = !seatShadow(room, side);
+    if (full) return { op: "room", room: view };
+    if (Number(view.round) % FULL_EVERY === 0) return { op: "room", room: view };
+    const last = seatShadow(room, side);
+    if (last.clock !== view.clock) return { op: "room", room: view };
+    if (Number(view.round) !== Number(last.round) + 1) return { op: "room", room: view };
+    const delta = deltaFor(room, side, view);
+    if (!delta) return { op: "room", room: view };
+    // If most of the board moved, the difference is not smaller than the frame.
+    const moved = delta.pieces.length + delta.gone.length;
+    if (moved * 2 >= (view.pieces || []).length + moved) return { op: "room", room: view };
+    return { op: "delta", roomId: room.id, delta };
+  }
+
   function tellRoom(room, skip = "") {
     for (const seat of [room.seats.blue, room.seats.red]) {
       if (seat.kind !== "human") continue;
       if (seat.username === skip) continue;
       const peer = sockets.get(seat.username);
-      if (peer) peer.send({ op: "room", room: roomView(room, seat.username) });
+      if (!peer) continue;
+      const side = room.seats.blue.username === seat.username ? "blue" : "red";
+      const view = roomView(room, seat.username);
+      const frame = frameFor(room, side, view, seat.username);
+      setSeatShadow(room, side, view);
+      peer.send(frame);
     }
   }
 
@@ -154,6 +273,7 @@ export function createLobby() {
 
   function endRoom(room, reason) {
     room.note = reason;
+    shadows.delete(room.id);
     rooms.delete(room.id);
     deleteRoom(room.id);
     for (const seat of [room.seats.blue, room.seats.red]) {
@@ -204,6 +324,9 @@ export function createLobby() {
     const roomId = seatOf.get(username);
     const room = roomId ? rooms.get(roomId) : null;
     const view = seatView(room, username);
+    // Whatever this seat was sent before it disconnected is not in its browser any more: the
+    // welcome is a full frame, so the next one must be too.
+    if (room) forgetSeat(room, room.seats.blue.username === username ? "blue" : "red");
     peer.send({
       op: "welcome",
       username,
@@ -518,8 +641,28 @@ export function createLobby() {
     if (op === "route") return routeFor(username, message);
     if (op === "run") return setClock(username, true);
     if (op === "hold") return setClock(username, false);
+    if (op === "sync") return syncSeat(username);
+    if (op === "fullframes") {
+      if (message.on === false) verbose.delete(username);
+      else verbose.add(username);
+      return { ok: true, on: verbose.has(username) };
+    }
     if (op === "leave") return leave(username);
     return { error: "Unknown request." };
+  }
+
+  // A page that notices a missing round asks for the whole room instead of guessing.
+  function syncSeat(username) {
+    const roomId = seatOf.get(username);
+    const room = roomId ? rooms.get(roomId) : null;
+    if (!room) return { error: "You are not in a match." };
+    const side = room.seats.blue.username === username ? "blue" : "red";
+    forgetSeat(room, side);
+    const peer = sockets.get(username);
+    const view = roomView(room, username);
+    if (peer) peer.send({ op: "room", room: view });
+    setSeatShadow(room, side, view);
+    return { ok: true };
   }
 
   // Every connected seat, for the one message a drain has to deliver.

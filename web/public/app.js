@@ -478,6 +478,45 @@ function paintLog(list) {
   }
 }
 
+// A delta is the difference since the frame this page already has. If the round does not follow
+// on from the one on screen, the page has missed something and asks for the whole room rather
+// than patching a guess.
+function applyDelta(delta) {
+  if (!room || !delta) return;
+  const next = Number(delta.round) || 0;
+  const here = Number(room.round) || 0;
+  if (next !== here + 1 && next !== here) {
+    send({ op: "sync" });
+    return;
+  }
+  const byId = new Map((room.pieces || []).map((piece) => [piece.id, piece]));
+  for (const piece of delta.pieces || []) byId.set(piece.id, piece);
+  for (const id of delta.gone || []) byId.delete(id);
+  const routes = { ...(room.routes || {}), ...(delta.routes || {}) };
+  const sites = (room.sites || []).map((site) => {
+    const hit = (delta.sites || []).find((change) => change.id === site.id);
+    return hit ? { ...site, owner: hit.owner } : site;
+  });
+  room = {
+    ...room,
+    round: next,
+    clock: delta.clock,
+    note: delta.note,
+    pieces: [...byId.values()],
+    routes,
+    sites,
+    seat: delta.seatChanged ? delta.seat : room.seat,
+    capitals: delta.capitalsChanged ? delta.capitals : room.capitals,
+  };
+  if (selected && !byId.has(selected.id)) {
+    selected = null;
+    preview = null;
+    hoverKey = "";
+  }
+  renderRoom();
+  drawMatch();
+}
+
 function showPlay(on) {
   gate.classList.toggle("hidden", on);
   play.classList.toggle("hidden", !on);
@@ -550,6 +589,8 @@ function connect() {
       renderPeople();
       renderRoom();
       drawMatch();
+    } else if (message.op === "delta") {
+      applyDelta(message.delta);
     } else if (message.op === "route") {
       // Late replies for another piece are not this selection's route.
       if (!selected || message.piece !== selected.id) return;
