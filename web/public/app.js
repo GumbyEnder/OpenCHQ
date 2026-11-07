@@ -1,5 +1,5 @@
 import {
-  capitalMarkers, centerOn, clampZoom, fitViewport, legendEntries, paintMatch, panBy,
+  capitalMarkers, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch, panBy,
   rememberSeen, sightTable, statusLine, zoomAt,
 } from "./render.mjs";
 import {
@@ -98,6 +98,9 @@ function send(message) {
 // Canvas is sized to whole cells: 320x136 at scale 2 is 640x272. The camera zooms and pans on
 // top of that fit; it starts at the fit and follows the selected piece.
 let camera = null;
+// True once the player zooms or pans: from then on the camera is theirs. Until then every resize
+// and every frame recomputes the whole-world fit, which is what the original put on the screen.
+let userCamera = false;
 let fogSeen = null;
 let fogKey = "";
 
@@ -117,12 +120,19 @@ function sizeCanvas() {
     board.width = w;
     board.height = h;
     board.style.height = Math.round(availH) + "px";
-    // A resize is a new viewport: keep the cell under the middle of the screen, not the old left.
+    // A resize is a new viewport. An untouched camera refits to the whole world; a camera the
+    // player has zoomed keeps its zoom and stays on the same cell.
     const old = camera;
-    camera = null;
-    viewForCanvas();
-    if (old && camera) {
-      camera = { ...camera, scale: old.scale, left: Math.round(camera.viewW / 2 - ((camera.viewW / 2 - old.left) / old.scale + 0.5) * old.scale) };
+    if (!userCamera || !old) {
+      camera = null;
+      viewForCanvas();
+    } else {
+      const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
+      const midX = (old.left + old.viewW / 2) / old.scale;
+      const midY = (old.top + old.viewH / 2) / old.scale;
+      camera = { ...fit, scale: Math.max(MIN_ZOOM, Math.min(64, old.scale)) };
+      camera.left = Math.round(camera.viewW / 2 - midX * camera.scale);
+      camera.top = Math.round(camera.viewH / 2 - midY * camera.scale);
     }
   }
 }
@@ -131,12 +141,10 @@ function viewForCanvas() {
   sizeCanvas();
   const canvas = board;
   const fit = fitViewport(canvas.width, canvas.height, boardPayload.width || 320, boardPayload.height || 136, 64);
-  if (!camera) {
-    // Start legible, not whole-map: a piece is a mark at 2x and a unit at 6x.
-    camera = { ...fit, scale: clampZoom(Math.max(fit.scale, Math.round(8 * dpr()))) };
-    if (room && room.capitals && room.you && room.capitals[room.you]) {
-      camera = centerOn(room.capitals[room.you], camera);
-    }
+  if (!userCamera || !camera) {
+    // The default view is the whole world, as the original's was: the planet reads at a glance and
+    // the zoom is for detail, not for finding the map.
+    camera = { ...fit, scale: Math.max(MIN_ZOOM, fit.scale) };
   }
   return camera;
 }
@@ -147,13 +155,18 @@ let following = true;
 
 let sawRoom = false;
 
+// Fit shows the whole world, which is what the original game put on the screen: one planet, all of
+// it, with a click to zoom. It used to reset to the legible 8 px default, so "Fit" never fitted.
 function refit() {
-  camera = null;
-  viewForCanvas();
+  userCamera = false;
+  sizeCanvas();
+  const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
+  camera = { ...fit, scale: Math.max(MIN_ZOOM, fit.scale) };
   drawMatch();
 }
 
 function zoomStep(factor) {
+  userCamera = true;
   const view = viewForCanvas();
   camera = zoomAt(view, factor, view.viewW / 2, view.viewH / 2);
   drawMatch();
@@ -168,7 +181,16 @@ function setFollow(on) {
 
 // The sight table is rebuilt when the round or the seat's own pieces change, and the memory of
 // what has been seen accumulates across rounds.
+// Fog is the concealed scenario's rule, not the game's default. The original showed the whole
+// earth and hid only the enemy's pieces, which the server's view already does: the map is a map,
+// the enemy is a secret. Only the 9999 "Concealed" era darkens the ground itself.
+function concealedEra() {
+  const era = String((room && room.era) || (boardPayload && boardPayload.era) || "");
+  return era === "9999";
+}
+
 function fogFor(view) {
+  if (!concealedEra()) return null;
   if (!room || !Array.isArray(room.pieces)) return null;
   const sight = Number(boardPayload.sightCells || 8);
   const key = String(room.round) + "|" + room.pieces.map((piece) => piece.id + piece.x + "," + piece.y).join(";");
@@ -314,7 +336,9 @@ board.addEventListener("click", (event) => {
     selected = mine;
     preview = null;
     hoverKey = mine.id + ":" + mine.x + "," + mine.y;
-    camera = centerOn(mine, viewForCanvas());
+    // At the whole-world fit there is nothing to centre; once the player has zoomed, selecting a
+    // piece brings it into the middle.
+    if (userCamera) camera = centerOn(mine, viewForCanvas());
     say(PICK_HINT + " Then pick a destination.");
     drawMatch();
     return;
@@ -353,6 +377,7 @@ function screenPoint(event) {
 board.addEventListener("wheel", (event) => {
   event.preventDefault();
   const at = screenPoint(event);
+  userCamera = true;
   camera = zoomAt(viewForCanvas(), event.deltaY < 0 ? 1.25 : 0.8, at.x, at.y);
   drawMatch();
 }, { passive: false });
@@ -367,6 +392,7 @@ board.addEventListener("pointerdown", (event) => {
 });
 board.addEventListener("pointermove", (event) => {
   if (!panFrom) return;
+  userCamera = true;
   camera = panBy(viewForCanvas(), event.clientX - panFrom.x, event.clientY - panFrom.y);
   panFrom = { x: event.clientX, y: event.clientY };
   drawMatch();

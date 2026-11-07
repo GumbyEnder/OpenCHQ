@@ -182,6 +182,10 @@ export function paintFog(ctx, view, lit, seen) {
   if (!lit || lit.length === 0) return 0;
   const cols = visibleColumns(view);
   const rows = visibleRows(view);
+  if (view.boardW * view.scale <= view.viewW) {
+    cols.first = 0;
+    cols.last = view.boardW - 1;
+  }
   let drawn = 0;
   for (let y = rows.first; y <= rows.last; y++) {
     const row = y * view.boardW;
@@ -217,7 +221,9 @@ export function paintSightRing(ctx, cell, view, sight, color) {
 //
 // The board is 320x136; at 2x a piece is four pixels. The camera is whole-cell zoom plus a
 // pan, and the pan is unbounded in X because the painter tiles the board across the seam.
-export const MIN_ZOOM = 2;
+// The floor is 1, not 2: the whole earth has to fit on a short canvas, and a 320x136 board in a
+// 270-pixel-tall window fits only at 1x. Legibility is what the zoom-in is for.
+export const MIN_ZOOM = 1;
 // Device pixels, not CSS pixels: the canvas is sized at the device pixel ratio, so a cell is
 // crisp only if the zoom is expressed in the same units. 32 device px is 16 CSS px on a retina
 // screen and 32 on a plain one.
@@ -321,6 +327,12 @@ export function paintCells(ctx, board, view) {
   const v = view;
   const cols = visibleColumns(v);
   const rows = visibleRows(v);
+  // The board wraps in X, so a view wider than the board used to tile the whole world two or
+  // three times across the screen. When the board fits, draw it once and leave the margins empty.
+  if (v.boardW * v.scale <= v.viewW) {
+    cols.first = 0;
+    cols.last = v.boardW - 1;
+  }
   let painted = 0;
   for (let y = rows.first; y <= rows.last; y++) {
     const row = y * v.boardW;

@@ -132,3 +132,21 @@ player can now make before it is too late:
   "transport (cargo)", and selecting one says it cannot fight back and an enemy ship sinks it.
 - **A plane's absence is a number.** The view carries `inactive` rounds remaining, and selecting an
   aircraft says "Away on a mission: 3 rounds until it can fly again."
+
+
+## The board is the earth again (after the CHQ reference)
+
+The original Command HQ put the whole planet on one 320x200 screen — a fully revealed map, black
+dots for cities, terrain colours, and a right-click zoom for detail. Ours had drifted: "Fit" never
+fitted (it reset to the 8 px legible default), the first view opened on a window rather than the
+world, and a view wider than the board tiled the earth two or three times across the screen.
+
+Now:
+
+- the default camera is the whole world fit — 320x136 centred on the canvas, 2 px per cell on a
+  762 px canvas, one copy, margins either side;
+- **Fit** returns to that view; zoom and pan take the camera over and a resize keeps it;
+- the board is only tiled when it is genuinely larger than the view, because the seam wrap is for
+  panning, not for wallpaper;
+- **fog is the concealed era's rule, not the default.** The map is a map; the enemy is the secret,
+  which the server's view already enforces. Only era 9999 darkens the ground.
