@@ -2,6 +2,10 @@
 # The extract is not part of OpenCHQ.
 local/
 data/
+# The exception: the baked board and the decoded font atlas are ours, small, and the only reason the
+# public host can draw the original's world instead of a blank grid.
+!web/data/
+!web/data/*.json
 
 # Export output
 export/

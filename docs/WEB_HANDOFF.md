@@ -25,7 +25,7 @@ Working today:
 - Invite, decline, and accept. The inviter keeps the side they picked. The other human gets the opposite side.
 - Hold and Run change a shared clock flag. Both seats see it.
 
-Pieces do not move. The clock does not call a tick. The match page is a schematic, 640 by 284, with Washington at (79, 44) and Moscow at (183, 25). Disconnect ends the room at once with "NAME left the match." Reconnect is a later node. Do not build it early.
+Pieces do not move. The clock does not call a tick. The match page draws the original's map - the baked terrain grid, the same palette - with Washington at (79, 44) and Moscow at (183, 25). Disconnect ends the room at once with "NAME left the match." Reconnect is a later node. Do not build it early.
 
 Proof of the scaffold: `node web/test/run.mjs` prints `WEB_OK` and exits 0. That run is iteration 1 of 40. The counter on this machine is `/tmp/openchq-web-iteration` and is not in git.
 
@@ -36,7 +36,7 @@ Six nodes are done: `accounts`, `lobby`, `bot_room`, `human_room`, `clock`, `har
 | Order | Id | Depends | Work left |
 | --- | --- | --- | --- |
 | 70 | board_data | harness | `GET /api/board`: 320 by 136 cells, stride 162, sites, both capitals, no image and no executable path |
-| 80 | board_paint | board_data | Canvas paints cell ids. Distinct colors for ocean, shallows, city, and capital. Schematic only when the extract is missing |
+| 80 | board_paint | board_data | Canvas paints cell ids. Distinct colors for ocean, shallows, city, and capital. The public host paints web/data/world.json, the baked board; the schematic is only for a build with neither |
 | 90 | pieces | board_paint | 1986 and the other early eras place four pieces. 2023 places none. The room view includes the caller's pieces |
 | 100 | tick | pieces | Direct `tick()` moves a running room one round. Held does not move. Tests do not sleep 0.14 seconds |
 | 110 | orders | tick | Own land piece, one cell per round. X wraps. Y does not. Wasteland refused. Slow terrain is slower, and the ratio stays unnamed |

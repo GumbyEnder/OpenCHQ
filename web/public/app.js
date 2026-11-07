@@ -106,22 +106,30 @@ let userCamera = false;
 let fogSeen = null;
 let fogKey = "";
 
-// The canvas is sized by the page, not by a number in the HTML: at 640x272 fixed, a cell was four
-// CSS pixels on a laptop and the map sat below the fold. It now takes the width it has and about
-// two thirds of the window height, at the device pixel ratio, and a cell is ~8 px by default.
+// The canvas is the original screen's map area and nothing else: 320 cells wide by 136 tall, at the
+// largest whole number of device pixels that fits the width it has. It used to take the width and a
+// fixed share of the window height instead, which is how the world ended up a small island of
+// terrain in a field of black - the fit then had to drop to one pixel a cell to make 136 rows fit a
+// 270 px box, and the map stopped looking like the original's at all.
 function dpr() {
   return Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1));
 }
 
+const SCREEN_W = 320;
+const SCREEN_H = 136;
+
 function sizeCanvas() {
-  const availW = Math.max(320, Math.floor(board.parentElement ? board.parentElement.clientWidth : 640));
-  const availH = Math.max(240, Math.floor((window.innerHeight || 800) * 0.62));
-  const w = Math.round(availW * dpr());
-  const h = Math.round(availH * dpr());
+  const availW = Math.max(SCREEN_W, Math.floor(board.parentElement ? board.parentElement.clientWidth : 640));
+  // The original's screen is 320x200 with the map in the top 136 rows; the rest of the screen is the
+  // monitor band, which is DOM here. So the canvas is exactly the map, at a whole-pixel cell.
+  const cellsAcross = Math.max(1, Math.min(8, Math.floor(availW / SCREEN_W)));
+  const w = Math.round(SCREEN_W * cellsAcross * dpr());
+  const h = Math.round(SCREEN_H * cellsAcross * dpr());
   if (board.width !== w || board.height !== h) {
     board.width = w;
     board.height = h;
-    board.style.height = Math.round(availH) + "px";
+    board.style.width = "100%";
+    board.style.height = "auto";
     // A resize is a new viewport. An untouched camera refits to the whole world; a camera the
     // player has zoomed keeps its zoom and stays on the same cell.
     const old = camera;
@@ -308,7 +316,11 @@ function paintChrome(view) {
     return;
   }
   document.getElementById("chrome").classList.remove("hidden");
-  const mapWidthPx = (Number(boardPayload.width) || 320) * (view ? view.scale : 1);
+  // The map's width on screen, not its width in the backing store: the canvas is a whole number of
+  // device pixels per cell and the browser scales it to the container, so 320*scale would put the
+  // band short of the map's right edge.
+  const rect = board.getBoundingClientRect();
+  const mapWidthPx = Math.round(rect.width || board.clientWidth || (Number(boardPayload.width) || 320) * (view ? view.scale : 1));
   const geometry = chromeGeometry(mapWidthPx);
   box.style.width = geometry.boxWidth + "px";
   box.style.height = geometry.boxHeight + "px";

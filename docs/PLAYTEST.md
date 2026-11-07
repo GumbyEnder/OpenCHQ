@@ -274,3 +274,26 @@ No before/after table is claimed here. The 26,834 came from a harness that is no
 the replacement harness written this session did not reproduce that endgame state, so the honest
 statement is: the branch and its tests exist, the old silent skip is gone from the code path, and the
 endgame number still needs re-measuring with a harness that can reach a ringed capital on purpose.
+
+## The map on the public host (owner's requirement, 2026-11-07)
+
+The owner's words: the game map needs to look like the original — it can be updated but it cannot
+just be a blank grid. Two things were wrong with that.
+
+First, the live host had no extract and therefore answered /api/board with source "missing", so the
+player got a schematic. The fix is a bake, not a copy: tools/bake_world.mjs reads the extract once and
+writes web/data/world.json - 320x136 terrain codes as 5,575 runs, the 84 sites, the 38 wells, the
+palette, the capitals - plus web/data/font.json, the 92 decoded glyphs. 47 KB and 4 KB, both
+committed, neither containing a picture, an executable or a data file of the 1990 release.
+board.mjs now answers source "bundled" when there is no extract, and web/test/nodes/bundled_board.mjs
+fails if the baked board and the extract ever disagree cell for cell, so a stale bake cannot ship.
+
+Second, the canvas was sized to the container width and a fixed share of the window height, which is
+how the world became a small island in a field of black: at 731x270 the whole-cell fit had to drop to
+one pixel per cell to make 136 rows fit, and it read as a grid rather than a map. The canvas is now
+exactly the map - 320 cells by 136 at the largest whole number of device pixels the width allows,
+scaled to the container by CSS - and the monitor band sits below it as DOM, the way the original's
+320x200 screen is laid out. Measured after the change on a host with no extract: canvas 640x272
+backing, 695x297 on screen, 2 px per cell, 114,496 pixels of ocean #55ffff, 17,616 of polar
+#ffffff, 17,205 of plain #00aa00, 8,792 of desert #ffff55, 5,545 of forest #55ff55, 3,933 of mountain
+#aaaaaa - the measured palette from the archive, not an approximation of it.

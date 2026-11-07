@@ -281,12 +281,65 @@ export function buildGrid(rawBytes, sites) {
 
 let cached = null;
 
+// The baked board. The public host has no extract and never will, so the map the player sees there
+// comes from this file: the same 320x136 terrain codes, the same sites, the same palette, derived
+// from the archive by tools/bake_world.mjs. No picture, executable or data file of the 1990 release
+// is shipped - a blank grid is not "the original's board", and it is not what the player is owed.
+const bundledFile = path.join(projectDir, "web", "data", "world.json");
+
+function bundledWorld() {
+  if (!existsSync(bundledFile)) return null;
+  try {
+    return JSON.parse(readFileSync(bundledFile, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function unbundle(world) {
+  if (!world || !Array.isArray(world.terrainRuns)) return null;
+  const total = CELL_W * CELL_H;
+  const cells = new Array(total);
+  let at = 0;
+  for (const run of world.terrainRuns) {
+    if (!Array.isArray(run) || run.length !== 2) return null;
+    const [value, count] = run;
+    for (let i = 0; i < count && at < total; i++) cells[at++] = value;
+  }
+  if (at !== total) return null;
+  return {
+    source: "bundled",
+    width: world.width || CELL_W,
+    height: world.height || CELL_H,
+    stride: world.stride || ROW_STRIDE,
+    cells,
+    sites: Array.isArray(world.sites) ? world.sites : [],
+    wells: Array.isArray(world.wells) ? world.wells : [],
+    capitals: world.capitals || { blue: { ...SEATS.blue }, red: { ...SEATS.red } },
+    terrain: world.terrain || TERRAIN,
+    paint: world.paint || "original",
+    counts: world.counts || { capitals: 0, docks: 0, cities: 0 },
+    sightCells: sightCells(),
+  };
+}
+
+export function bundledBoard() {
+  return unbundle(bundledWorld());
+}
+
+
+
 // Everything the page needs to draw the board. No image bytes, no stills, and no
 // path to the extract: those stay on this machine.
 export function boardPayload(env = process.env) {
   if (cached) return cached;
   const root = resolveDataRoot(env);
   if (!root) {
+    const baked = bundledBoard();
+    if (baked) {
+      cached = baked;
+      return cached;
+    }
     cached = {
       source: "missing",
       width: CELL_W,
@@ -352,14 +405,29 @@ export function boardPayload(env = process.env) {
   return cached;
 }
 
+// Same bargain as the board: the decoded atlas rides in the repo so the public host can draw the
+// original's lettering. The sheet itself is never shipped.
+function bundledFont(file) {
+  if (!existsSync(file)) return { source: "missing" };
+  try {
+    const atlas = JSON.parse(readFileSync(file, "utf8"));
+    const glyphs = Array.isArray(atlas.glyphs) ? atlas.glyphs : [];
+    if (!glyphs.length) return { source: "missing" };
+    return { source: "bundled", _meta: atlas._meta || {}, glyphs };
+  } catch {
+    return { source: "missing" };
+  }
+}
+
 // The original's font atlas, decoded from FONTS.CHQ by the reference tree's
 // tools/font_decode.py. It rides the same data-root rule as the board: where the extract is absent
 // (the public host) this answers source "missing" and the page keeps its system font.
 export function fontPayload(env = process.env) {
   const root = resolveDataRoot(env);
-  if (!root) return { source: "missing" };
+  const bakedFont = path.join(projectDir, "web", "data", "font.json");
+  if (!root) return bundledFont(bakedFont);
   const file = path.join(root, "data", "font_atlas.json");
-  if (!existsSync(file)) return { source: "missing" };
+  if (!existsSync(file)) return bundledFont(bakedFont);
   const atlas = JSON.parse(readFileSync(file, "utf8"));
   const meta = atlas && atlas._meta ? atlas._meta : {};
   return {
