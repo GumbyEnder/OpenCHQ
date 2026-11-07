@@ -168,6 +168,18 @@ export function logLines(match, side, events, round) {
       case "refuel":
         if (mine) push("refuelled");
         break;
+      case "intel":
+        if (mine) push("intel revealed " + (Number(event.reveals) || 0) + " enemy unit(s); they know");
+        break;
+      case "intel_seen":
+        if (mine) push("the enemy read your positions");
+        break;
+      case "satellite":
+        if (mine) push("a satellite pass revealed " + (Number(event.reveals) || 0) + " enemy unit(s)");
+        break;
+      case "ceasefire":
+        if (mine) push("cease fire accepted; nothing changes");
+        break;
       case "aid":
         if (mine) push("aid reached " + (event.name || "a city"));
         else if (legible(match, side, event)) push("enemy aid reached a city");

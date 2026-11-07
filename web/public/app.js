@@ -751,19 +751,33 @@ function toolRow(room) {
   if (!wanted.length) return null;
   const row = document.createElement("div");
   row.className = "shop tools";
+  // The server's own words for each tool: what it does, what it costs a side, and every stand-in
+  // named as one. The page never writes this text itself, so it cannot disagree with the rule.
+  const kit = ((room && room.seat && room.seat.kit) || []);
   for (const tool of wanted) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "buy";
     button.textContent = TOOL_WORDS[tool.name];
-    // An aircraft on the ground is the other half of this row: a mission is a piece order.
-    if (tool.name === "nuke" && tool.allowed === false) {
-      button.title = String(tool.reason || "A nuke is refused in this match.");
+    const brief = kit.find((entry) => entry.name === tool.name);
+    if (tool.allowed === false) {
+      button.title = String(tool.reason || (brief && brief.reason) || "Refused in this match.");
+      button.disabled = true;
     } else {
-      button.title = "Send it now.";
+      // An aircraft on the ground is the other half of this row: a mission is a piece order.
+      button.title = brief ? brief.text : "Send it now.";
     }
     button.addEventListener("click", () => send({ op: "tool", tool: tool.name }));
     row.append(button);
+  }
+  // The consequences of the kit, in text rather than in a tooltip: a player should be able to read
+  // that a nuke paints nothing before they fire one.
+  const nuke = kit.find((entry) => entry.name === "nuke");
+  if (nuke) {
+    const note = document.createElement("p");
+    note.className = "kitNote";
+    note.textContent = nuke.text;
+    row.append(note);
   }
   // A selected piece can dig in or repair: those are its own orders, not the era's tools.
   if (selected && selected.side === (room && room.you)) {

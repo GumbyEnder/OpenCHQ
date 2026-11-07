@@ -259,6 +259,15 @@ button.ghost {
   background: #55ffff;
 }
 
+/* What the kit does, said in words under the buttons. */
+.kitNote {
+  width: 100%;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #cfd6dd;
+}
+
 .alarm {
   margin: 6px 0 0;
   padding: 6px 10px;

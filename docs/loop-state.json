@@ -1,10 +1,10 @@
 {
-  "iteration": 21,
+  "iteration": 22,
   "cap": 40,
   "current": null,
-  "lastNodeId": "air_missions",
+  "lastNodeId": "late_kit_visible",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-07T07:04:51.881Z",
+  "lastRunAt": "2026-11-07T07:10:40.203Z",
   "history": [
     {
       "node": "board_paint",
@@ -167,6 +167,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-07T07:04:51.881Z"
+    },
+    {
+      "node": "late_kit_visible",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-07T07:10:40.203Z"
     }
   ]
 }

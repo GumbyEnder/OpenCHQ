@@ -79,6 +79,53 @@ function nearCapital(match, cell) {
   return false;
 }
 
+// What the kit does, said out loud, with every unascertained number labelled.
+//
+// The tools existed and the buttons existed; the consequences were only in this file. A player could
+// fire a nuke without being told it deals no damage, or wonder why a launch was refused. This
+// briefing is the text: a label, a sentence, whether the tool is available right now, and for a
+// nuke the radius the config guards and how many launches are left. Anything the archive never
+// printed is called STAND-IN in the sentence itself, not in a comment.
+export const STAND_IN = "STAND-IN";
+
+export function kitBriefing(match, side) {
+  const cfg = (rules().nukes || {});
+  const radius = Number(cfg.exclusion);
+  const status = nukeStatus(match, side);
+  const mine = match ? launchedBy(match, side) : { fired: 0, absorbed: 0 };
+  const left = Math.max(0, LAUNCH_LIMIT - Number(mine.fired || 0));
+  const kit = [];
+
+  const add = (name, label, text, allowed, reason) => {
+    kit.push({ name, label, text, allowed: Boolean(allowed), reason: reason || null });
+  };
+
+  const foes = (match && Array.isArray(match.pieces) ? match.pieces : [])
+    .filter((piece) => piece && piece.side !== side).length;
+  const turnable = (match && Array.isArray(match.sites) ? match.sites : [])
+    .filter((site) => site && site.kind === "city" && site.owner && site.owner !== side).length;
+
+  add("intel", "Intel scan", "Every enemy unit is revealed for one round, and the other side is told it was read.",
+    foes > 0, foes > 0 ? null : "There is nothing to reveal.");
+  add("satellite", "Satellite pass", "The same reveal, and it is quiet: nobody is told.",
+    foes > 0, foes > 0 ? null : "There is nothing to reveal.");
+  add("aid", "Foreign aid", "Turns one enemy city. The archive's own note says aid flips a city's owner.",
+    turnable > 0, turnable > 0 ? null : "There is no city to turn.");
+  add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
+
+  if (eraHas(match && match.era, "nuke")) {
+    const radiusText = Number.isFinite(radius) && radius >= 1
+      ? `A capital and the ${radius} cells around it cannot be targeted. That radius is a ${STAND_IN}: the archive kept a guard but never printed its size.`
+      : "No home-ground guard is set in this match.";
+    const limitText = `Launches stop after ${LAUNCH_LIMIT} fired or ${LAUNCH_LIMIT} absorbed without reply (the booklet's count). ` +
+      `This side has ${left} of ${LAUNCH_LIMIT} left.`;
+    const damageText = `A launch deals no damage and paints no wasteland — a ${STAND_IN}, because the archive's own nuke did neither.`;
+    add("nuke", "Nuke", [radiusText, limitText, damageText].join(" "), status.allowed, status.reason);
+  }
+
+  return kit;
+}
+
 // One tool use. Returns { ok, events } or { error }.
 export function useTool(match, side, tool, target) {
   if (!match) return { error: "There is no match." };

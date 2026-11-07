@@ -18,6 +18,7 @@ import { enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } fr
 import { metersFor } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
+import { kitBriefing } from "./late.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -159,6 +160,9 @@ function seatStatus(match, side) {
     // The aircraft this seat can fly, with each mission's cost in rounds. It rides the seat so the
     // page shows the same choices the server will accept.
     air: airBriefing(match, side),
+    // The late kit with its consequences in words: the nuke's guard radius, the launch limit left,
+    // and every stand-in named as one. A tool a player cannot understand is a rule they cannot use.
+    kit: kitBriefing(match, side),
   };
 }
 

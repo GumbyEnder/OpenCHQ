@@ -659,7 +659,7 @@
     {
       "id": "air_missions",
       "order": 420,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "air"
       ],
@@ -670,7 +670,7 @@
     {
       "id": "late_kit_visible",
       "order": 430,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "late_kit"
       ],

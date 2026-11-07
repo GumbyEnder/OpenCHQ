@@ -509,6 +509,12 @@ export function createLobby() {
     }
     const result = useTool(room.match, mine, String(message.tool ?? ""), message.to || null);
     if (!result || result.error) return { error: (result && result.error) || "That tool was refused." };
+    // A tool is used between rounds; its line belongs to the round that follows it, the same way an
+    // escort order and a mission do.
+    if (Array.isArray(result.events) && result.events.length) {
+      if (!Array.isArray(room.match.pendingEvents)) room.match.pendingEvents = [];
+      room.match.pendingEvents.push(...result.events);
+    }
     touch(room);
     tellRoom(room);
     return { ok: true, events: result.events || [] };
