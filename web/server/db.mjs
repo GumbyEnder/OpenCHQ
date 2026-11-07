@@ -30,9 +30,22 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    expires_at TEXT
   );
 `);
+
+// A session that never expires is a password that never has to be typed again. Rows written
+// before this column existed get stamped on first read.
+try {
+  const cols = db.prepare("PRAGMA table_info(sessions)").all().map((col) => col.name);
+  if (!cols.includes("expires_at")) db.exec("ALTER TABLE sessions ADD COLUMN expires_at TEXT");
+} catch {
+  // A read-only or missing table is not a reason to refuse to boot; userForToken copes.
+}
+
+const SESSION_DAYS = 30;
+const SESSION_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
 
 // A handle may be a plain name or an email-shaped one, because that is how players will sign
 // up. It must still start with a letter, so a handle can never look like a number or a route.
@@ -80,23 +93,69 @@ export function login(username, password) {
 
 export function openSession(userId) {
   const token = randomBytes(24).toString("hex");
-  db.prepare("INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)").run(
+  const at = Date.now();
+  db.prepare("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
     token,
     userId,
-    new Date().toISOString()
+    new Date(at).toISOString(),
+    new Date(at + SESSION_MS).toISOString()
   );
   return token;
+}
+
+// Sessions nobody has used in a month are not worth the row, and a row that is past its date is
+// not a session.
+export function pruneSessions(at = Date.now()) {
+  const iso = new Date(at).toISOString();
+  const gone = db.prepare("DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at < ?").run(iso);
+  return Number(gone.changes || 0);
 }
 
 export function userForToken(token) {
   if (!token) return null;
   const row = db.prepare(
-    `SELECT users.id AS id, users.username AS username
+    `SELECT sessions.expires_at AS expires_at, sessions.created_at AS created_at,
+            users.id AS id, users.username AS username
      FROM sessions JOIN users ON users.id = sessions.user_id
      WHERE sessions.token = ?`
   ).get(token);
   if (!row) return null;
+  // A session with no date predates the column: stamp it from its creation instead of logging
+  // an existing player out for no reason.
+  if (!row.expires_at) {
+    const born = Date.parse(row.created_at) || Date.now();
+    db.prepare("UPDATE sessions SET expires_at = ? WHERE token = ?").run(
+      new Date(born + SESSION_MS).toISOString(),
+      token
+    );
+  } else if (Date.parse(row.expires_at) < Date.now()) {
+    db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+    return null;
+  }
   return { id: row.id, username: row.username };
+}
+
+// Changing a password ends every other session: if someone else had the old one, they lose it.
+export function changePassword(username, current, next, keepToken) {
+  const key = String(username ?? "").trim().toLowerCase();
+  const row = db.prepare("SELECT id, pass_salt, pass_hash FROM users WHERE username_key = ?").get(key);
+  if (!row) return { error: "Those credentials did not match." };
+  const got = scryptSync(String(current ?? ""), Buffer.from(row.pass_salt, "hex"), 32);
+  const expect = Buffer.from(row.pass_hash, "hex");
+  if (got.length !== expect.length || !timingSafeEqual(got, expect)) {
+    return { error: "That is not the current password." };
+  }
+  if (String(next ?? "").length < 8) return { error: "Use at least 8 characters." };
+  if (String(next) === String(current)) return { error: "That is the same password." };
+  const salt = randomBytes(16);
+  const hash = scryptSync(String(next), salt, 32);
+  db.prepare("UPDATE users SET pass_salt = ?, pass_hash = ? WHERE id = ?").run(
+    salt.toString("hex"),
+    hash.toString("hex"),
+    row.id
+  );
+  const ended = db.prepare("DELETE FROM sessions WHERE user_id = ? AND token <> ?").run(row.id, String(keepToken ?? ""));
+  return { ok: true, ended: Number(ended.changes || 0) };
 }
 
 export function closeSession(token) {

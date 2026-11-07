@@ -134,6 +134,11 @@ button.ghost {
 .shop button:disabled { opacity: 0.45; cursor: not-allowed; }
 .purse { font-variant-numeric: tabular-nums; color: #9fe8d0; margin: 4px 0 0; }
 /* The round log: the clock reporting itself, newest last. */
+.whoami { text-align: right; }
+.passwordBox summary { cursor: pointer; font-size: 12px; color: #8fa6b3; }
+.passwordBox form { display: flex; gap: 6px; align-items: end; justify-content: end; margin-top: 6px; }
+.passwordBox label { font-size: 11px; }
+.passwordBox input { width: 130px; }
 .logHeading { margin: 14px 0 4px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #8fa6b3; }
 .roundLog { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: #cfe3d8; }
 .roundLog li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

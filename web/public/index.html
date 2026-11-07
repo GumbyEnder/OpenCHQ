@@ -12,7 +12,18 @@
       <p class="mark">OpenCHQ</p>
       <p class="sub">Two sides. One map. The server keeps the rules.</p>
     </div>
-    <p id="account" class="account"></p>
+    <div class="whoami">
+      <p id="account" class="account"></p>
+      <details id="passwordBox" class="passwordBox">
+        <summary>Change password</summary>
+        <form id="password">
+          <label>Current <input name="current" type="password" autocomplete="current-password" required></label>
+          <label>New <input name="next" type="password" autocomplete="new-password" required></label>
+          <button type="submit">Change</button>
+        </form>
+        <p class="fine">Changing it ends every other session.</p>
+      </details>
+    </div>
   </header>
 
   <main>

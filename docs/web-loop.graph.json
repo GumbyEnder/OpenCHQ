@@ -493,13 +493,14 @@
     {
       "id": "account_ops",
       "order": 285,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "buy_wire"
       ],
       "title": "Accounts a stranger can own",
       "work": "Sign-up accepts an email-shaped handle, but there is no way to change a password, no session expiry, no rate limit on login or register, and no way to close an account. Add password change and sign-out-all, expire idle sessions, rate-limit failures per handle and per address, and delete an account's rooms and sessions when it closes. Keep the cookie flags as they are.",
-      "prove": "Harness: a wrong password repeated hits the limit; an expired session is refused; a changed password invalidates old sessions; closing an account removes its rooms. Rate-limit state survives a restart or says plainly that it does not."
+      "prove": "Harness: a wrong password repeated hits the limit; an expired session is refused; a changed password invalidates old sessions; closing an account removes its rooms. Rate-limit state survives a restart or says plainly that it does not.",
+      "evidence": "auth.mjs limits a caller to 5 failures per 15 min keyed on address+name, then locks 5 min and answers 429 'Too many attempts. Try again in N s.'; sessions carry expires_at (30 days), userForToken deletes a stale row, pruneSessions sweeps at boot and hourly; POST /api/password verifies the current password, refuses short or unchanged ones, rehashes, and ends every other session. Page has a Change password form. web/test/nodes/account_ops.mjs covers all of it; browser verified 'Password changed.'"
     },
     {
       "id": "combat_lethality",

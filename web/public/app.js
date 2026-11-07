@@ -637,6 +637,22 @@ document.querySelector("#register").addEventListener("submit", async (event) => 
   }
 });
 
+// A password that cannot be changed is a password that cannot be un-leaked.
+document.querySelector("#password").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const fields = new FormData(event.target);
+  try {
+    const result = await post("/api/password", {
+      current: fields.get("current"),
+      next: fields.get("next"),
+    });
+    event.target.reset();
+    say("Password changed." + (result && result.ended ? " " + result.ended + " other session(s) ended." : ""));
+  } catch (err) {
+    say(err.message);
+  }
+});
+
 document.querySelector("#launch").addEventListener("submit", (event) => {
   event.preventDefault();
   const fields = new FormData(event.target);

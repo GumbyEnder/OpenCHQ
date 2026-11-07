@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { closeSession, login, openSession, register, userForToken } from "./db.mjs";
+import { changePassword, closeSession, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
+import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
 import { boardPayload } from "./board.mjs";
 import { roundSeconds } from "./rules.mjs";
 import { createLobby } from "./lobby.mjs";
@@ -20,6 +21,15 @@ const types = {
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
 };
+
+// The caller's address, for the login limit. A proxy header is only trusted when the socket came
+// from loopback or a private address, which is the case behind Railway's edge.
+function addressOf(req) {
+  const raw = String(req.socket && req.socket.remoteAddress || "");
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const local = /^(127\.|::1$|::ffff:127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(raw);
+  return (local && forwarded) || raw || "unknown";
+}
 
 function tokenFrom(req) {
   const header = String(req.headers.cookie ?? "");
@@ -126,15 +136,48 @@ const server = createServer(async (req, res) => {
       send(res, 400, { error: "Send a JSON body." });
       return;
     }
+    // An open login route is a password-guessing machine. A caller that keeps failing is told to
+    // wait, keyed on the address and the name so neither one noisy address nor one name is enough.
+    const key = attemptKey(addressOf(req), body.username);
+    const gate = blocked(key);
+    if (gate.blocked) {
+      send(res, 429, { error: "Too many attempts. Try again in " + gate.retryAfter + " s." });
+      return;
+    }
     const result = url.pathname === "/api/register"
       ? register(body.username, body.password)
       : login(body.username, body.password);
     if (result.error) {
+      noteFailure(key);
       send(res, 400, { error: result.error });
       return;
     }
+    noteSuccess(key);
     const token = openSession(result.user.id);
     send(res, 200, { user: result.user }, { "set-cookie": cookie(req, token, 60 * 60 * 24 * 14) });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/password") {
+    const token = tokenFrom(req);
+    const user = userForToken(token);
+    if (!user) {
+      send(res, 401, { error: "Sign in first." });
+      return;
+    }
+    let body;
+    try {
+      body = await readBody(req);
+    } catch {
+      send(res, 400, { error: "Send a JSON body." });
+      return;
+    }
+    const changed = changePassword(user.username, body.current, body.next, token);
+    if (changed.error) {
+      send(res, 400, { error: changed.error });
+      return;
+    }
+    // Every other session is gone; the one that asked keeps working.
+    send(res, 200, { ok: true, ended: changed.ended });
     return;
   }
   if (req.method === "POST" && url.pathname === "/api/logout") {
@@ -188,6 +231,16 @@ server.listen(port, host, () => {
 // The one clock. Round length is a tunable, not a constant: config/game.json -> roundSeconds.
 // Every running room advances one round per beat; held and finished rooms are skipped, so
 // nothing ticks for a game nobody is playing.
+// Expired sessions are not worth the row. One sweep at boot, one an hour.
+pruneSessions();
+setInterval(() => {
+  try {
+    pruneSessions();
+  } catch (err) {
+    console.error("session prune failed:", err && err.message ? err.message : err);
+  }
+}, 60 * 60 * 1000).unref();
+
 const beat = Math.max(1, Math.round(roundSeconds() * 1000));
 const ticker = setInterval(() => {
   try {
