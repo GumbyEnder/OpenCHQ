@@ -173,8 +173,10 @@ export function rememberSeen(seen, lit) {
   return into;
 }
 
-const FOG_REMEMBERED = "rgba(6, 12, 22, 0.45)";
-const FOG_UNKNOWN = "rgba(4, 8, 15, 0.82)";
+// Fog is memory, not a shutter: unknown ground keeps the world's silhouette so the player can
+// plan toward it, and remembered ground keeps more. At 0.82 the map was a black rectangle.
+export const FOG_REMEMBERED = "rgba(6, 12, 22, 0.28)";
+export const FOG_UNKNOWN = "rgba(6, 12, 22, 0.55)";
 
 export function paintFog(ctx, view, lit, seen) {
   if (!lit || lit.length === 0) return 0;

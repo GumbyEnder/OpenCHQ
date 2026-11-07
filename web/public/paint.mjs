@@ -5,14 +5,17 @@
 // Colors are ours; nothing here reads the original map picture.
 
 export const PALETTE = Object.freeze({
-  ocean: "#0a1826",
-  shallows: "#1c4f6b",
-  lake: "#0f3049",
-  docks: "#24405c",
-  plain: "#3a4a30",
-  forest: "#24361f",
-  jungle: "#1b3a1b",
-  mountain: "#4a4a45",
+  // The first palette was too dark to read: a screenshot of a played match looked like a black
+  // rectangle with a blue dot on it. These values keep the same colours, lifted enough that land
+  // and water separate at 8 px per cell and the world's shape survives the fog.
+  ocean: "#12293d",
+  shallows: "#2a6b8e",
+  lake: "#17445f",
+  docks: "#2d4f6e",
+  plain: "#4a5c3a",
+  forest: "#2e4527",
+  jungle: "#24492a",
+  mountain: "#5a5a52",
   desert: "#6b5c3a",
   polar: "#b8c3c9",
   wasteland: "#2a2420",

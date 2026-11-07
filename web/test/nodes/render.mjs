@@ -26,6 +26,8 @@ import {
   panBy,
   zoomAt,
   paintFog,
+  FOG_REMEMBERED,
+  FOG_UNKNOWN,
   MIN_ZOOM,
   MAX_ZOOM,
   visibleColumns,
@@ -312,9 +314,13 @@ export async function run(ctx) {
   const fogged = paintFog(rec.ctx, view, later, remembered);
   const styles = new Set(rec.fills.map((fill) => fill.color));
   if (fogged <= 0) fail("nothing was fogged");
-  if (!styles.has("rgba(6, 12, 22, 0.45)")) fail("remembered ground is not drawn at its own level: " + [...styles].join(","));
-  if (!styles.has("rgba(4, 8, 15, 0.82)")) fail("unknown ground is not drawn at its own level");
+  // Assert against the constants, not a second copy of their values: the levels are tunable and
+  // the test should follow them, while still proving that memory is lighter than the unknown.
+  if (!styles.has(FOG_REMEMBERED)) fail("remembered ground is not drawn at its own level: " + [...styles].join(","));
+  if (!styles.has(FOG_UNKNOWN)) fail("unknown ground is not drawn at its own level");
   if (styles.size < 2) fail("fog uses one level for everything, so memory is invisible");
+  const alpha = (style) => Number(String(style).split(",").pop().replace(")", "").trim());
+  if (!(alpha(FOG_UNKNOWN) > alpha(FOG_REMEMBERED))) fail("unknown ground is lighter than remembered ground");
 
   // ---- camera: 2x is unreadable, so zoom is whole cells and pan may cross the seam -----
   if (clampZoom(1) !== MIN_ZOOM) fail("the camera zoomed below the readable floor");
