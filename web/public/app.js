@@ -5,6 +5,7 @@ import {
 import {
   PICK_HINT,
   ackText,
+  alarmText,
   buyMessage,
   cellAtEvent,
   orderMessage,
@@ -26,6 +27,7 @@ const roomBox = document.querySelector("#room");
 const flash = document.querySelector("#flash");
 const board = document.querySelector("#board");
 const boardNote = document.querySelector("#boardNote");
+const alarmStrip = document.querySelector("#alarm");
 const legendBox = document.querySelector("#legend");
 
 let socket = null;
@@ -57,6 +59,14 @@ let boardPayload = {
 
 function say(text) {
   flash.textContent = text || "";
+}
+
+// The end of a match said once, in the player's own terms.
+function sayResult(room) {
+  if (!room || !room.over) return;
+  const mine = room.you || (room.seat && room.seat.side);
+  say(room.winner && mine ? (room.winner === mine ? "You have won. Both capitals." : "The enemy holds both capitals.")
+    : "The match is over.");
 }
 
 function eraName(era) {
@@ -217,6 +227,16 @@ function drawMatch() {
       (following ? "following" : "free");
   }
   boardNote.textContent = previewLine(preview) || statusLine(boardPayload, room, result);
+  // A capital under threat is the loudest thing on the page, and it stays up until the threat
+  // passes: the last ten rounds of a match are not the time to be quiet.
+  if (alarmStrip) {
+    // A finished match is not under threat; the result replaces the alarm rather than sitting
+    // under it.
+    const finished = boardPayload && boardPayload.over;
+    const alarm = finished ? "" : alarmText(boardPayload && boardPayload.alarm);
+    alarmStrip.textContent = alarm;
+    alarmStrip.classList.toggle("hidden", !alarm);
+  }
   renderLegend();
 }
 
@@ -463,6 +483,7 @@ function seatRow(label, seat, yours) {
 }
 
 function renderRoom() {
+  if (room && room.over) sayResult(room);
   roomBox.className = room ? "" : "room-empty";
   roomBox.textContent = "";
   if (!room) {
@@ -641,6 +662,9 @@ function applyDelta(delta) {
     routes,
     sites,
     seat: delta.seatChanged ? delta.seat : room.seat,
+    // The alarm is not a "changed" field: it rides every delta, because the sentence is only
+    // useful in the round it becomes true.
+    alarm: delta.alarm === undefined ? room.alarm : delta.alarm,
     capitals: delta.capitalsChanged ? delta.capitals : room.capitals,
   };
   if (selected && !byId.has(selected.id)) {

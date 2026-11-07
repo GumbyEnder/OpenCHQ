@@ -3,6 +3,7 @@
 // A thousand played rounds ended with 162 cities against 69 and no winner, so the win path has to
 // be proven directly: put an enemy piece next to a capital, order it in, tick, and read the result.
 
+import { alarmText } from "../../public/command.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { issueOrder } from "../../server/move.mjs";
@@ -76,5 +77,28 @@ export async function run() {
   if (redSite) redSite.owner = "red";
   if (checkWin(harbour) !== null) fail("a ship on the enemy capital won the match");
 
-  return ["a capital is taken by standing on it", "holding both capitals is the win", "a ship does not hold a capital"];
+  // The alarm: an enemy land piece inside the sight radius of your capital says so, once, and a
+  // new closer approach says so again.
+  const watcher = openMatch("1986", matchSites("1986"));
+  watcher.clock = "running";
+  watcher.pieces = [
+    { id: "blue:land", side: "blue", domain: "land", kind: null, x: blue.x, y: blue.y, path: [] },
+    { id: "red:land", side: "red", domain: "land", kind: null, x: blue.x + 5, y: blue.y, path: [] },
+  ];
+  const alarmTick = tickMatch(watcher);
+  const threat = (alarmTick.events || []).find((e) => e.type === "threat" && e.side === "blue");
+  if (!threat) fail("no threat event with red troops five cells from the blue capital");
+  if (threat.distance !== 5) fail("the threat distance reads " + threat.distance);
+  const sentence = alarmText(threat);
+  if (!/5 cells from/.test(sentence)) fail("the alarm sentence reads: " + sentence);
+  // Standing still or backing off does not repeat it every round.
+  const quiet = tickMatch(watcher);
+  if ((quiet.events || []).some((e) => e.type === "threat")) fail("the alarm repeated without a closer approach");
+
+  return [
+    "a capital is taken by standing on it",
+    "holding both capitals is the win",
+    "a ship does not hold a capital",
+    "enemy troops near a capital raise an alarm once",
+  ];
 }

@@ -224,5 +224,14 @@ export function forSeat(match, side) {
     notes.push(seatName + " has not been found.");
   }
 
-  return { pieces, routes, sites, capitals, seat, notes };
+  // The alarm travels with the seat's own view: the page can shout about a capital under threat
+  // without the server having to keep a second channel for it.
+  const alarm = (match.alarm && match.alarm[side]) || null;
+
+  // The result is part of the view. Without it a served page saw the clock stop and never learned
+  // that the match was over, or who won — a harness played on for ten minutes past the end.
+  const over = Boolean(match.over);
+  const winner = match.winner || null;
+
+  return { pieces, routes, sites, capitals, seat, notes, alarm, over, winner };
 }

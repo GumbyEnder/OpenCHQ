@@ -104,6 +104,17 @@ export function purseText(seat) {
   return parts.join(" · ");
 }
 
+// The alarm strip: the one sentence a player needs when the enemy is closing on a capital. The
+// server sends {name, distance}; nothing here invents a number.
+export function alarmText(alarm) {
+  if (!alarm) return "";
+  const distance = Number(alarm.distance);
+  if (!Number.isFinite(distance)) return "";
+  const name = alarm.name || "your capital";
+  if (distance === 0) return "Enemy troops are on " + name + ".";
+  return "Enemy troops " + distance + (distance === 1 ? " cell" : " cells") + " from " + name + ".";
+}
+
 // A shop row names the unit and, when the server priced it, the price. A refused row says
 // why instead of pretending it can be bought.
 export function shopLabel(entry) {

@@ -84,6 +84,18 @@ export function logLines(match, side, events, round) {
         push("paid " + paid + (from ? " from " + from + (from === 1 ? " city" : " cities") : ""));
         break;
       }
+      case "threat": {
+        // The alarm is for the seat whose capital is being approached, and only for it: the other
+        // side gets its own alarm when the same happens to it.
+        if (!mine) break;
+        const name = event.name || "your capital";
+        const distance = Number(event.distance);
+        if (!Number.isFinite(distance)) break;
+        push(distance === 0
+          ? "enemy troops are on " + name
+          : "enemy troops " + distance + " cell" + (distance === 1 ? "" : "s") + " from " + name);
+        break;
+      }
       case "income_skipped":
         if (mine) push("no pay this round: the pool is short");
         break;

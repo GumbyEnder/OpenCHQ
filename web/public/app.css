@@ -214,6 +214,20 @@ button.ghost {
   font-size: 12px;
 }
 
+.alarm {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid #d8604f;
+  background: #2a1a18;
+  color: #f3d6cf;
+  font-size: 13px;
+  border-radius: 3px;
+}
+
+.alarm.hidden {
+  display: none;
+}
+
 .flash {
   position: fixed;
   left: 50%;

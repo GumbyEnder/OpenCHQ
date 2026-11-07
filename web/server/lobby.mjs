@@ -230,6 +230,11 @@ export function createLobby() {
     }
     const delta = {
       round: view.round,
+      // The alarm rides the delta too. It only ever appeared in a whole frame, and a whole frame
+      // may be twenty-five rounds away — long enough for the capital to fall first.
+      alarm: view.alarm || null,
+      over: Boolean(view.over),
+      winner: view.winner || null,
       clock: view.clock,
       note: view.note,
       pieces,
