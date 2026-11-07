@@ -67,10 +67,19 @@ export async function run(ctx) {
   const negative = issueOrder(match, "blue", "blue:land", stepX, -1);
   if (!negative.error) fail("an order off the Y range (y=-1) was accepted");
 
-  // ---- a cell another piece holds is refused -----------------------------------------
+  // ---- an enemy-held cell is a target; a friendly-held cell is a refusal ---------------
+  // Two player-like sides used to stand eight cells apart for a thousand rounds because the order
+  // to close was refused as if it were a collision. The order is now accepted; the walk still stops
+  // one short (advance reports `blocked`), which is where combat happens.
   const held = issueOrder(match, "blue", "blue:land", 183, 25);
-  if (!held.error) fail("an order onto red:land's cell was accepted");
-  if (!String(held.error).includes("holds")) fail("held-cell refusal reads: " + held.error);
+  if (held.error) fail("an order onto red:land's cell was refused: " + held.error);
+  if (!Array.isArray(held.path) || !held.path.length) fail("an attack order returned no path");
+  const friendCell = (match.pieces || []).find((piece) => piece.side === "blue" && piece.id !== "blue:land" && !piece.path);
+  if (friendCell) {
+    const friendly = issueOrder(match, "blue", "blue:land", friendCell.x, friendCell.y);
+    if (!friendly.error) fail("an order onto a friendly piece's cell was accepted");
+    if (!String(friendly.error).includes("holds")) fail("held-cell refusal reads: " + friendly.error);
+  }
   const blocked = blockedCells(match);
   if (!blocked.has("183,25") || !blocked.has(String(stepX) + "," + String(stepY))) {
     fail("blockedCells missed a held cell: " + JSON.stringify([...blocked]));

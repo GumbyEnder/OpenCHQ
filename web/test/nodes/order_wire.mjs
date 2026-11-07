@@ -168,9 +168,19 @@ export async function run(ctx) {
   ok(fail, "the cost is at least one round per step", plan.rounds >= plan.path.length);
   eq(fail, "a preview does not move the piece", JSON.stringify(match.pieces), before);
 
-  const refusedHeld = planOrder(match, "blue", "blue:land", RED_CAPITAL.x, RED_CAPITAL.y);
-  if (!refusedHeld || !/holds that cell/.test(String(refusedHeld.error || ""))) {
-    fail("the planner did not refuse a cell another piece holds: " + JSON.stringify(refusedHeld));
+  // An enemy-held cell is a target, not an obstacle: you give the order and the walk closes until
+  // combat decides. A cell held by a friend is still refused - two pieces never share a cell.
+  const attack = planOrder(match, "blue", "blue:land", RED_CAPITAL.x, RED_CAPITAL.y);
+  if (!attack || !attack.ok || !Array.isArray(attack.path) || attack.path.length === 0) {
+    fail("the planner refused an order onto an enemy-held cell: " + JSON.stringify(attack).slice(0, 200));
+  }
+  const blueFriend = (match.pieces || []).find((piece) => piece.side === "blue" && piece.id !== "blue:land" && !piece.path);
+  const friendCell = blueFriend ? { x: blueFriend.x, y: blueFriend.y } : null;
+  if (friendCell) {
+    const refusedHeld = planOrder(match, "blue", "blue:land", friendCell.x, friendCell.y);
+    if (!refusedHeld || !/holds that cell/.test(String(refusedHeld.error || ""))) {
+      fail("the planner did not refuse a cell a friendly piece holds: " + JSON.stringify(refusedHeld).slice(0, 200));
+    }
   }
   const refusedOffMap = planOrder(match, "blue", "blue:land", BLUE_CAPITAL.x, -1);
   if (!refusedOffMap || !/off the map/.test(String(refusedOffMap.error || ""))) {

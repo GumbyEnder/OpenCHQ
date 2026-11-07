@@ -280,8 +280,13 @@ export function planOrder(match, side, pieceId, toX, toY) {
 
   if (isRefused(terrainAt(x, y) ?? -1)) return { error: "Wasteland is refused." };
 
+  // An order onto a cell held by the enemy is an attack, and it used to be refused as if it were
+  // a collision. Two player-like sides then stood eight cells apart for a thousand rounds: neither
+  // could give the order to close, so combat never began. A friend in the cell is still a refusal -
+  // two pieces do not share a cell - but an enemy is who you were marching toward.
   const holder = pieceAt(match, x, y, piece.id);
-  if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
+  const attacking = Boolean(holder) && holder.side !== side;
+  if (holder && !attacking) return { error: "Another piece holds that cell (" + holder.id + ")." };
 
   const path = route(match, piece, { x, y }, side);
   if (path === null) return { error: "No route. Wasteland is refused and a held cell is not entered." };

@@ -47,11 +47,48 @@ sides. No captures, no contact, no shots.
    `{"satellite":2,"intel":2,"intel_seen":2}`. The acks are fine; the measuring was not — the same
    lesson as the full-frame harness two iterations ago.
 
+
+## Round two: the order to attack (wakeup 26)
+
+The deadlock had a cause, and it was not the economy. `planOrder` refused any destination whose
+cell was occupied — **including an enemy's**. Two player-like sides therefore stood eight cells
+apart for a thousand rounds: neither could give the order to close, and combat (which resolves
+between adjacent pieces every other round) never had a pair to resolve. An order onto an
+enemy-held cell is now an attack; a friendly piece in the cell is still a refusal, and `advance`
+still stops one cell short and lets combat decide.
+
+Same harness, same board, 1,000 rounds:
+
+| | before (no attack order) | after |
+| --- | --- | --- |
+| cities | blue 83, red 89, neutral 97 | **blue 162, red 69, neutral 38** |
+| pieces killed | — | 171 |
+| refusals of "another piece holds that cell" | 8,886 | 6,043, and most now name a *friendly* piece |
+| winner | none | none — the capitals are still standing |
+
+The frontier moves now, and the map is being contested rather than shared.
+
+### The payday is not the problem (measured, 600 rounds each)
+
+| `payEvery` | cities at 600 | buys | purse at 600 |
+| --- | --- | --- | --- |
+| 25 | blue 111, red 76, neutral 82 | 220 | 709 |
+| 12 | blue 88, red 78, neutral 103 | 257 | 1,468 |
+| 6 | blue 94, red 75, neutral 100 | 231 | 3,013 |
+
+Three times the income buys about a tenth more units and settles nothing; the purse simply grows.
+**Do not shorten `payEvery`.** The recommendation in `docs/BALANCE.md` to fix the slope before the
+shape was wrong for this reason: the slope was never the binding constraint. What a side cannot do
+is spend, because at a frontier of empty cities there is nothing worth buying.
+
 ## Next, in order
 
-1. Make the frontier legible: a target that cannot be reached should say so at the moment it is
+1. The endgame: nobody can win. 162 cities against 69, 171 kills, and the capitals never fall. Find
+   out what the win condition actually requires (probing the capital's ring and its garrison), then
+   make the last ten rounds of a match legible to the player.
+2. Make the frontier legible: a target that cannot be reached should say so at the moment it is
    chosen ("no lane from here to there"), not after the order is refused. That alone turns the
    deadlock into a decision: build a lane, take a coast, or go somewhere else.
-2. Give the policy an army: tanks, artillery, a stack, and a reason to attack a held city. If the
+3. Give the policy an army: tanks, artillery, a stack, and a reason to attack a held city. If the
    match still cannot be won at 1,000 rounds with armour, the stalemate is a rule defect, not a
    policy defect.
