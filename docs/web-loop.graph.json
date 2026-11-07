@@ -615,7 +615,7 @@
     {
       "id": "chq_disassembly",
       "order": 380,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "board_paint"
       ],
