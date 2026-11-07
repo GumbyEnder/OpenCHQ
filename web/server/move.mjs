@@ -80,9 +80,13 @@ function pieceAt(match, x, y, skipId = null) {
 }
 
 // Every cell a piece currently holds. An order and a walk both treat these as solid.
-export function blockedCells(match) {
+// Cells a walker will go round. Only its OWN side counts: a march into an enemy-held cell is
+// contact, and combat decides it. Treating the enemy as an obstacle is what let two armies walk
+// past each other for 244 rounds without a shot.
+export function blockedCells(match, side = null) {
   const out = new Set();
   for (const unit of (match && match.pieces) || []) {
+    if (side && unit.side !== side) continue;
     out.add(wrapX(unit.x) + "," + Number(unit.y));
   }
   return out;
@@ -91,7 +95,7 @@ export function blockedCells(match) {
 // Dial-weighted BFS over the cylinder. Entering a cell costs rules.landPace of that cell;
 // refused cells (wasteland) are never entered, and held cells are skipped unless they are
 // the destination (which issueOrder has already rejected).
-function route(match, from, to) {
+function route(match, from, to, side = null) {
   const sx = wrapX(from.x);
   const sy = Number(from.y);
   const gx = wrapX(to.x);
@@ -105,7 +109,7 @@ function route(match, from, to) {
   const prev = new Int32Array(CELL_W * CELL_H).fill(-1);
   dist[start] = 0;
   const buckets = [[start]];
-  const held = blockedCells(match);
+  const held = blockedCells(match, side);
 
   let cur = 0;
   let guard = 0;
@@ -206,7 +210,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
   const holder = pieceAt(match, x, y, piece.id);
   if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
 
-  const path = route(match, piece, { x, y });
+  const path = route(match, piece, { x, y }, side);
   if (path === null) return { error: "No route. Wasteland is refused and a held cell is not entered." };
   const rounds = path.reduce((sum, step) => sum + Math.max(1, Number(step.pace) || 1), 0);
   return { ok: true, path, rounds };
@@ -223,6 +227,7 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   }
   piece.path = plan.path;
   piece.pace = Math.max(1, Number(plan.path[0].pace) || 1);
+  piece.detours = 0;
   return { ok: true, path: plan.path.map((step) => ({ ...step })), rounds: plan.rounds };
 }
 
@@ -302,6 +307,11 @@ export function repair(match, side, pieceId) {
 export function advance(match) {
   const events = [];
   if (!match || !Array.isArray(match.pieces) || match.over) return events;
+  // A piece whose next cell is held used to drop its whole path and stand still, which is what
+  // made an army in contact go stiff: 13,075 refusals in a 400-round bot match. It now looks for
+  // a way round once a round, within a budget, and only stands still when there is no way round.
+  let detours = 0;
+  const DETOUR_BUDGET = 48;
   for (const piece of match.pieces) {
     if (!Array.isArray(piece.path) || piece.path.length === 0) continue;
     // An aircraft on a mission is not on the ground to be moved.
@@ -315,9 +325,25 @@ export function advance(match) {
     const ny = Number(next.y);
     const occupant = pieceAt(match, nx, ny, piece.id);
     if (occupant) {
-      // Stop one short: the walker never shares a cell, and the clash is combat's job.
+      // Stop one short: the walker never shares a cell, and the clash is combat's job. Going
+      // round costs a route, so a piece gets a few tries per order and the round gets a budget.
+      // An enemy in the way is contact, not an obstacle: the path stops and combat decides.
+      const goal = occupant.side === piece.side ? piece.path[piece.path.length - 1] : null;
+      const tries = Number(piece.detours) || 0;
+      if (goal && tries < 4 && detours < DETOUR_BUDGET) {
+        const around = route(match, { x: piece.x, y: piece.y }, goal, piece.side);
+        if (around && around.length) {
+          piece.path = around;
+          piece.pace = Math.max(1, Number(around[0].pace) || 1);
+          piece.detours = tries + 1;
+          detours += 1;
+          events.push({ type: "detour", pieceId: piece.id, by: occupant.id, x: nx, y: ny, rounds: around.length });
+          continue;
+        }
+      }
       piece.path = [];
       piece.pace = 1;
+      piece.detours = 0;
       events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
       continue;
     }
