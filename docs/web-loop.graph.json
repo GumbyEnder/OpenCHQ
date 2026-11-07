@@ -604,7 +604,7 @@
     {
       "id": "unit_icons",
       "order": 370,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "chq_disassembly"
       ],

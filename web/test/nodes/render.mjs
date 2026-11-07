@@ -6,6 +6,7 @@ import {
   BOARD_W,
   BOARD_H,
   PIECE_INK,
+  PIECE_MARKER,
   capitalMarkers,
   cellToPixel,
   fitViewport,
@@ -189,19 +190,31 @@ export async function run(ctx) {
   eq(fail, "capital names survive the payload", renamed.map((c) => c.name), ["Washington", "Moscow"]);
 
   // --- a piece carries its side, its shape and its owner's outline -----------
+  // Shapes are the zoomed-in view. At map scale the marker is the original's block (see the
+  // unit_icons node), so these assertions use a view above MARKER_ZOOM.
+  const zoom = { ...full, scale: 8 };
+  const marker = recorder();
+  paintPiece(marker.ctx, { side: "blue", domain: "sea", x: 0, y: 15 }, full, { own: "blue" });
+  const block = marker.fills;
+  eq(fail, "a map-scale piece is a nine-cell block", block.length, 9);
+  if (marker.ops.some((op) => op.op === "arc")) fail("a map-scale piece drew a disc");
+  eq(fail, "a map-scale marker keeps the measured blue", block.filter((op) => op.color === "#0000aa").length, 8);
+  eq(fail, "a map-scale marker keeps the light centre", block.filter((op) => op.color === "#ffffff").length, 1);
   const sea = recorder();
-  paintPiece(sea.ctx, { side: "blue", domain: "sea", x: 0, y: 15 }, full, { own: "blue" });
+  paintPiece(sea.ctx, { side: "blue", domain: "sea", x: 0, y: 15 }, zoom, { own: "blue" });
   const arc = sea.ops.find((op) => op.op === "arc");
   ok(fail, "a sea piece is a disc", arc);
   eq(fail, "a blue piece is blue", arc.color, SCHEMATIC.blue);
   eq(fail, "an own piece gets a white outline", sea.ops.find((op) => op.op === "stroke").color, PIECE_INK.own);
   const enemy = recorder();
-  paintPiece(enemy.ctx, { side: "red", domain: "land", kind: null, x: 183, y: 25 }, full, { own: "blue" });
+  paintPiece(enemy.ctx, { side: "red", domain: "land", kind: null, x: 183, y: 25 }, zoom, { own: "blue" });
   const box = enemy.ops.find((op) => op.op === "rect");
   ok(fail, "a land piece is a square", box);
   eq(fail, "a red piece is red", box.color, SCHEMATIC.red);
   eq(fail, "an enemy piece gets a dark outline", enemy.ops.find((op) => op.op === "stroke").color, PIECE_INK.enemy);
-  eq(fail, "a square piece is centered on its cell", [box.x + box.w / 2, box.y + box.h / 2], [367, 51]);
+  const at = cellToPixel(183, 25, zoom);
+  eq(fail, "a square piece is centered on its cell",
+    [Math.round(box.x + box.w / 2), Math.round(box.y + box.h / 2)], [Math.round(at.x), Math.round(at.y)]);
 
   // --- the real payload paints, with pieces and both capitals ----------------
   const res = await fetch(base + "/api/board");
@@ -249,12 +262,16 @@ export async function run(ctx) {
   eq(fail, "grid colors are distinct", new Set(seen).size, 4);
 
   // pieces are on the grid: each side's mark lands on its own cell center
-  const blueMarkAt = painted.ops.find((op) => op.op === "rect" && op.color === SCHEMATIC.blue &&
-    op.x + op.w / 2 === 159 && op.y + op.h / 2 === 89);
+  // At map scale a piece is the original's block: eight cells of the side's dark colour and one
+  // light centre, which must sit on the piece's own cell (Washington at 79,44, two pixels per cell).
+  const blueMarkAt = painted.fills.find((f) => f.color === "#ffffff" && f.x === 79 * 2 && f.y === 44 * 2);
   ok(fail, "the blue land piece is drawn on Washington", blueMarkAt);
-  const redMarkAt = painted.ops.find((op) => op.op === "arc" && op.color === SCHEMATIC.red &&
-    op.x === 601 && op.y === 141);
+  const around = painted.fills.filter((f) => f.color === "#0000aa" && Math.abs(f.x - 79 * 2) <= 2 && Math.abs(f.y - 44 * 2) <= 2);
+  eq(fail, "the blue marker is a block around its cell", around.length, 8);
+  const redMarkAt = painted.fills.find((f) => f.color === "#ffffff" && f.x === 300 * 2 && f.y === 70 * 2);
   ok(fail, "the red sea piece is drawn on its ocean cell", redMarkAt);
+  const redAround = painted.fills.filter((f) => f.color === "#aa0000" && Math.abs(f.x - 300 * 2) <= 2 && Math.abs(f.y - 70 * 2) <= 2);
+  eq(fail, "the red marker is a block around its cell", redAround.length, 8);
 
   // enemy pieces are only the ones sent: dropping them changes the count
   const oneSide = recorder();
@@ -270,9 +287,15 @@ export async function run(ctx) {
   eq(fail, "pieces still draw on the schematic", schematic.pieces, 4);
   ok(fail, "the schematic still labels Washington", fallback.texts.some((t) => t.text === "Washington"));
   ok(fail, "the schematic still labels Moscow", fallback.texts.some((t) => t.text === "Moscow"));
+  // The schematic marks a city with the marker's light centre and the side colour around it.
   const blueMark = fallback.fills.find((f) => f.x === 79 * 2 && f.y === 44 * 2);
   if (!blueMark || blueMark.color !== SCHEMATIC.blue) fail("schematic does not mark Washington in blue");
-  const schematicColors = new Set([...Object.values(PALETTE), ...Object.values(SCHEMATIC)]);
+  const schematicColors = new Set([
+    ...Object.values(PALETTE),
+    ...Object.values(SCHEMATIC),
+    ...Object.values(PIECE_MARKER.body),
+    PIECE_MARKER.centre,
+  ]);
   for (const fill of fallback.fills) {
     if (!schematicColors.has(fill.color)) fail("the schematic invented a color " + fill.color);
   }

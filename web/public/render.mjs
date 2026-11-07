@@ -12,6 +12,45 @@ export const BOARD_W = 320;
 export const BOARD_H = 136;
 
 // Outlines only: a piece's fill is its side color.
+// What the original draws for a unit on the map, measured from its own screen.
+//
+// docs/chq-reference/chq_0021.png is a 640x400 capture of the 320x200 game, so two screen pixels per
+// cell. Every unit marker in it is a 6x6 block — three cells at map scale — in the side's dark colour
+// (dark blue #0000aa, dark red #aa0000) with one light pixel at the centre. There are no per-type
+// sprites on the board: the original told units apart in its panels, not on the map.
+export const PIECE_MARKER = Object.freeze({
+  size: 3,
+  body: Object.freeze({ blue: "#0000aa", red: "#aa0000" }),
+  centre: "#ffffff",
+});
+
+// Below this zoom the board is the original's board and every unit is the original's marker. Above
+// it the shapes take over, because at eight pixels per cell a player should be able to tell a tank
+// from an infantry section — an affordance the original did not need and did not have.
+export const MARKER_ZOOM = 4;
+
+// The nine cells of a marker, with the centre one carrying the light pixel. X wraps, so a unit in
+// the seam column draws three cells, not two.
+export function markerCells(x, y, side, boardW = BOARD_W) {
+  const half = (PIECE_MARKER.size - 1) / 2;
+  const body = PIECE_MARKER.body[side] || PIECE_MARKER.body.blue;
+  const cells = [];
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      const centre = dx === 0 && dy === 0;
+      cells.push({
+        dx,
+        dy,
+        x: ((((Number(x) + dx) % boardW) + boardW) % boardW),
+        y: Number(y) + dy,
+        colour: centre ? PIECE_MARKER.centre : body,
+        centre,
+      });
+    }
+  }
+  return cells;
+}
+
 export const PIECE_INK = Object.freeze({
   own: "#f2f7ff",
   enemy: "#050b14",
@@ -353,6 +392,21 @@ export function paintPiece(ctx, piece, view, opts = {}) {
   const at = cellToPixel(piece.x, piece.y, view);
   const r = Math.max(2, view.scale * 1.8);
   const shape = pieceShape(piece);
+
+  // At map scale the marker is the original's: a three-cell block in the side's dark colour with a
+  // light pixel in the middle. A transport keeps the block but loses the light centre, which is this
+  // page's one deliberate addition — the original had no cargo concept to draw.
+  if (view.scale < MARKER_ZOOM) {
+    const size = Math.max(1, Math.ceil(view.scale));
+    for (const cell of markerCells(piece.x, piece.y, piece.side, view.boardW || BOARD_W)) {
+      const px = cellToPixel(cell.x, cell.y, view);
+      ctx.fillStyle = cell.centre && piece.transport === true
+        ? PIECE_MARKER.body[piece.side] || PIECE_MARKER.body.blue
+        : cell.colour;
+      ctx.fillRect(Math.floor(px.x - view.scale / 2), Math.floor(px.y - view.scale / 2), size, size);
+    }
+    return at;
+  }
   ctx.fillStyle = pieceColor(piece);
   ctx.beginPath();
   if (shape === "ring") {

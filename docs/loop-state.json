@@ -1,10 +1,10 @@
 {
-  "iteration": 15,
+  "iteration": 17,
   "cap": 40,
   "current": null,
-  "lastNodeId": "chq_disassembly",
+  "lastNodeId": "unit_icons",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-07T06:22:13.956Z",
+  "lastRunAt": "2026-11-07T06:37:07.063Z",
   "history": [
     {
       "node": "board_paint",
@@ -131,6 +131,18 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-07T06:22:13.956Z"
+    },
+    {
+      "node": "unit_icons",
+      "status": "todo",
+      "note": "blocked: markers are runtime-built 7x7 sprites (descriptor table DS:0xEAFA, index side*9+type, pointers from DS:0xDB04 into a boot-filled bank); the pixel data is not static in CHQ_unpacked.EXE and disasm_index.json's linear!=file offset so objdump cannot follow the loader. See Command HQ/modern/docs/ghidra/export/marker_hunt.md",
+      "at": "2026-11-07T06:30:27.849Z"
+    },
+    {
+      "node": "unit_icons",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-07T06:37:07.063Z"
     }
   ]
 }
