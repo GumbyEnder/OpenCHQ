@@ -27,6 +27,7 @@ import {
   consume,
   hold,
   knownKinds,
+  meterOf,
   metersFor,
   produce,
   rateOf,
@@ -68,7 +69,7 @@ export async function run(ctx) {
   const spent = consume(match, "blue", "steel", 5);
   must(spent && spent.ok === true, "a side could not spend steel: " + JSON.stringify(spent));
   eq(spent.held, 35, "steel after spending 5");
-  eq(meter(match, "red", "steel").held, 40, "one side's spending must not touch the other's reserve");
+  eq(meterOf(match, "red", "steel").held, 40, "one side's spending must not touch the other's reserve");
   const topped = hold(match, "blue", "steel", 2);
   must(topped && topped.ok === true, "a side could not hold steel: " + JSON.stringify(topped));
   eq(topped.held, 37, "steel after holding 2");
@@ -129,14 +130,14 @@ export async function run(ctx) {
     must(knownKinds().includes("tin"), "a configured kind is not known: " + JSON.stringify(knownKinds()));
     must(!resourceKinds("1942").includes("tin"), "the configured kind ignored its era gate");
     const tinMatch = openMatch("1986", []);
-    eq(meter(tinMatch, "blue", "tin").held, 7, "a configured kind's reserve");
+    eq(meterOf(tinMatch, "blue", "tin").held, 7, "a configured kind's reserve");
     const tinSpent = consume(tinMatch, "blue", "tin", 3);
     must(tinSpent && tinSpent.ok === true, "a configured kind could not be consumed: " + JSON.stringify(tinSpent));
     eq(tinSpent.held, 4, "a configured kind after spending");
     const tinPaid = produce(tinMatch, "blue", "tin", 1);
     must(tinPaid && /never recovered/.test(String(tinPaid.error)), "a configured kind paid without a rate");
     upkeepResources(tinMatch);
-    eq(meter(tinMatch, "blue", "tin").held, 2, "a configured kind must burn what config says");
+    eq(meterOf(tinMatch, "blue", "tin").held, 2, "a configured kind must burn what config says");
   } finally {
     if (previous === undefined) delete process.env.OPENCHQ_CONFIG;
     else process.env.OPENCHQ_CONFIG = previous;
