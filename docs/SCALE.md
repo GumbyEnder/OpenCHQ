@@ -69,11 +69,18 @@ Played for real — two accounts, two sockets, the same ops the page sends, 0.12
 (`local/two-seat-play.mjs`): the room reached **98 rounds in 190 s**, about 2 s a round, when the
 clock asked for 0.12 s. The tick was not the problem; the orders were.
 
-| measured | |
-| --- | --- |
-| one `planOrder` (a route across the board) | **5.65 ms** |
-| orders a scripted seat sends a round | ~100 |
-| a round at 1,000 rooms x 2 seats x 3 orders | **34 s of CPU** — seven times a 5 s round |
+| measured | before | after |
+| --- | --- | --- |
+| one `planOrder`, 60 orders across the board | 5.22 ms | **1.82 ms** |
+| one order to a nearby cell | — | 0.013 ms |
+| a round at 1,000 rooms x 2 seats x 3 orders | 34 s of CPU | **11 s** |
+| the two-seat played room, real ops | 0.5 rounds/s | **0.9 rounds/s** |
+
+The search is A* now: a wrap-aware Manhattan lower bound (every cell costs at least a round, so the
+cell distance never overestimates), a flat-array binary heap instead of per-node objects, and the
+three 43,520-entry work arrays are reused with a generation stamp instead of allocated and filled
+per order. All 60 orders in `local/route-bench.mjs` return the same cost as the old search — the
+walks changed shape in places, never in price.
 
 So the ceiling for 1,000 concurrent games is not memory (111 MB) and not egress (4 MB/s): it is the
 route, which is a breadth-first search of all 43,520 cells, run once per order, every order.
