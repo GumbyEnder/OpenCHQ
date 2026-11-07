@@ -21,6 +21,26 @@ Round: 5 s. Payday: every 25 rounds (2.1 min). Prices: infantry 1, tank 2, ship 
 - **A payday at 14 cities buys 19 infantry or 9 tanks.** At 27 cities, 32 infantry or 16 tanks.
 - **The match ends at round 244** (red), about 20 minutes at 5 s.
 
+## Does the game make armies meet? Yes — with a driver that wants to fight
+
+The scripted player above walks to the nearest unowned city, and two armies doing that pass each
+other: 2 shots in 244 rounds. The bot concentrates on a focus cell and marches on the enemy capital.
+Same board, same rules, 400 rounds (`node local/contact.mjs 400`):
+
+| driver | first shot | shots | destroyed | captures | ends |
+| --- | --- | --- | --- | --- | --- |
+| bot | round 48 (4 min) | 350 | 56 | 64 | still going at 400 |
+| scripted colonist | round 226 | 2 | 0 | 88 | red wins at 244 |
+
+So contact is not a missing rule: it is a decision the player makes. The colonist numbers are a
+warning about *incentives*, not about combat — a player who never wants to fight is not punished for
+it, because taking empty cities pays and losing nothing costs nothing.
+
+The bot also emitted 13,075 "No route. Wasteland is refused and a held cell is not entered." in 400
+rounds. That is the same symptom the soak showed from the other side (6,750 blocked orders): a piece
+whose next cell is held has no alternative, so an army in contact goes stiff. This is the next rule
+to look at, and it is in the player's hands every round, unlike a payday.
+
 ## What this says
 
 **The economy already has a curve, and it is linear in cities.** Income is not a constant: it is one
