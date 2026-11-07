@@ -1,10 +1,10 @@
 {
-  "iteration": 19,
+  "iteration": 20,
   "cap": 40,
   "current": null,
-  "lastNodeId": "political_map",
+  "lastNodeId": "transport_escort",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-07T06:52:23.679Z",
+  "lastRunAt": "2026-11-07T06:58:58.184Z",
   "history": [
     {
       "node": "board_paint",
@@ -155,6 +155,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-07T06:52:23.679Z"
+    },
+    {
+      "node": "transport_escort",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-07T06:58:58.184Z"
     }
   ]
 }

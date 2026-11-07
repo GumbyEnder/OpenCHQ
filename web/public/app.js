@@ -358,12 +358,17 @@ function drawMatch() {
     camNote.textContent = "cell " + (view.scale / dpr()).toFixed(0) + " px · " +
       (following ? "following" : "free");
   }
+  // A crossing nobody screens is said out loud, in the seat's own words, before the loss.
+  const unscreened = Array.isArray(room && room.unscreened) ? room.unscreened : [];
+  const escortNote = unscreened.length === 0 ? ""
+    : unscreened.length === 1 ? "A transport is crossing unscreened."
+    : unscreened.length + " transports are crossing unscreened.";
   // In the political view the note says what the colours mean, counted from the patches on screen.
   const politicalNote = result.tally
     ? "Political: blue holds " + result.tally.blue + ", red holds " + result.tally.red +
       ", neutral " + result.tally.neutral + "."
     : "";
-  boardNote.textContent = politicalNote ||
+  boardNote.textContent = politicalNote || escortNote ||
     previewLine(preview) || cargoNote(selected) || airNote(selected) || statusLine(boardPayload, room, result);
   // A capital under threat is the loudest thing on the page, and it stays up until the threat
   // passes: the last ten rounds of a match are not the time to be quiet.
@@ -772,6 +777,20 @@ function toolRow(room) {
       button.addEventListener("click", () => send({ op: kind, piece: selected.id }));
       row.append(button);
     }
+    // A transport crossing with no warship able to see it is the sink rule waiting to happen. The
+    // server says which transports are in that state; this puts the selected warship on one.
+    const unscreened = Array.isArray(room.unscreened) ? room.unscreened : [];
+    if (unscreened.length && selected.domain === "sea" && selected.transport !== true) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "buy";
+      button.textContent = "Escort";
+      button.title = unscreened.length === 1
+        ? "Travel with your unscreened transport."
+        : "Travel with your unscreened transports, nearest first.";
+      button.addEventListener("click", () => send({ op: "escort", ship: selected.id, transport: unscreened[0] }));
+      row.append(button);
+    }
   }
   return row;
 }
@@ -817,6 +836,9 @@ function applyDelta(delta) {
     // useful in the round it becomes true.
     alarm: delta.alarm === undefined ? room.alarm : delta.alarm,
     roundSeconds: delta.roundSeconds === undefined ? room.roundSeconds : delta.roundSeconds,
+    // Which of this seat's transports are crossing naked rides every delta for the same reason the
+    // alarm does: the warning is only worth anything in the round it is true.
+    unscreened: Array.isArray(delta.unscreened) ? delta.unscreened : (room.unscreened || []),
     capitals: delta.capitalsChanged ? delta.capitals : room.capitals,
   };
   if (selected && !byId.has(selected.id)) {

@@ -126,6 +126,15 @@ export function logLines(match, side, events, round) {
         // A shot is noise on its own: a fight is worth a line only when the seat can see it,
         // and the fight's result arrives as destroyed/overrun.
         break;
+      case "escort": {
+        // Your own escort always reads; the enemy's only when one of your pieces can see the spot.
+        if (!mine) break;
+        // The line names what formed. It does not print a cell, a distance or a rate: none of
+        // those are known for an escort, and a made-up one would be worse than the sentence.
+        push("a warship is escorting a transport");
+        break;
+      }
+
       case "blocked":
         if (mine) push("a unit could not step: the way was held");
         break;

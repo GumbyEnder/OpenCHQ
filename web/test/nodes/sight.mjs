@@ -146,7 +146,7 @@ export async function run(ctx) {
   // ---- hidden pieces are absent, never flagged ------------------------------------------
   const topKeys = Object.keys(reachView).sort().join(",");
   // Sorted, so roundSeconds sits before routes ("roundS" < "route").
-  expect(fail, topKeys === "alarm,capitals,notes,over,pieces,roundSeconds,routes,seat,sites,winner", "the view shape changed: " + topKeys);
+  expect(fail, topKeys === "alarm,capitals,notes,over,pieces,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
   for (const piece of reachView.pieces) {
     for (const key of ["hidden", "visible", "concealed", "seen"]) {
       expect(fail, !(key in piece), "a piece carries a '" + key + "' flag: " + JSON.stringify(piece));

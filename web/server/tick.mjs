@@ -14,6 +14,7 @@ import { advance } from "./move.mjs";
 import { resolve } from "./combat.mjs";
 import { occupy, pay, upkeep } from "./economy.mjs";
 import { tickAir } from "./air.mjs";
+import { followEscorts } from "./escort.mjs";
 import { CELL_W } from "./board.mjs";
 
 const SIDES = ["blue", "red"];
@@ -80,6 +81,14 @@ export function tickMatch(match) {
   match.round = Number.isInteger(match.round) ? match.round + 1 : 1;
 
   const events = [];
+  // An escort order is given between rounds; its line belongs to the round that follows it.
+  if (Array.isArray(match.pendingEvents) && match.pendingEvents.length) {
+    events.push(...match.pendingEvents);
+    match.pendingEvents = [];
+  }
+  // An escort holds station before its transport moves, so the ship trails the transport rather
+  // than chasing the cell it just left.
+  followEscorts(match);
   // Modules that are still stubs return [] (or nothing). A round does not depend on them
   // producing events; it only depends on them being called in this order.
   for (const step of [advance, resolve, occupy, tickAir, upkeep, pay]) {

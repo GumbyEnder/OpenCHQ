@@ -7,6 +7,7 @@ import { matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
 import { sendMission } from "./air.mjs";
+import { orderEscort } from "./escort.mjs";
 import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { logLines } from "./log.mjs";
@@ -124,6 +125,9 @@ export function createLobby() {
       // The round the server is running, so the page draws the same clock the server does instead
       // of keeping a copy of a tunable. Without it the TIME LEFT bar had nothing to run down.
       roundSeconds: seen ? seen.roundSeconds : null,
+      // Which of this seat's transports are crossing with no warship able to see them. The page
+      // cannot work this out for itself without keeping a second copy of the sight rule.
+      unscreened: seen && Array.isArray(seen.unscreened) ? seen.unscreened : [],
       pieces: seen ? seen.pieces : piecesFor(room.match),
       routes: seen ? seen.routes : {},
       sites: seen ? seen.sites : [],
@@ -245,6 +249,7 @@ export function createLobby() {
       gone,
       routes,
       sites,
+      unscreened: view.unscreened || [],
       seatChanged: last.seat !== signature(view.seat),
       capitalsChanged: last.capitals !== signature(view.capitals),
     };
@@ -574,6 +579,30 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // An escort is a decision, not a movement: the warship is told to travel with the transport and
+  // the ship trails it one cell a round. Passing no transport releases the ship.
+  function escortOp(username, message) {
+    const roomId = seatOf.get(username);
+    const room = roomId ? rooms.get(roomId) : null;
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const claimed = message.side === undefined || message.side === null ? mine : String(message.side);
+    if (claimed !== mine) return { error: "That side is not yours. You hold " + mine + "." };
+
+    const shipId = String(message.ship ?? message.piece ?? message.pieceId ?? "");
+    if (!shipId) return { error: "An escort needs a ship id." };
+    const transportId = message.transport === undefined ? null : message.transport;
+
+    const result = orderEscort(room.match, mine, shipId, transportId);
+    if (!result || result.error) return { error: (result && result.error) || "The escort was refused." };
+    touch(room);
+    tellRoom(room);
+    const peer = sockets.get(username);
+    if (peer) peer.send({ op: "escorted", ship: result.ship, transport: result.transport ?? null });
+    return { ok: true };
+  }
+
   function setClock(username, running) {
     const roomId = seatOf.get(username);
     const room = roomId ? rooms.get(roomId) : null;
@@ -728,6 +757,7 @@ export function createLobby() {
     if (op === "mission") return missionOp(username, message);
     if (op === "entrench") return pieceOp(username, message, "entrench");
     if (op === "repair") return pieceOp(username, message, "repair");
+    if (op === "escort") return escortOp(username, message);
     if (op === "run") return setClock(username, true);
     if (op === "hold") return setClock(username, false);
     if (op === "sync") return syncSeat(username);

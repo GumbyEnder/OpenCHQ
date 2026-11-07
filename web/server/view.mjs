@@ -17,6 +17,7 @@ import { CELL_W, SEATS } from "./board.mjs";
 import { enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
 import { metersFor } from "./resources.mjs";
 import { inactiveRounds } from "./air.mjs";
+import { unscreenedTransports } from "./escort.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -182,6 +183,7 @@ export function forSeat(match, side) {
       },
       seat: null,
       notes: [],
+      unscreened: [],
       roundSeconds: roundLength(),
     };
   }
@@ -223,6 +225,10 @@ export function forSeat(match, side) {
   // countdown and the clock is dead time: the player has no way to know a payment is coming.
   const seat = seatStatus(match, side);
 
+  // A transport crossing with no warship able to see it is a loss waiting to happen. The seat is
+  // told which of its own transports are in that state, by id, so the page can point at them.
+  const unscreened = unscreenedTransports(match, side);
+
   const notes = [];
   if (hidden) {
     const seatName = (SEATS[enemySide] && SEATS[enemySide].name) || "The other side";
@@ -241,7 +247,7 @@ export function forSeat(match, side) {
   // The round the server is actually running, so the page can draw the same clock. A page that
   // keeps its own copy of the round length is a second source of truth for a tunable.
   return {
-    pieces, routes, sites, capitals, seat, notes, alarm, over, winner,
+    pieces, routes, sites, capitals, seat, notes, alarm, over, winner, unscreened,
     roundSeconds: roundLength(),
   };
 }
