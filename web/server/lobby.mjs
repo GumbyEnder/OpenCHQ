@@ -5,7 +5,9 @@ import { forSeat } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
-import { issueOrder, planOrder } from "./move.mjs";
+import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
+import { sendMission } from "./air.mjs";
+import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { logLines } from "./log.mjs";
 import { roundSeconds, rules } from "./rules.mjs";
@@ -114,6 +116,12 @@ export function createLobby() {
       // The shop: what this era sells and at what price. Prices come from config, never from
       // the page, so the panel cannot disagree with what economy.buy charges.
       shop: shopFor(room.era),
+      // The late kit this era offers, and whether a nuke is even possible. A tool a player
+      // cannot see is a rule they cannot use, which is why this rides with the room.
+      tools: toolsForEra(room.era).map((tool) => ({
+        name: tool,
+        ...(tool === "nuke" ? nukeStatus(room.match, you) : {}),
+      })),
       // Cash, fuel and the rounds until the next payment. The page needs them to draw a
       // countdown; without them the clock is dead time and a player cannot plan a purchase.
       seat: seen ? seen.seat : null,
@@ -460,6 +468,62 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // The late kit and the air were in the engine and reachable by nobody: no op, no button. These
+  // two ops are the door. They take the same seat checks as an order, so a forged side is still
+  // refused by the module and by seatUsername, not by the page.
+  function toolOp(username, message) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    if (room.clock !== "running" && message.tool !== "satellite") {
+      // A held clock is not a reason to lose a satellite pass, but spending money while the game
+      // is paused is how a pause becomes a free turn.
+      return { error: "Start the clock first." };
+    }
+    const result = useTool(room.match, mine, String(message.tool ?? ""), message.to || null);
+    if (!result || result.error) return { error: (result && result.error) || "That tool was refused." };
+    saveRoom(room);
+    tellRoom(room);
+    return { ok: true, events: result.events || [] };
+  }
+
+  function missionOp(username, message) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const plane = String(message.piece ?? message.pieceId ?? "");
+    if (!plane) return { error: "A mission needs an aircraft." };
+    const result = sendMission(room.match, mine, plane, String(message.mode ?? ""), message.to || null);
+    if (!result || result.error) return { error: (result && result.error) || "That mission was refused." };
+    saveRoom(room);
+    tellRoom(room);
+    return { ok: true, events: result.events || [] };
+  }
+
+  // Digging in and repairing are a piece's own orders, so they take a piece id and nothing else.
+  function pieceOp(username, message, kind) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const pieceId = String(message.piece ?? message.pieceId ?? "");
+    if (!pieceId) return { error: "That needs a piece id." };
+    const result = kind === "entrench"
+      ? entrench(room.match, mine, pieceId)
+      : repair(room.match, mine, pieceId);
+    if (!result || result.error) return { error: (result && result.error) || "That was refused." };
+    saveRoom(room);
+    tellRoom(room);
+    return { ok: true, events: result.events || [] };
+  }
+
+  function roomFor(username) {
+    const roomId = seatOf.get(username);
+    return roomId ? rooms.get(roomId) : null;
+  }
+
   function order(username, message) {
     const roomId = seatOf.get(username);
     const room = roomId ? rooms.get(roomId) : null;
@@ -639,6 +703,10 @@ export function createLobby() {
     if (op === "order") return order(username, message);
     if (op === "buy") return buyOp(username, message);
     if (op === "route") return routeFor(username, message);
+    if (op === "tool") return toolOp(username, message);
+    if (op === "mission") return missionOp(username, message);
+    if (op === "entrench") return pieceOp(username, message, "entrench");
+    if (op === "repair") return pieceOp(username, message, "repair");
     if (op === "run") return setClock(username, true);
     if (op === "hold") return setClock(username, false);
     if (op === "sync") return syncSeat(username);

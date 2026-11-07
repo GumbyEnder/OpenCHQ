@@ -455,6 +455,8 @@ function renderRoom() {
   roomBox.append(seats, meta, note, actions);
   if (purseEl) roomBox.append(purseEl);
   if (shopEl) roomBox.append(shopEl);
+  const tools = toolRow(room);
+  if (tools) roomBox.append(tools);
 
   // What the last rounds actually did. Empty until the clock runs.
   if (roundLog.length) {
@@ -467,6 +469,53 @@ function renderRoom() {
     roomBox.append(heading, list);
     paintLog(list);
   }
+}
+
+// The late kit is a set of decisions, and a decision with no button is not a decision. Each era
+// says which tools it has; a nuke says why it is refused instead of hiding.
+const TOOL_WORDS = {
+  intel: "Intel",
+  satellite: "Satellite",
+  aid: "Foreign aid",
+  ceasefire: "Cease-fire",
+  nuke: "Nuke",
+  oil: "Oil",
+};
+
+function toolRow(room) {
+  const list = Array.isArray(room && room.tools) ? room.tools : [];
+  const wanted = list.filter((tool) => TOOL_WORDS[tool.name]);
+  if (!wanted.length) return null;
+  const row = document.createElement("div");
+  row.className = "shop tools";
+  for (const tool of wanted) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "buy";
+    button.textContent = TOOL_WORDS[tool.name];
+    // An aircraft on the ground is the other half of this row: a mission is a piece order.
+    if (tool.name === "nuke" && tool.allowed === false) {
+      button.title = String(tool.reason || "A nuke is refused in this match.");
+    } else {
+      button.title = "Send it now.";
+    }
+    button.addEventListener("click", () => send({ op: "tool", tool: tool.name }));
+    row.append(button);
+  }
+  // A selected piece can dig in or repair: those are its own orders, not the era's tools.
+  if (selected && selected.side === (room && room.you)) {
+    for (const [kind, label] of [["entrench", "Dig in"], ["repair", "Repair"]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "buy";
+      button.textContent = label;
+      button.title = kind === "entrench" ? "Infantry only, and it must be standing still."
+        : "Repair needs a city and money.";
+      button.addEventListener("click", () => send({ op: kind, piece: selected.id }));
+      row.append(button);
+    }
+  }
+  return row;
 }
 
 function paintLog(list) {
@@ -589,6 +638,12 @@ function connect() {
       renderPeople();
       renderRoom();
       drawMatch();
+    } else if (message.op === "ack") {
+      // What a command actually did, in the server's own words.
+      for (const event of message.events || []) {
+        if (event.note) say(String(event.note));
+        if (event.type && event.reveals !== undefined) noteLog([{ round: event.round, text: String(event.note || event.type) }]);
+      }
     } else if (message.op === "delta") {
       applyDelta(message.delta);
     } else if (message.op === "route") {

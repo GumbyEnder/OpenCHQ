@@ -214,7 +214,13 @@ server.on("upgrade", (req, socket) => {
         return;
       }
       const result = lobby.handle(user.username, message);
-      if (result && result.error) peer.send({ op: "error", error: result.error });
+      if (result && result.error) {
+        peer.send({ op: "error", error: result.error });
+      } else if (result && Array.isArray(result.events) && result.events.length) {
+        // A tool that changes the board but says nothing is a decision with no feedback: the
+        // player pressed a button and has to guess what happened.
+        peer.send({ op: "ack", events: result.events });
+      }
     };
   });
 });
