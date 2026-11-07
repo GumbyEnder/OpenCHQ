@@ -36,10 +36,21 @@ So contact is not a missing rule: it is a decision the player makes. The colonis
 warning about *incentives*, not about combat — a player who never wants to fight is not punished for
 it, because taking empty cities pays and losing nothing costs nothing.
 
-The bot also emitted 13,075 "No route. Wasteland is refused and a held cell is not entered." in 400
-rounds. That is the same symptom the soak showed from the other side (6,750 blocked orders): a piece
-whose next cell is held has no alternative, so an army in contact goes stiff. This is the next rule
-to look at, and it is in the player's hands every round, unlike a payday.
+That run also exposed the rule behind it, and it has since been fixed: `route()` treated every
+occupied cell as an obstacle — its own side and the enemy alike — so a march to the capital walked
+*around* the defenders standing in front of it. Held cells are now the walker's own side only, and a
+piece whose next cell is held by a friend re-routes instead of dropping its order.
+
+Measured on the same bot match, 400 rounds, real board:
+
+| | before | after |
+| --- | --- | --- |
+| shots | 350 | 507 |
+| destroyed | 56 | 108 |
+| winner | none at 400 | red, round 349 |
+| blocked orders (soak, scripted) | 6,750 | 3,430 |
+
+Doubling the kills is what it looks like when armies stop walking around each other.
 
 ## What this says
 
