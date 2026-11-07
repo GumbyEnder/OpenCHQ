@@ -122,7 +122,7 @@ function unpackMatch(packed) {
 // The row keeps the seats and anything the match will need. It is JSON so the match shape
 // can grow without a migration per node.
 export function saveRoom(room) {
-  const state = JSON.stringify({ seats: room.seats ?? {}, match: packMatch(room.match) });
+  const state = JSON.stringify({ seats: room.seats ?? {}, match: packMatch(room.match), resume: room.resume === true });
   let created = createdById.get(room.id);
   if (!created) {
     try {
@@ -207,14 +207,18 @@ export function loadRooms() {
     }
     const match = unpackMatch(state.match ?? null);
     createdById.set(row.id, row.created_at);
-    // A restored game is paused, and so is its match: one clock, never two.
-    if (match && typeof match === "object") match.clock = "held";
+    // A restored game is paused, and so is its match: one clock, never two. The one exception
+    // is a room that was marked to resume when the process drained for a deploy: that stop was
+    // ours, not the player's, so the match comes back running with the clock it had.
+    const resuming = state.resume === true && row.clock === "running" && Boolean(state.seats);
+    if (match && typeof match === "object") match.clock = resuming ? "running" : "held";
     return {
       id: row.id,
       mode: row.mode,
       era: row.era,
-      clock: "held",
-      note: String(row.note || ""),
+      clock: resuming ? "running" : "held",
+      resume: false,
+      note: resuming ? "Resumed after a deploy." : String(row.note || ""),
       seats: state.seats ?? {},
       match,
       savedAt: row.saved_at,

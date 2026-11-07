@@ -29,6 +29,12 @@ const boardNote = document.querySelector("#boardNote");
 const legendBox = document.querySelector("#legend");
 
 let socket = null;
+// A deploy closes the socket on purpose. The page reconnects on its own rather than leaving the
+// player looking at "connection closed" and a paused match.
+let reconnectTimer = null;
+let reconnectTries = 0;
+let wasReconnecting = false;
+const RECONNECT_TRIES = 8;
 let me = "";
 let users = [];
 let pending = [];
@@ -479,12 +485,28 @@ function showPlay(on) {
 }
 
 function connect() {
-  if (socket) socket.close();
+  // Drop the old socket without letting its close event schedule another reconnect: only the
+  // socket that is still the current one gets to do that.
+  const previous = socket;
+  socket = null;
+  if (previous) {
+    try {
+      previous.close();
+    } catch {
+      // Already closed.
+    }
+  }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(proto + "://" + location.host + "/ws");
+  const selfSocket = socket;
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.op === "welcome") {
+      if (wasReconnecting) {
+        // Say it once, then let the board talk: nothing is worse than a stale "reconnecting".
+        wasReconnecting = false;
+        say("Reconnected. The match is where you left it.");
+      }
       // A returning seat gets its room in the welcome, and the room carries its own log.
       if (message.room && Array.isArray(message.room.log) && !roundLog.length) noteLog(message.room.log);
       me = message.username;
@@ -494,6 +516,9 @@ function connect() {
       renderPeople();
       renderRoom();
       drawMatch();
+    } else if (message.op === "bye") {
+      // The server is going away on purpose: say so, and keep the room on screen.
+      say(message.reason || "The server is restarting.");
     } else if (message.op === "presence") {
       users = message.users || [];
       renderPeople();
@@ -555,7 +580,26 @@ function connect() {
     }
   });
   socket.addEventListener("close", () => {
-    if (me) say("Lobby connection closed.");
+    if (socket !== selfSocket) return;
+    // A deploy, a sleeping laptop or a dropped wifi all look the same from here. Reconnect by
+    // itself, backing off, and let the welcome message restore the room and its log.
+    if (!me) return;
+    if (reconnectTimer) return;
+    if (reconnectTries >= RECONNECT_TRIES) {
+      say("Lobby connection closed. Reload the page to rejoin.");
+      return;
+    }
+    reconnectTries += 1;
+    wasReconnecting = true;
+    const wait = Math.min(8000, 500 * 2 ** (reconnectTries - 1));
+    say("Connection lost. Reconnecting" + (reconnectTries > 1 ? " (try " + reconnectTries + ")" : "") + "\u2026");
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, wait);
+  });
+  socket.addEventListener("open", () => {
+    reconnectTries = 0;
   });
 }
 

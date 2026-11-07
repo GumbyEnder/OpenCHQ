@@ -138,6 +138,13 @@ export function createLobby() {
   // A disconnect pauses the game; it does not destroy it. The seat stays reserved for the
   // account, the room stays in the store, and the clock stops so nothing runs unwatched.
   function holdRoom(room, note) {
+    // A deploy is not the player's pause. While the process is draining, a disconnect is ours,
+    // so the room is marked to resume instead of being stopped and saved as stopped.
+    if (room.resume) {
+      room.note = note;
+      saveRoom(room);
+      return;
+    }
     room.clock = "held";
     if (room.match) room.match.clock = "held";
     room.note = note;
@@ -440,6 +447,32 @@ export function createLobby() {
     return events;
   }
 
+  // A deploy closes the listener under live sockets. Everything the store has not written yet
+  // is written here, in one pass, and every running room with a human seat is marked to resume
+  // so the reconnect finds the match still running instead of a paused one.
+  function beginDrain() {
+    const marked = [];
+    for (const room of rooms.values()) {
+      if (!room.match || room.match.over) continue;
+      const humans = [room.seats.blue, room.seats.red].some((seat) => seat && seat.kind === "human");
+      if (!humans) continue;
+      if (room.clock !== "running") continue;
+      room.resume = true;
+      marked.push(room);
+    }
+    return marked;
+  }
+
+  function flushAll() {
+    let written = 0;
+    for (const room of rooms.values()) {
+      room.dirty = false;
+      saveRoom(room);
+      written += 1;
+    }
+    return written;
+  }
+
   // Buying is an order with a price: the same seat checks as "order", then economy.buy does the
   // rules. A purchase answers with the new cash so the page can redraw without guessing.
   function buyOp(username, message) {
@@ -489,7 +522,21 @@ export function createLobby() {
     return { error: "Unknown request." };
   }
 
-  return { join, handle, presence, tickRooms };
+  // Every connected seat, for the one message a drain has to deliver.
+  function broadcast(message) {
+    let sent = 0;
+    for (const peer of sockets.values()) {
+      try {
+        peer.send(message);
+        sent += 1;
+      } catch {
+        // A socket already gone is not a reason to stop telling the rest.
+      }
+    }
+    return sent;
+  }
+
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast };
 }
 
 // What an era sells. The prices are config; the era gates are the archive's - aircraft exist

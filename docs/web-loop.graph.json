@@ -376,14 +376,15 @@
     {
       "id": "deploy_quietly",
       "order": 340,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "reconnect",
         "human_orders"
       ],
       "title": "A deploy must not drop a live game",
       "work": "Every deploy restarts the process and closes every socket. Rooms survive (they are rows), but a player mid-match is disconnected by a build. Add a drain: the server answers a local-only POST /api/drain by holding every running room and replying when no seat is connected, and tools/fire.sh calls it before railway up with a timeout. If the drain does not clear in time, deploy anyway and say so. Never make the page poll to find out - the socket close is the signal.",
-      "prove": "The harness starts a room with a connected seat, calls drain, sees the clock hold and the response deferred, closes the seat, sees drain return, and confirms the store has the room held. A drain with no rooms returns at once."
+      "prove": "The harness starts a room with a connected seat, calls drain, sees the clock hold and the response deferred, closes the seat, sees drain return, and confirms the store has the room held. A drain with no rooms returns at once.",
+      "evidence": "main.mjs catches SIGTERM/SIGINT: stops the ticker, beginDrain marks every running room with a human seat to resume, broadcast tells the seats 'op:bye', flushAll writes every room, then exit. rooms.saveRoom persists that flag and loadRooms restores a marked room running with its saved clock. The page reconnects by itself with backoff and says 'Reconnected. The match is where you left it.' Proven live: SIGTERM logged 'drained 1 rooms, 1 will resume, 1 seats told', and across the restart the board went round 14 -> 16 with clock running and no button pressed."
     },
     {
       "id": "order_wire",

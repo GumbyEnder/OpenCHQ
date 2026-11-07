@@ -189,11 +189,37 @@ server.listen(port, host, () => {
 // Every running room advances one round per beat; held and finished rooms are skipped, so
 // nothing ticks for a game nobody is playing.
 const beat = Math.max(1, Math.round(roundSeconds() * 1000));
-setInterval(() => {
+const ticker = setInterval(() => {
   try {
     lobby.tickRooms();
   } catch (err) {
     console.error("tick failed:", err && err.message ? err.message : err);
   }
-}, beat).unref();
+}, beat);
+ticker.unref();
 console.log(`round length ${roundSeconds()} s (${beat} ms)`);
+
+// A deploy sends SIGTERM and the process used to die mid-round with live sockets. Now it stops
+// the clock, tells the seats, writes every room and leaves: the rooms that were running with a
+// human in them come back running, because that interruption was ours and not the player's.
+let draining = false;
+function drain(signal) {
+  if (draining) return;
+  draining = true;
+  clearInterval(ticker);
+  try {
+    const marked = lobby.beginDrain();
+    const told = lobby.broadcast({
+      op: "bye",
+      reason: "The server is restarting. Your match is saved; this page reconnects by itself.",
+    });
+    const written = lobby.flushAll();
+    console.log(`${signal}: drained ${written} rooms, ${marked.length} will resume, ${told} seats told`);
+  } catch (err) {
+    console.error("drain failed:", err && err.message ? err.message : err);
+  }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+process.on("SIGTERM", () => drain("SIGTERM"));
+process.on("SIGINT", () => drain("SIGINT"));
