@@ -121,6 +121,9 @@ export function createLobby() {
       blue: { username: room.seats.blue.username, kind: room.seats.blue.kind },
       red: { username: room.seats.red.username, kind: room.seats.red.kind },
       round: room.match ? room.match.round : 0,
+      // The round the server is running, so the page draws the same clock the server does instead
+      // of keeping a copy of a tunable. Without it the TIME LEFT bar had nothing to run down.
+      roundSeconds: seen ? seen.roundSeconds : null,
       pieces: seen ? seen.pieces : piecesFor(room.match),
       routes: seen ? seen.routes : {},
       sites: seen ? seen.sites : [],
@@ -233,6 +236,7 @@ export function createLobby() {
       // The alarm rides the delta too. It only ever appeared in a whole frame, and a whole frame
       // may be twenty-five rounds away — long enough for the capital to fall first.
       alarm: view.alarm || null,
+      roundSeconds: view.roundSeconds || null,
       over: Boolean(view.over),
       winner: view.winner || null,
       clock: view.clock,

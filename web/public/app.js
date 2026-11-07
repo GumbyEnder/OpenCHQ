@@ -736,6 +736,7 @@ function applyDelta(delta) {
     // The alarm is not a "changed" field: it rides every delta, because the sentence is only
     // useful in the round it becomes true.
     alarm: delta.alarm === undefined ? room.alarm : delta.alarm,
+    roundSeconds: delta.roundSeconds === undefined ? room.roundSeconds : delta.roundSeconds,
     capitals: delta.capitalsChanged ? delta.capitals : room.capitals,
   };
   if (selected && !byId.has(selected.id)) {
