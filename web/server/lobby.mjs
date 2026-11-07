@@ -12,6 +12,18 @@ import { buy, seedOwners } from "./economy.mjs";
 import { logLines } from "./log.mjs";
 import { roundSeconds, rules } from "./rules.mjs";
 
+// A player action during a running clock marks the room dirty instead of committing it: the tick
+// writes dirty rooms within FLUSH_SECONDS anyway, and a commit per order is what turned a 0.12 s
+// round into three seconds when two seats sent a few hundred orders a round. A held clock, a
+// create, a leave or a win still saves at once, because those are the changes a player notices.
+function touch(room) {
+  if (room && room.clock === "running") {
+    room.dirty = true;
+    return;
+  }
+  saveRoom(room);
+}
+
 function sideOf(value) {
   return value === "red" ? "red" : "blue";
 }
@@ -483,7 +495,7 @@ export function createLobby() {
     }
     const result = useTool(room.match, mine, String(message.tool ?? ""), message.to || null);
     if (!result || result.error) return { error: (result && result.error) || "That tool was refused." };
-    saveRoom(room);
+    touch(room);
     tellRoom(room);
     return { ok: true, events: result.events || [] };
   }
@@ -497,7 +509,7 @@ export function createLobby() {
     if (!plane) return { error: "A mission needs an aircraft." };
     const result = sendMission(room.match, mine, plane, String(message.mode ?? ""), message.to || null);
     if (!result || result.error) return { error: (result && result.error) || "That mission was refused." };
-    saveRoom(room);
+    touch(room);
     tellRoom(room);
     return { ok: true, events: result.events || [] };
   }
@@ -514,7 +526,7 @@ export function createLobby() {
       ? entrench(room.match, mine, pieceId)
       : repair(room.match, mine, pieceId);
     if (!result || result.error) return { error: (result && result.error) || "That was refused." };
-    saveRoom(room);
+    touch(room);
     tellRoom(room);
     return { ok: true, events: result.events || [] };
   }
@@ -544,7 +556,7 @@ export function createLobby() {
       return { error: err && err.message ? err.message : String(err) };
     }
     if (!result || result.error) return { error: (result && result.error) || "The order was refused." };
-    saveRoom(room);
+    touch(room);
     tellRoom(room);
     // The seat hears its own order back: the page acknowledges in place instead of guessing
     // that a silent socket meant success.
@@ -680,7 +692,7 @@ export function createLobby() {
       return { error: err && err.message ? err.message : String(err) };
     }
     if (!result || result.error) return { error: (result && result.error) || "The purchase was refused." };
-    saveRoom(room);
+    touch(room);
     tellRoom(room);
     const peer = sockets.get(username);
     if (peer) {

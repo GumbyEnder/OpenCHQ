@@ -63,6 +63,27 @@ The path, with the parts that exist marked:
   lets a page rebuild its board from a full frame, so a re-route costs one frame, not a match.
 - Keep the drain we built: it is the same operation that makes a rolling deploy safe.
 
+## The order is the cost
+
+Played for real — two accounts, two sockets, the same ops the page sends, 0.12 s rounds
+(`local/two-seat-play.mjs`): the room reached **98 rounds in 190 s**, about 2 s a round, when the
+clock asked for 0.12 s. The tick was not the problem; the orders were.
+
+| measured | |
+| --- | --- |
+| one `planOrder` (a route across the board) | **5.65 ms** |
+| orders a scripted seat sends a round | ~100 |
+| a round at 1,000 rooms x 2 seats x 3 orders | **34 s of CPU** — seven times a 5 s round |
+
+So the ceiling for 1,000 concurrent games is not memory (111 MB) and not egress (4 MB/s): it is the
+route, which is a breadth-first search of all 43,520 cells, run once per order, every order.
+
+One thing changed here: a player action during a running clock now marks the room dirty instead of
+committing it (the tick flushes dirty rooms within 2 s), which took the room from 3.2 s to 2.0 s a
+round — a commit per order cost more than the order did. The route itself is the next fix: a bounded
+or heuristic search, or a cached path per (side, from, to), before a second instance is worth
+talking about.
+
 ## What is deliberately not measured yet
 
 - Real players. The rooms above are synthetic: the site table is the real 1986 board (269 sites),
