@@ -111,6 +111,19 @@ export function cargoNote(piece) {
   return "At sea as a transport: it cannot fight back, and an enemy ship that catches it sinks it.";
 }
 
+// An aircraft on a mission is absent for a known number of rounds. Say the number: "inactive" as a
+// word costs the player nothing to read and tells them nothing.
+export function airNote(piece) {
+  if (!piece || piece.kind !== "aircraft") return "";
+  const left = Number(piece.inactive);
+  if (Number.isFinite(left) && left > 0) {
+    return "Away on a mission: " + left + (left === 1 ? " round" : " rounds") + " until it can fly again.";
+  }
+  // No number here: the mission lengths live in config/game.json's air block, and a page that
+  // prints its own copy of them is a second source of truth for a tunable.
+  return "Ready to fly. A mission keeps it away for a while — longer for a strike than a patrol.";
+}
+
 // The alarm strip: the one sentence a player needs when the enemy is closing on a capital. The
 // server sends {name, distance}; nothing here invents a number.
 export function alarmText(alarm) {

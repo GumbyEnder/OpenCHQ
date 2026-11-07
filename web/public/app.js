@@ -5,6 +5,7 @@ import {
 import {
   PICK_HINT,
   ackText,
+  airNote,
   alarmText,
   buyMessage,
   cargoNote,
@@ -227,7 +228,8 @@ function drawMatch() {
     camNote.textContent = "cell " + (view.scale / dpr()).toFixed(0) + " px · " +
       (following ? "following" : "free");
   }
-  boardNote.textContent = previewLine(preview) || cargoNote(selected) || statusLine(boardPayload, room, result);
+  boardNote.textContent =
+    previewLine(preview) || cargoNote(selected) || airNote(selected) || statusLine(boardPayload, room, result);
   // A capital under threat is the loudest thing on the page, and it stays up until the threat
   // passes: the last ten rounds of a match are not the time to be quiet.
   if (alarmStrip) {

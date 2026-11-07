@@ -33,7 +33,7 @@ import {
   wrapDelta,
   wrapX,
 } from "../../public/render.mjs";
-import { cargoNote } from "../../public/command.mjs";
+import { airNote, cargoNote } from "../../public/command.mjs";
 import { EXTRACT_MISSING, PALETTE, SCHEMATIC } from "../../public/paint.mjs";
 
 function recorder() {
@@ -171,6 +171,13 @@ export async function run(ctx) {
   eq(fail, "a land piece on land is a square", pieceShape({ domain: "land" }), "square");
   eq(fail, "cargo is explained", /cannot fight back/.test(cargoNote({ transport: true })), true);
   eq(fail, "a land piece is not cargo", cargoNote({ transport: false }), "");
+
+  // --- an aircraft says how long it is away -----------------------------------
+  eq(fail, "a plane away on a mission counts down", airNote({ kind: "aircraft", inactive: 3 }),
+    "Away on a mission: 3 rounds until it can fly again.");
+  eq(fail, "one round is singular", /1 round until/.test(airNote({ kind: "aircraft", inactive: 1 })), true);
+  eq(fail, "a ready plane says so", /Ready to fly/.test(airNote({ kind: "aircraft", inactive: 0 })), true);
+  eq(fail, "an infantry is not an aircraft", airNote({ kind: null, inactive: 3 }), "");
 
   // --- capitals --------------------------------------------------------------
   const fallbackCaps = capitalMarkers(null);

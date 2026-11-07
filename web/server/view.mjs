@@ -16,6 +16,7 @@
 import { CELL_W, SEATS } from "./board.mjs";
 import { enemyRouteSteps, payEvery, sightCells } from "./rules.mjs";
 import { metersFor } from "./resources.mjs";
+import { inactiveRounds } from "./air.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -118,6 +119,9 @@ function viewPiece(unit, steps, round) {
     // The five words the unit list uses. Derived, never stored twice.
     transport: unit.transport === true,
     entrenched: unit.entrenched === true,
+    // How many rounds until an aircraft can fly again. `state` says "inactive"; the page needs the
+    // number, or a mission is an unexplained absence rather than a cost.
+    inactive: inactiveRounds(unit, round),
     state: stateOf(unit, round),
   };
 }

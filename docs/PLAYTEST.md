@@ -116,3 +116,19 @@ the game rather than about a missing rule.
 3. Give the policy an army: tanks, artillery, a stack, and a reason to attack a held city. If the
    match still cannot be won at 1,000 rounds with armour, the stalemate is a rule defect, not a
    policy defect.
+
+
+## Legibility: what a player can see now (wakeups 28-30)
+
+The engine had the rules; the page did not show them. Three additions, each one a decision the
+player can now make before it is too late:
+
+- **A capital under threat.** Enemy land troops inside 8 cells of a capital raise an alarm in that
+  seat's log and a strip above the board, repeated only on a closer approach. The last ten rounds
+  of a match used to be silent.
+- **The result.** The seat view carries `over` and `winner` now. Before this, a page watched the
+  clock stop and never learned who won, and a playing harness ran ten minutes past the end.
+- **Cargo looks like cargo.** A land piece in water draws as a ring, the legend names it
+  "transport (cargo)", and selecting one says it cannot fight back and an enemy ship sinks it.
+- **A plane's absence is a number.** The view carries `inactive` rounds remaining, and selecting an
+  aircraft says "Away on a mission: 3 rounds until it can fly again."
