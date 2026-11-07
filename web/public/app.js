@@ -334,6 +334,8 @@ function drawMatch() {
     fog: fogFor(view),
     sight: Number(boardPayload.sightCells || 8),
     sightAt: selected,
+    // The original's lettering for city names, once the camera is close enough to read them.
+    atlas: fontAtlas,
   });
   paintChrome(view);
   const camNote = document.getElementById("camNote");
@@ -514,12 +516,20 @@ document.getElementById("camFit")?.addEventListener("click", () => refit());
 document.getElementById("camFollow")?.addEventListener("click", () => setFollow(!following));
 
 async function loadBoard() {
-  try {
-    const res = await fetch("/api/board", { credentials: "same-origin" });
-    const payload = await res.json();
-    boardPayload = payload && typeof payload === "object" ? payload : boardPayload;
-  } catch (err) {
-    boardPayload = { ...boardPayload, source: "missing", cells: null };
+  // A board fetch that loses a race with server startup used to leave the page on the schematic for
+  // the rest of its life. Try twice before believing the extract is really absent.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch("/api/board", { credentials: "same-origin" });
+      const payload = await res.json();
+      if (payload && typeof payload === "object") {
+        boardPayload = payload;
+        if (payload.source !== "missing") break;
+      }
+    } catch (err) {
+      boardPayload = { ...boardPayload, source: "missing", cells: null };
+    }
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 800));
   }
   drawMatch();
 }

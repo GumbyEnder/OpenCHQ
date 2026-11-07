@@ -7,6 +7,7 @@
 // so the grid and the schematic keep one palette.
 
 import { colorForTerrain, paintBoard, PALETTE, SCHEMATIC, EXTRACT_MISSING } from "./paint.mjs";
+import { textBitmap } from "./font.mjs";
 
 export const BOARD_W = 320;
 export const BOARD_H = 136;
@@ -453,6 +454,76 @@ export function paintPieces(ctx, pieces, view, opts = {}) {
   return drawn;
 }
 
+// City names on the board, once the camera is close enough to read them.
+//
+// The original kept place names in its panels, not on the map. These labels are this page's
+// addition, drawn with the game's own lettering (FONTS.CHQ) so they belong to the picture, and only
+// past LABEL_ZOOM pixels per cell, where a name is not clutter. A label is dropped when its city is
+// off screen and clamped when it would run off an edge.
+export const LABEL_ZOOM = 4;
+
+function labelBox(text, labelScale, at, view) {
+  const width = String(text).length * 8 * labelScale;
+  const height = 6 * labelScale;
+  let x = at.x + Math.max(2, view.scale * 0.6);
+  let y = at.y - height / 2;
+  if (x + width > view.viewW - 2) x = at.x - width - 2;
+  if (x < 2) x = 2;
+  if (y < 2) y = 2;
+  if (y + height > view.viewH - 2) y = view.viewH - height - 2;
+  return { x, y, width, height };
+}
+
+export function visibleLabels(sites, view, opts = {}) {
+  const list = Array.isArray(sites) ? sites : [];
+  const out = [];
+  if (!view || Number(view.scale) < LABEL_ZOOM) return out;
+  const labelScale = Math.max(1, Math.floor(Number(view.scale) / LABEL_ZOOM));
+  const seen = new Set();
+  for (const site of list) {
+    if (!site || !site.name) continue;
+    const x = Number(site.x);
+    const y = Number(site.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const key = x + ":" + y;
+    if (seen.has(key)) continue;
+    const at = cellToPixel(x, y, view);
+    // Off screen: a label for a city the player cannot see is noise.
+    if (at.x < -8 || at.x > view.viewW + 8 || at.y < -8 || at.y > view.viewH + 8) continue;
+    seen.add(key);
+    const box = labelBox(site.name, labelScale, at, view);
+    if (box.width + 4 > view.viewW) continue;
+    out.push({ text: String(site.name), x: box.x, y: box.y, width: box.width, height: box.height,
+      scale: labelScale, cell: { x, y }, owner: site.owner || null });
+  }
+  return out;
+}
+
+// Draw the labels from the decoded FONTS.CHQ atlas. Nothing is drawn without an atlas: the page
+// keeps the text in its board note instead of inventing a font.
+export function paintLabels(ctx, atlas, labels, opts = {}) {
+  if (!atlas || !Array.isArray(labels) || !labels.length) return 0;
+  const ink = opts.ink || "#ffffff";
+  const shadow = opts.shadow || "#000000";
+  let drawn = 0;
+  for (const label of labels) {
+    const bitmap = textBitmap(atlas, label.text, label.scale);
+    if (!bitmap.width || !bitmap.height) continue;
+    for (let y = 0; y < bitmap.height; y++) {
+      const row = bitmap.rows[y];
+      for (let x = 0; x < bitmap.width; x++) {
+        if (row[x] !== "1") continue;
+        ctx.fillStyle = shadow;
+        ctx.fillRect(label.x + x + 1, label.y + y + 1, 1, 1);
+        ctx.fillStyle = ink;
+        ctx.fillRect(label.x + x, label.y + y, 1, 1);
+      }
+    }
+    drawn += 1;
+  }
+  return drawn;
+}
+
 export function paintCapitals(ctx, markers, view) {
   const list = Array.isArray(markers) ? markers : [];
   const r = Math.max(3, view.scale * 2.4);
@@ -561,7 +632,9 @@ export function paintMatch(ctx, board, room, opts = {}) {
   const preview = paintPreview(ctx, opts.preview, view, opts);
   const pieces = paintPieces(ctx, room && room.pieces, view, opts);
   const capitals = paintCapitals(ctx, capitalMarkers(board), view);
-  return { mode, painted, fogged, pieces, capitals, preview, message: "", view };
+  const labels = visibleLabels(room && room.sites, view);
+  const labelled = paintLabels(ctx, opts.atlas, labels);
+  return { mode, painted, fogged, pieces, capitals, labels: labelled, preview, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.
