@@ -183,3 +183,22 @@ Measurement script: `Command HQ/modern/tools/sample_palette.py`; output
 
 One deliberate difference: the capital's ground is yellow so the legend can name it, while the
 marker that identifies a capital remains the ring and the label.
+
+## Where the unit markers are not (wakeup 14)
+
+The unit sprites were the next fidelity item, and looking for them turned into a negative result
+worth writing down so nobody repeats it.
+
+- `UNITS.PIC` decodes to 320x200 in the original's 16 EGA colours. Its top 24 rows are two bands of
+  ten 12x12 tiles: the same figures repeated on white, blue and cyan plates. That is a palette
+  variant sheet for UI sprites, not a marker set. Below the bands is window chrome (bevelled boxes,
+  borders) and large art.
+- `ANIMS/*.PAN` are already decoded by the reference tree's `tools/pan_decode.py` into
+  `extracted/anims/<NAME>/` — 60x18 and larger battle sprites. A map marker is 1 to 3 pixels at one
+  pixel per cell, so these are not it either.
+- The only place the mapping "unit type and side -> marker" can live is the draw routine in
+  `CHQ_unpacked.EXE`. That needs a working 16-bit disassembly, which this session does not have.
+
+So the graph gained `chq_disassembly` as an explicit prerequisite, and `unit_icons` now depends on
+it rather than being re-claimed every fire against the same wall. The board keeps its shapes until
+the table is read out; shapes are honest, invented sprites would not be.

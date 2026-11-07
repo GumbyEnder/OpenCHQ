@@ -593,7 +593,7 @@
     {
       "id": "fonts",
       "order": 360,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "board_paint"
       ],
@@ -606,11 +606,22 @@
       "order": 370,
       "status": "todo",
       "depends": [
-        "board_paint"
+        "chq_disassembly"
       ],
       "title": "Units that look like the original's",
-      "work": "BLOCKED until a disassembler is usable in-session: UNITS.PIC's top rows are editor art on a ~12 px pitch, and the on-map marker glyphs are not obviously there - the table that maps a unit to its marker is in the draw routine inside CHQ_unpacked.EXE. With REA's Ghidra provider working (GHIDRA_INSTALL_DIR is now in the profile config), read that routine, cut the markers, and draw them per domain and side.",
+      "work": "BLOCKED until a disassembler is usable in-session: UNITS.PIC's top rows are editor art on a ~12 px pitch, and the on-map marker glyphs are not obviously there - the table that maps a unit to its marker is in the draw routine inside CHQ_unpacked.EXE. With REA's Ghidra provider working (GHIDRA_INSTALL_DIR is now in the profile config), read that routine, cut the markers, and draw them per domain and side. (Now depends on chq_disassembly: the marker table has to be read out of the EXE first. What is already known: UNITS.PIC is 320x200 in 16 EGA colours, its top 24 rows are two 10-tile bands of 12x12 sprites - the same figures repeated on white, blue and cyan plates, i.e. palette variants of UI sprites - and the rest is window chrome and large art. ANIMS/*.PAN decode to large battle sprites, not 1-cell markers. So the markers are not in the art files.)",
       "prove": "web/test/nodes/unit_icons.mjs asserts each domain (infantry, armour, sea, submarine, aircraft) and each side resolves to a distinct marker bitmap cut from the sheet, with the shapes fallback when the extract is absent."
+    },
+    {
+      "id": "chq_disassembly",
+      "order": 380,
+      "status": "todo",
+      "depends": [
+        "board_paint"
+      ],
+      "title": "A disassembler that actually runs",
+      "work": "unit_icons is blocked on one fact that only CHQ_unpacked.EXE holds: which marker the game draws for each unit type and side. The REA MCP provider is not present in-session, but Ghidra 12.1.4 is installed at ~/tools/ghidra_12.1.4_PUBLIC and binutils objdump handles 16-bit DOS. Get a usable 16-bit disassembly of CHQ_unpacked.EXE (Ghidra analyzeHeadless with the x86:LE:16 real-mode language, or objdump -b binary -m i8086), locate the code that draws a unit marker on the world map, and write the table it reads (unit type -> marker bitmap, per side) to Command HQ/modern/extracted/data/unit_markers.json. If the table cannot be found, record what the routine does instead and say so.",
+      "prove": "web/test/nodes/disasm.mjs asserts a real artifact exists: either unit_markers.json with one entry per unit type and side plus the address the table was read from, or a written finding naming the routine and the instruction that draws the marker. The test fails if the artifact is a guess: it checks every marker entry decodes to a bitmap of the game's map scale (1-5 px per side) and that both sides differ."
     }
   ]
 }
