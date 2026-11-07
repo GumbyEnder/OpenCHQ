@@ -6,7 +6,8 @@
 // a nuke would be accepted, wells would never change owner, income would never land on
 // round 25 (or would land on round 24), and a dry side would keep a full reserve.
 
-import { priceOf, rules } from "../../server/rules.mjs";
+import { priceOf } from "../../server/rules.mjs";
+import { resourceSpec } from "../../server/resources.mjs";
 import { startPool } from "../../server/rules.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { buy, capture, occupy, pay, upkeep } from "../../server/economy.mjs";
@@ -48,8 +49,8 @@ export async function run(ctx) {
   const eq = (actual, expected, label) => {
     if (actual !== expected) fail(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   };
-  const reserve = Number(rules().fuel.reserve);
-  const burn = Number(rules().fuel.burn);
+  const reserve = Number(resourceSpec("fuel").reserve);
+  const burn = Number(resourceSpec("fuel").burn);
 
   // ---- oil: wells and cities start with the country they are in -------------------------
   const match = freshMatch();

@@ -9,7 +9,8 @@
 // starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
 // because no duration was recovered.
 
-import { payEvery, priceOf, rules } from "./rules.mjs";
+import { payEvery, priceOf } from "./rules.mjs";
+import { upkeepResources } from "./resources.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -338,46 +339,23 @@ export function pay(match) {
 // --- fuel --------------------------------------------------------------------------------
 
 // One running round for both sides, in place: a unit standing on a well takes it for its
-// side; standing on any well refills that side's reserve; a side with no unit on a well
-// burns `burn`. A dry side is flagged and stops; it never goes below zero and the other
-// side is untouched by it.
+// side; the resource model does everything else (standing on a well refills fuel, a side with
+// no unit on a well burns it, a dry side is flagged and stops, and the other side is
+// untouched). Fuel is one kind in config/game.json's `resources`; this function no longer
+// knows a reserve, a burn rate or a field name. See resources.mjs.
 export function upkeep(match) {
   if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) return [];
   seedOwners(match);
-  const fuel = (rules() && rules().fuel) || {};
-  const reserve = Number(fuel.reserve);
-  const burn = Number(fuel.burn);
-  if (!Number.isFinite(reserve) || !Number.isFinite(burn)) return [];
   const events = [];
 
   for (const side of SIDES) {
-    const seat = seatOf(match, side);
-    if (!seat) continue;
-    // Each side has its own reserve; null means it has not been touched yet.
-    if (seat.fuel === null || seat.fuel === undefined) seat.fuel = reserve;
-
+    if (!seatOf(match, side)) continue;
     for (const piece of match.pieces) {
       if (piece.side !== side) continue;
       const well = wellAt(match, piece.x, piece.y);
       if (well && well.owner !== side) events.push(...capture(match, side, piece.x, piece.y));
     }
-
-    const standing = match.pieces.some((piece) => piece.side === side && wellAt(match, piece.x, piece.y));
-    if (standing) {
-      const wasShort = seat.dry === true || Number(seat.fuel) < reserve;
-      seat.fuel = reserve;
-      seat.dry = false;
-      if (wasShort) events.push({ type: "refuel", side, fuel: seat.fuel });
-    } else {
-      const left = Math.max(0, Number(seat.fuel) - burn);
-      seat.fuel = left;
-      if (left <= 0) {
-        if (seat.dry !== true) events.push({ type: "dry", side });
-        seat.dry = true;
-      } else {
-        seat.dry = false;
-      }
-    }
   }
-  return events;
+
+  return events.concat(upkeepResources(match));
 }

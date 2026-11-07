@@ -8,18 +8,28 @@ import { fileURLToPath } from "node:url";
 import { TERRAIN } from "./board.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = process.env.OPENCHQ_CONFIG || path.resolve(here, "..", "..", "config", "game.json");
+const DEFAULT_CONFIG = path.resolve(here, "..", "..", "config", "game.json");
 
 let cached = null;
+let cachedPath = null;
+
+// Resolved per call so a test can point the whole server at another tunables file without a
+// second process: OPENCHQ_CONFIG is the switch, and a stale cache is keyed by the path.
+export function configPath() {
+  return process.env.OPENCHQ_CONFIG || DEFAULT_CONFIG;
+}
 
 export function rules() {
-  if (cached) return cached;
-  cached = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+  const wanted = configPath();
+  if (cached && cachedPath === wanted) return cached;
+  cached = JSON.parse(readFileSync(wanted, "utf8"));
+  cachedPath = wanted;
   return cached;
 }
 
 export function resetRules() {
   cached = null;
+  cachedPath = null;
 }
 
 export function roundSeconds() {

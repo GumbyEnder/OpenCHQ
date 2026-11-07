@@ -92,6 +92,12 @@ export function purseText(seat) {
   const parts = [];
   if (Number.isFinite(seat.cash)) parts.push("pool " + seat.cash);
   if (Number.isFinite(seat.fuel)) parts.push("fuel " + seat.fuel);
+  // Every other resource kind the scenario carries, drawn from the same list the server builds.
+  // Fuel is above already; a kind with no held number is left out rather than shown as zero.
+  for (const meter of Array.isArray(seat.reserves) ? seat.reserves : []) {
+    if (!meter || meter.kind === "fuel") continue;
+    if (Number.isFinite(meter.held)) parts.push(meter.kind + " " + meter.held);
+  }
   if (Number.isFinite(seat.payIn)) {
     parts.push("payment in " + seat.payIn + (seat.payIn === 1 ? " round" : " rounds"));
   }

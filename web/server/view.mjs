@@ -15,6 +15,7 @@
 
 import { CELL_W, SEATS } from "./board.mjs";
 import { enemyRouteSteps, payEvery, sightCells } from "./rules.mjs";
+import { metersFor } from "./resources.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -144,6 +145,10 @@ function seatStatus(match, side) {
   return {
     cash: Number.isFinite(cash) ? cash : null,
     fuel: Number.isFinite(fuel) ? fuel : null,
+    // Every resource kind this scenario carries, held and dry, plus the rate when the owner
+    // set one. A null rate means nobody recovered it, and the page says so instead of
+    // drawing a number. Fuel's own field above stays for older readers.
+    reserves: metersFor(match, side),
     payIn,
     payEvery: Number.isFinite(every) && every > 0 ? every : null,
   };
