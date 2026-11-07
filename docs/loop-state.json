@@ -1,10 +1,10 @@
 {
-  "iteration": 13,
+  "iteration": 15,
   "cap": 40,
   "current": null,
-  "lastNodeId": "fonts",
+  "lastNodeId": "chq_disassembly",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-07T06:12:48.678Z",
+  "lastRunAt": "2026-11-07T06:22:13.956Z",
   "history": [
     {
       "node": "board_paint",
@@ -119,6 +119,18 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-07T06:12:48.678Z"
+    },
+    {
+      "node": "unit_icons",
+      "status": "todo",
+      "note": "Markers are not in UNITS.PIC or ANIMS. UNITS.PIC is 320x200, 16 EGA colours: its top 24 rows are two 10-tile bands of 12x12 sprites (the same figures repeated on white, blue and cyan plates - palette variants of UI sprites), the rest is window chrome and large art. ANIMS/*.PAN decode with modern/tools/pan_decode.py to large battle sprites (60x18 and up), not 1-cell markers. The unit->marker table is in CHQ_unpacked.EXE's draw routine; this needs a working disassembler (REA Ghidra provider), and there is none in-session.",
+      "at": "2026-11-07T06:17:16.315Z"
+    },
+    {
+      "node": "chq_disassembly",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-07T06:22:13.956Z"
     }
   ]
 }

@@ -202,3 +202,23 @@ worth writing down so nobody repeats it.
 So the graph gained `chq_disassembly` as an explicit prerequisite, and `unit_icons` now depends on
 it rather than being re-claimed every fire against the same wall. The board keeps its shapes until
 the table is read out; shapes are honest, invented sprites would not be.
+
+## The disassembler runs (wakeup 15)
+
+`chq_disassembly` existed as a blocker, and it turns out the work was already done a month ago and
+never connected: `Command HQ/modern/docs/ghidra/CHQ.gpr` is an analysed project whose full
+decompilation sits in `export/decompiled.c` — 880 functions, 23 of them renamed with evidence in
+`rename-log.md`. What was missing was a way to reach it from a script.
+
+Two tools now:
+
+- `tools/disasm.py index` parses the export into `extracted/data/disasm_index.json`: name,
+  segment:offset, linear address, size and the line in the C. 880 functions, ordered by address.
+- `tools/disasm.py dis 1eb5:000c` disassembles the unpacked image with `objdump -b binary -m i8086`.
+  The image is flat — file offset == (segment << 4) + offset — so objdump's addresses are the ones
+  Ghidra names, and no Ghidra run is needed to read machine code.
+
+The finding that matters for the next node: **`render_sprite` is not a sprite blitter.** Its body
+pushes five bytes into a ring at `0xefbc` and returns. `docs/re/SYSTEMS.md` calls it "a sprite
+blitter" with HIGH confidence, and that mislabel is why the unit-marker hunt was looking at
+`UNITS.PIC` instead of at the code that drains that ring.
