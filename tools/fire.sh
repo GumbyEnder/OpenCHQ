@@ -116,7 +116,12 @@ else
   if [ -z "$RAILWAY_BIN" ]; then
     DEPLOY_STATE="deploy-skipped:no-cli"
   else
-    if "$RAILWAY_BIN" up -y -d --service "$SERVICE" >>"$LOG" 2>&1; then
+    # A stale CLI session surfaces as "Unauthorized" only after the upload starts. Ask first, so the
+    # reason is named before anything is built, and the login can refresh the token.
+    if ! "$RAILWAY_BIN" status >>"$LOG" 2>&1; then
+      echo "LOOP_DEPLOY_AUTH: railway status failed - the CLI session is not usable: $(tail -n 1 "$LOG")"
+      DEPLOY_STATE="deploy-skipped:auth"
+    elif "$RAILWAY_BIN" up -y -d --service "$SERVICE" >>"$LOG" 2>&1; then
       echo "RAILWAY_UP $SERVICE"
     else
       DEPLOY_STATE="deploy-failed"
@@ -127,5 +132,11 @@ fi
 
 NEXT=$(node tools/loopctl.mjs status)
 echo "iteration ${ITERATION}/${CAP}, node ${NODE}, WEB_OK, ${PUSH_STATE}, ${DEPLOY_STATE} | ${NEXT}"
+# A green test run is not a green deploy. Exit non-zero so a fire cannot report "deployed" when the
+# build never reached the host; the commit and push have already happened and are not rolled back.
+case "$DEPLOY_STATE" in
+  deploy-failed) echo "LOOP_EXIT_DEPLOY_FAILED"; exit 3 ;;
+  deploy-skipped:auth) echo "LOOP_EXIT_DEPLOY_AUTH"; exit 4 ;;
+esac
 rm -f "$LOG"
 exit "$STATUS"
