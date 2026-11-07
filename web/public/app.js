@@ -155,6 +155,20 @@ function viewForCanvas() {
 // walks off the piece every time it steps.
 let following = true;
 
+// Terrain is the original's map; political is the same map with each city coloured by whoever holds
+// it. The toggle only changes what is drawn on top, never the camera or the board.
+let viewMode = "terrain";
+
+function setViewMode(next) {
+  viewMode = next === "political" ? "political" : "terrain";
+  const button = document.getElementById("viewToggle");
+  if (button) {
+    button.classList.toggle("armed", viewMode === "political");
+    button.textContent = viewMode === "political" ? "Terrain" : "Political";
+  }
+  drawMatch();
+}
+
 let sawRoom = false;
 
 // Fit shows the whole world, which is what the original game put on the screen: one planet, all of
@@ -334,6 +348,7 @@ function drawMatch() {
     fog: fogFor(view),
     sight: Number(boardPayload.sightCells || 8),
     sightAt: selected,
+    viewMode,
     // The original's lettering for city names, once the camera is close enough to read them.
     atlas: fontAtlas,
   });
@@ -343,7 +358,12 @@ function drawMatch() {
     camNote.textContent = "cell " + (view.scale / dpr()).toFixed(0) + " px · " +
       (following ? "following" : "free");
   }
-  boardNote.textContent =
+  // In the political view the note says what the colours mean, counted from the patches on screen.
+  const politicalNote = result.tally
+    ? "Political: blue holds " + result.tally.blue + ", red holds " + result.tally.red +
+      ", neutral " + result.tally.neutral + "."
+    : "";
+  boardNote.textContent = politicalNote ||
     previewLine(preview) || cargoNote(selected) || airNote(selected) || statusLine(boardPayload, room, result);
   // A capital under threat is the loudest thing on the page, and it stays up until the threat
   // passes: the last ten rounds of a match are not the time to be quiet.
@@ -513,6 +533,7 @@ window.addEventListener("resize", () => refit());
 document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1.4));
 document.getElementById("camOut")?.addEventListener("click", () => zoomStep(0.7));
 document.getElementById("camFit")?.addEventListener("click", () => refit());
+document.getElementById("viewToggle")?.addEventListener("click", () => setViewMode(viewMode === "political" ? "terrain" : "political"));
 document.getElementById("camFollow")?.addEventListener("click", () => setFollow(!following));
 
 async function loadBoard() {

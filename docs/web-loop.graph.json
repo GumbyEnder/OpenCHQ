@@ -626,7 +626,7 @@
     {
       "id": "city_labels",
       "order": 390,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "fonts"
       ],
@@ -637,7 +637,7 @@
     {
       "id": "political_map",
       "order": 400,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "city_labels"
       ],

@@ -524,6 +524,72 @@ export function paintLabels(ctx, atlas, labels, opts = {}) {
   return drawn;
 }
 
+// The other way the original showed the same earth: who holds what.
+//
+// OMAP.PIC is the political picture. Its fills, counted over the whole image: #5555ff (1742 px) and
+// #aa0000 (1678 px) over a #55ffff sea, with #aaaaaa for ground nobody holds and black for the
+// cities themselves. Those four are the measured colours; nothing here is picked.
+//
+// The regions the picture is drawn from are the weak link: CBR-REGN.DT0..DT4 are 184 integers per
+// era and what a slot means is still undocumented (docs/re/TODO.md), so there is no honest way to
+// colour a piece of ground by region. What the game does tell the seat is who owns each city, so the
+// political view colours cities, not borders — the node's own fallback.
+export const POLITICAL = Object.freeze({
+  blue: "#5555ff",
+  red: "#aa0000",
+  neutral: "#aaaaaa",
+  city: "#000000",
+});
+
+export function politicalInk(owner) {
+  if (owner === "blue" || owner === "Blue") return POLITICAL.blue;
+  if (owner === "red" || owner === "Red") return POLITICAL.red;
+  return POLITICAL.neutral;
+}
+
+// One patch per city, at its own cell, in the colour of whoever holds it, with the city itself as a
+// black dot in the middle the way the original drew towns on its map.
+export function politicalSites(sites, view) {
+  const list = Array.isArray(sites) ? sites : [];
+  const out = [];
+  for (const site of list) {
+    const x = Number(site && site.x);
+    const y = Number(site && site.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const at = cellToPixel(x, y, view);
+    if (at.x < -view.scale || at.x > view.viewW + view.scale) continue;
+    if (at.y < -view.scale || at.y > view.viewH + view.scale) continue;
+    out.push({ x, y, ink: politicalInk(site.owner), at, name: site.name || null });
+  }
+  return out;
+}
+
+export function paintPolitical(ctx, patches, view) {
+  const list = Array.isArray(patches) ? patches : [];
+  const size = Math.max(1, Math.ceil(view.scale));
+  for (const patch of list) {
+    ctx.fillStyle = patch.ink;
+    ctx.fillRect(Math.floor(patch.at.x - view.scale / 2), Math.floor(patch.at.y - view.scale / 2), size, size);
+    if (view.scale >= 3) {
+      ctx.fillStyle = POLITICAL.city;
+      ctx.fillRect(Math.floor(patch.at.x), Math.floor(patch.at.y), Math.max(1, Math.floor(size / 3)),
+        Math.max(1, Math.floor(size / 3)));
+    }
+  }
+  return list.length;
+}
+
+// What the legend says, counted from the same patches the board draws.
+export function politicalTally(patches) {
+  const tally = { blue: 0, red: 0, neutral: 0 };
+  for (const patch of Array.isArray(patches) ? patches : []) {
+    if (patch.ink === POLITICAL.blue) tally.blue += 1;
+    else if (patch.ink === POLITICAL.red) tally.red += 1;
+    else tally.neutral += 1;
+  }
+  return tally;
+}
+
 export function paintCapitals(ctx, markers, view) {
   const list = Array.isArray(markers) ? markers : [];
   const r = Math.max(3, view.scale * 2.4);
@@ -632,9 +698,18 @@ export function paintMatch(ctx, board, room, opts = {}) {
   const preview = paintPreview(ctx, opts.preview, view, opts);
   const pieces = paintPieces(ctx, room && room.pieces, view, opts);
   const capitals = paintCapitals(ctx, capitalMarkers(board), view);
+  // Political view: the same board with each city coloured by whoever holds it. The terrain under it
+  // is untouched, so switching back is switching back and nothing else.
+  let political = 0;
+  let tally = null;
+  if (opts.viewMode === "political") {
+    const patches = politicalSites(room && room.sites, view);
+    political = paintPolitical(ctx, patches, view);
+    tally = politicalTally(patches);
+  }
   const labels = visibleLabels(room && room.sites, view);
   const labelled = paintLabels(ctx, opts.atlas, labels);
-  return { mode, painted, fogged, pieces, capitals, labels: labelled, preview, message: "", view };
+  return { mode, painted, fogged, pieces, capitals, labels: labelled, political, tally, preview, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.
