@@ -20,6 +20,7 @@ import {
   shopLabel,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
+import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -234,6 +235,55 @@ function renderLegend() {
 let roundStartedAt = Date.now();
 let paintedRound = -1;
 
+// The original's lettering arrives from /api/fonts, which answers source "missing" on a host
+// without the extract. That is not an error: the label falls back to the system font it has always
+// used, and the bar keeps working either way.
+let fontAtlas = null;
+let fontAsked = false;
+
+async function loadFontAtlas() {
+  if (fontAsked) return;
+  fontAsked = true;
+  try {
+    const res = await fetch("/api/fonts", { credentials: "same-origin" });
+    const payload = await res.json();
+    fontAtlas = validateAtlas(payload).ok ? payload : null;
+  } catch {
+    fontAtlas = null;
+  }
+  paintChrome(camera);
+}
+
+function drawChromeLabel(text, boxWidth) {
+  const span = document.getElementById("timeLabel");
+  const canvas = document.getElementById("timeLabelArt");
+  if (!span || !canvas) return;
+  if (!fontAtlas) {
+    span.classList.remove("hidden");
+    canvas.classList.add("hidden");
+    span.textContent = text;
+    return;
+  }
+  // Whole-pixel sizes only: an integer cell scale keeps a one-pixel stem one pixel wide.
+  const scale = fitScale(fontAtlas, text, Math.max(8, boxWidth - 12));
+  const bitmap = textBitmap(fontAtlas, text, scale);
+  if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ffffff";
+  for (let y = 0; y < bitmap.height; y++) {
+    const row = bitmap.rows[y];
+    for (let x = 0; x < bitmap.width; x++) {
+      if (row[x] === "1") ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  canvas.classList.remove("hidden");
+  span.classList.add("hidden");
+}
+
 function paintChrome(view) {
   const box = document.getElementById("timebox");
   const bar = document.getElementById("timeFill");
@@ -249,8 +299,7 @@ function paintChrome(view) {
   box.style.width = geometry.boxWidth + "px";
   box.style.height = geometry.boxHeight + "px";
   box.style.left = geometry.boxLeft + "px";
-  const label = document.getElementById("timeLabel");
-  if (label) label.textContent = geometry.label;
+  drawChromeLabel(geometry.label, geometry.boxWidth);
   text.textContent = timeLeftText(room.seat, room.roundSeconds);
   const running = room.clock && room.clock !== "held";
   const fraction = running ? roundFraction(room.roundSeconds, Date.now() - roundStartedAt) : 1;
@@ -941,6 +990,7 @@ document.querySelector("#launch").addEventListener("submit", (event) => {
 renderLegend();
 
 loadBoard();
+loadFontAtlas();
 
 fetch("/api/me", { credentials: "same-origin" })
   .then((res) => res.json())

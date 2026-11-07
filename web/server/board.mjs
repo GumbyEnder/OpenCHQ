@@ -352,6 +352,23 @@ export function boardPayload(env = process.env) {
   return cached;
 }
 
+// The original's font atlas, decoded from FONTS.CHQ by the reference tree's
+// tools/font_decode.py. It rides the same data-root rule as the board: where the extract is absent
+// (the public host) this answers source "missing" and the page keeps its system font.
+export function fontPayload(env = process.env) {
+  const root = resolveDataRoot(env);
+  if (!root) return { source: "missing" };
+  const file = path.join(root, "data", "font_atlas.json");
+  if (!existsSync(file)) return { source: "missing" };
+  const atlas = JSON.parse(readFileSync(file, "utf8"));
+  const meta = atlas && atlas._meta ? atlas._meta : {};
+  return {
+    source: "extract",
+    _meta: meta,
+    glyphs: Array.isArray(atlas.glyphs) ? atlas.glyphs : [],
+  };
+}
+
 export function resetBoardCache() {
   cached = null;
 }

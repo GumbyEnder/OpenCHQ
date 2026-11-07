@@ -241,6 +241,10 @@ button.ghost {
   line-height: 1.25;
 }
 .timelabel { display: block; color: #ffffff; }
+/* The original's atlas, drawn at whole-pixel sizes. Hidden until the atlas loads; the text span
+   above stays as the fallback where the extract is absent. */
+.timelabelart { display: block; image-rendering: pixelated; }
+.timelabelart.hidden { display: none; }
 .timetext { display: block; color: #aaaaaa; font-size: 10px; }
 .timebar {
   height: 6px;

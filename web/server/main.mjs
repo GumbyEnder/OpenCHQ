@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { changePassword, closeSession, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
 import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
-import { boardPayload } from "./board.mjs";
+import { boardPayload, fontPayload } from "./board.mjs";
 import { roundSeconds } from "./rules.mjs";
 import { createLobby } from "./lobby.mjs";
 import { acceptWebSocket } from "./ws.mjs";
@@ -118,6 +118,16 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/me") {
     const user = userForToken(tokenFrom(req));
     send(res, 200, { user });
+    return;
+  }
+  // The font atlas is the original's art, so it follows the board's rule: served where the
+  // extract exists, source "missing" where it does not.
+  if (req.method === "GET" && url.pathname === "/api/fonts") {
+    try {
+      send(res, 200, fontPayload());
+    } catch (err) {
+      send(res, 500, { error: String(err && err.message ? err.message : err) });
+    }
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/board") {
