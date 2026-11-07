@@ -89,6 +89,40 @@ function approachCells(match, piece, capital) {
   return candidates;
 }
 
+// When the ring around the capital is full, waiting is not a plan.
+//
+// Units do not stack, so a capital whose eight neighbours are all occupied leaves the march with
+// nothing to stand on. A 400-round bot run logged 26,834 "no approach cell beside the capital"
+// skips, which is a bot that has stopped thinking rather than a siege. That number came from a
+// harness that is not in local/, so this change carries no re-measured before/after: the run needs
+// reproducing before anyone claims the skips are gone. An occupied cell is not off limits
+// to an order - the engine treats a move onto an enemy cell as an attack - so the army attacks the
+// weakest point of the ring instead of queueing behind it. The rule is the engine's own overrun
+// arithmetic: the cell with the fewest enemy pieces beside it is the one a group can break.
+export function assaultCells(match, piece, capital) {
+  const out = [];
+  for (let oy = -1; oy <= 1; oy++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      if (ox === 0 && oy === 0) continue;
+      const x = wrapX(capital.x + ox);
+      const y = Number(capital.y) + oy;
+      if (y < 0 || y >= CELL_H) continue;
+      const holder = (match.pieces || []).find(
+        (unit) => unit && unit.x === x && unit.y === y && unit.id !== piece.id && unit.side !== piece.side,
+      );
+      if (!holder) continue;
+      const friends = (match.pieces || []).filter(
+        (other) => other && other.side === holder.side && other.id !== holder.id &&
+          Math.max(Math.abs(wrapDelta(other.x, x)), Math.abs(Number(other.y) - y)) <= 1,
+      ).length;
+      const gap = Math.max(Math.abs(wrapDelta(piece.x, x)), Math.abs(Number(piece.y) - y));
+      out.push({ x, y, gap, defenders: friends, holder: holder.id });
+    }
+  }
+  out.sort((a, b) => a.defenders - b.defenders || a.gap - b.gap);
+  return out;
+}
+
 function note(side, pieceId, reason) {
   return { type: "bot_skip", side, pieceId, reason: String(reason || "refused") };
 }
@@ -138,10 +172,30 @@ export function focusTarget(match, side, foe, capital) {
   return best ? { x: best.x, y: best.y } : capital;
 }
 
-function marchOne(match, side, piece, capital, events) {
+// Exported so the ring case can be driven directly: the endgame state is hard to reach through
+// ordersFor, which picks a focus of its own first.
+export function marchOne(match, side, piece, capital, events) {
   const cells = approachCells(match, piece, capital);
   if (cells.length === 0) {
-    events.push(note(side, piece.id, "no approach cell beside the capital"));
+    // The ring is full: attack its weakest point rather than stand still. Units do not stack, so
+    // there is no cell to queue on and no order to give except the one the engine calls an attack.
+    const targets = assaultCells(match, piece, capital);
+    for (const cell of targets.slice(0, 3)) {
+      let result;
+      try {
+        result = issueOrder(match, side, piece.id, cell.x, cell.y);
+      } catch (err) {
+        continue;
+      }
+      if (result && result.ok) {
+        events.push({ type: "bot_order", side, pieceId: piece.id, to: { x: cell.x, y: cell.y },
+          path: result.path || [], assault: true, defenders: cell.defenders });
+        return;
+      }
+    }
+    events.push(note(side, piece.id, targets.length
+      ? "ringed, and no attack could be issued"
+      : "no approach cell beside the capital"));
     return;
   }
   let last = "no path";

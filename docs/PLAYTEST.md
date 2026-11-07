@@ -222,3 +222,55 @@ The finding that matters for the next node: **`render_sprite` is not a sprite bl
 pushes five bytes into a ring at `0xefbc` and returns. `docs/re/SYSTEMS.md` calls it "a sprite
 blitter" with HIGH confidence, and that mislabel is why the unit-marker hunt was looking at
 `UNITS.PIC` instead of at the code that drains that ring.
+
+## Who owns the world, and what CBR-REGN actually is (REA, 2026-11-07)
+
+A correction first, because it was in a loop report. "Blue owns no city at round 0" was wrong. That
+reading came from the political view, and politicalSites() only paints cities that are currently on
+screen — the camera was over Eurasia, and blue's cities are in the Americas. The persisted room state
+keeps siteOwners, so the real opening counts can be read instead of guessed:
+
+| era  | sites | blue | red | neutral |
+|------|-------|------|-----|---------|
+| 1918 | 243   | 42   | 26  | 175     |
+| 1942 | 248   | 43   | 27  | 178     |
+| 1986 | 269   | 45   | 28  | 196     |
+| 2023 | 271   | 45   | 29  | 197     |
+| 9999 | 271   | 45   | 29  | 197     |
+
+Blue's sites are country 0 (Washington's country), red's are country 1 (Moscow's). That is the
+country default the owner chose, and it is measured from CBR-SET.DAT's own cbr_cn, not assumed.
+
+The alliance question. `COMMAND/REGIONS.DAT` is 3,680 bytes: 1,840 big-endian words, i.e. 920 (x,y)
+points with x in 1..318 and y in 0..135. 920 = 184 x 5, so it is 184 regions of five points each — a
+region outline. Nearest centroid puts Washington (79,44) on region 62 (centroid 78.6,42.0, 2.0 cells
+away) and Moscow (183,25) on region 63 (183.4,22.6, 2.4 away), and every era's array keeps 62->62 and
+63->63.
+
+CBR-REGN.DT0..DT4 is then 184 region -> governing-region integers per era, and the eras really do
+differ: 61 of 184 entries change between 1918 and 1986. Taken to its transitive closure:
+
+- era 0: 52 of 184 regions self-governing; largest blocs are regions 59 (17), 32 (14), 76 (12), 60 (10)
+- era 4: 84 self-governing; largest blocs are 59 (17), 60 (10), 61 (8), 47 (7)
+- Washington's region 62 governs 4 regions in 1918 and 1 in 1986; Moscow's 63 governs 8 and 1
+
+So these arrays encode administrative and colonial control by region, not NATO and Warsaw Pact
+membership. The alliance structure the scenarios suggest is not in them. If it is anywhere it is in
+the EXE's own tables — docs/re/DISPOSITIONS.md names 0x130a (region coords), 0x1346 (region type) and
+0x1382 (region controller) — and the region *type* table is the next thing worth reading. Nothing was
+invented to fill that gap: ownership stays by country, and web/test/nodes/ownership.mjs pins it across
+all five eras so it cannot drift into a guess later.
+
+## The ring is not a siege (bot change)
+
+A capital whose eight neighbours are all occupied leaves a marching bot with no cell to stand on, and
+it used to log "no approach cell beside the capital" and stop — 26,834 times in one 400-round run.
+Units do not stack (owner's rule), so there is no cell to queue on; but the engine already treats a
+move onto an enemy-held cell as an attack. marchOne now attacks the weakest point of the ring instead
+of waiting: assaultCells() ranks the held ring cells by how many of the holder's friends stand beside
+them, and the army hits the lowest.
+
+No before/after table is claimed here. The 26,834 came from a harness that is not kept in local/, and
+the replacement harness written this session did not reproduce that endgame state, so the honest
+statement is: the branch and its tests exist, the old silent skip is gone from the code path, and the
+endgame number still needs re-measuring with a harness that can reach a ringed capital on purpose.
