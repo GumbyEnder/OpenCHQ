@@ -135,6 +135,19 @@ export function logLines(match, side, events, round) {
         break;
       }
 
+      case "scramble": {
+        // A scramble is your own aeroplane going up: the enemy's is only news if you can see it.
+        if (!mine && !legible(match, side, event)) break;
+        push(mine ? "an aircraft scrambled to intercept" : "an enemy aircraft scrambled");
+        break;
+      }
+
+      case "strike": {
+        if (!mine && !legible(match, side, event)) break;
+        push(mine ? "an aircraft flew a strike" : "an enemy strike went in");
+        break;
+      }
+
       case "blocked":
         if (mine) push("a unit could not step: the way was held");
         break;

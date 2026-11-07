@@ -777,6 +777,26 @@ function toolRow(room) {
       button.addEventListener("click", () => send({ op: kind, piece: selected.id }));
       row.append(button);
     }
+    // An aircraft's missions are choices with a price in rounds, and the price comes from the
+    // server's briefing so the page cannot disagree with what a mission actually costs.
+    const briefing = ((room && room.seat && room.seat.air) || []).find((plane) => plane.id === selected.id);
+    if (briefing) {
+      for (const mission of briefing.missions) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "buy";
+        button.textContent = mission.label + " (" + mission.rounds + "r)";
+        button.disabled = !briefing.ready || !briefing.canFly;
+        button.title = !briefing.canFly
+          ? "No friendly city, dock or ship in reach."
+          : !briefing.ready
+            ? "This aircraft is away for " + briefing.roundsLeft + " more rounds."
+            : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
+        button.addEventListener("click", () => send({ op: "mission", piece: selected.id, mode: mission.mode, to: { x: selected.x, y: selected.y } }));
+        row.append(button);
+      }
+    }
+
     // A transport crossing with no warship able to see it is the sink rule waiting to happen. The
     // server says which transports are in that state; this puts the selected warship on one.
     const unscreened = Array.isArray(room.unscreened) ? room.unscreened : [];

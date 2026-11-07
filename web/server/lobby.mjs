@@ -523,6 +523,12 @@ export function createLobby() {
     if (!plane) return { error: "A mission needs an aircraft." };
     const result = sendMission(room.match, mine, plane, String(message.mode ?? ""), message.to || null);
     if (!result || result.error) return { error: (result && result.error) || "That mission was refused." };
+    // A mission is flown between rounds, like an escort order: its line belongs to the round that
+    // follows it, and without this the round log never mentioned a scramble at all.
+    if (Array.isArray(result.events) && result.events.length) {
+      if (!Array.isArray(room.match.pendingEvents)) room.match.pendingEvents = [];
+      room.match.pendingEvents.push(...result.events);
+    }
     touch(room);
     tellRoom(room);
     return { ok: true, events: result.events || [] };

@@ -16,7 +16,7 @@
 import { CELL_W, SEATS } from "./board.mjs";
 import { enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
 import { metersFor } from "./resources.mjs";
-import { inactiveRounds } from "./air.mjs";
+import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 
 const SIDES = ["blue", "red"];
@@ -156,6 +156,9 @@ function seatStatus(match, side) {
     reserves: metersFor(match, side),
     payIn,
     payEvery: Number.isFinite(every) && every > 0 ? every : null,
+    // The aircraft this seat can fly, with each mission's cost in rounds. It rides the seat so the
+    // page shows the same choices the server will accept.
+    air: airBriefing(match, side),
   };
 }
 

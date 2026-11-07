@@ -1,10 +1,10 @@
 {
-  "iteration": 20,
+  "iteration": 21,
   "cap": 40,
   "current": null,
-  "lastNodeId": "transport_escort",
+  "lastNodeId": "air_missions",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-07T06:58:58.184Z",
+  "lastRunAt": "2026-11-07T07:04:51.881Z",
   "history": [
     {
       "node": "board_paint",
@@ -161,6 +161,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-07T06:58:58.184Z"
+    },
+    {
+      "node": "air_missions",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-07T07:04:51.881Z"
     }
   ]
 }
