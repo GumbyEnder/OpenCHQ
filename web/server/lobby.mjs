@@ -7,6 +7,7 @@ import { matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { issueOrder, planOrder } from "./move.mjs";
 import { buy, seedOwners } from "./economy.mjs";
+import { logLines } from "./log.mjs";
 import { roundSeconds, rules } from "./rules.mjs";
 
 function sideOf(value) {
@@ -116,6 +117,9 @@ export function createLobby() {
       // Cash, fuel and the rounds until the next payment. The page needs them to draw a
       // countdown; without them the clock is dead time and a player cannot plan a purchase.
       seat: seen ? seen.seat : null,
+      // The round log travels with the room so a reload does not erase what happened. It is
+      // already this seat's own lines, filtered when they were made.
+      log: Array.isArray(room.log && room.log[you]) ? room.log[you] : [],
       over: room.match ? Boolean(room.match.over) : false,
       winner: room.match ? room.match.winner : null,
       note: room.note,
@@ -396,6 +400,25 @@ export function createLobby() {
       room.dirty = true;
       tellRoom(room);
       if (result.events && result.events.length) events.push({ roomId: room.id, events: result.events });
+      // The clock is dead time without a log. Each human seat gets the round as it could see it,
+      // which is the view's own sight rule applied to events instead of pieces.
+      if (result.events && result.events.length) {
+        for (const side of ["blue", "red"]) {
+          const seat = room.seats[side];
+          if (!seat || seat.kind !== "human") continue;
+          const peer = sockets.get(seat.username);
+          if (!peer) continue;
+          const lines = logLines(room.match, side, result.events, room.match.round);
+          if (!lines.length) continue;
+          // The log outlives the socket: it is part of the room, so a reload shows the match
+          // that has been happening instead of an empty window.
+          if (!room.log) room.log = { blue: [], red: [] };
+          if (!Array.isArray(room.log[side])) room.log[side] = [];
+          room.log[side].push(...lines);
+          if (room.log[side].length > 60) room.log[side] = room.log[side].slice(-60);
+          peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
+        }
+      }
       if (room.match.over) {
         room.clock = "held";
         room.note = "The match is over.";

@@ -427,7 +427,7 @@
     {
       "id": "feedback",
       "order": 255,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "order_wire",
         "combat",
@@ -435,7 +435,8 @@
       ],
       "title": "Every rule the server applies must be visible",
       "work": "Shots resolve silently, captures are invisible and a finished match shows nothing but a note. Send the tick's events to the seats (shot, capture, blocked, over) and render them: a shot flash on the fighting cells, a capture toast naming the site, a blocked-order marker, and an end screen naming the winner with the round. Nothing invented: a shot still has no damage number, so the cue shows that a shot happened, not how hard.",
-      "prove": "Harness: a tick over a fighting pair and a capture emits events that reach the seat socket. Browser: the flash, the toast and the end screen are visible, and the shot cue contains no digit."
+      "prove": "Harness: a tick over a fighting pair and a capture emits events that reach the seat socket. Browser: the flash, the toast and the end screen are visible, and the shot cue contains no digit.",
+      "evidence": "web/server/log.mjs turns a round's events into lines per seat and filters them with the seat view, so a concealed-era enemy cannot leak through the log; lobby sends {op:'log'} each round and keeps the lines on the room so a reload restores them (welcome carries room.log). Page paints 'round N - ...' with contact lines de-duplicated. Verified live: 'round 1 - took Washington', 'round 8 - an enemy is in sight at 86,50', 'round 25 - paid 18 from 13 cities', and the same lines after a reload."
     },
     {
       "id": "sight_render",

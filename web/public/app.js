@@ -149,6 +149,29 @@ function drawMatch() {
 // (or a dock, for a ship) buys it there; anything else cancels.
 let buying = null;
 
+// The round log. A running clock is dead time unless it reports itself: every line here came
+// from the server already filtered to what this seat could see.
+let roundLog = [];
+const LOG_KEEP = 60;
+const LOG_SHOWN = 8;
+
+let logKeys = new Set();
+
+function noteLog(lines) {
+  for (const line of Array.isArray(lines) ? lines : []) {
+    if (!line || !line.text) continue;
+    // A sighting repeats every round the enemy stays visible. Say it once.
+    if (line.key) {
+      if (logKeys.has(line.key)) continue;
+      logKeys.add(line.key);
+    }
+    roundLog.push({ round: Number(line.round) || 0, text: String(line.text) });
+  }
+  if (roundLog.length > LOG_KEEP) roundLog = roundLog.slice(-LOG_KEEP);
+  const list = document.getElementById("roundLog");
+  if (list) paintLog(list);
+}
+
 function clearCommand() {
   selected = null;
   buying = null;
@@ -426,6 +449,27 @@ function renderRoom() {
   roomBox.append(seats, meta, note, actions);
   if (purseEl) roomBox.append(purseEl);
   if (shopEl) roomBox.append(shopEl);
+
+  // What the last rounds actually did. Empty until the clock runs.
+  if (roundLog.length) {
+    const heading = document.createElement("p");
+    heading.className = "logHeading";
+    heading.textContent = "Last rounds";
+    const list = document.createElement("ol");
+    list.className = "roundLog";
+    list.id = "roundLog";
+    roomBox.append(heading, list);
+    paintLog(list);
+  }
+}
+
+function paintLog(list) {
+  list.textContent = "";
+  for (const line of roundLog.slice(-LOG_SHOWN)) {
+    const item = document.createElement("li");
+    item.textContent = "round " + line.round + " \u2014 " + line.text;
+    list.append(item);
+  }
 }
 
 function showPlay(on) {
@@ -441,6 +485,8 @@ function connect() {
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.op === "welcome") {
+      // A returning seat gets its room in the welcome, and the room carries its own log.
+      if (message.room && Array.isArray(message.room.log) && !roundLog.length) noteLog(message.room.log);
       me = message.username;
       users = message.users || [];
       room = message.room;
@@ -461,6 +507,10 @@ function connect() {
     } else if (message.op === "declined") {
       say(message.by + " declined.");
     } else if (message.op === "room") {
+      if (!room || !message.room || room.id !== message.room.id) {
+        roundLog = [];
+        logKeys = new Set();
+      }
       room = message.room;
       if (message.reason) say(message.reason);
       if (selected && (!room || !(room.pieces || []).some((piece) => piece.id === selected.id))) {
@@ -468,6 +518,8 @@ function connect() {
         preview = null;
         hoverKey = "";
       }
+      // A reload shows the match that has been happening: the room carries its own log.
+      if (!roundLog.length && room && Array.isArray(room.log)) noteLog(room.log);
       pending = [];
       renderInvites();
       renderPeople();
@@ -484,10 +536,14 @@ function connect() {
         error: message.error || "",
       };
       drawMatch();
+    } else if (message.op === "log") {
+      noteLog(message.lines);
     } else if (message.op === "bought") {
       say("Bought an " + message.kind + " at " + message.at.x + "," + message.at.y + (message.cash !== null && message.cash !== undefined ? ". Pool " + message.cash + "." : "."));
     } else if (message.op === "ordered") {
       say(ackText(message));
+      // An order is the player's own act, so it belongs in the log beside what the round did.
+      noteLog([{ round: room && room.round ? room.round : 0, text: ackText(message).replace(/\.$/, "") }]);
       clearCommand();
     } else if (message.op === "error") {
       // The server's sentence is what the player reads. It is never swallowed.

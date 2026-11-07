@@ -2,9 +2,9 @@
   "iteration": 9,
   "cap": 40,
   "current": null,
-  "lastNodeId": "buy_wire",
+  "lastNodeId": "feedback",
   "lastResult": "WEB_OK",
-  "lastRunAt": "2026-11-07T00:13:12.395Z",
+  "lastRunAt": "2026-11-07T00:24:44.023Z",
   "history": [
     {
       "node": "board_paint",
@@ -65,6 +65,12 @@
       "status": "done",
       "note": "WEB_OK",
       "at": "2026-11-07T00:13:12.395Z"
+    },
+    {
+      "node": "feedback",
+      "status": "done",
+      "note": "WEB_OK",
+      "at": "2026-11-07T00:24:44.023Z"
     }
   ]
 }
