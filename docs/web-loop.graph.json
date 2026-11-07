@@ -648,13 +648,35 @@
     {
       "id": "transport_escort",
       "order": 410,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "transports"
       ],
       "title": "Crossing with an escort",
       "work": "A transport that meets a warship sinks; the player has no way to screen one. Add an order that puts a warship on the same route as a transport (an escort), so the transport stops being alone, and have the seat view and the round log say when a transport is crossing unscreened. No new numbers: the sink rule and the movement rules already exist.",
       "prove": "web/test/nodes/escort.mjs asserts an escorted transport is not reported as unscreened, an unescorted one is, that the escort order is refused for a non-warship or a non-transport target, and that the log names the escort when it forms."
+    },
+    {
+      "id": "air_missions",
+      "order": 420,
+      "status": "todo",
+      "depends": [
+        "air"
+      ],
+      "title": "A mission is a choice",
+      "work": "The two missions existed as prose: the seat was told an aircraft was ready, the costs lived in a hard-coded copy in air.mjs, and a scramble never reached the round log. Give each aircraft a briefing (rounds left, whether a base is in reach, and each mission's cost read from config/game.json's air block), carry it on the seat view, put the choices in the piece row, and log a scramble and a strike.",
+      "prove": "web/test/nodes/air_missions.mjs asserts the briefing's costs equal config's air.strikeRounds/patrolRounds and what sendMission actually charges, that an away aircraft is not ready and its refusal names the rounds left, that a plane with no base in reach cannot fly, that the briefing is per side, and that the log names a scramble to its owner and to an enemy who can see it but not to one who cannot."
+    },
+    {
+      "id": "late_kit_visible",
+      "order": 430,
+      "status": "todo",
+      "depends": [
+        "late_kit"
+      ],
+      "title": "The 1986 kit, spelled out",
+      "work": "The late kit exists in late.mjs and the page offers buttons, but the consequences are invisible: the nuke's exclusion radius, the first-user penalty and every stand-in are only in the code. Surface them as text on the page and in the round log, marking each unascertained number STAND-IN, and refuse with the reason rather than a bare no.",
+      "prove": "web/test/nodes/late_kit_visible.mjs asserts every stand-in value the page shows is labelled STAND-IN, that a refused tool gives its reason, that the exclusion radius printed is the config's, and that the round log records a tool use for its owner and not for the other seat."
     }
   ]
 }
