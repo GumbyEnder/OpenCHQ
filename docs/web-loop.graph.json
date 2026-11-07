@@ -338,14 +338,15 @@
     {
       "id": "resources",
       "order": 310,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "income",
         "fuel"
       ],
       "title": "More than oil, and still no invented rates",
       "work": "The successor will differ from the 1990 game here on purpose. Add resource kinds as data (config/game.json) with a generic holding + consumption model instead of one-off oil code, keep per-side reserves, and gate each kind by era. Any rate the owner has not set stays unnamed and unplaced rather than guessed. This is an owner-designed expansion, not a recovery of the original.",
-      "prove": "The harness asserts a second resource kind can be configured, held, consumed and shown without new code paths per kind, and that an unset rate is refused rather than defaulted to a number."
+      "prove": "The harness asserts a second resource kind can be configured, held, consumed and shown without new code paths per kind, and that an unset rate is refused rather than defaulted to a number.",
+      "evidence": "config/game.json carries a provenance table (documented | owner | stand-in) for all 21 player-facing tunables, with notes explaining every stand-in. rules.tunablePaths() walks the config, provenanceOf() reads the table, and shopFor() puts provenance on every price so the page marks a stand-in price with * and says why in the tooltip. web/test/nodes/resources.mjs fails on an unclassified tunable, a stale entry, an unknown word, an unexplained stand-in, or a shop price that disagrees with the config."
     },
     {
       "id": "pacing",
@@ -365,14 +366,15 @@
     {
       "id": "scale_out",
       "order": 330,
-      "status": "todo",
+      "status": "done",
       "depends": [
         "load_test",
         "view_deltas"
       ],
       "title": "Decide single instance or many, with numbers",
       "work": "One process holds 2000 sockets and ticks 1000 rooms inside the round budget. Decide whether the product needs more than one instance (uptime, region, load). If yes, the room store moves to Postgres and rooms are sharded per instance with a sticky socket; if no, record that the volume-pinned single instance is the accepted design and what would overturn it.",
-      "prove": "A written decision in docs/SCALE.md with the measured numbers it rests on, and the harness still prints WEB_OK on whichever path was chosen."
+      "prove": "A written decision in docs/SCALE.md with the measured numbers it rests on, and the harness still prints WEB_OK on whichever path was chosen.",
+      "evidence": "docs/SCALE.md with measured numbers: 1,000 rooms cost 9.79 ms per round (0.2% of a core at 5 s), 114 KB heap per 40-piece room (111 MB at 1,000), 4.0 MB/s egress with deltas vs 23.0 MB/s without. Decision recorded: one instance until a measured trigger, because the first ceiling is egress and the single SQLite writer is what forbids a second instance today. The multi-instance path names its migration surface (saveRoom/loadRooms/pruneRooms), the lease, and edge routing by room id, and marks which parts already exist."
     },
     {
       "id": "deploy_quietly",
