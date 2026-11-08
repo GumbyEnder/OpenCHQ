@@ -127,9 +127,11 @@ const SCREEN_H = BOARD_H;
 function mapBox() {
   const stage = document.getElementById("mapStage");
   const band = document.getElementById("chrome");
+  // A hidden band takes no room: reserving its height anyway is how the map ends up smaller than the
+  // window for a reason nobody can see on the page.
   const bandH = band && !band.classList.contains("hidden")
     ? Math.round(band.getBoundingClientRect().height)
-    : 60;
+    : 0;
   if (document.body.classList.contains("in-match") && stage) {
     const rect = stage.getBoundingClientRect();
     return {
