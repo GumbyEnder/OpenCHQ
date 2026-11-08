@@ -11,6 +11,8 @@
 
 import { payEvery, priceOf } from "./rules.mjs";
 import { upkeepResources } from "./resources.mjs";
+// Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
+import { canPlace } from "./placement.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -149,7 +151,7 @@ function dropValue(list, value) {
 
 // --- buying ------------------------------------------------------------------------------
 
-export function buy(match, side, kind, x, y) {
+export function buy(match, side, kind, x, y, board = null) {
   if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) {
     return { error: "There is no match to buy into." };
   }
@@ -166,35 +168,28 @@ export function buy(match, side, kind, x, y) {
 
   seedOwners(match);
 
-  const site = siteAt(match, x, y);
-  if (!site) return { error: `Nothing to buy at ${x},${y}.` };
-  const wanted = domain === "sea" ? DOCK_KINDS : CITY_KINDS;
-  if (!wanted.has(site.kind)) {
-    return {
-      error:
-        domain === "sea"
-          ? "Ships are bought at a friendly dock."
-          : "Land and aircraft are bought at a friendly city.",
-    };
-  }
-  if (!friendly(match, side, site)) {
-    return { error: `${site.name || site.id} is not ${side}'s.` };
-  }
-  if (match.pieces.some((piece) => Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y))) {
+  const cx = Number(x);
+  const cy = Number(y);
+  if (!Number.isInteger(cx) || !Number.isInteger(cy)) return { error: "A purchase needs whole cells." };
+  if (match.pieces.some((piece) => Number(piece.x) === cx && Number(piece.y) === cy)) {
     return { error: "Two pieces cannot share a cell." };
   }
 
-  // A purchase always spends the pool. It used to be free until the clock first ran, which
-  // made a 2023 start a free army: a player could fill the board and then press Run. The
-  // start pool is what the setup phase spends.
-  {
-    if (!Number.isFinite(seat.cash) || seat.cash < price) {
-      return { error: `Not enough in ${side}'s pool for a ${unitKind}.` };
-    }
-    seat.cash -= price;
-    // Unready, with no recovered recovery time: the flag is set and nothing counts down.
-    site.unready = true;
+  // Where it may stand is the placement module's rule, and the page highlights the cells that same
+  // module returns. A purchase no longer needs a city or a dock: land and air go anywhere on land in
+  // the seat's own zone, and a hull goes into coastal water.
+  const placement = canPlace(match, side, unitKind, cx, cy, board);
+  if (placement.error) return { error: placement.error };
+
+  if (!Number.isFinite(seat.cash) || seat.cash < price) {
+    return { error: `Not enough in ${side}'s pool for a ${unitKind}.` };
   }
+  seat.cash -= price;
+
+  // The build still costs the nearest held city its readiness: production happens somewhere, even
+  // when the owner widened where the unit may stand.
+  const home = nearestOwned(match, side, cx, cy);
+  if (home) home.unready = true;
 
   seat.bought = Number(seat.bought || 0) + 1;
   let serial = seat.bought;
@@ -210,8 +205,8 @@ export function buy(match, side, kind, x, y) {
     side,
     domain,
     kind: unitKind,
-    x: Number(site.x),
-    y: Number(site.y),
+    x: cx,
+    y: cy,
     path: [],
     pace: 1,
     facing: null,
@@ -220,6 +215,25 @@ export function buy(match, side, kind, x, y) {
   };
   match.pieces.push(piece);
   return { ok: true, piece };
+}
+
+// The site a purchase is charged to: the nearest one this side holds, measured with the board's own
+// X wrap. Nothing is invented when the seat holds nothing; the purchase simply marks no site.
+function nearestOwned(match, side, x, y) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const site of match.sites) {
+    if (!site || site.owner !== side) continue;
+    const dx = Math.abs(Number(site.x) - x);
+    const wrapped = Math.min(dx, 320 - dx);
+    const dy = Math.abs(Number(site.y) - y);
+    const distance = Math.max(wrapped, dy);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = site;
+    }
+  }
+  return best;
 }
 
 // --- oil capture -------------------------------------------------------------------------

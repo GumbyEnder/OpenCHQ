@@ -66,7 +66,7 @@ export const name = "dialogs";
 export async function run(ctx) {
   // --- the navigation is the command list -----------------------------------
   eq("the strip carries the original's commands", NAV.map((item) => item.id),
-    ["buy", "economy", "kit", "map", "war", "log"]);
+    ["buy", "economy", "air", "kit", "map", "war", "log"]);
   for (const item of NAV) {
     if (!item.label || !item.title || !item.hint) fail("nav item " + item.id + " is missing its words");
   }

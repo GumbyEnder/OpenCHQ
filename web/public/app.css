@@ -678,6 +678,10 @@ body.in-match .nav {
 .buyrow.head { background: transparent; border-color: transparent; color: var(--muted); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
 .buyrow.armed { border-color: var(--accent); background: #14343a; }
 .buyrow:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The air table's fourth column is a row of small buttons, not a number. */
+.airtable .buyrow { grid-template-columns: 1fr 96px 60px 150px; }
+.airmissions { display: flex; gap: 4px; justify-content: flex-end; }
+.airmissions button { font-size: 11px; padding: 1px 7px; border-radius: 6px; }
 
 body.in-match .mapstage {
   flex: 1 1 auto;

@@ -3,13 +3,14 @@ import { deleteRoom, flushRooms, flushWindow, loadRooms, pruneRooms, saveRoom } 
 import { tickMatch } from "./tick.mjs";
 import { forSeat } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
-import { matchSites } from "./board.mjs";
+import { boardPayload, matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
 import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
+import { maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
 import { roundSeconds, rules } from "./rules.mjs";
 
@@ -494,6 +495,36 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // Where a purchase may stand. The page asks for this when a unit is armed and paints the mask, so
+  // the highlight is the server's own rule rather than a second copy of it in the browser.
+  function placementOp(username, message) {
+    const room = roomFor(username);
+    const peer = sockets.get(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const kind = String(message.kind ?? "");
+    const mask = placementMask(room.match, mine, kind, boardPayload());
+    if (mask.error) {
+      if (peer) peer.send({ op: "placement", kind, error: mask.error });
+      return { ok: true };
+    }
+    if (peer) {
+      peer.send({
+        op: "placement",
+        kind,
+        width: mask.width,
+        height: mask.height,
+        count: mask.count,
+        domain: mask.domain,
+        zone: mask.zone,
+        coast: mask.coast,
+        mask: maskBase64(mask.mask),
+      });
+    }
+    return { ok: true };
+  }
+
   // The late kit and the air were in the engine and reachable by nobody: no op, no button. These
   // two ops are the door. They take the same seat checks as an order, so a forged side is still
   // refused by the module and by seatUsername, not by the page.
@@ -737,7 +768,7 @@ export function createLobby() {
     const at = destinationOf(message);
     let result;
     try {
-      result = buy(room.match, mine, message.kind, at.x, at.y);
+      result = buy(room.match, mine, message.kind, at.x, at.y, boardPayload());
     } catch (err) {
       return { error: err && err.message ? err.message : String(err) };
     }
@@ -765,6 +796,7 @@ export function createLobby() {
     if (op === "order") return order(username, message);
     if (op === "buy") return buyOp(username, message);
     if (op === "route") return routeFor(username, message);
+    if (op === "placement") return placementOp(username, message);
     if (op === "tool") return toolOp(username, message);
     if (op === "mission") return missionOp(username, message);
     if (op === "entrench") return pieceOp(username, message, "entrench");

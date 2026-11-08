@@ -18,12 +18,18 @@
     "fuel": {
       "reserve": 10000,
       "burn": 1,
-      "refillAt": ["oilfield", "well"]
+      "refillAt": [
+        "oilfield",
+        "well"
+      ]
     },
     "steel": {
       "reserve": 40,
       "burn": 1,
-      "eras": ["1942", "1986"]
+      "eras": [
+        "1942",
+        "1986"
+      ]
     }
   },
   "sightCells": 8,
@@ -38,7 +44,8 @@
     "hits": "The archive's HITS is 6. Do not raise it: the desktop Washington-to-Moscow march meets one cell short and Red holds both capitals.",
     "air": "The 8 and 4 are the booklet counts (docs/POLISH_LOOP.md: air mission inactive 8 rounds, scramble 4). The reach of 10 is a STAND-IN: the archive's aircraft range was not recovered.",
     "nukes": "A nuke is refused by default and the archive's own stand-in deals no damage and paints no wasteland. exclusion 2 is a STAND-IN guard around a capital; the archive kept a home-ground guard but never printed its size. The launch limit (three fired or three absorbed) is the booklet count and stays in code.",
-    "overrun": "Overrun existed in the archive (the owner's list of missing combat depth names it); how much more force it took was never recovered. The rule therefore compares counts rather than inventing a threshold: when one side has strictly more friendly pieces standing on the defender's cell than the defender has, the defender is removed at once. Set false to return to a pure grinding front."
+    "overrun": "Overrun existed in the archive (the owner's list of missing combat depth names it); how much more force it took was never recovered. The rule therefore compares counts rather than inventing a threshold: when one side has strictly more friendly pieces standing on the defender's cell than the defender has, the defender is removed at once. Set false to return to a pure grinding front.",
+    "placement": "STAND-IN. The archive printed where a purchase goes - land and air in any friendly city or base, ships only on docks - and the owner widened it: land and air anywhere in your own zone, ships into coastal water. Neither reach was ever printed, so 8 cells from a site you hold and 4 cells from a land cell are invented to make the rule exist. Change them here; the server refuses and the page highlights from this same block."
   },
   "air": {
     "strikeRounds": 8,
@@ -49,5 +56,9 @@
     "enabled": false,
     "exclusion": 2
   },
-  "overrun": true
+  "overrun": true,
+  "placement": {
+    "homeZoneCells": 8,
+    "coastCells": 4
+  }
 }

@@ -37,6 +37,24 @@ function freshMatch() {
   return match;
 }
 
+// A board to place on: ocean everywhere, with plain ground around the blue sites and off the blue
+// dock, so the placement rule (own zone for land and air, coastal water for ships) can be exercised
+// without the real extract.
+function boardFixture() {
+  const width = 320;
+  const height = 136;
+  const terrain = ["ocean", "docks", "shallows", "lake", "capital", "base", "city", "oilfield",
+    "plain", "forest", "mountain", "desert", "jungle", "polar", "wasteland", "facility"];
+  const cells = new Array(width * height).fill(0); // ocean
+  for (let y = 32; y <= 52; y++) {
+    for (let x = 58; x <= 92; x++) cells[y * width + x] = 8; // plain around the blue cities
+  }
+  for (let y = 12; y <= 20; y++) {
+    for (let x = 0; x <= 8; x++) cells[y * width + x] = 8; // plain around the blue dock
+  }
+  return { width, height, cells, terrain };
+}
+
 function siteOf(match, id) {
   return match.sites.find((site) => site.id === id);
 }
@@ -75,23 +93,30 @@ export async function run(ctx) {
   // ---- buy: the setup phase spends the start pool --------------------------------------
   // A purchase used to be free until the clock first ran, which made a 2023 start a free
   // army: fill the board, then press Run. The start pool is what the setup phase spends.
-  const firstBuy = buy(match, "blue", "infantry", 80, 40);
+  //
+  // Where a purchase may stand is placement.mjs, not a city or a dock: land and air go on ground
+  // inside the seat's own zone, hulls go into coastal water. The fixture board is ocean with plain
+  // ground around the blue sites.
+  const board = boardFixture();
+
+  const firstBuy = buy(match, "blue", "infantry", 80, 40, board);
   must(firstBuy && firstBuy.ok === true, "a setup purchase was refused: " + JSON.stringify(firstBuy));
   eq(firstBuy.piece.kind, "infantry", "bought piece kind");
   eq(firstBuy.piece.side, "blue", "bought piece side");
   eq(firstBuy.piece.domain, "land", "infantry domain");
+  eq(firstBuy.piece.x + "," + firstBuy.piece.y, "80,40", "a purchase stands on the cell it was placed on");
   const infantryPrice = priceOf("infantry");
   eq(match.sides.blue.cash, startPool("1986") - infantryPrice, "a setup purchase must spend its price");
-  must(siteOf(match, 10).unready, "a purchase must mark the city unready");
+  must(siteOf(match, 10).unready, "a purchase must mark the nearest held city unready");
 
   // two pieces cannot share a cell
-  const shared = buy(match, "blue", "infantry", 80, 40);
+  const shared = buy(match, "blue", "infantry", 80, 40, board);
   must(shared && shared.error, "two pieces were allowed to share a cell");
   must(/share/.test(shared.error), "wrong refusal for a shared cell: " + shared.error);
 
   // ---- buy: a nuke is always refused ---------------------------------------------------
   const cashBeforeNuke = match.sides.blue.cash;
-  const nuke = buy(match, "blue", "nuke", 70, 42);
+  const nuke = buy(match, "blue", "nuke", 70, 42, board);
   must(nuke && nuke.error, "a nuke was accepted");
   must(/refus/i.test(nuke.error), "a nuke must be refused: " + nuke.error);
   eq(match.sides.blue.cash, cashBeforeNuke, "a refused nuke must not spend");
@@ -103,26 +128,33 @@ export async function run(ctx) {
   const tankPrice = priceOf("tank");
   eq(tankPrice, 2, "the tank price");
   const cashBeforeTank = match.sides.blue.cash;
-  const tank = buy(match, "blue", "tank", 70, 42);
+  const tank = buy(match, "blue", "tank", 70, 42, board);
   must(tank && tank.ok === true, "a tank after the clock ran was refused: " + JSON.stringify(tank));
   eq(match.sides.blue.cash, cashBeforeTank - tankPrice, "a tank costs 2");
   eq(tank.piece.kind, "tank", "tank kind");
-  eq(siteOf(match, 14).unready, true, "the buying city must go unready");
+  eq(siteOf(match, 14).unready, true, "the nearest buying city must go unready");
 
-  // ships buy at a dock, land does not; land buys at a city, ships do not
-  const shipAtCity = buy(match, "blue", "ship", 75, 42);
-  must(shipAtCity && shipAtCity.error, "a ship was bought in a city");
-  must(/dock/i.test(shipAtCity.error), "the ship refusal must name the dock: " + shipAtCity.error);
-  const landAtDock = buy(match, "blue", "infantry", 2, 16);
-  must(landAtDock && landAtDock.error, "land was bought on a dock");
-  must(/city/i.test(landAtDock.error), "the land refusal must name the city: " + landAtDock.error);
-  const ship = buy(match, "blue", "ship", 2, 16);
-  must(ship && ship.ok === true, "a ship at a friendly dock was refused: " + JSON.stringify(ship));
+  // ---- buy: the placement rule ---------------------------------------------------------
+  // Open water is not ground: a walker is refused, and the sentence names the zone.
+  const infantryAtSea = buy(match, "blue", "infantry", 200, 100, board);
+  must(infantryAtSea && infantryAtSea.error, "land was bought in open water");
+  must(/zone|land/i.test(infantryAtSea.error), "the land refusal must name the zone: " + infantryAtSea.error);
+  // A hull inland is refused, and the sentence names coastal water.
+  const shipInland = buy(match, "blue", "ship", 85, 45, board);
+  must(shipInland && shipInland.error, "a ship was bought inland");
+  must(/coastal|water/i.test(shipInland.error), "the ship refusal must name coastal water: " + shipInland.error);
+  // ... and a cell just off the coast is accepted.
+  const ship = buy(match, "blue", "ship", 76, 31, board);
+  must(ship && ship.ok === true, "a ship in coastal water was refused: " + JSON.stringify(ship));
   eq(ship.piece.domain, "sea", "ship domain");
+  // A cell a long way from any water is refused for a hull too.
+  const shipFar = buy(match, "blue", "ship", 300, 100, board);
+  must(shipFar && shipFar.error, "a ship was bought far out at sea");
 
-  // and a side may not buy in the other side's city
-  const inRedCity = buy(match, "blue", "infantry", 180, 22);
-  must(inRedCity && inRedCity.error, "blue bought in a Red city");
+  // and a side may not place in the other side's country: the zone is measured from its own sites
+  const inRedCity = buy(match, "blue", "infantry", 180, 22, board);
+  must(inRedCity && inRedCity.error, "blue placed a unit in Red's country");
+  must(/zone/i.test(inRedCity.error), "the out-of-zone refusal must say so: " + inRedCity.error);
 
   // ---- income: round 24 does not pay, round 25 does ------------------------------------
   // Blue holds three cities (10, 11, 14) and now two wells (31, plus 30 after the capture

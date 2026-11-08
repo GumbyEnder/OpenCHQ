@@ -72,6 +72,27 @@ export async function run(ctx) {
   if (total !== baked.width * baked.height) fail("the terrain runs cover " + total + " cells, not " + baked.width * baked.height);
   if (!world._meta || !world._meta.not) fail("the baked file does not say what it is not");
 
+  // The map is not the game: the match needs the era's own site list - cities, docks off the cell
+  // grid, wells - or the public host opens a war with nothing owned and no income at all. The bake
+  // carries everything matchSites reads, so the two boards must produce the same list.
+  const { matchSites } = await import("../../server/board.mjs");
+  for (const era of ["1918", "1942", "1986", "2023"]) {
+    const fromBake = matchSites(era, baked);
+    if (!fromBake.length) fail("the baked board yields no sites for " + era + ", so the host has no economy");
+    const cities = fromBake.filter((site) => site.kind === "city").length;
+    const docks = fromBake.filter((site) => site.kind === "dock").length;
+    if (cities < 20 || docks < 20) fail(era + " from the bake has " + cities + " cities and " + docks + " docks");
+    if (live.source === "extract") {
+      const fromExtract = matchSites(era, live);
+      if (fromBake.length !== fromExtract.length) {
+        fail("the bake and the extract disagree on " + era + ": " + fromBake.length + " vs " + fromExtract.length);
+      }
+      const bakeIds = fromBake.map((site) => site.id + "@" + site.x + "," + site.y + ":" + site.kind).sort();
+      const extractIds = fromExtract.map((site) => site.id + "@" + site.x + "," + site.y + ":" + site.kind).sort();
+      if (JSON.stringify(bakeIds) !== JSON.stringify(extractIds)) fail("the bake and the extract disagree on " + era + "'s site list");
+    }
+  }
+
   // The original's lettering has to survive the same trip, or the live chrome is a system font.
   const font = fontPayload();
   if (!Array.isArray(font.glyphs) || font.glyphs.length !== 92) {

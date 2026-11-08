@@ -1,6 +1,6 @@
 import {
   capitalMarkers, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch, panBy,
-  rememberSeen, sightTable, statusLine, zoomAt,
+  paintPlacement, rememberSeen, sightTable, statusLine, zoomAt,
 } from "./render.mjs";
 import {
   PICK_HINT,
@@ -415,6 +415,8 @@ function drawMatch() {
     // The original's lettering for city names, once the camera is close enough to read them.
     atlas: fontAtlas,
   });
+  // While a unit is armed, the cells the server will accept are painted underneath everything else.
+  if (placement) paintPlacement(ctx, placement, view);
   paintChrome(view);
   const camNote = document.getElementById("camNote");
   if (camNote) {
@@ -449,6 +451,9 @@ function drawMatch() {
 // Which unit the player has put on the build cursor, if any. The next click on a friendly city
 // (or a dock, for a ship) buys it there; anything else cancels.
 let buying = null;
+// The cells the server says a purchase may stand on: {width, height, mask}. The page paints this and
+// never works the rule out for itself.
+let placement = null;
 
 // The round log. A running clock is dead time unless it reports itself: every line here came
 // from the server already filtered to what this seat could see.
@@ -476,6 +481,7 @@ function noteLog(lines) {
 function clearCommand() {
   selected = null;
   buying = null;
+  placement = null;
   preview = null;
   hoverKey = "";
   fogSeen = null;
@@ -501,14 +507,12 @@ board.addEventListener("click", (event) => {
   // A unit on the build cursor claims the click: the cell has to be one of the seat's own
   // sites, and the server decides whether the purchase is legal.
   if (buying) {
-    const site = (room.sites || []).find((place) => place.x === cell.x && place.y === cell.y);
-    if (!site) {
-      say("Buy " + buying + ": " + cell.x + "," + cell.y + " is not a site. Click one of your cities.");
-      return;
-    }
+    // The server owns the rule for where a purchase may stand; the page sends the cell the player
+    // picked and repeats the refusal in the server's own words when it comes back.
+    // The cursor stays armed until a purchase actually lands: a refused cell must not cost the
+    // player their place-in-mode, and buying several units in a row is the normal case.
     send(buyMessage(buying, cell));
-    buying = null;
-    renderRoom();
+    drawMatch();
     return;
   }
 
@@ -1109,7 +1113,12 @@ const DIALOG_PAINTERS = {
           buying = row.kind;
           selected = null;
           preview = null;
-          say("Buy " + row.kind + ": click one of your " + (row.domain === "sea" ? "docks" : "cities") + ".");
+          placement = null;
+          // Ask the server where this unit may stand, and paint its answer.
+          send({ op: "placement", kind: row.kind });
+          say("Buy " + row.kind + ": " + (row.domain === "sea"
+            ? "click highlighted coastal water to place it."
+            : "click a highlighted cell in your own zone to place it."));
           closeDialog();
         });
       }
@@ -1156,6 +1165,46 @@ const DIALOG_PAINTERS = {
       body.append(label, list);
     }
     body.append(note("One of cash per owned city and per owned oilfield, paid on the payday round. The count is the server's."));
+  },
+
+  // The fleet. Every aircraft this seat owns, where it is based, how many rounds it is away, and a
+  // button per mission the era allows. Without this an aircraft is only findable by clicking a marker
+  // on a world map, which is exactly what the original's "Show Air Power" command existed to prevent.
+  air(body) {
+    const planes = room && room.seat && Array.isArray(room.seat.air) ? room.seat.air : [];
+    if (!planes.length) {
+      body.append(note("No aircraft. Buy one in Buy; it appears here once you hold it."));
+      return;
+    }
+    const table = document.createElement("div");
+    table.className = "buytable airtable";
+    const head = document.createElement("div");
+    head.className = "buyrow head";
+    head.append(cell("Plane"), cell("Base"), cell("Away"), cell("Missions"));
+    table.append(head);
+    for (const plane of planes) {
+      const line = document.createElement("div");
+      line.className = "buyrow";
+      const acts = cell("");
+      acts.className = "airmissions";
+      for (const mission of Array.isArray(plane.missions) ? plane.missions : []) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = mission.label;
+        button.title = "Away for " + mission.rounds + " rounds.";
+        button.disabled = !plane.ready;
+        button.addEventListener("click", () => {
+          send({ op: "mission", piece: plane.id, mode: mission.mode, to: { x: plane.x, y: plane.y } });
+          say(plane.id + ": " + mission.label + " ordered.");
+          closeDialog();
+        });
+        acts.append(button);
+      }
+      line.append(cell(plane.id), cell(plane.base || "—"),
+        cell(plane.ready ? "ready" : String(plane.roundsLeft) + " rounds"), acts);
+      table.append(line);
+    }
+    body.append(table, note("A mission puts the aircraft out of action for its own number of rounds; that number is the config's, not this page's."));
   },
 
   kit(body) {
@@ -1345,6 +1394,18 @@ function connect() {
       }
     } else if (message.op === "delta") {
       applyDelta(message.delta);
+    } else if (message.op === "placement") {
+      if (!buying || String(message.kind) !== String(buying)) return;
+      if (message.error || !message.mask) {
+        placement = null;
+        say(message.error || "Nowhere to place that unit.");
+        return;
+      }
+      const binary = atob(message.mask);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      placement = { width: message.width, height: message.height, mask: bytes, count: message.count, domain: message.domain };
+      drawMatch();
     } else if (message.op === "route") {
       // Late replies for another piece are not this selection's route.
       if (!selected || message.piece !== selected.id) return;
@@ -1360,6 +1421,11 @@ function connect() {
       noteLog(message.lines);
     } else if (message.op === "bought") {
       say("Bought an " + message.kind + " at " + message.at.x + "," + message.at.y + (message.cash !== null && message.cash !== undefined ? ". Pool " + message.cash + "." : "."));
+      // One purchase lands, the cursor goes: the next click is a map click again.
+      buying = null;
+      placement = null;
+      drawMatch();
+      renderRoom();
     } else if (message.op === "ordered") {
       say(ackText(message));
       // An order is the player's own act, so it belongs in the log beside what the round did.

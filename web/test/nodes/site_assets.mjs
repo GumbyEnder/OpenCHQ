@@ -74,10 +74,22 @@ export async function run(ctx) {
       !match.pieces.some((piece) => Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y))
   );
   must(blueDock, "no friendly dock to buy a ship at");
-  const ship = buy(match, "blue", "ship", blueDock.x, blueDock.y);
-  must(ship && ship.ok === true, "a ship at a dock was refused: " + JSON.stringify(ship));
-  must(ship.piece.domain === "sea", "the dock produced a " + ship.piece.domain + " piece");
-  must(ship.piece.x === blueDock.x && ship.piece.y === blueDock.y, "the ship did not land on its dock");
+  // A hull goes into coastal water now, not onto the dock itself: ask the placement module for the
+  // cells it accepts and put the ship on the first one.
+  const { placementMask } = await import("../../server/placement.mjs");
+  const mask = placementMask(match, "blue", "ship", board);
+  must(mask && !mask.error, "no placement mask for a ship: " + JSON.stringify(mask));
+  let berth = null;
+  for (let id = 0; id < mask.mask.length && !berth; id++) {
+    if (!mask.mask[id]) continue;
+    const x = id % mask.width;
+    berth = { x, y: (id - x) / mask.width };
+  }
+  must(berth, "the board offers no coastal water for a ship");
+  const ship = buy(match, "blue", "ship", berth.x, berth.y, board);
+  must(ship && ship.ok === true, "a ship in coastal water was refused: " + JSON.stringify(ship));
+  must(ship.piece.domain === "sea", "the berth produced a " + ship.piece.domain + " piece");
+  must(ship.piece.x === berth.x && ship.piece.y === berth.y, "the ship did not land on its berth");
 
   const redWell = match.sites.find((site) => WELL(site) && site.owner === "red");
   must(redWell, "no Red well to take");

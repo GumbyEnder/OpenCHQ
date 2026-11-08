@@ -165,9 +165,10 @@ export async function run(ctx) {
   eq(fail, "ocean, shallows, city and capital are distinct", new Set(four).size, 4);
   eq(fail, "unknown terrain stays unnamed", paletteFor("nonsense"), null);
   const legend = legendEntries();
-  eq(fail, "legend names the marks, transport included", legend.length, 7);
-  eq(fail, "the legend names a transport", legend[6].label, "transport (cargo)");
-  eq(fail, "legend carries both side colors", [legend[4].color, legend[5].color], [SCHEMATIC.blue, SCHEMATIC.red]);
+  eq(fail, "legend names the ground and the marks, transport included", legend.length, 12);
+  eq(fail, "the legend names plain ground", legend[2].label, "plain");
+  eq(fail, "the legend names a transport", legend[11].label, "transport (cargo)");
+  eq(fail, "legend carries both side colors", [legend[9].color, legend[10].color], [SCHEMATIC.blue, SCHEMATIC.red]);
 
   // --- a transport is a ring, and the page says what that means --------------
   eq(fail, "a land piece at sea is a ring", pieceShape({ domain: "land", transport: true }), "ring");

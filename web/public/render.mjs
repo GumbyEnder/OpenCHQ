@@ -64,7 +64,12 @@ const CAPITAL_SEATS = Object.freeze({
   red: Object.freeze({ name: "Moscow", x: 183, y: 25 }),
 });
 
-const LEGEND_TERRAIN = Object.freeze(["ocean", "shallows", "city", "capital"]);
+// Every terrain a player actually sees, not only the four that carry a marker: green ground used to
+// appear on the board with no legend entry at all, which reads as "somebody's territory" when it is
+// just plain.
+const LEGEND_TERRAIN = Object.freeze([
+  "ocean", "shallows", "plain", "forest", "desert", "mountain", "polar", "city", "capital",
+]);
 
 // ---- maths -----------------------------------------------------------------
 
@@ -360,6 +365,33 @@ export function legendEntries() {
 
 // ---- painting --------------------------------------------------------------
 
+// The cells a purchase may stand on, painted over the board. `placement` is exactly what the server
+// sent: {width, height, mask} with the mask a byte per cell. The page never re-derives the rule.
+export function paintPlacement(ctx, placement, view, color = "rgba(120, 230, 255, 0.30)") {
+  if (!placement || !placement.mask || !view) return 0;
+  const bw = Number(placement.width) || 0;
+  const bh = Number(placement.height) || 0;
+  if (!bw || !bh) return 0;
+  const cols = visibleColumns(view);
+  const rows = visibleRows(view);
+  if (view.boardW * view.scale <= view.viewW) {
+    cols.first = 0;
+    cols.last = view.boardW - 1;
+  }
+  ctx.fillStyle = color;
+  let painted = 0;
+  for (let y = rows.first; y <= rows.last; y++) {
+    if (y < 0 || y >= bh) continue;
+    for (let sx = cols.first; sx <= cols.last; sx++) {
+      const x = wrapX(sx, view.boardW);
+      if (!placement.mask[y * bw + x]) continue;
+      ctx.fillRect(view.left + sx * view.scale, view.top + y * view.scale, view.scale, view.scale);
+      painted += 1;
+    }
+  }
+  return painted;
+}
+
 export function paintCells(ctx, board, view) {
   const cells = board && Array.isArray(board.cells) ? board.cells : null;
   if (!cells) return 0;
@@ -460,7 +492,9 @@ export function paintPieces(ctx, pieces, view, opts = {}) {
 // addition, drawn with the game's own lettering (FONTS.CHQ) so they belong to the picture, and only
 // past LABEL_ZOOM pixels per cell, where a name is not clutter. A label is dropped when its city is
 // off screen and clamped when it would run off an edge.
-export const LABEL_ZOOM = 4;
+// Names are clutter at the whole-world fit: at four pixels a cell every city label overlaps its
+// neighbour. Eight pixels per cell is the first scale at which a name is readable on its own.
+export const LABEL_ZOOM = 8;
 
 function labelBox(text, labelScale, at, view) {
   const width = String(text).length * 8 * labelScale;

@@ -175,7 +175,11 @@ function neighbourSite(sites, x, y) {
 // list places on this board. A dock takes its port's country; a well keeps the region the
 // oil list names. Unknown kinds pass through untouched. Ids stay stable per cell.
 export function matchSites(era = "1986", board = boardPayload()) {
-  if (!board || board.source !== "extract" || !Array.isArray(board.sites)) return [];
+  // The baked board carries the same grid, site table and wells the extract does, so a host with no
+  // extract plays the same 269-site 1986 map as a developer machine. Gating this on source "extract"
+  // is what left the public host with the 84-site picture list, no docks, nothing owned and no
+  // income at all - a dead economy that looked like a rule bug.
+  if (!board || (board.source !== "extract" && board.source !== "bundled") || !Array.isArray(board.sites)) return [];
   const base = board.sites.map((site) => ({
     id: site.id,
     name: site.name,

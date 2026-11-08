@@ -14,6 +14,7 @@ import { shopDisabled, shopLabel } from "./command.mjs";
 export const NAV = [
   { id: "buy", label: "Buy", title: "Buy units", hint: "What each unit costs, how many you have, and how many you have seen." },
   { id: "economy", label: "Economy", title: "Economy", hint: "Cash, the next payday, what pays it, and what you are burning." },
+  { id: "air", label: "Air", title: "Air power", hint: "Your aircraft, where each one is based, and how many rounds it is away." },
   { id: "kit", label: "Kit", title: "The late kit", hint: "The tools this scenario allows, and the sentence that says why one is refused." },
   { id: "map", label: "Map", title: "Map", hint: "Terrain or ownership, the whole world or a zoom, and whether the camera follows." },
   { id: "war", label: "War", title: "War", hint: "Who holds which side, the clock, and the way out." },

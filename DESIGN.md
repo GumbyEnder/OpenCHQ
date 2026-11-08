@@ -31,6 +31,14 @@ clicking faster than your opponent.
 - Lobby: era + side, Play a bot, invite an online player, accept/decline.
 - Match: click a piece, click a destination; Run/Hold the clock; Leave ends the match for good
   (disconnecting only pauses it).
+- The match collapses the page into one 34px strip: era · side · round · clock · pool, then the
+  commands Buy, Economy, Air, Kit, Map, War, Log, each opening one dialogue over the map.
+- Buying: pick a unit in Buy, then click where it stands. Land and air go on ground inside the seat's
+  own zone (within `placement.homeZoneCells` of a site it holds, 8 by default); hulls go into coastal
+  water within `placement.coastCells` of land (4). The server returns the legal cells and the page
+  paints them, so the highlight is the rule.
+- Air: the Air dialogue lists every aircraft with its base and how many rounds it is away, plus one
+  button per mission. Aircraft are otherwise only findable by clicking a marker on a world map.
 
 ## Rules that are not negotiable
 
@@ -47,7 +55,8 @@ directed graph in `docs/web-loop.graph.json`; the operating model is `docs/WEB_L
 boundaries are `docs/CONTRACTS.md`.
 
 Live: https://openchq-web-production.up.railway.app (Railway `openchq-web`, `/data` volume for
-accounts and rooms). Public host has no extract, so it draws the schematic board there.
+accounts and rooms). The public host has no extract, so it draws the baked board from `web/data/world.json`
+(`source: "bundled"`), and the match list is built from that same bake.
 
 ## After the port
 

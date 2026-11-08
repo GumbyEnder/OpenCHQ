@@ -39,7 +39,7 @@ function recorder() {
 export const name = "city_labels";
 
 export async function run() {
-  eq("labels start at four pixels per cell", LABEL_ZOOM, 4);
+  eq("labels start at eight pixels per cell", LABEL_ZOOM, 8);
 
   // --- nothing at map scale ---------------------------------------------------------------
   const world = fitViewport(640, 272); // whole earth, ~2 px per cell

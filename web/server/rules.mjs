@@ -75,6 +75,19 @@ export function payEvery() {
   return Number(rules().payEvery);
 }
 
+// Where a bought unit may be placed. Both reaches are stand-ins (see the note in the tunables
+// file); this accessor is the only place that reads them, so an edit cannot reach one caller and
+// miss another.
+export function placementRules() {
+  const block = rules().placement || {};
+  const zone = Number(block.homeZoneCells);
+  const coast = Number(block.coastCells);
+  return {
+    zone: Number.isFinite(zone) && zone > 0 ? Math.floor(zone) : 8,
+    coast: Number.isFinite(coast) && coast > 0 ? Math.floor(coast) : 4,
+  };
+}
+
 export function sightCells() {
   return Number(rules().sightCells);
 }
