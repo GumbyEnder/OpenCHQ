@@ -15,7 +15,11 @@
       <p class="mark">OpenCHQ</p>
       <p class="sub">Two sides. One map. The server keeps the rules.</p>
       <span id="stripInfo" class="stripinfo"></span>
+      <span id="purseChip" class="pursechip"></span>
     </div>
+    <!-- The original's commands lived behind a hidden menu bar. Here they are the strip's buttons and
+         each opens a dialogue over the map (see dialogs.mjs). -->
+    <nav id="nav" class="nav" aria-label="Match commands"></nav>
     <div class="whoami">
       <p id="account" class="account"></p>
       <details id="passwordBox" class="passwordBox">
@@ -43,6 +47,16 @@
     <p class="debuglabel">Wire</p>
     <ol id="debugWire" class="debugwire"></ol>
   </aside>
+
+  <!-- The dialogue the strip's buttons open. One panel, filled per command, over the map. -->
+  <div id="dialog" class="dialog hidden" role="dialog" aria-modal="false" aria-labelledby="dialogTitle">
+    <div class="dialoghead">
+      <h2 id="dialogTitle" class="dialogtitle">Buy units</h2>
+      <button type="button" id="dialogClose" class="dialogclose" title="Close (Esc)">&times;</button>
+    </div>
+    <p id="dialogHint" class="dialoghint"></p>
+    <div id="dialogBody" class="dialogbody"></div>
+  </div>
 
   <main>
     <section id="gate" class="panel">

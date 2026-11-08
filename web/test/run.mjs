@@ -469,10 +469,13 @@ async function main() {
   if (!intent || intent.op !== "buy" || intent.kind !== "infantry" || intent.x !== city.x || intent.y !== city.y) {
     fail("the page's purchase message is malformed: " + JSON.stringify(intent));
   }
-  // ... and the page actually draws that panel from these helpers rather than its own text.
+  // ... and the page actually draws that panel from these helpers rather than its own text. The
+  // purchase table lives in the dialogue module now, so the check reads both files the browser loads.
   const appText = readFileSync(path.join(root, "web", "public", "app.js"), "utf8");
+  const dialogText = readFileSync(path.join(root, "web", "public", "dialogs.mjs"), "utf8");
+  const pageText = appText + "\n" + dialogText;
   for (const call of ["purseText(room.seat)", "shopLabel(entry)", "shopDisabled(entry, cash)", "buyMessage(buying, cell)"]) {
-    if (!appText.includes(call)) fail("the page does not use " + call);
+    if (!pageText.includes(call)) fail("the page does not use " + call);
   }
   const after2023 = adaBox.length;
   wsAda.send(JSON.stringify({ op: "leave" }));

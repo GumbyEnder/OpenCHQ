@@ -16,13 +16,13 @@ import {
   purseText,
   refusalText,
   routeRequest,
-  shopDisabled,
-  shopLabel,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
+// The navigation itself, and the two dialogues this page was missing: buying and the economy.
+import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -582,9 +582,21 @@ board.addEventListener("pointerup", () => {
   panFrom = null;
 });
 window.addEventListener("keydown", (event) => {
+  // Typing a name or a password is not a command: the shortcuts only apply away from the gate's
+  // fields.
+  const tag = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : "";
+  if (tag === "input" || tag === "select" || tag === "textarea") return;
   const view = viewForCanvas();
   const step = 8 * view.scale;
   const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+  // Escape is the way out of a dialogue, which is what the original's Buy Units menu did too.
+  if (event.key === "Escape" && openDialogId) {
+    closeDialog();
+    return;
+  }
+  if (event.key === "b" || event.key === "B") return openDialog("buy");
+  if (event.key === "e" || event.key === "E") return openDialog("economy");
+  if (event.key === "p" || event.key === "P") return setViewMode(viewMode === "political" ? "terrain" : "political");
   if (event.key === "+" || event.key === "=") return zoomStep(1.4);
   if (event.key === "-" || event.key === "_") return zoomStep(0.7);
   if (event.key === "0") return refit();
@@ -706,7 +718,12 @@ function syncShell() {
   }
   const info = document.getElementById("stripInfo");
   if (info) info.textContent = stripInfo(room);
+  // The purse at a glance: the economy dialogue explains it, this is the number a player wants to
+  // see without opening anything.
+  const purse = document.getElementById("purseChip");
+  if (purse) purse.textContent = room && room.seat ? purseText(room.seat) : "";
   renderDebug();
+  paintDialog();
 }
 
 function seatRow(label, seat, yours) {
@@ -753,70 +770,23 @@ function renderRoom() {
   leave.addEventListener("click", () => send({ op: "leave" }));
   actions.append(run, leave);
 
-  // The wallet and the payment countdown: without them the clock is dead time, because a
-  // player cannot see that money is coming or when.
-  let purseEl = null;
-  let shopEl = null;
+  // The wallet, in one line. Buying, the kit and the round log each have a dialogue of their own now,
+  // so this box carries only what a player wants at a glance.
+  roomBox.append(seats, meta, note, actions);
   if (room.seat) {
     const purse = document.createElement("p");
     purse.className = "purse";
     purse.textContent = purseText(room.seat);
-    purseEl = purse;
+    roomBox.append(purse);
   }
-
-  // The shop. Prices come from the server, so the panel cannot disagree with what it charges.
-  if (Array.isArray(room.shop) && room.shop.length) {
-    const shop = document.createElement("div");
-    shop.className = "shop";
-    const cash = room.seat && Number.isFinite(room.seat.cash) ? room.seat.cash : null;
-    for (const entry of room.shop) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "buy";
-      button.textContent = shopLabel(entry);
-      button.disabled = shopDisabled(entry, cash);
-      button.title = entry.refused || (button.disabled
-        ? "Not enough in the pool."
-        : "Click, then click a friendly " + (entry.domain === "sea" ? "dock" : "city") + ".");
-      button.addEventListener("click", () => {
-        if (entry.refused) {
-          say(entry.refused);
-          return;
-        }
-        buying = entry.kind;
-        selected = null;
-        preview = null;
-        say("Buy " + entry.kind + ": click one of your " + (entry.domain === "sea" ? "docks" : "cities") + ".");
-        renderRoom();
-      });
-      if (buying === entry.kind) button.className += " armed";
-      shop.append(button);
-    }
-    shopEl = shop;
-  }
-
-  roomBox.append(seats, meta, note, actions);
-  if (purseEl) roomBox.append(purseEl);
-  if (shopEl) roomBox.append(shopEl);
   if (!sawRoom && room) {
     // A match that opens below the fold is a match the player does not see open.
     sawRoom = true;
     setTimeout(() => document.getElementById("board")?.scrollIntoView({ block: "center" }), 60);
   }
-  const tools = toolRow(room);
-  if (tools) roomBox.append(tools);
-
-  // What the last rounds actually did. Empty until the clock runs.
-  if (roundLog.length) {
-    const heading = document.createElement("p");
-    heading.className = "logHeading";
-    heading.textContent = "Last rounds";
-    const list = document.createElement("ol");
-    list.className = "roundLog";
-    list.id = "roundLog";
-    roomBox.append(heading, list);
-    paintLog(list);
-  }
+  // Whatever dialogue is open follows the round: a price table that stops updating is a table the
+  // player is reading instead of the game.
+  paintDialog();
 }
 
 // The late kit is a set of decisions, and a decision with no button is not a decision. Each era
@@ -1064,6 +1034,241 @@ function setDebug(on) {
 document.getElementById("debugToggle")?.addEventListener("click", () => setDebug(!debugOpen));
 document.getElementById("debugClose")?.addEventListener("click", () => setDebug(false));
 setDebug(debugOpen);
+
+// ---- the navigation, and the dialogues it opens ---------------------------
+// The original hid these commands behind a menu bar that appeared when the controller entered the
+// strip at the top of the screen. A browser has buttons instead, and one dialogue over the map.
+let openDialogId = null;
+
+function note(text) {
+  const p = document.createElement("p");
+  p.className = "dialogfoot";
+  p.textContent = text;
+  return p;
+}
+
+function cell(text) {
+  const span = document.createElement("span");
+  span.textContent = text;
+  return span;
+}
+
+function definition(dl, label, value) {
+  const dt = document.createElement("dt");
+  dt.textContent = label;
+  const dd = document.createElement("dd");
+  dd.textContent = value;
+  dl.append(dt, dd);
+}
+
+function closeDialog() {
+  if (openDialogId === null) return;
+  openDialogId = null;
+  paintDialog();
+}
+
+function openDialog(id) {
+  if (!room) {
+    say("Start a match first.");
+    return;
+  }
+  openDialogId = openDialogId === id ? null : id;
+  paintDialog();
+}
+
+const DIALOG_PAINTERS = {
+  // The purchase menu, with the original's own columns: what it is, how many you hold, how many you
+  // have seen, what it costs. Arming a row and then clicking your city or dock is the whole order.
+  buy(body) {
+    const rows = buyRows(room);
+    if (!rows.length) {
+      body.append(note("This scenario sells nothing."));
+      return;
+    }
+    const table = document.createElement("div");
+    table.className = "buytable";
+    const head = document.createElement("div");
+    head.className = "buyrow head";
+    head.append(cell("Unit"), cell("Yours"), cell("Seen"), cell("Cost"));
+    table.append(head);
+    for (const row of rows) {
+      const line = document.createElement("button");
+      line.type = "button";
+      line.className = "buyrow" + (buying === row.kind ? " armed" : "");
+      line.append(cell(row.kind), cell(String(row.own)), cell(String(row.known)),
+        cell(row.price === null ? "—" : row.price + "b"));
+      if (row.refused) {
+        line.disabled = true;
+        line.title = row.refused;
+      } else if (!row.affordable) {
+        line.disabled = true;
+        line.title = "Not enough in the pool.";
+      } else {
+        line.title = "Arm this, then click one of your " + (row.domain === "sea" ? "docks" : "cities") + ".";
+        line.addEventListener("click", () => {
+          buying = row.kind;
+          selected = null;
+          preview = null;
+          say("Buy " + row.kind + ": click one of your " + (row.domain === "sea" ? "docks" : "cities") + ".");
+          closeDialog();
+        });
+      }
+      table.append(line);
+    }
+    body.append(table, note("Seen counts only enemy units this seat can see. Prices are the server's."));
+    const untyped = untypedCount(room);
+    if (untyped > 0) {
+      body.append(note(untyped === 1
+        ? "One of your units has no type recorded: it is part of the opening force, whose order of battle was never recovered."
+        : untyped + " of your units have no type recorded: they are part of the opening force, whose order of battle was never recovered."));
+    }
+  },
+
+  // The economy: the pool, when the next payday lands, what it is worth and what is burning. Every
+  // figure here came off the seat the server sent.
+  economy(body) {
+    const model = economyModel(room);
+    const dl = document.createElement("dl");
+    dl.className = "dlgrid";
+    definition(dl, "Pool", model.cash === null ? "unknown" : String(model.cash));
+    definition(dl, "Next payday", model.payIn === null ? "unknown" : "in " + model.payIn + " rounds");
+    definition(dl, "Payday every", model.payEvery === null ? "unknown" : model.payEvery + " rounds");
+    definition(dl, "Payday worth", model.income
+      ? model.income.amount + " · " + model.income.cities + " cities + " + model.income.wells + " oil"
+      : "unknown");
+    definition(dl, "Cities held", String(model.held.city));
+    definition(dl, "Docks held", String(model.held.dock));
+    definition(dl, "Oilfields held", String(model.held.well));
+    definition(dl, "Your units", String(model.units.own));
+    definition(dl, "Enemy units seen", String(model.units.known));
+    body.append(dl);
+    if (model.reserves.length) {
+      const label = document.createElement("p");
+      label.className = "dialoglabels";
+      label.textContent = "Stocks";
+      const list = document.createElement("ul");
+      list.className = "reserves";
+      for (const meter of model.reserves) {
+        const item = document.createElement("li");
+        item.textContent = reserveLine(meter);
+        list.append(item);
+      }
+      body.append(label, list);
+    }
+    body.append(note("One of cash per owned city and per owned oilfield, paid on the payday round. The count is the server's."));
+  },
+
+  kit(body) {
+    const tools = toolRow(room);
+    body.append(tools || note("This scenario has no late-war tools."));
+  },
+
+  map(body) {
+    const group = document.createElement("div");
+    group.className = "dialogbuttons";
+    const act = (label, title, run) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.title = title;
+      button.addEventListener("click", () => {
+        run();
+        paintDialog();
+      });
+      return button;
+    };
+    group.append(
+      act("Zoom in", "Bigger cells (+)", () => zoomStep(1.4)),
+      act("Zoom out", "Smaller cells (-)", () => zoomStep(0.7)),
+      act("Whole world", "Fit the planet (0)", () => refit()),
+      act(viewMode === "political" ? "Terrain" : "Political", "Who holds what (P)",
+        () => setViewMode(viewMode === "political" ? "terrain" : "political")),
+      act(following ? "Stop following" : "Follow piece", "Keep the selected piece centred (F)",
+        () => setFollow(!following)),
+    );
+    const state = document.createElement("p");
+    state.className = "dialogfoot";
+    state.textContent = "cell " + Math.max(1, Math.round((camera ? camera.scale : 1) / dpr())) +
+      " px · " + (following ? "following" : "free") + " · " + viewMode;
+    body.append(group, state);
+  },
+
+  war(body) {
+    const dl = document.createElement("dl");
+    dl.className = "dlgrid";
+    definition(dl, "Blue", room.blue ? (room.blue.kind === "bot" ? "Bot" : room.blue.username) : "—");
+    definition(dl, "Red", room.red ? (room.red.kind === "bot" ? "Bot" : room.red.username) : "—");
+    definition(dl, "You", room.you || "—");
+    definition(dl, "Era", eraName(room.era));
+    definition(dl, "Clock", room.clock || "—");
+    definition(dl, "Round", String(room.round));
+    body.append(dl);
+    const group = document.createElement("div");
+    group.className = "dialogbuttons";
+    const run = document.createElement("button");
+    run.type = "button";
+    run.textContent = room.clock === "running" ? "Hold the clock" : "Run the clock";
+    run.addEventListener("click", () => send({ op: room.clock === "running" ? "hold" : "run" }));
+    const leave = document.createElement("button");
+    leave.type = "button";
+    leave.className = "ghost";
+    leave.textContent = "Leave the match";
+    leave.addEventListener("click", () => send({ op: "leave" }));
+    group.append(run, leave);
+    body.append(group);
+    if (room.note) body.append(note(room.note));
+  },
+
+  log(body) {
+    if (!roundLog.length) {
+      body.append(note("Nothing has happened yet. The clock reports itself here once it runs."));
+      return;
+    }
+    const list = document.createElement("ol");
+    list.className = "roundLog";
+    body.append(list);
+    paintLog(list);
+  },
+};
+
+function paintDialog() {
+  const panel = document.getElementById("dialog");
+  const body = document.getElementById("dialogBody");
+  if (!panel || !body) return;
+  for (const button of document.querySelectorAll(".navbtn")) {
+    button.classList.toggle("armed", button.dataset.dialog === openDialogId);
+  }
+  if (!room) openDialogId = null;
+  if (!openDialogId) {
+    panel.classList.add("hidden");
+    return;
+  }
+  const item = navFor(openDialogId);
+  const painter = DIALOG_PAINTERS[openDialogId];
+  document.getElementById("dialogTitle").textContent = item ? item.title : openDialogId;
+  document.getElementById("dialogHint").textContent = item ? item.hint : "";
+  body.textContent = "";
+  panel.classList.remove("hidden");
+  if (painter) painter(body);
+}
+
+function buildNav() {
+  const box = document.getElementById("nav");
+  if (!box) return;
+  for (const item of NAV) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "navbtn";
+    button.dataset.dialog = item.id;
+    button.textContent = item.label;
+    button.title = item.hint;
+    button.addEventListener("click", () => openDialog(item.id));
+    box.append(button);
+  }
+}
+
+document.getElementById("dialogClose")?.addEventListener("click", closeDialog);
+buildNav();
 
 function connect() {
   // Drop the old socket without letting its close event schedule another reconnect: only the

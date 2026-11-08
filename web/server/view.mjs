@@ -19,6 +19,9 @@ import { metersFor } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing } from "./late.mjs";
+// The payday itself, so the economy dialog shows the figure the tick will pay rather than a page-side
+// copy of the rule.
+import { payoutFor } from "./economy.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -157,6 +160,9 @@ function seatStatus(match, side) {
     reserves: metersFor(match, side),
     payIn,
     payEvery: Number.isFinite(every) && every > 0 ? every : null,
+    // What the next payday is worth, counted by the economy module's own rule: one per owned city
+    // plus one per owned well. The page prints this instead of counting the board itself.
+    income: payoutFor(match, side),
     // The aircraft this seat can fly, with each mission's cost in rounds. It rides the seat so the
     // page shows the same choices the server will accept.
     air: airBriefing(match, side),

@@ -303,7 +303,7 @@ function ownedWells(match, side) {
   return ids;
 }
 
-function payoutFor(match, side) {
+export function payoutFor(match, side) {
   const cities = ownedCities(match, side).size;
   const wells = ownedWells(match, side).size;
   return { cities, wells, amount: cities + wells };
