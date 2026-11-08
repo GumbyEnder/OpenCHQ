@@ -176,6 +176,13 @@ function sizeCanvas() {
   // CSS size fills the box the shell gives it, at the board's aspect: the backing store stays a
   // whole number of device pixels per cell (crisp stems, deterministic camera) while the page shows
   // the map as large as the window allows. `image-rendering: pixelated` keeps the cells square.
+  applyCanvasCss();
+}
+
+// The canvas's on-screen size on its own, because the monitor band appearing or going away changes
+// the box the map may use and that happens after the paint, not before it.
+function applyCanvasCss() {
+  const box = mapBox();
   const fitW = Math.max(SCREEN_W, Math.min(box.availW, Math.round(box.availH * SCREEN_W / SCREEN_H)));
   board.style.width = Math.round(fitW) + "px";
   board.style.height = Math.round(fitW * SCREEN_H / SCREEN_W) + "px";
@@ -344,12 +351,17 @@ function paintChrome(view) {
   const box = document.getElementById("timebox");
   const bar = document.getElementById("timeFill");
   const text = document.getElementById("timeText");
-  if (!box || !bar || !text) return;
+  const chrome = document.getElementById("chrome");
+  if (!box || !bar || !text || !chrome) return;
+  const wasHidden = chrome.classList.contains("hidden");
   if (!room || !room.round) {
-    document.getElementById("chrome").classList.add("hidden");
+    chrome.classList.add("hidden");
+    if (!wasHidden) applyCanvasCss();
     return;
   }
-  document.getElementById("chrome").classList.remove("hidden");
+  chrome.classList.remove("hidden");
+  // The band arriving takes room from the map, and this runs after the canvas was sized.
+  if (wasHidden) applyCanvasCss();
   // The map's width on screen, not its width in the backing store: the canvas is a whole number of
   // device pixels per cell and the browser scales it to the container, so 320*scale would put the
   // band short of the map's right edge.

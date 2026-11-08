@@ -547,6 +547,10 @@ body.in-match .mapstage {
   min-height: 0;
 }
 
+/* The band is a fixed-height strip of the original's screen; it must never be squeezed by the
+   canvas sitting above it in the same flex column. */
+body.in-match .chrome { flex: 0 0 auto; }
+
 body.in-match #board { border-radius: 6px; }
 
 body.in-match .legend {
