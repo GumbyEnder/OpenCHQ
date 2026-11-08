@@ -94,3 +94,25 @@ live behind the Mode Bar at the top of the screen, and moving the controller int
 step still missing. Until the Buy Units screen is captured, per-unit prices, damage per shot, scan
 radii, oil in/out, foreign-aid cost and the entrench bonus stay open - and stay labelled STAND-IN in
 `config/game.json`. No number should be inferred from table shapes in the image.
+
+## The run, scripted and repeated
+
+`local/rea-capture.sh` launches DOSBox on a private display, walks the setup with synthetic keys and
+takes the capture. Reaching the war room is now reproducible rather than a one-off. After `ALT+P` the
+five-digit counter in monitor three advanced 0000 -> 0003, so the clock really runs and the capture is
+of a live game, not a frozen screen.
+
+The Mode Bar resisted synthetic input: pointer to the top strip, a right click, and DOSBox's mouse lock
+(`Ctrl-F10`) all left the bar closed. The one click that landed produced the "UNIT PATH" mode message,
+which means it hit the map rather than the strip. So the purchase menu is still unreached, and the
+numbers behind it are still unmeasured; nothing was inferred to fill them.
+
+The manual, read while the game was up, prints these and they are therefore sources rather than
+stand-ins:
+
+- a nuclear strike costs 10 billion (which is the 10 already in `config/game.json`)
+- most games last 200-300 rounds; a city pays 50 million a round, and the manual prices a city at about
+  15 billion across a game
+- a paradrop costs the infantry 25 per cent of its strength
+- three nukes fired and three absorbed makes a side immune to nukes for the rest of the game
+- a "carrier engaged" warning means an unspotted submarine has been detected in the area
