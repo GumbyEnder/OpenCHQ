@@ -21,6 +21,8 @@ import {
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
+// The shell: the strip a match collapses the navigation into, and the box the map may fill.
+import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -115,21 +117,45 @@ function dpr() {
   return Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1));
 }
 
-const SCREEN_W = 320;
-const SCREEN_H = 136;
+const SCREEN_W = BOARD_W;
+const SCREEN_H = BOARD_H;
+
+// The box the map may occupy. In a match that is what is left of the window after the strip, the
+// monitor band and its own borders; before a match it is the panel's width and a sane share of the
+// height. Measured, not remembered: the match layout is a flex column, so the stage's own rect is
+// the only honest answer to "how much room is there".
+function mapBox() {
+  const stage = document.getElementById("mapStage");
+  const band = document.getElementById("chrome");
+  const bandH = band && !band.classList.contains("hidden")
+    ? Math.round(band.getBoundingClientRect().height)
+    : 60;
+  if (document.body.classList.contains("in-match") && stage) {
+    const rect = stage.getBoundingClientRect();
+    return {
+      availW: Math.max(SCREEN_W, Math.floor(rect.width - 8)),
+      availH: Math.max(SCREEN_H, Math.floor(rect.height - bandH - 8)),
+    };
+  }
+  const width = board.parentElement ? board.parentElement.clientWidth : 640;
+  return {
+    availW: Math.max(SCREEN_W, Math.floor(width - 8)),
+    availH: Math.max(SCREEN_H, Math.floor(window.innerHeight - 300)),
+  };
+}
 
 function sizeCanvas() {
-  const availW = Math.max(SCREEN_W, Math.floor(board.parentElement ? board.parentElement.clientWidth : 640));
+  const box = mapBox();
   // The original's screen is 320x200 with the map in the top 136 rows; the rest of the screen is the
-  // monitor band, which is DOM here. So the canvas is exactly the map, at a whole-pixel cell.
-  const cellsAcross = Math.max(1, Math.min(8, Math.floor(availW / SCREEN_W)));
+  // monitor band, which is DOM here. So the canvas is exactly the map, at a whole-pixel cell - and
+  // at the largest whole-pixel cell that fits both the width and the height, so a match fills the
+  // window instead of leaving the world as an island in a field of black.
+  const cellsAcross = fitCells(box.availW, box.availH);
   const w = Math.round(SCREEN_W * cellsAcross * dpr());
   const h = Math.round(SCREEN_H * cellsAcross * dpr());
   if (board.width !== w || board.height !== h) {
     board.width = w;
     board.height = h;
-    board.style.width = "100%";
-    board.style.height = "auto";
     // A resize is a new viewport. An untouched camera refits to the whole world; a camera the
     // player has zoomed keeps its zoom and stays on the same cell.
     const old = camera;
@@ -145,6 +171,12 @@ function sizeCanvas() {
       camera.top = Math.round(camera.viewH / 2 - midY * camera.scale);
     }
   }
+  // CSS size fills the box the shell gives it, at the board's aspect: the backing store stays a
+  // whole number of device pixels per cell (crisp stems, deterministic camera) while the page shows
+  // the map as large as the window allows. `image-rendering: pixelated` keeps the cells square.
+  const fitW = Math.max(SCREEN_W, Math.min(box.availW, Math.round(box.availH * SCREEN_W / SCREEN_H)));
+  board.style.width = Math.round(fitW) + "px";
+  board.style.height = Math.round(fitW * SCREEN_H / SCREEN_W) + "px";
 }
 
 function viewForCanvas() {
@@ -340,6 +372,11 @@ function tickChrome() {
     roundStartedAt = Date.now();
   }
   paintChrome(camera);
+  // The debug window follows the clock at a readable rate rather than on every frame.
+  if (debugOpen && Date.now() - debugPaintedAt > 250) {
+    debugPaintedAt = Date.now();
+    renderDebug();
+  }
 }
 
 setInterval(tickChrome, 100);
@@ -642,6 +679,22 @@ function renderInvites() {
   }
 }
 
+// The shell changes shape the moment there is a match: the masthead becomes one narrow strip and
+// the map takes the window. The class on <body> is the whole switch; the stylesheet does the rest.
+// A shell change moves the map's box, so the camera is refitted - but only on the transition, or
+// every delta would throw away a camera the player set up.
+function syncShell() {
+  const inMatch = Boolean(room);
+  const changed = document.body.classList.contains("in-match") !== inMatch;
+  if (changed) {
+    document.body.classList.toggle("in-match", inMatch);
+    refit();
+  }
+  const info = document.getElementById("stripInfo");
+  if (info) info.textContent = stripInfo(room);
+  renderDebug();
+}
+
 function seatRow(label, seat, yours) {
   const row = document.createElement("div");
   row.className = "seat " + label.toLowerCase();
@@ -651,6 +704,12 @@ function seatRow(label, seat, yours) {
 }
 
 function renderRoom() {
+  if (document.body.classList.contains("in-match") !== Boolean(room)) syncShell();
+  else {
+    const info = document.getElementById("stripInfo");
+    if (info) info.textContent = stripInfo(room);
+    renderDebug();
+  }
   if (room && room.over) sayResult(room);
   roomBox.className = room ? "" : "room-empty";
   roomBox.textContent = "";
@@ -900,7 +959,97 @@ function showPlay(on) {
   gate.classList.toggle("hidden", on);
   play.classList.toggle("hidden", !on);
   renderAccount();
+  syncShell();
 }
+
+// ---- the debug window ----------------------------------------------------
+// Top right, closed by default, and opened by a button that is always there. It reports what the
+// page has actually been told - the socket's state, the board's provenance, the room's own fields -
+// plus the last frames off the wire, because "the round is not moving" is a wire question first.
+const WIRE_KEEP = 40;
+const wireLog = [];
+let socketState = "closed";
+let debugOpen = false;
+let debugPaintedAt = 0;
+try {
+  debugOpen = localStorage.getItem("openchq.debug") === "1";
+} catch {
+  debugOpen = false;
+}
+
+function wireLabel(message) {
+  if (!message || !message.op) return "?";
+  if (message.op === "delta") return "delta · round " + (message.delta && message.delta.round);
+  if (message.op === "room") return "room · round " + (message.room && message.room.round);
+  if (message.op === "ack") return "ack · " + ((message.events && message.events.length) || 0) + " event(s)";
+  if (message.op === "presence") return "presence · " + ((message.users || []).length) + " online";
+  if (message.op === "route") return "route · " + (message.error ? message.error : (message.rounds + " rounds"));
+  if (message.op === "error") return "error · " + (message.error || message.reason || "");
+  return String(message.op);
+}
+
+function noteWire(text) {
+  wireLog.push(String(text));
+  while (wireLog.length > WIRE_KEEP) wireLog.shift();
+  if (debugOpen) paintWire();
+}
+
+function paintWire() {
+  const list = document.getElementById("debugWire");
+  if (!list) return;
+  list.textContent = "";
+  for (const line of wireLog) {
+    const item = document.createElement("li");
+    item.textContent = line;
+    list.append(item);
+  }
+  list.scrollTop = list.scrollHeight;
+}
+
+function renderDebug() {
+  const panel = document.getElementById("debugPanel");
+  if (!panel || !debugOpen) return;
+  const rows = debugRows({
+    me,
+    socket: socketState,
+    board: {
+      source: boardPayload.source,
+      width: boardPayload.width,
+      height: boardPayload.height,
+      cells: Array.isArray(boardPayload.cells) ? boardPayload.cells.length : 0,
+    },
+    room,
+    camera: camera ? { scale: Math.max(1, Math.round(camera.scale / dpr())), follow: following } : null,
+  });
+  const list = document.getElementById("debugRows");
+  list.textContent = "";
+  for (const [label, value] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    list.append(dt, dd);
+  }
+  paintWire();
+}
+
+function setDebug(on) {
+  debugOpen = Boolean(on);
+  const panel = document.getElementById("debugPanel");
+  const button = document.getElementById("debugToggle");
+  if (panel) panel.classList.toggle("hidden", !debugOpen);
+  if (button) button.setAttribute("aria-expanded", debugOpen ? "true" : "false");
+  try {
+    localStorage.setItem("openchq.debug", debugOpen ? "1" : "0");
+  } catch {
+    // A private window with no storage still gets a debug window.
+  }
+  renderDebug();
+}
+
+document.getElementById("debugToggle")?.addEventListener("click", () => setDebug(!debugOpen));
+document.getElementById("debugClose")?.addEventListener("click", () => setDebug(false));
+setDebug(debugOpen);
 
 function connect() {
   // Drop the old socket without letting its close event schedule another reconnect: only the
@@ -919,6 +1068,7 @@ function connect() {
   const selfSocket = socket;
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
+    noteWire(wireLabel(message));
     if (message.op === "welcome") {
       if (wasReconnecting) {
         // Say it once, then let the board talk: nothing is worse than a stale "reconnecting".
@@ -1007,6 +1157,8 @@ function connect() {
   });
   socket.addEventListener("close", () => {
     if (socket !== selfSocket) return;
+    socketState = "closed";
+    renderDebug();
     // A deploy, a sleeping laptop or a dropped wifi all look the same from here. Reconnect by
     // itself, backing off, and let the welcome message restore the room and its log.
     if (!me) return;
@@ -1026,6 +1178,8 @@ function connect() {
   });
   socket.addEventListener("open", () => {
     reconnectTries = 0;
+    socketState = "open";
+    renderDebug();
   });
 }
 

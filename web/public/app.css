@@ -9,6 +9,7 @@
   --blue: #3d7ec9;
   --red: #c4473a;
   --gold: #d6c07a;
+  --strip: 34px;
 }
 
 * { box-sizing: border-box; }
@@ -48,6 +49,9 @@ body {
 .sub, .fine, .account { color: var(--muted); }
 
 .sub, .account, .fine { margin: 0; }
+
+/* The strip's own line. Empty, and therefore invisible, until a match is up. */
+.stripinfo { display: none; }
 
 h1 {
   margin: 0 0 14px;
@@ -171,12 +175,22 @@ button.ghost {
   opacity: 0.7;
 }
 
+/* The map stage: the canvas and, directly beneath it, the original's monitor band. It is a flex
+   column so the canvas can take every pixel the window has once a match is up. */
+.mapstage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 12px;
+  min-height: 0;
+}
+
 #board {
   width: 100%;
   height: auto;
+  max-width: 100%;
   display: block;
   touch-action: none;
-  margin-top: 12px;
   background: #081018;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -223,6 +237,7 @@ button.ghost {
   border-bottom: 2px solid #555555;
   height: 56px;
   overflow: hidden;
+  align-self: stretch;
 }
 .chrome.hidden { display: none; }
 .timebox {
@@ -292,13 +307,269 @@ button.ghost {
   border-radius: 999px;
   background: #1a2438;
   color: var(--gold);
+  z-index: 70;
+  max-width: min(720px, calc(100% - 32px));
+  text-align: center;
 }
 
 /* ID rules like `#gate { display: grid }` outrank a bare class, so the gate
    stayed visible after sign-in without this. */
 .hidden { display: none !important; }
 
+/* ---- the debug window, top right, closed by default ---------------------- */
+
+.debugtoggle {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: #101a2a;
+  border: 1px solid var(--line);
+  color: #9fb0c6;
+}
+
+.debugtoggle[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: #bfe0ff;
+}
+
+.debugpanel {
+  position: fixed;
+  top: 44px;
+  right: 10px;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  padding: 10px 12px;
+  background: rgba(7, 12, 20, 0.96);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: #cfe0f5;
+  z-index: 65;
+}
+
+.debughead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.debugclose {
+  padding: 0 6px;
+  font-size: 14px;
+  line-height: 1.2;
+  background: transparent;
+  border-color: var(--line);
+}
+
+.debugrows {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 2px 8px;
+  margin: 0;
+}
+
+.debugrows dt { color: var(--muted); }
+.debugrows dd { margin: 0; word-break: break-word; }
+
+.debuglabel {
+  margin: 10px 0 2px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.debugwire {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 150px;
+  overflow: auto;
+  font-size: 11px;
+  color: #9fb0c6;
+}
+
+.debugwire li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- in a match: one narrow strip, and the map owns the window ----------- */
+
+body.in-match {
+  height: 100vh;
+  overflow: hidden;
+}
+
+body.in-match #strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: var(--strip);
+  margin: 0;
+  padding: 0 10px;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(#0d1524, #0a1220);
+  border-bottom: 1px solid var(--line);
+  z-index: 50;
+  /* It arrives rather than appearing, but the motion is opacity only: a keyframe that slides a
+     fixed bar leaves it off-screen wherever CSS animations are throttled (a background tab), and a
+     missing strip is worse than a plain one. */
+  animation: stripfade 180ms ease-out;
+}
+
+@keyframes stripfade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+body.in-match .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+body.in-match .mark {
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+body.in-match .sub,
+body.in-match #passwordBox { display: none; }
+
+body.in-match .stripinfo {
+  display: inline;
+  font-size: 12px;
+  color: #9fb0c6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.in-match .whoami {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 12px;
+}
+
+body.in-match .account { font-size: 12px; }
+
+body.in-match main {
+  width: 100%;
+  margin: 0;
+  height: calc(100vh - var(--strip));
+  padding-top: var(--strip);
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+body.in-match .play {
+  display: flex;
+  grid-template-columns: none;
+  gap: 0;
+  margin: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+/* The lobby is the navigation. In a match it is the strip, so it goes away entirely. */
+body.in-match #lobby { display: none; }
+
+body.in-match .match {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 2px 4px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+body.in-match .matchhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+body.in-match .matchhead h1 { display: none; }
+
+body.in-match #room { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* In a match the strip already says the era, the side, the round and the clock, so the room's own
+   sentences are the same news twice. Keep what the player presses: seats, hold/leave, the purse and
+   the shop. */
+body.in-match #room > p:not(.purse) { display: none; }
+body.in-match #room .seats { display: flex; gap: 6px; margin: 0; }
+body.in-match #room .seat { padding: 2px 8px; font-size: 11px; border-radius: 999px; }
+body.in-match #room p { margin: 0; }
+body.in-match #room .actions { margin: 0; gap: 6px; }
+body.in-match #room .actions button { padding: 2px 9px; font-size: 11px; border-radius: 7px; }
+body.in-match #room .shop { margin: 0; gap: 5px; flex-wrap: nowrap; overflow-x: auto; max-width: 100%; }
+body.in-match #room .shop button { padding: 2px 8px; font-size: 11px; }
+/* The round log is the clock reporting itself, and in a match it belongs over the map rather than in
+   a column above it: every row it takes is a row of the world the player cannot see. */
+body.in-match .logHeading { display: none; }
+body.in-match .roundLog {
+  position: fixed;
+  right: 10px;
+  bottom: 12px;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+  max-height: 96px;
+  overflow: auto;
+  padding: 6px 8px 6px 20px;
+  background: rgba(7, 12, 20, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 11px;
+  z-index: 45;
+}
+
+body.in-match .mapstage {
+  flex: 1 1 auto;
+  justify-content: center;
+  margin-top: 4px;
+  min-height: 0;
+}
+
+body.in-match #board { border-radius: 6px; }
+
+body.in-match .legend {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  font-size: 11px;
+  gap: 4px 10px;
+}
+
+body.in-match #boardNote {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  font-size: 11px;
+}
+
+body.in-match .cam { margin-top: 0; }
+body.in-match .cam button { padding: 1px 8px; }
+body.in-match .alarm { margin: 4px 0 0; padding: 3px 8px; font-size: 12px; }
+
+body.in-match .flash { bottom: 10px; }
+
 @media (max-width: 800px) {
   #gate, .play { grid-template-columns: 1fr; }
   .top { flex-direction: column; align-items: start; }
+  body.in-match .stripinfo { display: none; }
 }

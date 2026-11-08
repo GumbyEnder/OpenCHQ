@@ -7,10 +7,14 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <header class="top">
-    <div>
+  <!-- Before a match this is the page's masthead. Once a match is up the same element becomes the
+       one-row strip at the top of the screen (see body.in-match in app.css): the lobby goes away
+       and the map takes the whole window. -->
+  <header class="top" id="strip">
+    <div class="brand">
       <p class="mark">OpenCHQ</p>
       <p class="sub">Two sides. One map. The server keeps the rules.</p>
+      <span id="stripInfo" class="stripinfo"></span>
     </div>
     <div class="whoami">
       <p id="account" class="account"></p>
@@ -23,8 +27,22 @@
         </form>
         <p class="fine">Changing it ends every other session.</p>
       </details>
+      <button type="button" id="debugToggle" class="debugtoggle" aria-expanded="false"
+              aria-controls="debugPanel" title="Open the debug window">Debug</button>
     </div>
   </header>
+
+  <!-- Top right, closed by default. What the page actually knows, not what it hopes: the socket, the
+       board payload's provenance, the room's own fields, and the last frames off the wire. -->
+  <aside id="debugPanel" class="debugpanel hidden" aria-labelledby="debugTitle">
+    <div class="debughead">
+      <span id="debugTitle">Debug</span>
+      <button type="button" id="debugClose" class="debugclose" title="Close">×</button>
+    </div>
+    <dl id="debugRows" class="debugrows"></dl>
+    <p class="debuglabel">Wire</p>
+    <ol id="debugWire" class="debugwire"></ol>
+  </aside>
 
   <main>
     <section id="gate" class="panel">
@@ -48,7 +66,7 @@
     </section>
 
     <section id="play" class="play hidden">
-      <section class="panel lobby">
+      <section class="panel lobby" id="lobby">
         <h1>Lobby</h1>
         <form id="launch" class="launch">
           <label>Era
@@ -73,25 +91,29 @@
         <div id="invites"></div>
       </section>
 
-      <section class="panel match">
-        <h1>Match</h1>
-        <div id="room" class="room-empty">Start a bot match, or invite someone who is online.</div>
-        <div class="cam">
-          <button type="button" id="camOut" title="Zoom out (-)">-</button>
-          <button type="button" id="camIn" title="Zoom in (+)">+</button>
-          <button type="button" id="camFit" title="Whole map (0)">Fit</button>
-          <button type="button" id="viewToggle" title="Terrain or who holds what (P)">Political</button>
-          <button type="button" id="camFollow" class="armed" title="Follow the selected piece (F)">Follow</button>
-          <span id="camNote" class="fine"></span>
+      <section class="panel match" id="matchPanel">
+        <div class="matchhead">
+          <h1>Match</h1>
+          <div id="room" class="room-empty">Start a bot match, or invite someone who is online.</div>
+          <div class="cam">
+            <button type="button" id="camOut" title="Zoom out (-)">-</button>
+            <button type="button" id="camIn" title="Zoom in (+)">+</button>
+            <button type="button" id="camFit" title="Whole map (0)">Fit</button>
+            <button type="button" id="viewToggle" title="Terrain or who holds what (P)">Political</button>
+            <button type="button" id="camFollow" class="armed" title="Follow the selected piece (F)">Follow</button>
+            <span id="camNote" class="fine"></span>
+          </div>
         </div>
         <p id="alarm" class="alarm hidden" role="alert"></p>
-        <canvas id="board" width="960" height="600"></canvas>
-        <div id="chrome" class="chrome" aria-hidden="true">
-          <div id="timebox" class="timebox">
-            <span id="timeLabel" class="timelabel">TIME LEFT</span>
-            <canvas id="timeLabelArt" class="timelabelart hidden" width="8" height="6"></canvas>
-            <div class="timebar"><i id="timeFill"></i></div>
-            <span id="timeText" class="timetext"></span>
+        <div id="mapStage" class="mapstage">
+          <canvas id="board" width="960" height="600"></canvas>
+          <div id="chrome" class="chrome" aria-hidden="true">
+            <div id="timebox" class="timebox">
+              <span id="timeLabel" class="timelabel">TIME LEFT</span>
+              <canvas id="timeLabelArt" class="timelabelart hidden" width="8" height="6"></canvas>
+              <div class="timebar"><i id="timeFill"></i></div>
+              <span id="timeText" class="timetext"></span>
+            </div>
           </div>
         </div>
         <div id="legend" class="legend" aria-label="Map legend"></div>
