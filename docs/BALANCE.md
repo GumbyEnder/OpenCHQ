@@ -1,5 +1,11 @@
 # Balance: what a real match pays
 
+> **STALE as of T-001 (2026-11-09).** Everything below was measured when a payday came every 25
+> rounds, a city paid 1, oilfields paid cash too, and a unit cost 1–2. The rules now are the 1990
+> manual's: a city pays 50 million every round, wells pay oil and no cash, and units cost 10–20
+> billion (`config/game.json`). The measurements are kept because the method and the board are still
+> right; the numbers are not. Re-run `node local/balance.mjs 1000` before quoting any of it.
+
 Measured, not estimated. `node local/balance.mjs 1000` plays both seats on the same 269-site board
 the lobby opens, with the same `buy` / `issueOrder` / `tickMatch` calls the server makes, and records
 every payday.

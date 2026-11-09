@@ -19,8 +19,9 @@ clicking faster than your opponent.
    costs money and the city goes unready.
 3. Send orders. A piece walks one cell per running round; slow ground and water cost more; the
    incoming path is not a straight line but the sea lanes when you are at sea.
-4. Watch the round tick (`config/game.json` → `roundSeconds`, 5 s today). Income lands every
-   `payEvery` rounds. Fuel burns per side unless a unit stands on a well.
+4. Watch the round tick (`config/game.json` → `roundSeconds`, 5 s today). Every city the side holds
+   pays 50 million (0.05 billion) a round; `payEvery` is 1, so cash rises on every tick. Wells pay
+   oil, never cash. Money is held as integer millions and shown in billions.
 5. Two hostile pieces stop one cell short and trade a shot every other round. No damage number
    exists yet — that is a measured gap, not a design choice.
 6. Hold both capitals to win. A dropped player pauses the game; the room stays and is theirs to
@@ -33,14 +34,18 @@ clicking faster than your opponent.
   (disconnecting only pauses it).
 - The match collapses the page into one 34px strip: era · side · round · clock · pool, then the
   commands Buy, Economy, Air, Kit, Map, War, Log, each opening one dialogue over the map.
-- Buying: pick a unit in Buy, then click where it stands. Land and air go on ground inside the seat's
+- Buying: pick a unit in Buy, then click where it stands. Prices are the 1990 manual's (p.28, matching
+  the executable's table at DS:0x2E16): infantry 10, tank 20, submarine 10, cruiser 10, carrier 20,
+  aircraft 20, recon satellite 10, satellite killer 5, nuke 10, foreign aid 10, intel scan 10, all in
+  billions. Land and air go on ground inside the seat's
   own zone (within `placement.homeZoneCells` of a site it holds, 8 by default); hulls go into coastal
   water within `placement.coastCells` of land (4). The server returns the legal cells and the page
   paints them, so the highlight is the rule.
 - Air: the Air dialogue lists every aircraft with its base and how many rounds it is away, plus one
   button per mission. Aircraft are otherwise only findable by clicking a marker on a world map.
-- A bought unit looks like itself: five-cell silhouettes for infantry, tank, aircraft, ship and
-  submarine once the board is zoomed past the marker scale, and the same shape beside the name in Buy.
+- A bought unit looks like itself: five-cell silhouettes for infantry, tank, aircraft, cruiser,
+  carrier and submarine once the board is zoomed past the marker scale, and the same shape beside the
+  name in Buy.
   Below that zoom the piece is still the original's measured 3x3 block, and an untyped opening piece
   stays a block because the archive never recorded what it was.
 - Strip controls: Play/Pause (the clock), Resign (concede: the other side wins, the room stays so the
@@ -51,8 +56,15 @@ clicking faster than your opponent.
 
 - The server owns the clock, the pieces and the filtered view. The page draws and sends orders.
 - Two sides only. X wraps, Y does not. Wasteland is refused.
-- Numbers the 1990 game never revealed (damage, the real oil rate, the movement ratio, most
-  prices) stay unnamed. `config/game.json` holds the stand-ins the owner accepted.
+- Numbers the 1990 game never revealed (damage, the real oil rate, the movement ratio) stay
+  unnamed. `config/game.json` holds the stand-ins the owner accepted. Prices, city income and the era
+  rosters are no longer stand-ins: they are the manual's, and every one carries its source in
+  `config/game.json` → `sources`.
+- Still labelled UNVERIFIED in config: whether a capital pays like a city (`money.capitalPays` is
+  false and the code has never paid one), which p.28 icon row is the submarine, the cruiser and the
+  carrier, and the concealed era's roster (it uses the 1986 set). `startPool` stays a stand-in: at 9
+  billion a 1942 seat cannot afford the cheapest 10-billion unit until income lands, which is two
+  rounds at 13 cities.
 - Original art, stills and the unpacked executable never reach a browser.
 
 ## Current milestone
