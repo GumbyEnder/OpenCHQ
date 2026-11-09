@@ -8,6 +8,7 @@
 
 import { colorForTerrain, paintBoard, PALETTE, SCHEMATIC, EXTRACT_MISSING } from "./paint.mjs";
 import { textBitmap } from "./font.mjs";
+import { glyphCells, glyphFor } from "./glyphs.mjs";
 
 export const BOARD_W = 320;
 export const BOARD_H = 136;
@@ -440,6 +441,27 @@ export function paintPiece(ctx, piece, view, opts = {}) {
     }
     return at;
   }
+  // A typed unit gets its own silhouette once the board is zoomed. An untyped opening piece keeps
+  // the original's generic block, because the archive never recorded what it was.
+  const glyph = piece.transport === true ? null : glyphFor(piece.kind);
+  if (glyph) {
+    const size = Math.max(1, Math.ceil(view.scale));
+    const ink = Boolean(opts.own) && String(piece.side) === String(opts.own) ? PIECE_INK.own : PIECE_INK.enemy;
+    ctx.fillStyle = pieceColor(piece);
+    for (const cell of glyphCells(piece.x, piece.y, piece.kind, view.boardW || BOARD_W)) {
+      const px = cellToPixel(cell.x, cell.y, view);
+      ctx.fillRect(Math.floor(px.x - view.scale / 2), Math.floor(px.y - view.scale / 2), size, size);
+    }
+    // One hairline around the shape so a dark hull on dark water still reads.
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1;
+    for (const cell of glyphCells(piece.x, piece.y, piece.kind, view.boardW || BOARD_W)) {
+      const px = cellToPixel(cell.x, cell.y, view);
+      ctx.strokeRect(Math.floor(px.x - view.scale / 2) + 0.5, Math.floor(px.y - view.scale / 2) + 0.5, size - 1, size - 1);
+    }
+    return at;
+  }
+
   ctx.fillStyle = pieceColor(piece);
   ctx.beginPath();
   if (shape === "ring") {

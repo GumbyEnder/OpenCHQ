@@ -565,6 +565,14 @@ body.in-match .nav {
 }
 
 .navbtn:hover { background: #16243a; }
+.navbtn.danger { color: #ffb4a8; border-color: #4a2028; }
+.navbtn.danger:hover { background: #3a1418; }
+.navbtn.clockbtn { min-width: 30px; font-size: 13px; }
+.navbtn:disabled { opacity: 0.4; cursor: default; }
+.gamebtns { display: none; gap: 4px; align-items: center; }
+body.in-match .gamebtns { display: flex; }
+.uniticon { width: 15px; height: 15px; image-rendering: pixelated; margin-right: 6px;
+  vertical-align: -2px; }
 .navbtn.armed { border-color: var(--accent); color: #d9fbf7; background: #14343a; }
 
 .dialog {

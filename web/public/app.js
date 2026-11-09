@@ -23,6 +23,8 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
 import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
+// Per-type silhouettes: one shape for the map at zoom, the same shape beside the name in Buy.
+import { glyphDataUrl } from "./glyphs.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -70,9 +72,15 @@ function say(text) {
 // The end of a match said once, in the player's own terms.
 function sayResult(room) {
   if (!room || !room.over) return;
+  // The server writes the sentence that ended the game: a resignation and a capital win are not the
+  // same loss, and the page must not flatten both into "the enemy holds both capitals".
   const mine = room.you || (room.seat && room.seat.side);
-  say(room.winner && mine ? (room.winner === mine ? "You have won. Both capitals." : "The enemy holds both capitals.")
-    : "The match is over.");
+  const note = typeof room.note === "string" ? room.note.trim() : "";
+  if (note) {
+    say(note);
+    return;
+  }
+  say(room.winner && mine ? (room.winner === mine ? "You have won." : "You lost.") : "The match is over.");
 }
 
 function eraName(era) {
@@ -713,7 +721,47 @@ function renderInvites() {
 // the map takes the window. The class on <body> is the whole switch; the stylesheet does the rest.
 // A shell change moves the map's box, so the camera is refitted - but only on the transition, or
 // every delta would throw away a camera the player set up.
+// Play/Pause, Resign, New and Quit. The clock button mirrors the room's own state, so it cannot say
+// "pause" while the server is running the clock. The three game commands are destructive, so each
+// asks once before sending.
+const clockBtn = document.getElementById("clockBtn");
+const resignBtn = document.getElementById("resignBtn");
+const newBtn = document.getElementById("newBtn");
+const quitBtn = document.getElementById("quitBtn");
+
+function syncGameButtons() {
+  const running = Boolean(room && room.clock === "running");
+  if (clockBtn) {
+    clockBtn.textContent = running ? "\u275A\u275A" : "\u25B6";
+    clockBtn.setAttribute("aria-pressed", running ? "true" : "false");
+    clockBtn.title = running ? "Pause the clock" : "Play the clock";
+  }
+  for (const button of [resignBtn, newBtn, quitBtn]) if (button) button.disabled = !room;
+}
+
+clockBtn?.addEventListener("click", () => {
+  if (!room) return;
+  send({ op: room.clock === "running" ? "hold" : "run" });
+});
+resignBtn?.addEventListener("click", () => {
+  if (!room) return;
+  if (!confirm("Resign this game? The other side wins.")) return;
+  send({ op: "resign" });
+});
+newBtn?.addEventListener("click", () => {
+  if (!room) return;
+  if (!confirm("Start a new game? This one is abandoned.")) return;
+  send({ op: "newgame" });
+});
+quitBtn?.addEventListener("click", () => {
+  if (!room) return;
+  if (!confirm("Quit this game and return to the lobby? It is not kept.")) return;
+  send({ op: "quit" });
+});
+
 function syncShell() {
+  // Called on every room frame: the strip's purse moves when a purchase lands, and the refit inside
+  // only runs on the in-match transition.
   const inMatch = Boolean(room);
   const changed = document.body.classList.contains("in-match") !== inMatch;
   if (changed) {
@@ -726,6 +774,7 @@ function syncShell() {
   // see without opening anything.
   const purse = document.getElementById("purseChip");
   if (purse) purse.textContent = room && room.seat ? purseText(room.seat) : "";
+  syncGameButtons();
   renderDebug();
   paintDialog();
 }
@@ -739,6 +788,10 @@ function seatRow(label, seat, yours) {
 }
 
 function renderRoom() {
+  // The strip's numbers and the clock button follow every room frame, not only the frame that enters
+  // or leaves a match: a purchase changes the purse, and a run/hold changes the button.
+  syncShell();
+  syncGameButtons();
   if (document.body.classList.contains("in-match") !== Boolean(room)) syncShell();
   else {
     const info = document.getElementById("stripInfo");
@@ -1099,7 +1152,13 @@ const DIALOG_PAINTERS = {
       const line = document.createElement("button");
       line.type = "button";
       line.className = "buyrow" + (buying === row.kind ? " armed" : "");
-      line.append(cell(row.kind), cell(String(row.own)), cell(String(row.known)),
+      const name = cell("");
+      const icon = document.createElement("img");
+      icon.className = "uniticon";
+      icon.alt = "";
+      icon.src = glyphDataUrl(row.kind, "#bfe3ff");
+      name.append(icon, document.createTextNode(row.kind));
+      line.append(name, cell(String(row.own)), cell(String(row.known)),
         cell(row.price === null ? "—" : row.price + "b"));
       if (row.refused) {
         line.disabled = true;
@@ -1298,7 +1357,16 @@ function paintDialog() {
   document.getElementById("dialogHint").textContent = item ? item.hint : "";
   body.textContent = "";
   panel.classList.remove("hidden");
-  if (painter) painter(body);
+  if (!painter) return;
+  // A dialogue that throws used to leave an empty panel with no explanation. Draw the failure instead:
+  // the player gets a sentence, and the console keeps the stack.
+  try {
+    painter(body);
+  } catch (err) {
+    body.textContent = "";
+    body.append(note("This panel failed to draw: " + (err && err.message ? err.message : String(err))));
+    throw err;
+  }
 }
 
 function buildNav() {

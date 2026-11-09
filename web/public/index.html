@@ -19,7 +19,14 @@
     </div>
     <!-- The original's commands lived behind a hidden menu bar. Here they are the strip's buttons and
          each opens a dialogue over the map (see dialogs.mjs). -->
+    <button type="button" id="clockBtn" class="navbtn clockbtn" aria-pressed="false"
+            title="Play or pause the clock">&#9654;</button>
     <nav id="nav" class="nav" aria-label="Match commands"></nav>
+    <div class="gamebtns">
+      <button type="button" id="resignBtn" class="navbtn danger" title="Concede: the other side wins">Resign</button>
+      <button type="button" id="newBtn" class="navbtn" title="Abandon this game and start a new one, same era and side">New</button>
+      <button type="button" id="quitBtn" class="navbtn" title="Leave this game and return to the lobby">Quit</button>
+    </div>
     <div class="whoami">
       <p id="account" class="account"></p>
       <details id="passwordBox" class="passwordBox">

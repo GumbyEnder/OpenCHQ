@@ -39,6 +39,13 @@ clicking faster than your opponent.
   paints them, so the highlight is the rule.
 - Air: the Air dialogue lists every aircraft with its base and how many rounds it is away, plus one
   button per mission. Aircraft are otherwise only findable by clicking a marker on a world map.
+- A bought unit looks like itself: five-cell silhouettes for infantry, tank, aircraft, ship and
+  submarine once the board is zoomed past the marker scale, and the same shape beside the name in Buy.
+  Below that zoom the piece is still the original's measured 3x3 block, and an untyped opening piece
+  stays a block because the archive never recorded what it was.
+- Strip controls: Play/Pause (the clock), Resign (concede: the other side wins, the room stays so the
+  result can be read), New (abandon this game, start a fresh one in the same era and side), Quit
+  (leave to the lobby). Each destructive one asks once.
 
 ## Rules that are not negotiable
 

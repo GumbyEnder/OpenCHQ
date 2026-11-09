@@ -380,6 +380,37 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // Resigning is a loss with a name: the other side wins, the clock stops, and the room stays so the
+  // result can be read. It is not `leave`, which throws the game away without a winner.
+  function resignOp(username) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    if (room.match.over) return { error: "The match is already over." };
+    const other = mine === "blue" ? "red" : "blue";
+    room.match.over = true;
+    room.match.winner = other;
+    room.clock = "held";
+    room.match.clock = "held";
+    room.note = username + " resigned. " + other + " wins.";
+    saveRoom(room);
+    tellRoom(room);
+    return { ok: true };
+  }
+
+  // A new game in the same era on the same side. The old room is closed for good: a player asking for
+  // a new game is done with the old one, and two live rooms for one seat is how a seat gets torn.
+  function newGameOp(username) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const era = room.era;
+    endRoom(room, username + " started a new game.");
+    return startBot(username, era, mine);
+  }
+
   function startBot(username, era, side) {
     if (seatOf.has(username)) return { error: "Leave the current match first." };
     const mine = sideOf(side);
@@ -811,6 +842,9 @@ export function createLobby() {
       return { ok: true, on: verbose.has(username) };
     }
     if (op === "leave") return leave(username);
+    if (op === "quit") return leave(username);
+    if (op === "resign") return resignOp(username);
+    if (op === "newgame") return newGameOp(username);
     return { error: "Unknown request." };
   }
 
