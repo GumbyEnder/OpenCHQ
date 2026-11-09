@@ -4,7 +4,7 @@
 // and cannot touch the harness database, then asserts the numbers the probe printed. The
 // probe ticks real matches and stores them with rooms.saveRoom; nothing here is a stand-in.
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,15 +14,16 @@ export const name = "load_test";
 
 export function run() {
   let output = "";
-  try {
-    output = execFileSync(process.execPath, ["tools/bench-rooms.mjs", "1000", "8"], {
-      cwd: root,
-      encoding: "utf8",
-      timeout: 180000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (err) {
-    const text = String((err && (err.stdout || err.message)) || err);
+  const bench = spawnSync(process.execPath, ["tools/bench-rooms.mjs", "1000", "8"], {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 180000,
+  });
+  output = String(bench.stdout || "");
+  // The probe exits 1 on a capacity failure but still prints BENCH_JSON, so keep the numbers:
+  // that lets the assertions below name the exact budget instead of dying on the exit code.
+  if (!output.split("\n").some((row) => row.startsWith("BENCH_JSON "))) {
+    const text = String(bench.stderr || bench.error || "exit " + bench.status);
     throw new Error("bench-rooms failed: " + text.trim().split("\n").slice(-3).join(" | "));
   }
 
@@ -39,8 +40,9 @@ export function run() {
   console.log(
     `load_test: headroom floor ${floor}x, measured tick ${report.tickHeadroom}x / round ${report.roundHeadroom}x`
   );
+  const budgetS = Number(report.budgetMs) > 0 ? (Number(report.budgetMs) / 1000).toFixed(2) : "the";
   if (!(report.tickHeadroom > floor)) {
-    throw new Error("tick headroom " + report.tickHeadroom + "x, need >" + floor + "x inside the 0.14 s round");
+    throw new Error("tick headroom " + report.tickHeadroom + "x, need >" + floor + "x inside the " + budgetS + " s round");
   }
   if (!(report.roundHeadroom > floor)) {
     throw new Error("round headroom " + report.roundHeadroom + "x, need >" + floor + "x including the store slice");
