@@ -209,6 +209,7 @@ export async function run(ctx) {
       eq(one.cashWells, 0, "round " + round + " wells pay no cash");
     }
     eq(tenth.sides.blue.cash, 1500, "3 cities + 2 wells over 10 rounds is exactly 1.5 billion");
+    console.log("criterion 4 ok: 3 cities + 2 wells, 10 rounds, cash 0 -> 1500 million; each event 150 (0.15b), wells 0 in cash");
   }
 
   // ---- income: a base and a capital pay nothing while capitalPays is false (criterion 6) ---
@@ -226,6 +227,7 @@ export async function run(ctx) {
       pay(quiet);
     }
     eq(quiet.sides.blue.cash, 0, "a base and a capital paid cash while capitalPays is false");
+    console.log("criterion 6 ok: a base + a capital held 10 rounds add 0 while capitalPays is false");
   }
 
   // ---- income: a finished match pays nothing -------------------------------------------
@@ -276,6 +278,7 @@ export async function run(ctx) {
     eq(wellOnly.sides.blue.cash, 1000, "owning a well for 10 rounds changed cash");
     must(wellOnly.sides.blue.fuel > 100, "a held well did not refill oil: " + wellOnly.sides.blue.fuel);
     eq(wellOnly.sides.blue.fuel, Number(resourceSpec("fuel").reserve), "a well refilled the reserve");
+    console.log("criterion 5 ok: a held well for 10 rounds left cash at 1000 and refilled fuel to the reserve");
   }
 
   // ---- oil: standing on a red well flips its owner to blue ----------------------------

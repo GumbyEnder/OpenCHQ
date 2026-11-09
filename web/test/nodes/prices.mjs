@@ -68,6 +68,7 @@ export async function run(ctx) {
   }
   eq(priceOf("tank"), 2 * priceOf("infantry"), "a tank is twice an infantry (Manual p.22)");
   eq(priceOf("nuke"), 10 * factor, "a nuke is 10 billion (Manual p.30, p.28)");
+  console.log("criteria 1-2 ok: 11 prices in millions match the p.28 column; tank = 2x infantry; nuke = 10b");
 
   // ---- 3: the generic ship kind is gone -----------------------------------------------
   if (priceOf("ship") !== undefined) fail("priceOf(\"ship\") still answers: the generic kind is gone");
@@ -79,6 +80,7 @@ export async function run(ctx) {
     threw = true;
   }
   if (threw) fail("priceOf must answer undefined for an unknown kind, not throw");
+  console.log("criterion 3 ok: priceOf(ship) is undefined; the generic kind is gone");
 
   // ---- 8: config carries a source for every price and for income ---------------------
   const sources = rules().sources || {};
@@ -98,6 +100,7 @@ export async function run(ctx) {
   if (!/Manual p\.27/.test(String(sourceOf("cityIncome")))) fail("cityIncome has no Manual p.27 source");
   if (String(sourceOf("capitalPays")) !== "UNVERIFIED") fail("capitalPays must be labelled UNVERIFIED");
   eq(cityIncome(), 50, "a city pays 50 million a round (Manual p.27)");
+  console.log("criterion 8 ok: every price, payEvery and cityIncome carries its source; sub/cruiser/carrier carry the p.28 icon-row UNVERIFIED label; capitalPays is UNVERIFIED");
 
   // ---- 9: no money literal outside config ---------------------------------------------
   const offenders = [];
@@ -113,6 +116,7 @@ export async function run(ctx) {
     });
   }
   if (offenders.length) fail("money literals outside config/game.json:\n" + offenders.join("\n"));
+  console.log("criterion 9 ok: no price or income literal in web/server or web/public outside config/game.json");
 
   // ---- 10: no "ship" unit kind outside migration code ---------------------------------
   const ships = [];
@@ -128,6 +132,7 @@ export async function run(ctx) {
     });
   }
   if (ships.length) fail("a \"ship\" unit kind survives outside migration code:\n" + ships.join("\n"));
+  console.log("criterion 10 ok: no ship unit kind anywhere in web/ outside web/server/migrate.mjs");
 
   // ---- 12: an old save's ship becomes a cruiser, and money scales once ----------------
   const old = migrateMatch({
@@ -143,4 +148,5 @@ export async function run(ctx) {
   eq(old.sides.red.cash, 40 * factor, "old billions scale to millions");
   const again = migrateMatch(old);
   eq(again.sides.blue.cash, 9 * factor, "a row already in millions is never scaled twice");
+  console.log("criterion 12 ok: an old save ship loads as a cruiser, its cash scales once, infantry untouched");
 }
