@@ -11,7 +11,8 @@ the lobby opens, with the same `buy` / `issueOrder` / `tickMatch` calls the serv
 every payday.
 
 Board: 269 sites — 62 cities, 2 capitals, 35 oilfields, 20 facilities, 150 docks.
-Round: 5 s. Payday: every 25 rounds (2.1 min). Prices: infantry 1, tank 2, ship 2, nuke 10.
+Round: 5 s. Payday: every 25 rounds (2.1 min). Prices: infantry 1, tank 2, generic ship 2, nuke 10.
+(Both the payday and the price list above are the pre-T-001 stand-ins; see the banner.)
 
 ## The measurement
 
@@ -93,5 +94,6 @@ The real problem is the **slope**, not the shape:
    a new rule, so it needs the owner's agreement and another measurement — not a quiet constant in
    the config.
 
-Nothing above is applied. `incomeCurve` is `flat`, `payEvery` is still 25, and every number in this
-file is reproducible with one command.
+Items 1–2 above are superseded by T-001: the price table is the manual's, and `payEvery` is 1 with a
+city paying 50 million. Items 3–4 still stand. Every measurement in this file is reproducible with
+one command, but it will not resemble the current rules until `local/balance.mjs` is re-run.

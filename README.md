@@ -1,6 +1,6 @@
 # OpenCHQ
 
-OpenCHQ is a world-map strategy game for two sides. Each side starts with a land piece at its capital and a ship at sea. The side that holds every capital wins.
+OpenCHQ is a world-map strategy game for two sides. Each side starts with a land piece at its capital and a cruiser at sea. The side that holds every capital wins.
 
 It follows the tradition of Danielle Bunten Berry's 1990 design. This project is independent of that game and of its rights holders, and it does not use that name or logo. The game runs in a web browser.
 
@@ -32,7 +32,7 @@ The directory needs `data/sites.json`, `data/tmap.bin`, `data/map_res.json`, `da
 
 You pick an era and a side before the map appears. The eras are 1918, 1942, 1986, 2023, and a concealed start labeled ????. Blue's capital is Washington. Red's capital is Moscow. You command the side you picked. In a named era the other side is on the map and marches on your capital. In the concealed start they stay hidden until you find their capital.
 
-Start opens the purchase screen on the map. Your land piece and your ship are already placed. You may add units before the first turn. Land and aircraft go in a friendly city. Ships go on a dock beside one. Begin starts the match.
+Start opens the purchase screen on the map. Your land piece and your cruiser are already placed. You may add units before the first turn. Land and aircraft go in a friendly city. Ships go on a dock beside one. Begin starts the match.
 
 Time starts held, so an order waits. Run starts the turns. Pause and Resume stop and continue them. Keys T and P do the same. The turn counter advances once each turn. One running speed only.
 

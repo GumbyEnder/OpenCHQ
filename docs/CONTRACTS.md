@@ -30,7 +30,7 @@ match = {
     id: "blue:land" | "red:sea" | <generated>,
     side: "blue"|"red",
     domain: "land"|"sea",
-    kind: "infantry"|"tank"|"ship"|"submarine"|"aircraft"|null, // null = archive opening piece
+    kind: "infantry"|"tank"|"cruiser"|"carrier"|"submarine"|"aircraft"|null, // null = archive opening piece; saved "ship" loads as "cruiser"
     x, y,                                  // integers, 0..319 and 0..135
     path: [{x,y,pace}],                    // remaining steps, [] when idle
     pace: 1|2,                             // ticks this piece still owes on its current step
