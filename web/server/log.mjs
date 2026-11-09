@@ -9,6 +9,7 @@
 
 import { CELL_W } from "./board.mjs";
 import { payEvery, sightCells } from "./rules.mjs";
+import { resourceSpec } from "./resources.mjs";
 import { forSeat } from "./view.mjs";
 
 const SIDES = ["blue", "red"];
@@ -162,9 +163,16 @@ export function logLines(match, side, events, round) {
         break;
       case "retired":
         break;
-      case "dry":
-        if (mine) push("out of fuel: units are not moving");
+      case "dry": {
+        // Name the resource that actually ran out. Saying "out of fuel" when the steel meter
+        // emptied sent the owner looking at a fuel figure that was still 9,900.
+        if (!mine) break;
+        const kind = String(event.kind || "fuel");
+        const spec = resourceSpec(kind);
+        const stops = !spec || spec.blocksMovement !== false;
+        push("out of " + kind + (stops ? ": units are not moving" : ""));
         break;
+      }
       case "refuel":
         if (mine) push("refuelled");
         break;

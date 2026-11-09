@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { boardPayload, fontPayload, resolveDataRoot } from "../web/server/board.mjs";
+import { laneGraph } from "../web/server/lanes.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.resolve(here, "..");
@@ -60,6 +61,12 @@ for (const file of sourceFiles) {
   }
 }
 
+const lanes = laneGraph(root);
+if (lanes.error) {
+  console.error("BAKE_FAILED: the lane table did not decode: " + lanes.error);
+  process.exit(1);
+}
+
 const world = {
   _meta: {
     what: "Derived board: terrain codes, sites and wells, read from the extract by tools/bake_world.mjs",
@@ -79,6 +86,15 @@ const world = {
   wells: board.wells,
   runEncoding: "terrain:[code,count]* for width*height cells, row-major",
   terrainRuns: runs(board.cells),
+  // The recovered sea-lane table, as plain numbers. The public host has no executable to read,
+  // so without this every ship order answers "No sea lane reaches that cell".
+  lanes: {
+    _what: "151 lane waypoints and their directed edges, decoded from the archive by tools/bake_world.mjs",
+    count: lanes.count,
+    edgeCount: lanes.edgeCount,
+    waypoints: lanes.waypoints,
+    adjacency: lanes.adjacency,
+  },
 };
 
 mkdirSync(outDir, { recursive: true });

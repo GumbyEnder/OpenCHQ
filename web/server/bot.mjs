@@ -14,7 +14,9 @@
 import { CELL_H, CELL_W, boardPayload, resolveDataRoot } from "./board.mjs";
 import { laneGraph, seaRoute } from "./lanes.mjs";
 import { issueOrder, wrapDelta, wrapX } from "./move.mjs";
-import { isRefused } from "./rules.mjs";
+import { isRefused, priceOf } from "./rules.mjs";
+import { buy, seedOwners } from "./economy.mjs";
+import { placementMask } from "./placement.mjs";
 
 const SIDES = new Set(["blue", "red"]);
 
@@ -217,6 +219,73 @@ export function marchOne(match, side, piece, capital, events) {
   events.push(note(side, piece.id, last));
 }
 
+// A bot that only ever moves its opening two pieces is a bot a reviewer cannot see acting, and
+// it can never press an advantage. It buys when it can afford to, up to this many pieces, and
+// every purchase is reported as a bot_buy event so the server log and the owner's debug view
+// both show it.
+const BOT_UNIT_CAP = 6;
+
+function botBuy(match, side, events) {
+  const seat = match.sides && match.sides[side];
+  if (!seat) return;
+  const mine = (match.pieces || []).filter((piece) => piece && piece.side === side);
+  if (mine.length >= BOT_UNIT_CAP) return;
+  const price = priceOf("infantry");
+  if (!Number.isFinite(price) || !Number.isFinite(seat.cash) || seat.cash < price) return;
+
+  let board;
+  try {
+    board = boardPayload();
+  } catch {
+    return;
+  }
+  // Ownership is what placement reads, and the economy seeds it lazily.
+  try {
+    seedOwners(match);
+  } catch {
+    return;
+  }
+  let mask;
+  try {
+    mask = placementMask(match, side, "infantry", board);
+  } catch {
+    return;
+  }
+  if (mask.error || !mask.mask) return;
+
+  // Prefer a cell near a site this side holds, so the new unit joins the war rather than
+  // appearing in a corner.
+  const sites = (match.sites || []).filter((site) => site && site.owner === side);
+  let target = null;
+  let best = Infinity;
+  for (let id = 0; id < mask.mask.length; id++) {
+    if (!mask.mask[id]) continue;
+    const x = id % CELL_W;
+    const y = (id - x) / CELL_W;
+    let gap = 0;
+    for (const site of sites) {
+      const dx = Math.abs(Number(site.x) - x);
+      gap = Math.max(Math.min(dx, CELL_W - dx), Math.abs(Number(site.y) - y));
+      if (gap < best) {
+        best = gap;
+        target = { x, y };
+      }
+    }
+    if (!sites.length && !target) target = { x, y };
+  }
+  if (!target) return;
+
+  let bought;
+  try {
+    bought = buy(match, side, "infantry", target.x, target.y, board);
+  } catch {
+    return;
+  }
+  if (bought && bought.ok) {
+    events.push({ type: "bot_buy", side, kind: "infantry", at: { x: bought.piece.x, y: bought.piece.y }, pieceId: bought.piece.id });
+  }
+}
+
 export function ordersFor(match, side) {
   const events = [];
   if (!match || !SIDES.has(side)) return events;
@@ -233,6 +302,8 @@ export function ordersFor(match, side) {
   if (!capital || !Number.isInteger(capital.x) || !Number.isInteger(capital.y)) return events;
 
   const mine = match.pieces.filter((piece) => piece && piece.side === side);
+  // Reinforce first, so a unit bought this round can march this round.
+  botBuy(match, side, events);
   // One focus for the whole army: a weak point of the enemy line once there is contact, the
   // capital until then.
   const focus = focusTarget(match, side, foe, capital);

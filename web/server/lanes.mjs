@@ -13,6 +13,8 @@
 
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { boardPayload } from "./board.mjs";
 
 export const WAYPOINT_COUNT = 151;
 export const GROUP_COUNT = 27;
@@ -64,11 +66,54 @@ function emptyGraph(error) {
   return { waypoints: [], edges: [], adjacency: [], count: 0, error };
 }
 
+const here = path.dirname(fileURLToPath(import.meta.url));
+const bundledWorldFile = path.resolve(here, "..", "data", "world.json");
+
+// The public host has no extract, so the lane tables cannot be read there. tools/bake_world.mjs
+// writes the decoded waypoints and edges into web/data/world.json for exactly that host. The
+// table is still a derivation of ours, never the executable.
+function bundledGraph(error) {
+  if (!existsSync(bundledWorldFile)) return emptyGraph(error || "no bundled lane table");
+  let world;
+  try {
+    world = JSON.parse(readFileSync(bundledWorldFile, "utf8"));
+  } catch (err) {
+    return emptyGraph("cannot read the baked world: " + err.message);
+  }
+  const lanes = world && world.lanes;
+  if (!lanes || !Array.isArray(lanes.waypoints) || !Array.isArray(lanes.adjacency)) {
+    return emptyGraph(error || "the baked world carries no lane table");
+  }
+  const waypoints = lanes.waypoints.map((point) => ({ x: Number(point.x), y: Number(point.y) }));
+  const adjacency = lanes.adjacency.map((row) => (Array.isArray(row) ? row.map(Number) : []));
+  const edges = [];
+  for (let a = 0; a < adjacency.length; a++) {
+    for (const b of adjacency[a]) edges.push({ a, b });
+  }
+  return {
+    waypoints,
+    edges,
+    adjacency,
+    count: waypoints.length,
+    edgeCount: edges.length,
+    source: "bundled",
+    error: "",
+  };
+}
+
 // Reads the waypoint tables once and caches the result per data root.
 export function laneGraph(dataRoot) {
   const key = String(dataRoot || "");
   const hit = graphCache.get(key);
   if (hit) return hit;
+
+  // No data root means the public host: play the baked lane table instead of refusing every
+  // sea order. An explicit root that does not exist still fails, so a broken install is loud.
+  if (key === "") {
+    const baked = bundledGraph("no CHQ_unpacked.EXE under (no data root)");
+    graphCache.set(key, baked);
+    return baked;
+  }
 
   const exe = findExe(key);
   if (!exe) {
@@ -232,7 +277,17 @@ function terrainRow(dataRoot, y) {
 
 function cellId(dataRoot, x, y) {
   const rows = terrainRow(dataRoot, y);
-  if (!rows) return null;
+  if (!rows) {
+    // No tmap.bin (the public host): the baked board carries the same terrain codes.
+    try {
+      const cells = boardPayload().cells;
+      if (!Array.isArray(cells)) return null;
+      const cx = ((Math.trunc(x) % CELL_W) + CELL_W) % CELL_W;
+      return cells[y * CELL_W + cx] ?? null;
+    } catch {
+      return null;
+    }
+  }
   const cx = ((Math.trunc(x) % CELL_W) + CELL_W) % CELL_W;
   const value = rows[y * TERRAIN_STRIDE + (cx >> 1)];
   return cx % 2 === 0 ? (value >> 4) & 0x0f : value & 0x0f;
@@ -260,17 +315,24 @@ function laneCost(a, b) {
   return Math.max(wrapX(b.x - a.x), Math.abs(b.y - a.y));
 }
 
-function nearestWaypoint(graph, target) {
+function nearestWaypoint(graph, target, accept = null) {
   let best = -1;
   let bestCost = Infinity;
+  let fallback = -1;
+  let fallbackCost = Infinity;
   for (let i = 0; i < graph.waypoints.length; i++) {
     const cost = laneCost(graph.waypoints[i], target);
+    if (cost < fallbackCost) {
+      fallbackCost = cost;
+      fallback = i;
+    }
+    if (accept && !accept(i)) continue;
     if (cost < bestCost) {
       bestCost = cost;
       best = i;
     }
   }
-  return best;
+  return best >= 0 ? best : fallback;
 }
 
 function shortestChain(graph, start, goal) {
@@ -323,6 +385,9 @@ export function seaRoute(dataRoot, from, to) {
   // lane graph, not the terrain map, decides where the sea legs run.
   const startTerrain = cellId(dataRoot, start.x, start.y);
   const endTerrain = cellId(dataRoot, end.x, end.y);
+  // A lake is water the sea lanes never reach: it is the cut-off case the page is allowed to
+  // refuse. Only sea water (ocean, docks, shallows) may be an endpoint.
+  if (startTerrain === 3 || endTerrain === 3) return null;
   if (startTerrain !== null && endTerrain !== null &&
     !isWater(startTerrain) && !isWater(endTerrain)) {
     return null;
@@ -331,8 +396,8 @@ export function seaRoute(dataRoot, from, to) {
   const graph = laneGraph(dataRoot);
   if (graph.error || !graph.waypoints.length) return null;
 
-  const startIndex = nearestWaypoint(graph, start);
-  const goalIndex = nearestWaypoint(graph, end);
+  const startIndex = nearestWaypoint(graph, start, (i) => isWater(cellId(dataRoot, graph.waypoints[i].x, graph.waypoints[i].y)));
+  const goalIndex = nearestWaypoint(graph, end, (i) => isWater(cellId(dataRoot, graph.waypoints[i].x, graph.waypoints[i].y)));
   if (startIndex < 0 || goalIndex < 0) return null;
 
   let legs;
@@ -343,11 +408,20 @@ export function seaRoute(dataRoot, from, to) {
     if (!legs) return null;
   }
 
+  // A lane step has to be water. Some of the recovered waypoints sit on a cell the terrain map
+  // paints as ground (the archive's lanes are coarser than its terrain); return those waypoints
+  // only as a last resort, because a ship cannot stand on them.
+  const wet = legs.filter((index) => isWater(cellId(dataRoot, graph.waypoints[index].x, graph.waypoints[index].y)));
+  const usable = wet.length >= 2 ? wet : legs;
+
   const steps = [{ x: start.x, y: start.y }];
-  for (const index of legs) {
+  const seen = new Set([start.x + "," + start.y]);
+  for (const index of usable) {
     const wp = graph.waypoints[index];
-    const last = steps[steps.length - 1];
-    if (wp.x !== last.x || wp.y !== last.y) steps.push({ x: wp.x, y: wp.y });
+    const key = wp.x + "," + wp.y;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    steps.push({ x: wp.x, y: wp.y });
   }
   const last = steps[steps.length - 1];
   if (last.x !== end.x || last.y !== end.y) steps.push({ x: end.x, y: end.y });

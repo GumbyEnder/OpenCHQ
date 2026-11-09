@@ -17,6 +17,7 @@
 
 import { boardPayload } from "./board.mjs";
 import { db } from "./db.mjs";
+import { migrateMatch } from "./migrate.mjs";
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS rooms (
@@ -93,14 +94,18 @@ function packMatch(match) {
     if (SIDES.includes(site.owner)) siteOwners[site.owner].push(site.id);
     if (site.unready) sitesUnready.push(site.id);
   }
-  return { ...rest, siteOwners, sitesUnready };
+  return { ...rest, siteOwners, sitesUnready, moneyUnit: "millions" };
 }
 
+// Rows written before T-001 stored cash in whole billions and could carry the generic "ship"
+// kind. migrate.mjs owns that migration; unpack runs it on every load.
+
 // Rebuild the full site list from the board, then apply the ownership the row recorded.
-// A row written before this format (a plain sites array) is passed through untouched.
-function unpackMatch(packed) {
+// A row written before this format (a plain sites array) is passed through untouched, but is
+// still migrated for unit kinds and the money scale.
+export function unpackMatch(packed) {
   if (!packed || typeof packed !== "object") return null;
-  if (!packed.siteOwners && Array.isArray(packed.sites)) return { ...packed };
+  if (!packed.siteOwners && Array.isArray(packed.sites)) return migrateMatch({ ...packed });
   const { siteOwners, sitesUnready, sites, ...rest } = packed;
   const owners = new Map();
   for (const side of SIDES) {
@@ -116,7 +121,7 @@ function unpackMatch(packed) {
       ...(unready.has(key) ? { unready: true } : {}),
     });
   }
-  return { ...rest, sites: rebuilt };
+  return migrateMatch({ ...rest, sites: rebuilt });
 }
 
 // The row keeps the seats and anything the match will need. It is JSON so the match shape

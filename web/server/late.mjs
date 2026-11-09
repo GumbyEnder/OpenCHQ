@@ -7,9 +7,9 @@
 // default and, when enabled, still deals no damage. The only tool that changes the board is
 // foreign aid, and the archive's own note says it flips a city's owner.
 
-import { rules } from "./rules.mjs";
+import { millionsPerBillion, priceOf, rules } from "./rules.mjs";
 
-const LATE_ERAS = new Set(["1986", "2023"]);
+const LATE_ERAS = new Set(["1986", "2023", "9999"]);
 
 // The booklet's limit, from docs/POLISH_LOOP.md: "after three nukes fired or three absorbed
 // without reply, further launches stop".
@@ -23,14 +23,41 @@ export const NUKE_NOTE = "A nuke is refused.";
 
 export const TOOLS = Object.freeze(["buy", "entrench", "intel", "satellite", "aid", "ceasefire", "nuke", "oil"]);
 
+// Deduct a priced tool's cost from the seat's pool, in integer millions. Validation of whether a
+// tool would do anything happens before this call, so a refused no-op never spends.
+function charge(match, side, tool) {
+  const kind = PRICE_KIND[tool];
+  if (!kind) return { ok: true, price: 0 };
+  const price = priceOf(kind);
+  if (!Number.isFinite(price)) return { ok: true, price: 0 };
+  const seat = match.sides && match.sides[side];
+  if (!seat) return { error: `Unknown side: ${side}.` };
+  if (!Number.isFinite(seat.cash) || seat.cash < price) {
+    const factor = millionsPerBillion();
+    const billions = Number.isFinite(factor) && factor > 0 ? price / factor : price;
+    return { error: `Not enough in ${side}'s pool for ${tool} (${billions} billion).` };
+  }
+  seat.cash -= price;
+  return { ok: true, price };
+}
+
 // Oil is its own case: 1918 and 1942 hide it, 1986 and 2023 show it, and the concealed start
-// shows it while refusing the rest of the 1986 kit.
+// (9999) shows the 1986 set too, labelled UNVERIFIED in config.
 const OIL_ERAS = new Set(["1986", "2023", "9999"]);
+
+// What a tool costs, as a priced kind in config/game.json's table (Manual p.28 + DS:0x2E16).
+// A tool with no price entry costs nothing; a tool with a price is charged from the seat's pool.
+const PRICE_KIND = Object.freeze({
+  intel: "intelScan",
+  satellite: "reconSat",
+  aid: "foreignAid",
+  nuke: "nuke",
+  ceasefire: null,
+});
 
 function eraHas(era, tool) {
   if (tool === "buy" || tool === "entrench") return true;
   if (tool === "oil") return OIL_ERAS.has(String(era));
-  if (era === "9999") return false; // the concealed start refuses the 1986 tools
   return LATE_ERAS.has(String(era));
 }
 
@@ -141,12 +168,15 @@ export function useTool(match, side, tool, target) {
   if (name === "intel" || name === "satellite") {
     const foes = (match.pieces || []).filter((piece) => piece && piece.side !== side);
     if (name === "intel" && foes.length === 0) return { error: "There is nothing to reveal." };
+    const paid = charge(match, side, name);
+    if (paid.error) return paid;
     for (const piece of foes) piece.revealedRound = round;
     events.push({
       type: name === "intel" ? "intel" : "satellite",
       side,
       round,
       reveals: foes.length,
+      cost: paid.price,
       note: name === "intel" ? INTEL_NOTE : SATELLITE_NOTE,
     });
     if (name === "intel") {
@@ -163,9 +193,11 @@ export function useTool(match, side, tool, target) {
       .filter((site) => site && site.kind === "city" && site.owner && site.owner !== side)
       .sort((a, b) => Number(a.id) - Number(b.id))[0];
     if (!city) return { error: "There is no city to turn." };
+    const paid = charge(match, side, name);
+    if (paid.error) return paid;
     const from = city.owner;
     city.owner = side;
-    events.push({ type: "aid", side, site: city.id, name: city.name, x: city.x, y: city.y, from, round, note: AID_NOTE });
+    events.push({ type: "aid", side, site: city.id, name: city.name, x: city.x, y: city.y, from, round, cost: paid.price, note: AID_NOTE });
     return { ok: true, events };
   }
 
@@ -184,10 +216,12 @@ export function useTool(match, side, tool, target) {
     if (!at) return { error: "A launch needs a target cell." };
     if (at.y < 0 || at.y > 135) return { error: "The target is off the map." };
     if (nearCapital(match, at)) return { error: "Home ground is not a target." };
+    const paid = charge(match, side, name);
+    if (paid.error) return paid;
     const mine = launchedBy(match, side);
     mine.fired = Number(mine.fired || 0) + 1;
     // No wasteland, no flipped city, no damage: the archive's own rule for this stand-in.
-    events.push({ type: "nuke", side, x: at.x, y: at.y, round, launched: mine.fired, note: "Stand-in nuke. It paints nothing and deals no damage." });
+    events.push({ type: "nuke", side, x: at.x, y: at.y, round, launched: mine.fired, cost: paid.price, note: "Stand-in nuke. It paints nothing and deals no damage." });
     return { ok: true, events };
   }
 

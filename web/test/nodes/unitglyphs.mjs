@@ -20,7 +20,7 @@ export const name = "unitglyphs";
 export async function run(ctx) {
   eq("a glyph is five cells wide", GLYPH_SIZE, 5);
   eq("a glyph is drawn from two pixels per cell", GLYPH_MIN_ZOOM, 2);
-  eq("every unit the shop sells has a glyph", GLYPH_KINDS, ["infantry", "tank", "aircraft", "ship", "submarine"]);
+  eq("every unit the shop sells has a glyph", GLYPH_KINDS, ["infantry", "tank", "aircraft", "cruiser", "carrier", "submarine"]);
 
   // --- every glyph is a full square of rows, and no two are the same shape ---
   const shapes = new Set();
@@ -41,7 +41,7 @@ export async function run(ctx) {
   const head = tank.filter((c) => c.dy === -2).map((c) => c.dx);
   eq("the tank is one cell wide at the barrel", head, [0]);
 
-  const seam = glyphCells(0, 10, "ship", 320);
+  const seam = glyphCells(0, 10, "cruiser", 320);
   for (const cell of seam) {
     if (cell.x < 0 || cell.x >= 320) fail("a wrapped glyph cell left the board at " + cell.x);
   }

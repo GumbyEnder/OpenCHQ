@@ -12,7 +12,7 @@
 
 import { placementRules } from "./rules.mjs";
 
-const SEA_KINDS = new Set(["ship", "submarine"]);
+const SEA_KINDS = new Set(["cruiser", "carrier", "submarine"]);
 // Terrain ids from the board payload's own table: 0 ocean, 2 shallows, 3 lake.
 const OCEAN = 0;
 const SHALLOWS = 2;
@@ -92,7 +92,7 @@ export function placementMask(match, side, kind, board) {
       mask[id] = 1;
       count += 1;
     }
-    if (!count) return { error: "No coastal water is open for a ship." };
+    if (!count) return { error: "No coastal water is open for a hull." };
     return { ok: true, width: w, height: h, mask, count, domain: "sea", zone, coast };
   }
 

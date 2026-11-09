@@ -9,7 +9,7 @@
 // rule is re-derived - the payday comes from the seat's own `income`, which the server counts with
 // the economy module's rule, and the prices come from the shop row the server priced.
 
-import { shopDisabled, shopLabel } from "./command.mjs";
+import { formatBillions, formatWholeBillions, shopDisabled, shopLabel } from "./command.mjs";
 
 export const NAV = [
   { id: "buy", label: "Buy", title: "Buy units", hint: "What each unit costs, how many you have, and how many you have seen." },
@@ -42,6 +42,7 @@ export function buyRows(room) {
       label: shopLabel(entry),
       price,
       domain: entry.domain || "land",
+      tool: entry.tool || null,
       refused: entry.refused || "",
       own: count(you, entry.kind),
       known: count(enemy, entry.kind),
@@ -86,6 +87,7 @@ export function economyModel(room) {
     ? {
       cities: Number(seat.income.cities) || 0,
       wells: Number(seat.income.wells) || 0,
+      cashWells: Number(seat.income.cashWells) || 0,
       amount: Number(seat.income.amount) || 0,
     }
     : null;

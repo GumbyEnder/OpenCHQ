@@ -368,7 +368,7 @@ export function legendEntries() {
 
 // The cells a purchase may stand on, painted over the board. `placement` is exactly what the server
 // sent: {width, height, mask} with the mask a byte per cell. The page never re-derives the rule.
-export function paintPlacement(ctx, placement, view, color = "rgba(120, 230, 255, 0.30)") {
+export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255, 0.62)") {
   if (!placement || !placement.mask || !view) return 0;
   const bw = Number(placement.width) || 0;
   const bh = Number(placement.height) || 0;
@@ -386,7 +386,10 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 230, 255
     for (let sx = cols.first; sx <= cols.last; sx++) {
       const x = wrapX(sx, view.boardW);
       if (!placement.mask[y * bw + x]) continue;
-      ctx.fillRect(view.left + sx * view.scale, view.top + y * view.scale, view.scale, view.scale);
+      // At the whole-world fit a cell is one pixel. Draw it at least one full pixel and at a
+      // strength a player can see; a 30%-alpha single pixel read as "no highlights at all".
+      const size = Math.max(1, Math.round(view.scale));
+      ctx.fillRect(view.left + sx * view.scale, view.top + y * view.scale, size, size);
       painted += 1;
     }
   }

@@ -728,3 +728,13 @@ body.in-match .flash { bottom: 10px; }
   .top { flex-direction: column; align-items: start; }
   body.in-match .stripinfo { display: none; }
 }
+
+/* The build the page is actually running. Small, always present, and clickable-proof: the
+   reviewer's check is that this string matches the commit in the report. */
+.buildfooter {
+  margin: 10px 0 4px;
+  text-align: right;
+  font-size: 11px;
+  opacity: 0.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

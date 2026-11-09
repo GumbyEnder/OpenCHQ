@@ -49,7 +49,7 @@ export async function run(ctx) {
   eq("the coastal reach is the config's", rules.coast, 4);
 
   // --- a kind knows its domain ----------------------------------------------
-  eq("a hull is sea", [domainOf("ship"), domainOf("submarine")], ["sea", "sea"]);
+  eq("a hull is sea", [domainOf("cruiser"), domainOf("carrier"), domainOf("submarine")], ["sea", "sea", "sea"]);
   eq("everything else is land", [domainOf("infantry"), domainOf("tank"), domainOf("aircraft")], ["land", "land", "land"]);
 
   const grid = board();
@@ -79,7 +79,7 @@ export async function run(ctx) {
   // --- sea: coastal water only ----------------------------------------------
   {
     const match = matchWith([{ id: 1, name: "Home", x: 80, y: 50, kind: "city", owner: "blue" }]);
-    const mask = placementMask(match, "blue", "ship", grid);
+    const mask = placementMask(match, "blue", "cruiser", grid);
     const at = (x, y) => mask.mask[y * W + x];
     eq("water one cell off the coast is legal", at(80, 39), 1);
     eq("water at the edge of the coastal reach is legal", at(80, 36), 1);
@@ -94,8 +94,8 @@ export async function run(ctx) {
     placementRefusal("tank", "land", 8, 4),
     "A tank goes on land inside your own zone, within 8 cells of a site you hold.");
   eq("the sea sentence names the coast",
-    placementRefusal("ship", "sea", 8, 4),
-    "A ship goes in coastal water, within 4 cells of land.");
+    placementRefusal("cruiser", "sea", 8, 4),
+    "A cruiser goes in coastal water, within 4 cells of land.");
 
   // --- canPlace is the gate the purchase goes through -----------------------
   {
@@ -128,6 +128,7 @@ export async function run(ctx) {
   // --- a purchase lands where it was asked to ---------------------------------
   {
     const match = matchWith([{ id: 1, name: "Home", x: 80, y: 50, kind: "city", owner: "blue" }]);
+    match.sides.blue.cash = 10000;
     const bought = buy(match, "blue", "infantry", 82, 52, grid);
     if (!bought.ok) fail("a legal purchase was refused: " + JSON.stringify(bought));
     eq("the piece stands on the chosen cell", [bought.piece.x, bought.piece.y], [82, 52]);

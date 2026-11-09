@@ -9,10 +9,11 @@
 // starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
 // because no duration was recovered.
 
-import { payEvery, priceOf } from "./rules.mjs";
+import { payEvery, priceOf, cityIncome, capitalPays } from "./rules.mjs";
 import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace } from "./placement.mjs";
+import { CELL_W } from "./board.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -35,7 +36,8 @@ const DOMAIN_BY_KIND = Object.freeze({
   infantry: "land",
   tank: "land",
   aircraft: "land",
-  ship: "sea",
+  cruiser: "sea",
+  carrier: "sea",
   submarine: "sea",
 });
 
@@ -164,7 +166,7 @@ export function buy(match, side, kind, x, y, board = null) {
   const domain = Object.hasOwn(DOMAIN_BY_KIND, unitKind) ? DOMAIN_BY_KIND[unitKind] : null;
   if (!domain) return { error: `No such unit: ${unitKind || "(none)"}.` };
   const price = priceOf(unitKind);
-  if (price === null) return { error: `No price for a ${unitKind}.` };
+  if (!Number.isFinite(price)) return { error: `No price for a ${unitKind}.` };
 
   seedOwners(match);
 
@@ -256,6 +258,13 @@ export function capture(match, side, x, y) {
   const from = well.owner ?? null;
   well.owner = side;
   syncWellLists(match, well.id, side);
+  // occupy() leaves paying-site counts behind for pay(); a well changing hands changes only the
+  // informational well count, so patch that summary instead of forcing pay() to rescan.
+  const tally = match.incomeSummary;
+  if (tally && from !== side) {
+    if ((from === "blue" || from === "red") && tally[from].wells > 0) tally[from].wells -= 1;
+    if (side === "blue" || side === "red") tally[side].wells += 1;
+  }
   return [{ type: "capture", site: well.id, name: well.name, side, from }];
 }
 
@@ -271,61 +280,92 @@ export function occupy(match) {
   seedOwners(match);
 
   // One pass over the pieces, not one pass per site: with 84 sites and 1000 rooms a round the
-  // per-site filter was the difference between 10x and 3x headroom in the capacity bench.
+  // per-site filter was the difference between 10x and 3x headroom in the capacity bench. A cell
+  // key is numeric and a side is a bit, so the pass allocates nothing per piece.
   const byCell = new Map();
   for (const piece of match.pieces) {
     if (!piece || !isSide(piece.side)) continue;
-    const key = Number(piece.x) + "," + Number(piece.y);
-    if (!byCell.has(key)) byCell.set(key, []);
-    byCell.get(key).push(piece.side);
+    const key = Number(piece.y) * CELL_W + Number(piece.x);
+    byCell.set(key, (byCell.get(key) || 0) | (piece.side === "blue" ? 1 : 2));
   }
 
+  // Income counts are a by-product of this same pass: pay() runs every round now, and a second
+  // walk of the site list per round per room is a measurable slice of the bench budget.
+  const tally = {
+    blue: { cities: 0, capitals: 0, wells: 0 },
+    red: { cities: 0, capitals: 0, wells: 0 },
+  };
+
   for (const site of match.sites) {
-    if (!site || !occupiable(site.kind)) continue;
-    const sides = [...new Set(byCell.get(Number(site.x) + "," + Number(site.y)) || [])];
-    const holder = sides.length === 1 ? sides[0] : null; // contested or empty: nobody holds it
+    if (!site) continue;
+    const kind = site.kind;
+    const holder = occupiable(kind) ? byCell.get(Number(site.y) * CELL_W + Number(site.x)) || 0 : 0;
 
     // A capital is taken the same way and kept the same way; what makes it different is that
     // the win condition reads it, and a piece standing on it is the freshest fact. An open
     // capital (nobody has taken it) stays open, which is why ownership is never seeded onto one.
-    if (holder && site.owner !== holder) {
-      events.push({ type: "capture", site: site.id, name: site.name, kind: site.kind, side: holder, from: site.owner ?? null });
-      site.owner = holder;
+    const side = holder === 1 ? "blue" : holder === 2 ? "red" : null; // contested or empty: nobody holds it
+    if (side && site.owner !== side) {
+      events.push({ type: "capture", site: site.id, name: site.name, kind, side, from: site.owner ?? null });
+      site.owner = side;
     }
+
+    const owner = site.owner;
+    if (owner !== "blue" && owner !== "red") continue;
+    const row = tally[owner];
+    if (kind === "city") row.cities += 1;
+    else if (kind === "capital") row.capitals += 1;
+    else if (WELL_KINDS.has(kind)) row.wells += 1;
   }
+
+  match.incomeSummary = tally;
   return events;
 }
 
 // --- income ------------------------------------------------------------------------------
 
-function ownedCities(match, side) {
-  const seat = seatOf(match, side);
-  const listed = new Set(listOf(seat, "cities"));
-  const ids = new Set();
-  for (const site of match.sites) {
-    if (!site || !CITY_KINDS.has(site.kind)) continue; // capitals are not cities
-    if (site.owner === side || listed.has(site.id)) ids.add(site.id);
-  }
-  return ids;
-}
-
-function ownedWells(match, side) {
-  const ids = new Set();
-  for (const site of match.sites) {
-    if (site && WELL_KINDS.has(site.kind) && site.owner === side) ids.add(site.id);
-  }
-  return ids;
-}
-
 export function payoutFor(match, side) {
-  const cities = ownedCities(match, side).size;
-  const wells = ownedWells(match, side).size;
-  return { cities, wells, amount: cities + wells };
+  const counts = incomeCounts(match);
+  const { cities, wells } = counts[side] || { cities: 0, wells: 0 };
+  // A city pays cityIncome millions every round. A well gives oil (resources.mjs), never cash;
+  // `wells` is reported so the economy dialogue can show what is held, and `cashWells` is the
+  // part that pays, which is always zero. Bases are not ownable at all and pay nothing.
+  const amount = cities * cityIncome();
+  return { cities, wells, cashWells: 0, amount };
 }
 
-// Income lands on every payEvery-th round: one per city held plus one per owned well.
-// Capitals are not cities. A finished match pays nothing. A side whose pool was never
-// funded - cash not a number, or already short (negative) - is not paid.
+// Both sides' paying-site counts in one pass over the sites. pay() runs every round now, so a
+// per-side scan of 84 sites per side per room would be paid for every room every round.
+function incomeCounts(match) {
+  const counts = { blue: { cities: 0, wells: 0 }, red: { cities: 0, wells: 0 } };
+  const paysCapital = capitalPays();
+  for (const site of match.sites) {
+    if (!site) continue;
+    const side = site.owner;
+    if (side !== "blue" && side !== "red") continue;
+    const row = counts[side];
+    if (CITY_KINDS.has(site.kind) || (paysCapital && CAPITAL_KINDS.has(site.kind))) row.cities += 1;
+    else if (WELL_KINDS.has(site.kind)) row.wells += 1;
+  }
+  // A restored row can list a city whose site owner has since changed; the list is the second
+  // source. It is normally empty, so this pass costs nothing on the hot path.
+  for (const side of SIDES) {
+    const seat = seatOf(match, side);
+    const listed = seat && Array.isArray(seat.cities) ? seat.cities : null;
+    if (!listed || listed.length === 0) continue;
+    for (const id of listed) {
+      const site = match.sites.find((entry) => entry && entry.id === id);
+      if (!site || site.owner === side) continue;
+      if (CITY_KINDS.has(site.kind) || (paysCapital && CAPITAL_KINDS.has(site.kind))) counts[side].cities += 1;
+    }
+  }
+  return counts;
+}
+
+// Income lands every round (payEvery, Manual p.27): cityIncome millions per city and nothing per
+// well. Capitals pay only when config money.capitalPays is true (UNVERIFIED, off by default). A
+// finished match pays nothing. A side whose pool was never funded - cash not a number, or already
+// short (negative) - is not paid.
 export function pay(match) {
   if (!match || !Array.isArray(match.sites) || !match.sides) return [];
   seedOwners(match);
@@ -336,6 +376,26 @@ export function pay(match) {
   if (round <= 0 || round % every !== 0) return [];
 
   const events = [];
+  // occupy() already walked every site this round and left both sides' paying counts behind.
+  // Use it when it is fresh; otherwise (a direct pay() call in a test) count here.
+  let tally = match.incomeSummary;
+  if (tally) delete match.incomeSummary;
+  if (!tally) {
+    const blue = { cities: 0, capitals: 0, wells: 0 };
+    const red = { cities: 0, capitals: 0, wells: 0 };
+    for (const site of match.sites) {
+      if (!site) continue;
+      const owner = site.owner;
+      if (owner !== "blue" && owner !== "red") continue;
+      const row = owner === "blue" ? blue : red;
+      if (site.kind === "city") row.cities += 1;
+      else if (site.kind === "capital") row.capitals += 1;
+      else if (WELL_KINDS.has(site.kind)) row.wells += 1;
+    }
+    tally = { blue, red };
+  }
+  const paysCapital = capitalPays();
+  const perCity = cityIncome();
   for (const side of SIDES) {
     const seat = seatOf(match, side);
     if (!seat) continue;
@@ -343,9 +403,12 @@ export function pay(match) {
       events.push({ type: "income_skipped", side, reason: "short", round });
       continue;
     }
-    const { cities, wells, amount } = payoutFor(match, side);
+    const row = tally[side];
+    const cities = row.cities + (paysCapital ? row.capitals : 0);
+    const wells = row.wells;
+    const amount = cities * perCity;
     seat.cash += amount;
-    events.push({ type: "income", side, round, cities, wells, amount });
+    events.push({ type: "income", side, round, cities, wells, cashWells: 0, amount });
   }
   return events;
 }

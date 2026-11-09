@@ -64,7 +64,7 @@ export async function run(ctx) {
   socket.send({ op: "leave" });
   socket.close();
 
-  // ---- a ship is bought at a dock, and a well is captured by standing on it -------------
+  // ---- a cruiser is bought at a dock, and a well is captured by standing on it -------------
   const match = openMatch("1986", matchSites("1986", board));
   must(match.sites.length >= room.sites.length, "the merge dropped sites: " + match.sites.length);
   upkeep(match); // seeds every dock and well with the country the board names
@@ -73,23 +73,26 @@ export async function run(ctx) {
     (site) => DOCK(site) && site.owner === "blue" &&
       !match.pieces.some((piece) => Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y))
   );
-  must(blueDock, "no friendly dock to buy a ship at");
+  must(blueDock, "no friendly dock to buy a cruiser at");
   // A hull goes into coastal water now, not onto the dock itself: ask the placement module for the
-  // cells it accepts and put the ship on the first one.
+  // cells it accepts and put the cruiser on the first one.
   const { placementMask } = await import("../../server/placement.mjs");
-  const mask = placementMask(match, "blue", "ship", board);
-  must(mask && !mask.error, "no placement mask for a ship: " + JSON.stringify(mask));
+  const mask = placementMask(match, "blue", "cruiser", board);
+  must(mask && !mask.error, "no placement mask for a cruiser: " + JSON.stringify(mask));
   let berth = null;
   for (let id = 0; id < mask.mask.length && !berth; id++) {
     if (!mask.mask[id]) continue;
     const x = id % mask.width;
     berth = { x, y: (id - x) / mask.width };
   }
-  must(berth, "the board offers no coastal water for a ship");
-  const ship = buy(match, "blue", "ship", berth.x, berth.y, board);
-  must(ship && ship.ok === true, "a ship in coastal water was refused: " + JSON.stringify(ship));
+  must(berth, "the board offers no coastal water for a cruiser");
+  // Fund the fixture: a cruiser costs 10 billion (manual p.28) and the stand-in startPool is 9,
+  // which T-001 deliberately left alone, so an unfunded seat cannot buy a hull.
+  match.sides.blue.cash = 100000;
+  const ship = buy(match, "blue", "cruiser", berth.x, berth.y, board);
+  must(ship && ship.ok === true, "a cruiser in coastal water was refused: " + JSON.stringify(ship));
   must(ship.piece.domain === "sea", "the berth produced a " + ship.piece.domain + " piece");
-  must(ship.piece.x === berth.x && ship.piece.y === berth.y, "the ship did not land on its berth");
+  must(ship.piece.x === berth.x && ship.piece.y === berth.y, "the cruiser did not land on its berth");
 
   const redWell = match.sites.find((site) => WELL(site) && site.owner === "red");
   must(redWell, "no Red well to take");

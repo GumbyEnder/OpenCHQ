@@ -12,6 +12,7 @@ import { CELL_W, CELL_H, boardPayload, resolveDataRoot } from "./board.mjs";
 import { landPace, isRefused } from "./rules.mjs";
 import { seaRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
+import { movementBlocked } from "./resources.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -393,8 +394,22 @@ export function advance(match) {
   // a way round once a round, within a budget, and only stands still when there is no way round.
   let detours = 0;
   const DETOUR_BUDGET = 48;
+  // A dry blocking resource stops that side's pieces; a non-blocking one (steel, which is not in
+  // the original) never does. The answer is per side and does not change inside one round.
+  const blocked = {};
+  const isBlocked = (side) => {
+    if (!(side in blocked)) {
+      try {
+        blocked[side] = movementBlocked(match, side);
+      } catch {
+        blocked[side] = null;
+      }
+    }
+    return Boolean(blocked[side]);
+  };
   for (const piece of match.pieces) {
     if (!Array.isArray(piece.path) || piece.path.length === 0) continue;
+    if (isBlocked(piece.side)) continue;
     // An aircraft on a mission is not on the ground to be moved.
     if (inactiveRounds(piece, match.round) > 0) continue;
     // A ship's path comes from the lane graph (lanes.seaRoute), stepped one waypoint at a time;

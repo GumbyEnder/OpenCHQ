@@ -72,5 +72,19 @@ export function debugRows(state = {}) {
   rows.push(["camera", camera
     ? String(camera.scale) + " px/cell" + (camera.follow ? " · following" : " · free")
     : "—"]);
+  // Owner-only: the server attaches these to the room for the review account and for nobody
+  // else, so a normal player's debug window stays fog-safe.
+  const actions = room && Array.isArray(room.botActions) ? room.botActions.slice(-10) : [];
+  for (const action of actions) {
+    const round = action && action.round !== undefined ? "r" + action.round : "r?";
+    if (!action) continue;
+    if (action.type === "buy") {
+      rows.push(["bot " + round, "buy " + String(action.kind || "unit") + " at " +
+        (action.at ? action.at.x + "," + action.at.y : "?")]);
+    } else if (action.type === "order") {
+      rows.push(["bot " + round, "order " + String(action.piece || "piece") + " -> " +
+        (action.to ? action.to.x + "," + action.to.y : "?")]);
+    }
+  }
   return rows;
 }

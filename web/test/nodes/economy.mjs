@@ -74,6 +74,11 @@ export async function run(ctx) {
   const match = freshMatch();
   eq(siteOf(match, 30).owner, null, "ownership must not be pre-set by the fixture");
   eq(match.sides.blue.cash, startPool("1986"), "blue pool at open");
+  // The early start pool is a stand-in of 9 billion (T-001 leaves startPool alone); an infantry
+  // now costs the recovered 10 billion, so fund the fixture rather than pretend the stand-in is
+  // the price source.
+  match.sides.blue.cash = 100000;
+  match.sides.red.cash = 100000;
 
   const first = upkeep(match);
 
@@ -106,7 +111,7 @@ export async function run(ctx) {
   eq(firstBuy.piece.domain, "land", "infantry domain");
   eq(firstBuy.piece.x + "," + firstBuy.piece.y, "80,40", "a purchase stands on the cell it was placed on");
   const infantryPrice = priceOf("infantry");
-  eq(match.sides.blue.cash, startPool("1986") - infantryPrice, "a setup purchase must spend its price");
+  eq(match.sides.blue.cash, 100000 - infantryPrice, "a setup purchase must spend its price");
   must(siteOf(match, 10).unready, "a purchase must mark the nearest held city unready");
 
   // two pieces cannot share a cell
@@ -126,11 +131,11 @@ export async function run(ctx) {
   match.round = 3;
   match.clock = "running";
   const tankPrice = priceOf("tank");
-  eq(tankPrice, 2, "the tank price");
+  eq(tankPrice, 2 * infantryPrice, "the tank price is twice an infantry (p.22)");
   const cashBeforeTank = match.sides.blue.cash;
   const tank = buy(match, "blue", "tank", 70, 42, board);
   must(tank && tank.ok === true, "a tank after the clock ran was refused: " + JSON.stringify(tank));
-  eq(match.sides.blue.cash, cashBeforeTank - tankPrice, "a tank costs 2");
+  eq(match.sides.blue.cash, cashBeforeTank - tankPrice, "a tank costs twice an infantry");
   eq(tank.piece.kind, "tank", "tank kind");
   eq(siteOf(match, 14).unready, true, "the nearest buying city must go unready");
 
@@ -140,48 +145,88 @@ export async function run(ctx) {
   must(infantryAtSea && infantryAtSea.error, "land was bought in open water");
   must(/zone|land/i.test(infantryAtSea.error), "the land refusal must name the zone: " + infantryAtSea.error);
   // A hull inland is refused, and the sentence names coastal water.
-  const shipInland = buy(match, "blue", "ship", 85, 45, board);
-  must(shipInland && shipInland.error, "a ship was bought inland");
-  must(/coastal|water/i.test(shipInland.error), "the ship refusal must name coastal water: " + shipInland.error);
+  const shipInland = buy(match, "blue", "cruiser", 85, 45, board);
+  must(shipInland && shipInland.error, "a cruiser was bought inland");
+  must(/coastal|water/i.test(shipInland.error), "the hull refusal must name coastal water: " + shipInland.error);
   // ... and a cell just off the coast is accepted.
-  const ship = buy(match, "blue", "ship", 76, 31, board);
-  must(ship && ship.ok === true, "a ship in coastal water was refused: " + JSON.stringify(ship));
-  eq(ship.piece.domain, "sea", "ship domain");
+  const ship = buy(match, "blue", "cruiser", 76, 31, board);
+  must(ship && ship.ok === true, "a cruiser in coastal water was refused: " + JSON.stringify(ship));
+  eq(ship.piece.domain, "sea", "cruiser domain");
+  // A carrier is a hull too.
+  const carrier = buy(match, "blue", "carrier", 78, 31, board);
+  must(carrier && carrier.ok === true, "a carrier in coastal water was refused: " + JSON.stringify(carrier));
   // A cell a long way from any water is refused for a hull too.
-  const shipFar = buy(match, "blue", "ship", 300, 100, board);
-  must(shipFar && shipFar.error, "a ship was bought far out at sea");
+  const shipFar = buy(match, "blue", "cruiser", 300, 100, board);
+  must(shipFar && shipFar.error, "a cruiser was bought far out at sea");
 
   // and a side may not place in the other side's country: the zone is measured from its own sites
   const inRedCity = buy(match, "blue", "infantry", 180, 22, board);
   must(inRedCity && inRedCity.error, "blue placed a unit in Red's country");
   must(/zone/i.test(inRedCity.error), "the out-of-zone refusal must say so: " + inRedCity.error);
 
-  // ---- income: round 24 does not pay, round 25 does ------------------------------------
-  // Blue holds three cities (10, 11, 14) and now two wells (31, plus 30 after the capture
-  // below). Red holds one city and one well. The payout is one per city and one per well.
+  // ---- income: every round, cities only (Manual p.27) -----------------------------------
+  // Blue holds three cities (10, 11, 14) and wells. A well gives oil, not cash, so only the
+  // cities pay: 3 x 50 million = 150 million (0.15 billion) each round.
   match.round = 24;
   match.clock = "running";
   const cashAt24 = match.sides.blue.cash;
-  const noPay = pay(match);
-  eq(noPay.length, 0, "round 24 must not pay");
-  eq(match.sides.blue.cash, cashAt24, "round 24 must not add to the pool");
+  const paid24 = pay(match);
+  const blue24 = paid24.find((event) => event.type === "income" && event.side === "blue");
+  must(blue24, "round 24 did not pay blue: " + JSON.stringify(paid24));
+  eq(blue24.cities, 3, "blue city count");
+  eq(blue24.cashWells, 0, "wells pay no cash");
+  eq(blue24.amount, 150, "blue income on one round (3 cities x 50 million)");
+  eq(match.sides.blue.cash, cashAt24 + 150, "income must land every round, cities only");
+  const red24 = paid24.find((event) => event.type === "income" && event.side === "red");
+  must(red24, "round 24 did not pay red: " + JSON.stringify(paid24));
+  eq(red24.amount, 50, "red income (one city, its well pays nothing)");
 
   match.round = 25;
   const cashAt25 = match.sides.blue.cash;
-  const redAt25 = match.sides.red.cash;
-  const paid = pay(match);
-  const blueIncome = paid.find((event) => event.type === "income" && event.side === "blue");
-  must(blueIncome, "round 25 did not pay blue: " + JSON.stringify(paid));
-  eq(blueIncome.cities, 3, "blue city count");
-  eq(blueIncome.wells, 1, "blue well count");
-  eq(blueIncome.amount, 4, "blue income on round 25");
-  eq(match.sides.blue.cash, cashAt25 + 4, "round 25 must add one per city and one per well");
-  const redIncome = paid.find((event) => event.type === "income" && event.side === "red");
-  must(redIncome, "round 25 did not pay red: " + JSON.stringify(paid));
-  eq(redIncome.amount, 2, "red income (one city, one well)");
-  eq(match.sides.red.cash, redAt25 + 2, "red pool on round 25");
-  // capitals must not be counted as cities
-  eq(match.sides.blue.cash - cashAt24, 4, "a capital was paid as a city");
+  const paid25 = pay(match);
+  const blue25 = paid25.find((event) => event.type === "income" && event.side === "blue");
+  must(blue25, "round 25 did not pay blue: " + JSON.stringify(paid25));
+  eq(match.sides.blue.cash, cashAt25 + 150, "round 25 pays again, not every 25th round");
+
+  // ---- income: exactly 1.5 billion from 3 cities + 2 wells over 10 rounds (criterion 4) ---
+  {
+    const tenth = openMatch("1986", []);
+    tenth.sites = [
+      { id: 40, name: "A", x: 10, y: 10, kind: "city", owner: "blue" },
+      { id: 41, name: "B", x: 11, y: 10, kind: "city", owner: "blue" },
+      { id: 42, name: "C", x: 12, y: 10, kind: "city", owner: "blue" },
+      { id: 43, name: "W1", x: 13, y: 10, kind: "well", owner: "blue" },
+      { id: 44, name: "W2", x: 14, y: 10, kind: "well", owner: "blue" },
+    ];
+    tenth.sides.blue.cash = 0;
+    tenth.sides.red.cash = 0;
+    for (let round = 1; round <= 10; round++) {
+      tenth.round = round;
+      const events = pay(tenth);
+      const one = events.find((event) => event.type === "income" && event.side === "blue");
+      must(one, "round " + round + " did not pay blue: " + JSON.stringify(events));
+      eq(one.amount, 150, "round " + round + " income (0.15 billion)");
+      eq(one.cashWells, 0, "round " + round + " wells pay no cash");
+    }
+    eq(tenth.sides.blue.cash, 1500, "3 cities + 2 wells over 10 rounds is exactly 1.5 billion");
+  }
+
+  // ---- income: a base and a capital pay nothing while capitalPays is false (criterion 6) ---
+  {
+    const quiet = openMatch("1986", []);
+    quiet.sites = [
+      { id: 50, name: "Base", x: 10, y: 10, kind: "base", owner: "blue" },
+      { id: 51, name: "Capital", x: 11, y: 10, kind: "capital", owner: "blue" },
+    ];
+    quiet.sides.blue.cash = 0;
+    quiet.sides.red.cash = 0;
+    quiet.round = 1;
+    for (let round = 1; round <= 10; round++) {
+      quiet.round = round;
+      pay(quiet);
+    }
+    eq(quiet.sides.blue.cash, 0, "a base and a capital paid cash while capitalPays is false");
+  }
 
   // ---- income: a finished match pays nothing -------------------------------------------
   match.round = 50;
@@ -200,8 +245,8 @@ export async function run(ctx) {
   must(skipped, "a cash-short side was paid: " + JSON.stringify(shortPay));
   must(!shortPay.some((event) => event.type === "income" && event.side === "blue"), "a cash-short side was paid");
   eq(match.sides.blue.cash, -1, "a cash-short side's pool must not grow");
-  eq(match.sides.red.cash, redAt75 + 2, "the other side is still paid");
-  match.sides.blue.cash = cashAt25 + 4;
+  eq(match.sides.red.cash, redAt75 + 50, "the other side is still paid");
+  match.sides.blue.cash = cashAt25 + 150;
 
   // ---- fuel: a dry side stops, the other keeps its reserve ----------------------------
   match.sides.blue.fuel = 1;
@@ -215,6 +260,23 @@ export async function run(ctx) {
   eq(match.sides.red.dry, false, "a dry blue must not stop red");
   eq(match.sides.red.fuel, reserve - burn, "red keeps its own reserve and burns one round");
   must(!dryEvents.some((event) => event.type === "dry" && event.side === "red"), "red was wrongly marked dry");
+
+  // ---- oil: a well pays oil, never cash (criterion 5) ----------------------------------
+  {
+    const wellOnly = openMatch("1986", []);
+    wellOnly.sites = [{ id: 60, name: "Well", x: 10, y: 10, kind: "well", owner: "blue" }];
+    wellOnly.pieces = [{ id: "blue:land", side: "blue", domain: "land", kind: null, x: 10, y: 10, path: [], pace: 1 }];
+    wellOnly.sides.blue.cash = 1000;
+    wellOnly.sides.red.cash = 1000;
+    wellOnly.sides.blue.fuel = 100;
+    for (let round = 1; round <= 10; round++) {
+      wellOnly.round = round;
+      upkeep(wellOnly);
+    }
+    eq(wellOnly.sides.blue.cash, 1000, "owning a well for 10 rounds changed cash");
+    must(wellOnly.sides.blue.fuel > 100, "a held well did not refill oil: " + wellOnly.sides.blue.fuel);
+    eq(wellOnly.sides.blue.fuel, Number(resourceSpec("fuel").reserve), "a well refilled the reserve");
+  }
 
   // ---- oil: standing on a red well flips its owner to blue ----------------------------
   const walker = match.pieces.find((piece) => piece.id === "blue:land");

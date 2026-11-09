@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { changePassword, closeSession, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
@@ -109,15 +111,57 @@ async function serveFile(res, urlPath) {
   }
 }
 
+// The commit the page is actually running. Railway's builder does not always keep .git, so
+// tools/fire.sh writes web/data/build.json before upload; git is the fallback on a dev machine
+// and OPENCHQ_COMMIT lets a host name the build explicitly.
+let versionCache = null;
+function versionInfo() {
+  if (versionCache) return versionCache;
+  let commit = String(process.env.OPENCHQ_COMMIT || "").trim();
+  let source = commit ? "env" : "";
+  if (!commit) {
+    const buildFile = path.resolve(publicDir, "..", "data", "build.json");
+    if (existsSync(buildFile)) {
+      try {
+        const baked = JSON.parse(readFileSync(buildFile, "utf8"));
+        commit = String(baked.commit || "").trim();
+        source = commit ? "build.json" : "";
+      } catch {
+        /* a corrupt build stamp is not a reason to fail a page load */
+      }
+    }
+  }
+  if (!commit) {
+    const git = spawnSync("git", ["rev-parse", "HEAD"], { cwd: publicDir, encoding: "utf8" });
+    if (git.status === 0) {
+      commit = String(git.stdout || "").trim();
+      source = commit ? "git" : "";
+    }
+  }
+  versionCache = {
+    commit: commit || "unknown",
+    short: commit ? commit.slice(0, 7) : "unknown",
+    source: source || "none",
+  };
+  return versionCache;
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   if (req.method === "GET" && url.pathname === "/api/health") {
     send(res, 200, { ok: true });
     return;
   }
+  if (req.method === "GET" && url.pathname === "/api/version") {
+    send(res, 200, versionInfo());
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/me") {
     const user = userForToken(tokenFrom(req));
-    send(res, 200, { user });
+    // A returning page keeps its session; refresh the cookie's clock so a long-lived tab does
+    // not fall off the end of Max-Age mid-match. The value never changes.
+    const extra = user ? { "set-cookie": cookie(req, tokenFrom(req), 60 * 60 * 24 * 14) } : {};
+    send(res, 200, { user }, extra);
     return;
   }
   // The font atlas is the original's art, so it follows the board's rule: served where the
@@ -225,7 +269,7 @@ server.on("upgrade", (req, socket) => {
       }
       const result = lobby.handle(user.username, message);
       if (result && result.error) {
-        peer.send({ op: "error", error: result.error });
+        peer.send({ op: "error", id: message.id ?? null, error: result.error });
       } else if (result && Array.isArray(result.events) && result.events.length) {
         // A tool that changes the board but says nothing is a decision with no feedback: the
         // player pressed a button and has to guess what happened.

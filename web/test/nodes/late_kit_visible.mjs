@@ -22,6 +22,7 @@ function match(extra = {}) {
   return {
     era: "1986",
     round: 4,
+    sides: { blue: { cash: 50000 }, red: { cash: 50000 } },
     pieces: [
       { id: "b1", side: "blue", domain: "land", kind: "infantry", x: 80, y: 44, path: [], pace: 1 },
       { id: "r1", side: "red", domain: "land", kind: "infantry", x: 183, y: 25, path: [], pace: 1 },

@@ -10,6 +10,26 @@ import { pixelToCell, wrapX } from "./render.mjs";
 export const PICK_HINT = "Select one of your pieces.";
 export const REFUSED = "The order was refused.";
 
+// Money is carried on the wire as integer millions (a city pays 50, an infantry costs 10000).
+// The manual prints billions, so the page divides here and nowhere else: 1000 million = 1
+// billion. Formatting trims trailing zeros, which is what makes 10 stay "10" and 150 become
+// "0.15".
+const MILLIONS_PER_BILLION = 1000;
+
+export function formatBillions(millions) {
+  const value = Number(millions);
+  if (!Number.isFinite(value)) return "";
+  const text = (value / MILLIONS_PER_BILLION).toFixed(3).replace(/\.?0+$/, "");
+  return text === "" || text === "-0" ? "0" : text;
+}
+
+// Cash in whole billions, as Monitor Four shows it (Manual p.27).
+export function formatWholeBillions(millions) {
+  const value = Number(millions);
+  if (!Number.isFinite(value)) return "";
+  return String(Math.round(value / MILLIONS_PER_BILLION));
+}
+
 function cell(value) {
   if (!value || typeof value !== "object") return null;
   const x = Number(value.x);
@@ -90,7 +110,7 @@ export function refusalText(message) {
 export function purseText(seat) {
   if (!seat || (seat.cash === null && seat.fuel === null && seat.payIn === null)) return "";
   const parts = [];
-  if (Number.isFinite(seat.cash)) parts.push("pool " + seat.cash);
+  if (Number.isFinite(seat.cash)) parts.push("pool " + formatBillions(seat.cash) + "b");
   if (Number.isFinite(seat.fuel)) parts.push("fuel " + seat.fuel);
   // Every other resource kind the scenario carries, drawn from the same list the server builds.
   // Fuel is above already; a kind with no held number is left out rather than shown as zero.
@@ -140,7 +160,7 @@ export function alarmText(alarm) {
 export function shopLabel(entry) {
   if (!entry || !entry.kind) return "";
   if (entry.refused) return entry.kind + " - " + entry.refused;
-  return Number.isFinite(entry.price) ? entry.kind + " " + entry.price : entry.kind;
+  return Number.isFinite(entry.price) ? entry.kind + " " + formatBillions(entry.price) + "b" : entry.kind;
 }
 
 export function shopDisabled(entry, cash) {

@@ -217,6 +217,17 @@ export function produce(match, side, kind, sites = 1) {
   return hold(match, side, kind, rate * count);
 }
 
+export function movementBlocked(match, side) {
+  if (!match || !match.sides) return null;
+  for (const kind of resourceKinds(match.era)) {
+    const spec = resourceSpec(kind);
+    if (!spec || spec.blocksMovement !== true) continue;
+    const meter = meterOf(match, side, kind);
+    if (meter && meter.dry === true) return kind;
+  }
+  return null;
+}
+
 // --- one running round ---------------------------------------------------------------------
 
 function refillKinds(spec) {

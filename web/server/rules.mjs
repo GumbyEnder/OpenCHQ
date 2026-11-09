@@ -75,6 +75,46 @@ export function payEvery() {
   return Number(rules().payEvery);
 }
 
+// Money is integer millions inside the server. The manual prints billions; the multiplier is a
+// tunable so no code file carries a bare 1000. A city pays `money.cityIncome` millions a round.
+export function millionsPerBillion() {
+  return Number(rules().money?.perBillion);
+}
+
+export function cityIncome() {
+  return Number(rules().money?.cityIncome);
+}
+
+// Whether a capital pays like a city. UNVERIFIED: the manual names only cities, and the code has
+// never paid a capital. The flag makes that choice explicit and editable.
+export function capitalPays() {
+  return rules().money?.capitalPays === true;
+}
+
+// A price in integer millions, converted from the manual's billions. A kind with no price has no
+// entry at all: undefined, not null, so a caller cannot mistake "unknown" for a free unit.
+export function priceOf(kind) {
+  const table = rules().prices || {};
+  if (!Object.hasOwn(table, kind)) return undefined;
+  const billions = Number(table[kind]);
+  const factor = millionsPerBillion();
+  if (!Number.isFinite(billions) || !Number.isFinite(factor)) return undefined;
+  return Math.round(billions * factor);
+}
+
+// What an era sells, in the config's order. An era with no roster entry sells nothing rather than
+// falling back to a code-side list; the roster is data.
+export function rosterFor(era) {
+  const table = rules().rosters || {};
+  const key = String(era ?? "");
+  return Array.isArray(table[key]) ? table[key].map(String) : [];
+}
+
+export function sourceOf(path) {
+  const sources = rules().sources || {};
+  return path.split(".").reduce((node, key) => (node && Object.hasOwn(node, key) ? node[key] : undefined), sources);
+}
+
 // Where a bought unit may be placed. Both reaches are stand-ins (see the note in the tunables
 // file); this accessor is the only place that reads them, so an edit cannot reach one caller and
 // miss another.
@@ -111,12 +151,9 @@ export function overrunEnabled() {
   return rules().overrun !== false;
 }
 
-export function priceOf(kind) {
-  const table = rules().prices || {};
-  return Object.hasOwn(table, kind) ? Number(table[kind]) : null;
-}
-
 export function startPool(era) {
   const table = rules().startPool || {};
-  return String(era) === "2023" ? Number(table["2023"]) : Number(table.early);
+  const billions = String(era) === "2023" ? Number(table["2023"]) : Number(table.early);
+  const factor = millionsPerBillion();
+  return Number.isFinite(billions) && Number.isFinite(factor) ? billions * factor : 0;
 }

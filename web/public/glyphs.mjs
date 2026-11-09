@@ -41,15 +41,23 @@ export const GLYPHS = Object.freeze({
     "..1..",
     ".1.1.",
   ]),
-  // Pointed bow, full beam, wide stern.
-  ship: Object.freeze([
+  // A cruiser: pointed bow, guns along the deck, wide stern.
+  cruiser: Object.freeze([
     "..1..",
     ".111.",
-    ".111.",
+    "11111",
+    "11111",
+    ".1.1.",
+  ]),
+  // A carrier: the flat flight deck runs the whole beam, with the island to one side.
+  carrier: Object.freeze([
+    "11111",
+    ".1.1.",
+    "11111",
     "11111",
     ".111.",
   ]),
-  // A long hull with a sail: no bow point, which is what tells it from a ship at a glance.
+  // A long hull with a sail: no bow point, which is what tells it from a cruiser at a glance.
   submarine: Object.freeze([
     ".....",
     "..1..",

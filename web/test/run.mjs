@@ -45,6 +45,9 @@ function startServer(port) {
         OPENCHQ_WEB_HOST: "127.0.0.1",
         OPENCHQ_WEB_PORT: String(port),
         OPENCHQ_WEB_DATA: dataDir,
+        // Short pings in the suite: three ping intervals still fit inside a test, while the
+        // production default (15 s) is asserted separately.
+        OPENCHQ_WS_PING_MS: "300",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -204,6 +207,7 @@ function makeContext(base, port) {
     config,
     fail,
     waitFor,
+    waitUntil,
     sqlite: () => new DatabaseSync(path.join(dataDir, "openchq.sqlite")),
     async register(name) {
       const user = name || "NodeTest" + (++serial) + Math.floor(Math.random() * 1000);
@@ -461,7 +465,7 @@ async function main() {
   const nukeRow = shop.find((entry) => entry.kind === "nuke");
   if (!nukeRow || !nukeRow.refused) fail("the shop does not refuse a nuke: " + JSON.stringify(nukeRow));
   if (!shopLabel(nukeRow).includes(nukeRow.refused)) fail("a refused row does not say why: " + shopLabel(nukeRow));
-  if (shopLabel(infantry) !== "infantry " + infantry.price) fail("a shop row does not name its price: " + shopLabel(infantry));
+  if (shopLabel(infantry) !== "infantry " + (Number(infantry.price) / 1000) + "b") fail("a shop row does not name its price: " + shopLabel(infantry));
   if (!shopDisabled(infantry, Number(infantry.price) - 1)) fail("a row the seat cannot pay for is enabled");
   if (shopDisabled(infantry, Number(infantry.price))) fail("a row the seat can pay for is disabled");
   if (!shopDisabled(nukeRow, 1000000)) fail("a refused row is enabled with any pool");

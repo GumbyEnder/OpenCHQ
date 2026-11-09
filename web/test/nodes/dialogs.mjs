@@ -26,10 +26,10 @@ const room = {
   round: 40,
   clock: "running",
   shop: [
-    { kind: "infantry", price: 3, domain: "land" },
-    { kind: "tank", price: 6, domain: "land" },
-    { kind: "ship", price: 4, domain: "sea" },
-    { kind: "nuke", price: 10, domain: "land", refused: "A nuke is refused." },
+    { kind: "infantry", price: 10000, domain: "land" },
+    { kind: "tank", price: 20000, domain: "land" },
+    { kind: "cruiser", price: 10000, domain: "sea" },
+    { kind: "nuke", price: 10000, domain: "tool", tool: "nuke", refused: "A nuke is refused." },
   ],
   pieces: [
     { id: "b1", side: "blue", kind: "infantry" },
@@ -37,7 +37,7 @@ const room = {
     { id: "b3", side: "blue", kind: "tank" },
     { id: "r1", side: "red", kind: "tank" },
     { id: "r2", side: "red", kind: "tank" },
-    { id: "r3", side: "red", kind: "ship" },
+    { id: "r3", side: "red", kind: "cruiser" },
   ],
   sites: [
     { id: "s1", kind: "city", owner: "blue" },
@@ -50,10 +50,10 @@ const room = {
   ],
   seat: {
     side: "blue",
-    cash: 4,
-    payIn: 10,
-    payEvery: 25,
-    income: { cities: 2, wells: 1, amount: 3 },
+    cash: 15000,
+    payIn: 1,
+    payEvery: 1,
+    income: { cities: 2, wells: 1, cashWells: 0, amount: 100 },
     reserves: [
       { kind: "fuel", held: 9997, reserve: 10000, rate: 1, dry: false },
       { kind: "steel", held: NaN, reserve: 40, rate: null, dry: false },
@@ -75,13 +75,13 @@ export async function run(ctx) {
 
   // --- the purchase table ---------------------------------------------------
   const rows = buyRows(room);
-  eq("every shop row is offered", rows.map((row) => row.kind), ["infantry", "tank", "ship", "nuke"]);
+  eq("every shop row is offered", rows.map((row) => row.kind), ["infantry", "tank", "cruiser", "nuke"]);
   const byKind = Object.fromEntries(rows.map((row) => [row.kind, row]));
-  eq("infantry: two held, none seen, three billion", [byKind.infantry.own, byKind.infantry.known, byKind.infantry.price], [2, 0, 3]);
+  eq("infantry: two held, none seen, 10 billion", [byKind.infantry.own, byKind.infantry.known, byKind.infantry.price], [2, 0, 10000]);
   eq("tank: one held, two seen", [byKind.tank.own, byKind.tank.known], [1, 2]);
-  eq("ship: none held, one seen", [byKind.ship.own, byKind.ship.known], [0, 1]);
-  eq("a six-billion tank is not affordable from four", byKind.tank.affordable, false);
-  eq("a three-billion infantry is affordable from four", byKind.infantry.affordable, true);
+  eq("cruiser: none held, one seen", [byKind.cruiser.own, byKind.cruiser.known], [0, 1]);
+  eq("a 20-billion tank is not affordable from 15", byKind.tank.affordable, false);
+  eq("a 10-billion infantry is affordable from 15", byKind.infantry.affordable, true);
   // The refused entry keeps the server's own sentence and is never dressed up as buyable.
   eq("the nuke carries the server's refusal", byKind.nuke.refused, "A nuke is refused.");
 
@@ -104,9 +104,9 @@ export async function run(ctx) {
 
   // --- the economy dialogue -------------------------------------------------
   const model = economyModel(room);
-  eq("the purse is the seat's", model.cash, 4);
-  eq("the next payday is the seat's countdown", [model.payIn, model.payEvery], [10, 25]);
-  eq("the payday worth is the server's count", model.income, { cities: 2, wells: 1, amount: 3 });
+  eq("the purse is the seat's", model.cash, 15000);
+  eq("the next payday is the seat's countdown", [model.payIn, model.payEvery], [1, 1]);
+  eq("the payday worth is the server's count", model.income, { cities: 2, wells: 1, cashWells: 0, amount: 100 });
   eq("held cities, docks and oilfields come off the site list",
     [model.held.city, model.held.dock, model.held.well], [2, 1, 1]);
   eq("the unit counts are the visible pieces", model.units, { own: 3, known: 3 });
@@ -124,7 +124,7 @@ export async function run(ctx) {
   if (!seat || !seat.income) fail("the seat carries no income block");
   eq("the seat's income is the economy module's payout", seat.income, counted);
   if (counted.amount <= 0) fail("1986 opens with nothing paying: " + JSON.stringify(counted));
-  eq("income is one per city plus one per well", counted.amount, counted.cities + counted.wells);
+  eq("income is 50 million per city and nothing per well", counted.amount, counted.cities * 50);
 
   // --- what the page ships --------------------------------------------------
   const html = await (await fetch(ctx.base + "/")).text();

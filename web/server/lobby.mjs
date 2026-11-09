@@ -12,7 +12,9 @@ import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
-import { roundSeconds, rules } from "./rules.mjs";
+import { roundSeconds } from "./rules.mjs";
+import { shopFor } from "./shop.mjs";
+import { compatUnitKind } from "./migrate.mjs";
 
 // A player action during a running clock marks the room dirty instead of committing it: the tick
 // writes dirty rooms within FLUSH_SECONDS anyway, and a commit per order is what turned a 0.12 s
@@ -50,6 +52,16 @@ function seatUsername(room, username) {
     if (seat && seat.kind === "human" && seat.username === username) return side;
   }
   return null;
+}
+
+// The owner's review account(s). An owner-only debug view is the one place the bot's decisions
+// are visible; a normal seat's room view never carries them, so fog is unchanged for players.
+function isOwner(username) {
+  const list = String(process.env.OPENCHQ_OWNER || "shane")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  return list.includes(String(username || "").toLowerCase());
 }
 
 export function createLobby() {
@@ -151,6 +163,9 @@ export function createLobby() {
       over: room.match ? Boolean(room.match.over) : false,
       winner: room.match ? room.match.winner : null,
       note: room.note,
+      // The bot's last decisions, for the owner's review only. A normal seat never sees this,
+      // so fog is untouched for players.
+      ...(isOwner(username) ? { botActions: Array.isArray(room.botActions) ? room.botActions.slice(-10) : [] } : {}),
     };
   }
 
@@ -649,7 +664,7 @@ export function createLobby() {
     // The seat hears its own order back: the page acknowledges in place instead of guessing
     // that a silent socket meant success.
     const peer = sockets.get(username);
-    if (peer) peer.send({ op: "ordered", piece: pieceId, to, rounds: result.rounds ?? 0 });
+    if (peer) peer.send({ op: "ordered", id: message.id ?? null, piece: pieceId, to, rounds: result.rounds ?? 0 });
     return { ok: true };
   }
 
@@ -707,10 +722,26 @@ export function createLobby() {
         const seat = room.seats[side];
         if (!seat || seat.kind !== "bot") continue;
         if (!room.match.seats) stampSeats(room);
+        let issued = [];
         try {
-          botOrders(room.match, side);
+          issued = botOrders(room.match, side) || [];
         } catch (err) {
           console.error("bot orders failed:", err && err.message ? err.message : err);
+        }
+        // Every bot decision is a line an operator can read without opening a browser, and the
+        // owner's debug view keeps the last ten. Silent bots are indistinguishable from fog.
+        if (issued.length) {
+          if (!Array.isArray(room.botActions)) room.botActions = [];
+          for (const event of issued) {
+            if (event.type === "bot_buy") {
+              console.log(`bot ${room.id} r${Number(room.match.round) + 1} buy ${event.kind} at ${event.at ? event.at.x + "," + event.at.y : "?"}`);
+              room.botActions.push({ round: Number(room.match.round) + 1, type: "buy", kind: event.kind, at: event.at || null });
+            } else if (event.type === "bot_order") {
+              console.log(`bot ${room.id} r${Number(room.match.round) + 1} order ${event.pieceId} -> ${event.to ? event.to.x + "," + event.to.y : "?"}`);
+              room.botActions.push({ round: Number(room.match.round) + 1, type: "order", piece: event.pieceId, to: event.to || null });
+            }
+          }
+          if (room.botActions.length > 10) room.botActions = room.botActions.slice(-10);
         }
       }
       const result = tickMatch(room.match);
@@ -810,6 +841,7 @@ export function createLobby() {
     if (peer) {
       peer.send({
         op: "bought",
+        id: message.id ?? null,
         kind: result.piece.kind,
         piece: result.piece.id,
         at: { x: result.piece.x, y: result.piece.y },
@@ -819,8 +851,35 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // An order carries an id so a resend after a reconnect cannot apply twice. The first copy
+  // runs; a later copy of the same id is answered with an ack, not applied again.
+  const seenOrderIds = new Map();
   function handle(username, message) {
     const op = String(message.op ?? "");
+    const dedupe = (op === "buy" || op === "order") && message.id !== undefined && message.id !== null;
+    const key = dedupe ? username + "|" + String(message.id) : "";
+    if (dedupe && seenOrderIds.has(key)) {
+      const peer = sockets.get(username);
+      if (peer) peer.send({ op: "ack", id: message.id, duplicate: true });
+      return { ok: true };
+    }
+    const result = dispatch(username, message);
+    if (dedupe) {
+      seenOrderIds.set(key, Date.now());
+      if (seenOrderIds.size > 1000) {
+        const oldest = seenOrderIds.keys().next().value;
+        seenOrderIds.delete(oldest);
+      }
+    }
+    return result;
+  }
+
+  function dispatch(username, message) {
+    const op = String(message.op ?? "");
+    // The older wire name for a hull survives as an alias so an existing page or script does not
+    // lose a purchase when the roster split hulls into cruiser and carrier. The alias lives in
+    // migrate.mjs, next to the save migration that does the same rename.
+    if (message) message.kind = compatUnitKind(message.kind);
     if (op === "bot") return startBot(username, message.era, message.side);
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
@@ -879,29 +938,8 @@ export function createLobby() {
   return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast };
 }
 
-// What an era sells. The prices are config; the era gates are the archive's - aircraft exist
-// from 1942 on, and a nuke is never on the shelf (economy refuses it and says so).
-const LAND_KINDS = ["infantry", "tank"];
-const SEA_KINDS = ["ship", "submarine"];
-
-export function shopFor(era) {
-  const key = String(era ?? "1986");
-  const seats = (rules().prices || {});
-  const kinds = [...LAND_KINDS];
-  if (key !== "1918") kinds.push("aircraft");
-  const all = [...kinds, ...SEA_KINDS];
-  const shop = [];
-  for (const kind of all) {
-    if (!Object.hasOwn(seats, kind)) continue;
-    shop.push({
-      kind,
-      price: Number(seats[kind]),
-      domain: kind === "ship" || kind === "submarine" ? "sea" : "land",
-    });
-  }
-  shop.push({ kind: "nuke", price: Object.hasOwn(seats, "nuke") ? Number(seats.nuke) : null, domain: "land", refused: "A nuke is refused." });
-  return shop;
-}
+// What an era sells lives in shop.mjs; it is pure so the roster test can read it without a
+// database. The prices are config and the era gates are the archive's.
 
 // A match opens with its countries already owned. Ownership used to be seeded lazily on the
 // first purchase, which meant a 2023 board showed no friendly city at all and the empty era

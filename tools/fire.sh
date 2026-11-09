@@ -102,6 +102,10 @@ if git diff --name-only "$PREV" HEAD | grep -Eq '^(web/|package\.json$|\.node-ve
   RUNTIME_CHANGED=1
 fi
 
+# The commit this upload carries. /api/version and the page footer read it; Railway's builder
+# does not keep .git, so the stamp is written here, after the commit and before the upload.
+node tools/stamp_build.mjs >>"$LOG" 2>&1 || echo "LOOP_STAMP_FAILED: build.json was not written"
+
 DEPLOY_STATE=deployed
 if [ "${OPENCHQ_LOOP_NODEPLOY:-0}" = "1" ]; then
   DEPLOY_STATE="deploy-skipped"

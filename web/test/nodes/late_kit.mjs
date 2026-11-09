@@ -19,6 +19,10 @@ function sub(id, side, x, y) {
 function fresh(era = "1986") {
   const match = openMatch(era, []);
   match.clock = "running";
+  // Fund both seats: the recovered tools cost 10 billion each and the early start pool is a
+  // 9-billion stand-in (T-001 leaves startPool alone).
+  match.sides.blue.cash = 50000;
+  match.sides.red.cash = 50000;
   match.sites = [
     { id: 10, name: "New York", x: 80, y: 40, kind: "city", owner: "blue" },
     { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", owner: "red" },
@@ -42,7 +46,7 @@ export async function run(ctx) {
   }
   const concealed = toolsForEra("9999");
   if (!concealed.includes("oil")) fail("the concealed start lost oil");
-  if (concealed.includes("nuke")) fail("the concealed start offered a nuke");
+  if (!concealed.includes("nuke")) fail("the ???? era did not use the 1986 set");
   const wrongEra = useTool(fresh("1942"), "blue", "intel");
   if (!wrongEra.error) fail("1942 ran an intel scan");
 

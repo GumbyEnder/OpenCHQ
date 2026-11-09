@@ -25,6 +25,8 @@ import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
 import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
 // Per-type silhouettes: one shape for the map at zoom, the same shape beside the name in Buy.
 import { glyphDataUrl } from "./glyphs.mjs";
+import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
+import { formatBillions, formatWholeBillions } from "./command.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -45,6 +47,30 @@ let reconnectTimer = null;
 let reconnectTries = 0;
 let wasReconnecting = false;
 const RECONNECT_TRIES = 8;
+// An order sent while the socket is down is kept, with its id, and resent when the socket comes
+// back. The server applies one id at most once, so a resend is safe. Never a silent loss.
+let orderSeq = 0;
+let orderQueue = [];
+function sendOrder(payload) {
+  const message = { ...payload, id: "o" + Date.now().toString(36) + "-" + (++orderSeq) };
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(message));
+  } else {
+    orderQueue.push(message);
+    say("Connection is down. Your order is queued and will be sent when it returns.");
+  }
+  return message;
+}
+function settleOrder(id) {
+  if (id === undefined || id === null) return;
+  orderQueue = orderQueue.filter((message) => message.id !== id);
+}
+function flushOrders() {
+  if (!orderQueue.length || !socket || socket.readyState !== WebSocket.OPEN) return;
+  const queued = orderQueue;
+  orderQueue = [];
+  for (const message of queued) socket.send(JSON.stringify(message));
+}
 let me = "";
 let users = [];
 let pending = [];
@@ -519,7 +545,7 @@ board.addEventListener("click", (event) => {
     // picked and repeats the refusal in the server's own words when it comes back.
     // The cursor stays armed until a purchase actually lands: a refused cell must not cost the
     // player their place-in-mode, and buying several units in a row is the normal case.
-    send(buyMessage(buying, cell));
+    sendOrder(buyMessage(buying, cell));
     drawMatch();
     return;
   }
@@ -541,7 +567,7 @@ board.addEventListener("click", (event) => {
     return;
   }
   const message = orderMessage(selected, cell);
-  if (message) send(message);
+  if (message) sendOrder(message);
 });
 
 board.addEventListener("mousemove", (event) => {
@@ -1120,7 +1146,7 @@ function definition(dl, label, value) {
 
 function closeDialog() {
   if (openDialogId === null) return;
-  openDialogId = null;
+  openDialogId = dialogAfter(openDialogId, { type: "close" });
   paintDialog();
 }
 
@@ -1129,7 +1155,7 @@ function openDialog(id) {
     say("Start a match first.");
     return;
   }
-  openDialogId = openDialogId === id ? null : id;
+  openDialogId = dialogAfter(openDialogId, { type: "open", id });
   paintDialog();
 }
 
@@ -1159,13 +1185,20 @@ const DIALOG_PAINTERS = {
       icon.src = glyphDataUrl(row.kind, "#bfe3ff");
       name.append(icon, document.createTextNode(row.kind));
       line.append(name, cell(String(row.own)), cell(String(row.known)),
-        cell(row.price === null ? "—" : row.price + "b"));
+        cell(row.price === null ? "—" : formatBillions(row.price) + "b"));
       if (row.refused) {
         line.disabled = true;
         line.title = row.refused;
       } else if (!row.affordable) {
         line.disabled = true;
         line.title = "Not enough in the pool.";
+      } else if (row.domain === "tool") {
+        line.title = "Use this now: the price is charged from the pool.";
+        line.addEventListener("click", () => {
+          send({ op: "tool", tool: row.tool });
+          say("Use " + row.kind + ".");
+          closeDialog();
+        });
       } else {
         line.title = "Arm this, then click one of your " + (row.domain === "sea" ? "docks" : "cities") + ".";
         line.addEventListener("click", () => {
@@ -1198,11 +1231,11 @@ const DIALOG_PAINTERS = {
     const model = economyModel(room);
     const dl = document.createElement("dl");
     dl.className = "dlgrid";
-    definition(dl, "Pool", model.cash === null ? "unknown" : String(model.cash));
-    definition(dl, "Next payday", model.payIn === null ? "unknown" : "in " + model.payIn + " rounds");
-    definition(dl, "Payday every", model.payEvery === null ? "unknown" : model.payEvery + " rounds");
+    definition(dl, "Pool", model.cash === null ? "unknown" : formatWholeBillions(model.cash) + "b");
+    definition(dl, "Next payday", model.payIn === null ? "unknown" : "in " + model.payIn + (model.payIn === 1 ? " round" : " rounds"));
+    definition(dl, "Payday every", model.payEvery === null ? "unknown" : model.payEvery + (model.payEvery === 1 ? " round" : " rounds"));
     definition(dl, "Payday worth", model.income
-      ? model.income.amount + " · " + model.income.cities + " cities + " + model.income.wells + " oil"
+      ? formatBillions(model.income.amount) + "b per round · " + model.income.cities + " cities + " + model.income.cashWells + " paying oil"
       : "unknown");
     definition(dl, "Cities held", String(model.held.city));
     definition(dl, "Docks held", String(model.held.dock));
@@ -1223,7 +1256,11 @@ const DIALOG_PAINTERS = {
       }
       body.append(label, list);
     }
-    body.append(note("One of cash per owned city and per owned oilfield, paid on the payday round. The count is the server's."));
+    // The rate is read off the state the server sent, never typed here (prices node, grep guard).
+    const perCity = model.income && model.income.cities > 0 ? model.income.amount / model.income.cities : null;
+    const every = model.payEvery === null || model.payEvery === undefined ? " every round" : (model.payEvery === 1 ? " every round" : " every " + model.payEvery + " rounds");
+    body.append(note("Each city pays " + (perCity === null ? "its rate" : formatBillions(perCity) + " billion") + every +
+      ". Oilfields give oil, never cash. Bases and capitals pay nothing."));
   },
 
   // The fleet. Every aircraft this seat owns, where it is based, how many rounds it is away, and a
@@ -1346,7 +1383,7 @@ function paintDialog() {
   for (const button of document.querySelectorAll(".navbtn")) {
     button.classList.toggle("armed", button.dataset.dialog === openDialogId);
   }
-  if (!room) openDialogId = null;
+  if (!room) openDialogId = dialogAfter(openDialogId, { type: "refresh", room: false });
   if (!openDialogId) {
     panel.classList.add("hidden");
     return;
@@ -1355,6 +1392,11 @@ function paintDialog() {
   const painter = DIALOG_PAINTERS[openDialogId];
   document.getElementById("dialogTitle").textContent = item ? item.title : openDialogId;
   document.getElementById("dialogHint").textContent = item ? item.hint : "";
+  // A state refresh redraws the body, so put back what the player was looking at: the scroll
+  // position and the focused control. Closing is the player's decision, not the clock's.
+  const view = keepView(body.scrollTop, document.activeElement && body.contains(document.activeElement)
+    ? focusKeyOf(document.activeElement)
+    : "");
   body.textContent = "";
   panel.classList.remove("hidden");
   if (!painter) return;
@@ -1366,6 +1408,11 @@ function paintDialog() {
     body.textContent = "";
     body.append(note("This panel failed to draw: " + (err && err.message ? err.message : String(err))));
     throw err;
+  }
+  body.scrollTop = view.scrollTop;
+  if (view.focusKey) {
+    const again = [...body.querySelectorAll("*")].find((element) => focusKeyOf(element) === view.focusKey);
+    if (again && typeof again.focus === "function") again.focus({ preventScroll: true });
   }
 }
 
@@ -1420,6 +1467,7 @@ function connect() {
       renderPeople();
       renderRoom();
       drawMatch();
+      flushOrders();
     } else if (message.op === "bye") {
       // The server is going away on purpose: say so, and keep the room on screen.
       say(message.reason || "The server is restarting.");
@@ -1455,6 +1503,7 @@ function connect() {
       renderRoom();
       drawMatch();
     } else if (message.op === "ack") {
+      settleOrder(message.id);
       // What a command actually did, in the server's own words.
       for (const event of message.events || []) {
         if (event.note) say(String(event.note));
@@ -1488,6 +1537,7 @@ function connect() {
     } else if (message.op === "log") {
       noteLog(message.lines);
     } else if (message.op === "bought") {
+      settleOrder(message.id);
       say("Bought an " + message.kind + " at " + message.at.x + "," + message.at.y + (message.cash !== null && message.cash !== undefined ? ". Pool " + message.cash + "." : "."));
       // One purchase lands, the cursor goes: the next click is a map click again.
       buying = null;
@@ -1495,15 +1545,19 @@ function connect() {
       drawMatch();
       renderRoom();
     } else if (message.op === "ordered") {
+      settleOrder(message.id);
       say(ackText(message));
       // An order is the player's own act, so it belongs in the log beside what the round did.
       noteLog([{ round: room && room.round ? room.round : 0, text: ackText(message).replace(/\.$/, "") }]);
       clearCommand();
     } else if (message.op === "error") {
-      // The server's sentence is what the player reads. It is never swallowed.
-      say(refusalText(message));
+      // The server's sentence is what the player reads. It is never swallowed, and a queued
+      // order that was refused says which one.
+      settleOrder(message.id);
+      const refusal = refusalText(message);
+      say(message.id ? "Order " + message.id + " refused: " + refusal : refusal);
       if (preview) {
-        preview = { ...preview, path: [], error: refusalText(message) };
+        preview = { ...preview, path: [], error: refusal };
         drawMatch();
       }
     }
@@ -1522,8 +1576,10 @@ function connect() {
     }
     reconnectTries += 1;
     wasReconnecting = true;
-    const wait = Math.min(8000, 500 * 2 ** (reconnectTries - 1));
-    say("Connection lost. Reconnecting" + (reconnectTries > 1 ? " (try " + reconnectTries + ")" : "") + "\u2026");
+    // Backoff 0.5, 1, 2, 4, 8, then 15 s and no higher. One toast: a cycle of toasts is noise,
+    // and the board already says the connection is down by not moving.
+    const wait = Math.min(15000, 500 * 2 ** (reconnectTries - 1));
+    if (reconnectTries === 1) say("Connection lost. Reconnecting\u2026");
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       connect();
@@ -1597,6 +1653,16 @@ renderLegend();
 
 loadBoard();
 loadFontAtlas();
+
+fetch("/api/version")
+  .then((res) => res.json())
+  .then((data) => {
+    const line = document.getElementById("buildCommit");
+    if (!line) return;
+    line.textContent = "build " + (data.short || "unknown");
+    line.title = String(data.commit || "");
+  })
+  .catch(() => {});
 
 fetch("/api/me", { credentials: "same-origin" })
   .then((res) => res.json())
