@@ -119,5 +119,8 @@ export function economyModel(room) {
 export function reserveLine(meter) {
   const held = meter.held === null ? "unknown" : String(meter.held);
   const rate = meter.rate === null ? "rate unknown" : String(meter.rate) + " a round";
-  return meter.kind + ": " + held + " held · " + rate + (meter.dry ? " · dry" : "");
+  // Steel is an owner-designed second resource, not something the 1990 game had. Say so on the
+  // readout itself so nobody reads it as a recovered rule.
+  const original = meter.kind === "steel" ? " · non-original stand-in" : "";
+  return meter.kind + ": " + held + " held · " + rate + (meter.dry ? " · dry" : "") + original;
 }

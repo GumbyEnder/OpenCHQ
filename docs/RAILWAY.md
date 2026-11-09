@@ -31,6 +31,7 @@ pass. Nothing here needs a dashboard click.
 - Root `package.json` exists only so Railpack detects Node at the repo root and gets a start
   script. It declares `engines.node >= 22` (`node:sqlite` and global `WebSocket` both need it)
   and has no dependencies. The game itself stays in `web/` with zero npm packages.
+  `node:sqlite` needs Node 22.5, so the floor is 22.5.
 - `.railway/` is gitignored: it holds this host's project link.
 - `railway service source connect --repo GumbyEnder/OpenCHQ --branch web --service openchq-web`
   is what makes a push to `web` deploy. `tools/fire.sh` also runs `railway up -y -d` as a

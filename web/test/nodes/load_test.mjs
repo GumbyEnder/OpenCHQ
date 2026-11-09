@@ -33,11 +33,17 @@ export function run() {
   if (report.rooms !== 1000 || report.pieces !== 8) {
     throw new Error("bench measured " + report.rooms + " rooms x " + report.pieces + " pieces, not 1000 x 8");
   }
-  if (!(report.tickHeadroom > 10)) {
-    throw new Error("tick headroom " + report.tickHeadroom + "x, need >10x inside the 0.14 s round");
+  const floor = Number(process.env.OPENCHQ_LOAD_HEADROOM) > 0
+    ? Number(process.env.OPENCHQ_LOAD_HEADROOM)
+    : 10;
+  console.log(
+    `load_test: headroom floor ${floor}x, measured tick ${report.tickHeadroom}x / round ${report.roundHeadroom}x`
+  );
+  if (!(report.tickHeadroom > floor)) {
+    throw new Error("tick headroom " + report.tickHeadroom + "x, need >" + floor + "x inside the 0.14 s round");
   }
-  if (!(report.roundHeadroom > 10)) {
-    throw new Error("round headroom " + report.roundHeadroom + "x, need >10x including the store slice");
+  if (!(report.roundHeadroom > floor)) {
+    throw new Error("round headroom " + report.roundHeadroom + "x, need >" + floor + "x including the store slice");
   }
   if (report.heldWrites !== 0) throw new Error("a held room was written " + report.heldWrites + " times");
   if (report.heldChanged !== 0) throw new Error("a held room's row changed");

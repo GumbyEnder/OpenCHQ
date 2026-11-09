@@ -24,7 +24,9 @@ const ROOMS = Number(process.argv[2] || 1000);
 const PIECES = Number(process.argv[3] || 8);
 const ROUND_SECONDS = 0.14; // the loop's round budget
 const BUDGET_MS = ROUND_SECONDS * 1000;
-const FLOOR = 10; // headroom multiple the node must clear
+const FLOOR = Number(process.env.OPENCHQ_LOAD_HEADROOM) > 0
+  ? Number(process.env.OPENCHQ_LOAD_HEADROOM)
+  : 10; // headroom multiple the node must clear; a slow host may lower it deliberately
 
 if (!Number.isInteger(ROOMS) || ROOMS < 1 || !Number.isInteger(PIECES) || PIECES < 2) {
   console.error("usage: node tools/bench-rooms.mjs [rooms>=1] [pieces>=2]");

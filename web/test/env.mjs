@@ -1,0 +1,41 @@
+// Where the reference tree lives, for tests that need bytes from the original.
+//
+// No test may hard-code a mount path: a host without the NAS is a supported host, and a test
+// that quietly returns there reports a pass for work it did not do. Callers ask for the root
+// and throw ctx.skip when it is absent.
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+// The extracted data root. OPENCHQ_DATA is the runner's variable; OPENCHQ_EXTRACT is the older
+// name the single-node scripts used; local/data_root.txt is the committed development pointer.
+export function extractRoot() {
+  for (const key of ["OPENCHQ_DATA", "OPENCHQ_EXTRACT"]) {
+    const value = process.env[key];
+    if (value) return path.resolve(value);
+  }
+  const pointer = path.join(projectDir, "local", "data_root.txt");
+  if (existsSync(pointer)) {
+    for (const line of readFileSync(pointer, "utf8").split("\n")) {
+      const text = line.trim();
+      if (!text || text.startsWith("#")) continue;
+      return path.resolve(projectDir, text);
+    }
+  }
+  return "";
+}
+
+// The reference tree root (the directory that holds tools/, docs/ and extracted/).
+export function referenceRoot() {
+  if (process.env.OPENCHQ_REFERENCE) return path.resolve(process.env.OPENCHQ_REFERENCE);
+  const extract = extractRoot();
+  return extract ? path.resolve(extract, "..") : "";
+}
+
+export function hasFile(...parts) {
+  const [first, ...rest] = parts;
+  if (!first) return false;
+  return existsSync(path.join(first, ...rest));
+}

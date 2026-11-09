@@ -113,8 +113,16 @@ export async function run(ctx) {
   eq("the stocks are the seat's own meters", model.reserves.map((meter) => meter.kind), ["fuel", "steel"]);
 
   // A rate nobody recovered says so instead of printing a number.
-  eq("a missing rate is said in words", reserveLine(model.reserves[1]), "steel: unknown held · rate unknown");
+  eq("a missing rate is said in words",
+    reserveLine(model.reserves[1]), "steel: unknown held · rate unknown · non-original stand-in");
   eq("a known rate is printed", reserveLine(model.reserves[0]), "fuel: 9997 held · 1 a round");
+  // Steel is not a recovered rule; the readout must say so where the player sees it.
+  if (!reserveLine(model.reserves[1]).includes("non-original")) {
+    fail("the steel readout is not labelled non-original");
+  }
+  if (reserveLine(model.reserves[0]).includes("non-original")) {
+    fail("the fuel readout was labelled non-original");
+  }
 
   // --- the server sends the figure the dialogue prints -----------------------
   const match = openMatch("1986", matchSites("1986"));

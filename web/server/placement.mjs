@@ -129,9 +129,12 @@ export function placementMask(match, side, kind, board) {
 // The sentence a refused cell gets. It names the rule and the stand-in the rule was set to, so a
 // player who wants a different reach knows it is a number and not a wall.
 export function placementRefusal(kind, domain, zone, coast) {
-  return domain === "sea"
+  // The leading clause is the sentence the player sees on a click outside the highlight. It names
+  // the unit, because a player with several kinds in play must know which purchase was refused.
+  const why = domain === "sea"
     ? "A " + kind + " goes in coastal water, within " + coast + " cells of land."
     : "A " + kind + " goes on land inside your own zone, within " + zone + " cells of a site you hold.";
+  return "That is not a valid place for " + kind + ". " + why;
 }
 
 export function canPlace(match, side, kind, x, y, board) {

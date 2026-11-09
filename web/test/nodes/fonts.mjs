@@ -8,7 +8,9 @@
 // When the extract is absent (the public host) the atlas is absent too and the page keeps a system
 // font. That path is asserted first so it holds even on a machine with no reference tree.
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { CELL_H, CELL_W, fitScale, glyphFor, textBitmap, validateAtlas } from "../../public/font.mjs";
+import { extractRoot, referenceRoot } from "../env.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -21,9 +23,10 @@ function eq(message, actual, expected) {
 export const name = "fonts";
 
 export async function run(ctx) {
-  const root = process.env.OPENCHQ_EXTRACT || "/mnt/nas/Projects/Command HQ/modern/extracted";
-  const atlasPath = root + "/data/font_atlas.json";
-  const fontPath = "/mnt/nas/Projects/Command HQ/COMMAND/FONTS.CHQ";
+  const root = extractRoot();
+  const ref = referenceRoot();
+  const atlasPath = root ? path.join(root, "data", "font_atlas.json") : "";
+  const fontPath = ref ? path.join(ref, "..", "COMMAND", "FONTS.CHQ") : "";
 
   // --- the absent case is the public host, and it must be quiet -----------------------------
   const absent = validateAtlas({ source: "missing" });
@@ -33,7 +36,11 @@ export async function run(ctx) {
   eq("an empty string is zero wide", empty.width, 0);
 
   // --- the file's own arithmetic ------------------------------------------------------------
-  if (existsSync(fontPath)) {
+  if (!fontPath || !existsSync(fontPath)) {
+    ctx.skip("no COMMAND/FONTS.CHQ beside the reference tree; only the fallback path was checked");
+    return;
+  }
+  {
     const bytes = readFileSync(fontPath);
     eq("FONTS.CHQ is the size the header implies", bytes.length, 564);
     eq("header names the first character", bytes[4], 0x20);
@@ -44,8 +51,8 @@ export async function run(ctx) {
   }
 
   // --- the atlas the decoder wrote ----------------------------------------------------------
-  if (!existsSync(atlasPath)) {
-    // No reference tree here: the assertions above and the fallback case are the whole story.
+  if (!atlasPath || !existsSync(atlasPath)) {
+    ctx.skip("no decoded font_atlas.json in the extract; only FONTS.CHQ was checked");
     return;
   }
   const atlas = JSON.parse(readFileSync(atlasPath, "utf8"));

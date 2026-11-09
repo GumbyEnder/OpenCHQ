@@ -68,10 +68,10 @@ function checkRoute(route, board, label) {
 export async function run(ctx) {
   const { fail } = ctx;
   const board = boardPayload();
-  if (!Array.isArray(board.cells)) {
-    fail("ship_routes: the board has no cells (source " + board.source + ")");
-  }
   const root = resolveDataRoot();
+  if (!root || !Array.isArray(board.cells)) {
+    ctx.skip("ship_routes: no extracted board on this host (set OPENCHQ_DATA or OPENCHQ_EXTRACT)");
+  }
   resetLaneCache();
 
   const match = openMatch("1942", matchSites("1942", board));

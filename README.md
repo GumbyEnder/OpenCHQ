@@ -18,6 +18,21 @@ node web/server/main.mjs
 
 Then open `http://127.0.0.1:8094`. `OPENCHQ_WEB_PORT` changes the port. Accounts are stored in `~/.local/share/openchq/`, or in `OPENCHQ_WEB_DATA` if that is set. They are not part of the game.
 
+## Tests
+
+Node 22.5 or newer is required (`node:sqlite`). From this folder:
+
+```
+npm test
+```
+
+The runner starts its own server on a free port, runs every module in `web/test/nodes/`, and ends with
+`node tests: N passed, M failed, K skipped`. It exits non-zero when anything failed, and every skip
+names what was missing. With no extract, board-dependent modules report as skipped, never as passed.
+`OPENCHQ_EXTRACT` (or `OPENCHQ_DATA`) points at the extract root and `OPENCHQ_REFERENCE` at the
+reference tree beside it; neither is required unless you want the reference-byte checks to run.
+`OPENCHQ_LOAD_HEADROOM` sets the headroom multiple the load test must clear (default 10).
+
 ## Data pack
 
 Original art and the extracted map are not in this repository. Point the game at a local extract:

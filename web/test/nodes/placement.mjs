@@ -89,13 +89,16 @@ export async function run(ctx) {
     if (!mask.count) fail("the sea mask is empty beside a coast");
   }
 
-  // --- the refusal names the rule and the number ----------------------------
-  eq("the land sentence names the zone",
+  // --- the refusal names the unit, then the rule and the number -------------
+  eq("the land sentence names the unit and the zone",
     placementRefusal("tank", "land", 8, 4),
-    "A tank goes on land inside your own zone, within 8 cells of a site you hold.");
-  eq("the sea sentence names the coast",
+    "That is not a valid place for tank. A tank goes on land inside your own zone, within 8 cells of a site you hold.");
+  eq("the sea sentence names the unit and the coast",
     placementRefusal("cruiser", "sea", 8, 4),
-    "A cruiser goes in coastal water, within 4 cells of land.");
+    "That is not a valid place for cruiser. A cruiser goes in coastal water, within 4 cells of land.");
+  if (!placementRefusal("infantry", "land", 8, 4).includes("not a valid place for infantry")) {
+    fail("the refusal does not say 'not a valid place for infantry'");
+  }
 
   // --- canPlace is the gate the purchase goes through -----------------------
   {
@@ -103,6 +106,10 @@ export async function run(ctx) {
     eq("a legal cell passes", canPlace(match, "blue", "infantry", 82, 52, grid).ok, true);
     const deep = canPlace(match, "blue", "infantry", 80, 39, grid);
     if (!deep.error) fail("canPlace accepted open water");
+    // This is the click on a cell the page did not highlight: the sentence must name the unit.
+    if (!deep.error.includes("not a valid place for infantry")) {
+      fail("an unhighlighted click says " + JSON.stringify(deep.error));
+    }
     const outside = canPlace(match, "blue", "infantry", 200, 100, grid);
     if (!outside.error) fail("canPlace accepted a cell outside the zone");
     const fractional = canPlace(match, "blue", "infantry", 82.5, 52, grid);

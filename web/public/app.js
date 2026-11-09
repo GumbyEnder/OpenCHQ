@@ -1252,6 +1252,9 @@ const DIALOG_PAINTERS = {
       for (const meter of model.reserves) {
         const item = document.createElement("li");
         item.textContent = reserveLine(meter);
+        if (meter.kind === "steel") {
+          item.title = "Steel is a non-original owner choice (D-003); the 1990 game had oil only.";
+        }
         list.append(item);
       }
       body.append(label, list);

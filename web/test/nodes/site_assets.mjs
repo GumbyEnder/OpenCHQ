@@ -23,7 +23,9 @@ export async function run(ctx) {
   const boardRes = await fetch(base + "/api/board");
   if (boardRes.status !== 200) fail("board status " + boardRes.status);
   const board = await boardRes.json();
-  if (board.source !== "extract") fail("this node needs the local extract; source " + board.source);
+  if (board.source !== "extract") {
+    ctx.skip("site_assets: no board extract on this host (set OPENCHQ_DATA or OPENCHQ_EXTRACT); got " + board.source);
+  }
   const paintedDocks = board.cells.filter((id) => id === 1).length;
   must(paintedDocks > 0, "the painted terrain has no dock cells (id 1)");
 
