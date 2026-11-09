@@ -3,7 +3,7 @@
 // The original drew one block for every unit on the map and told them apart in the unit monitor. This
 // page has no monitor, so each kind gets a five-cell silhouette at zoom, and the buy table shows the
 // same silhouette beside the name. These assertions pin the shapes, the seam wrap and the wire form.
-import { GLYPH_KINDS, GLYPH_SIZE, GLYPHS, glyphCells, glyphDataUrl, glyphFor } from "../../public/glyphs.mjs";
+import { GLYPH_KINDS, GLYPH_MIN_ZOOM, GLYPH_SIZE, GLYPHS, glyphCells, glyphDataUrl, glyphFor } from "../../public/glyphs.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -19,6 +19,7 @@ export const name = "unitglyphs";
 
 export async function run(ctx) {
   eq("a glyph is five cells wide", GLYPH_SIZE, 5);
+  eq("a glyph is drawn from two pixels per cell", GLYPH_MIN_ZOOM, 2);
   eq("every unit the shop sells has a glyph", GLYPH_KINDS, ["infantry", "tank", "aircraft", "ship", "submarine"]);
 
   // --- every glyph is a full square of rows, and no two are the same shape ---
@@ -35,8 +36,10 @@ export async function run(ctx) {
   // --- cells: centred, wrapped, and only the lit ones ------------------------
   const tank = glyphCells(100, 60, "tank", 320);
   eq("the tank's cell count is its bitmap's", tank.length, GLYPHS.tank.join("").split("1").length - 1);
-  const centreRow = tank.filter((c) => c.dy === 0).map((c) => c.dx).sort((a, b) => a - b);
-  eq("the tank is widest on its centre row", centreRow, [-1, 0, 1, 2]);
+  const hull = tank.filter((c) => c.dy === 1).map((c) => c.dx).sort((a, b) => a - b);
+  eq("the tank's hull is the full five cells wide", hull, [-2, -1, 0, 1, 2]);
+  const head = tank.filter((c) => c.dy === -2).map((c) => c.dx);
+  eq("the tank is one cell wide at the barrel", head, [0]);
 
   const seam = glyphCells(0, 10, "ship", 320);
   for (const cell of seam) {

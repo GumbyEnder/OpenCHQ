@@ -8,7 +8,7 @@
 
 import { colorForTerrain, paintBoard, PALETTE, SCHEMATIC, EXTRACT_MISSING } from "./paint.mjs";
 import { textBitmap } from "./font.mjs";
-import { glyphCells, glyphFor } from "./glyphs.mjs";
+import { GLYPH_MIN_ZOOM, glyphCells, glyphFor } from "./glyphs.mjs";
 
 export const BOARD_W = 320;
 export const BOARD_H = 136;
@@ -430,7 +430,10 @@ export function paintPiece(ctx, piece, view, opts = {}) {
   // At map scale the marker is the original's: a three-cell block in the side's dark colour with a
   // light pixel in the middle. A transport keeps the block but loses the light centre, which is this
   // page's one deliberate addition — the original had no cargo concept to draw.
-  if (view.scale < MARKER_ZOOM) {
+  // A typed unit draws its own silhouette at every zoom it can be read at. Only an untyped piece (and
+  // a map too small for five cells to mean anything) falls back to the original's block.
+  const glyphKind = piece.transport === true ? null : glyphFor(piece.kind);
+  if (!glyphKind && view.scale < MARKER_ZOOM) {
     const size = Math.max(1, Math.ceil(view.scale));
     for (const cell of markerCells(piece.x, piece.y, piece.side, view.boardW || BOARD_W)) {
       const px = cellToPixel(cell.x, cell.y, view);
@@ -443,8 +446,8 @@ export function paintPiece(ctx, piece, view, opts = {}) {
   }
   // A typed unit gets its own silhouette once the board is zoomed. An untyped opening piece keeps
   // the original's generic block, because the archive never recorded what it was.
-  const glyph = piece.transport === true ? null : glyphFor(piece.kind);
-  if (glyph) {
+  const glyph = glyphKind;
+  if (glyph && view.scale >= GLYPH_MIN_ZOOM) {
     const size = Math.max(1, Math.ceil(view.scale));
     const ink = Boolean(opts.own) && String(piece.side) === String(opts.own) ? PIECE_INK.own : PIECE_INK.enemy;
     ctx.fillStyle = pieceColor(piece);

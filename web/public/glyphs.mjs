@@ -10,41 +10,50 @@
 // sheet and no part of it may reach a browser. What is borrowed is the idea — one glance, one shape.
 
 export const GLYPH_SIZE = 5;
+// Below this many pixels per cell a five-cell silhouette is mush, so the block takes over. Above it a
+// typed unit is its own icon at every zoom — including the whole-world fit, which is where a player
+// spends most of a game looking.
+export const GLYPH_MIN_ZOOM = 2;
 
 // '1' is the hull/body, '.' is empty. Five rows of five.
 export const GLYPHS = Object.freeze({
+  // A figure: head, shoulders, torso, two legs.
   infantry: Object.freeze([
     "..1..",
-    "..11.",
-    "111..",
-    ".1...",
-    "1.1..",
-  ]),
-  tank: Object.freeze([
-    ".....",
-    "..1..",
-    ".1111",
     ".111.",
     "..1..",
+    ".111.",
+    ".1.1.",
   ]),
+  // A hull with a turret and a barrel over the nose.
+  tank: Object.freeze([
+    "..1..",
+    "11111",
+    ".111.",
+    "11111",
+    ".....",
+  ]),
+  // Top view: nose, wings, tail.
   aircraft: Object.freeze([
     "..1..",
     "..1..",
-    ".111.",
-    "1.1.1",
-    ".....",
+    "11111",
+    "..1..",
+    ".1.1.",
   ]),
+  // Pointed bow, full beam, wide stern.
   ship: Object.freeze([
-    ".1...",
-    ".1...",
-    "11111",
+    "..1..",
+    ".111.",
+    ".111.",
     "11111",
     ".111.",
   ]),
+  // A long hull with a sail: no bow point, which is what tells it from a ship at a glance.
   submarine: Object.freeze([
     ".....",
     "..1..",
-    "1111.",
+    ".111.",
     "11111",
     ".....",
   ]),
