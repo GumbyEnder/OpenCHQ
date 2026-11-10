@@ -167,3 +167,19 @@ ping-pong: each `join` closes the other socket with code 1000, each client recon
 backoff, and both tabs alternate "Connection lost. Reconnecting…" / "Reconnected." every ~2 s. A
 single tab is clean, so this does not affect the criterion above, but it is a real defect in the
 reconnect policy (the loser of a takeover should stand down, not fight back).
+
+**The blank tab.** During the first attempts the automation browser had two page targets open on
+the same account. Both ended at `about:blank` and the second was logged out, which is what looked
+like a page or session fault. Two fixes on the test side, one finding on ours:
+
+- The harness was driving whichever page had focus, so half the DOM reads and clicks landed on a
+  different tab. Every check in `tools/` now runs in one page with a fresh context.
+- A single tab on a fresh context survived 901 s, 180 rounds and 59 server pings with no reload
+  (`performance.timeOrigin` unchanged) and no `about:blank`. The page did not navigate itself away,
+  and the server did not close a single socket in that run — so the blank tab was the automation
+  browser, not the app or its session cookie.
+- The real defect it exposed stays on the list: **two clients on one session fight for the socket.**
+  `lobby.join` closes the previous peer with 1000, and the "loser" client reconnects and takes it
+  back, so both tabs alternate "Connection lost. Reconnecting…" / "Reconnected." every ~2 s. A
+  takeover is meant to be one-directional: the client that lost the socket should stand down until
+  the player acts, or the server should say why it closed (`bye`), not close with a bare 1000.
