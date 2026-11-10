@@ -79,8 +79,11 @@ wells (they are not in the 84-entry table).
 
 **R2 — the type byte is carried as `type`, and is NOT mapped onto `kind`.** This is a
 ruling, not a preference: the file's subtype and `web/data/world.json`'s `kind` disagree on
-34 of the 84 sites — e.g. 1986 file `type 1` on ids 10 (London), 35 (Tokyo), 62 (Washington)
-where `world.json` says `city`; `type 5` on 64..83 where `world.json` says `facility`. Writing
+**14 of the 84 sites** under the only mapping that exists (`1/2` = capital, `4` = city,
+`5` = facility): the 12 sites whose 1986 row is `type 3` (0, 1, 2, 4, 21, 22, 51, 52, 54,
+55, 57, 58) that `world.json` calls `city`, and ids 10 (London) and 35 (Tokyo) where the
+file says `type 1` and `world.json` says `city`. Ids 62/63 agree (`type 1/2`, `kind`
+capital) and 64..83 agree (`type 5`, `kind` facility). Writing
 the subtype into `kind` would silently reclassify cities, income and the 20 facilities in one
 keystroke. `kind` stays the asset list's word; the file's subtype travels beside it.
 
@@ -124,6 +127,14 @@ the exit code you start from in the commit message, so a red suite cannot be bla
 
 The 1986 neutral count is 6 from the file plus the §4 four; if the four are not forced, the
 test must fail on `blue 52 / red 26 / neutral 6`.
+
+Every cell above was re-derived on 2026-11-10 from `data/cbr_type_by_era.json` rows 0–3
+against `docs/re/era-captures/*.sites.json` (`owner` = `0x40` → blue, `0x80` → red, neither
+→ neutral) — 1918 25 live of 84 / 1942 64 / 1986 84 / 2023 84, and the same figures come out
+of both the file and the captures except the four §4 owner bits, which is what A3 is
+asserting. The earlier draft said "34 of 84" for the R2 disagreement; the reproducible count
+is 14, corrected here. If any cell here disagrees with a fresh run of the derivation,
+ERA_SETUP.md and the script win, and this table is wrong.
 
 **A4 — drift guard.** When `boardPayload().source === "extract"`, `era_table.mjs` re-reads
 `data/cbr_type_by_era.json` through `resolveDataRoot()` and fails naming the first differing
