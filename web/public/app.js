@@ -26,7 +26,8 @@ import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from ".
 // Per-type silhouettes: one shape for the map at zoom, the same shape beside the name in Buy.
 import { glyphDataUrl } from "./glyphs.mjs";
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
-import { formatBillions, formatWholeBillions } from "./command.mjs";
+import { formatBillions, formatWholeBillions, purchaseText } from "./command.mjs";
+import { createOrderWatch, queuedText } from "./orderwatch.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -47,10 +48,24 @@ let reconnectTimer = null;
 let reconnectTries = 0;
 let wasReconnecting = false;
 const RECONNECT_TRIES = 8;
+// The server's "another tab took this session" close code. This page does not reconnect after
+// it: two tabs trading one socket is a toast loop, not a connection.
+const TAKEOVER_CODE = 4001;
+let replaced = false;
+function standDown(reason) {
+  if (replaced) return;
+  replaced = true;
+  socketState = "replaced";
+  renderDebug();
+  say(reason || "This session was opened in another tab. This tab is no longer connected.");
+}
 // An order sent while the socket is down is kept, with its id, and resent when the socket comes
 // back. The server applies one id at most once, so a resend is safe. Never a silent loss.
 let orderSeq = 0;
 let orderQueue = [];
+// An order that gets no ack is not "sent": after ~2 s the page says so. The order is still
+// queued and resent, and the server applies one id at most once.
+const orderWatch = createOrderWatch({ onLate: (order) => say(queuedText(order.kind || "order")) });
 function sendOrder(payload) {
   const message = { ...payload, id: "o" + Date.now().toString(36) + "-" + (++orderSeq) };
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -59,10 +74,13 @@ function sendOrder(payload) {
     orderQueue.push(message);
     say("Connection is down. Your order is queued and will be sent when it returns.");
   }
+  // Watch every order, connected or not: a socket can be open and still not deliver.
+  orderWatch.watch(message);
   return message;
 }
 function settleOrder(id) {
   if (id === undefined || id === null) return;
+  orderWatch.settle(id);
   orderQueue = orderQueue.filter((message) => message.id !== id);
 }
 function flushOrders() {
@@ -1438,6 +1456,9 @@ document.getElementById("dialogClose")?.addEventListener("click", closeDialog);
 buildNav();
 
 function connect() {
+  // A deliberate connect (sign-in, or a reconnect this page decided on) clears the take-down
+  // state: the only way back into a replaced tab is a reload or a new sign-in.
+  replaced = false;
   // Drop the old socket without letting its close event schedule another reconnect: only the
   // socket that is still the current one gets to do that.
   const previous = socket;
@@ -1471,6 +1492,10 @@ function connect() {
       renderRoom();
       drawMatch();
       flushOrders();
+    } else if (message.op === "replaced") {
+      // The server handed this session's socket to another tab. Say it once and stand down:
+      // reconnecting from here would take the socket back and start the ping-pong again.
+      standDown(message.reason);
     } else if (message.op === "bye") {
       // The server is going away on purpose: say so, and keep the room on screen.
       say(message.reason || "The server is restarting.");
@@ -1541,7 +1566,7 @@ function connect() {
       noteLog(message.lines);
     } else if (message.op === "bought") {
       settleOrder(message.id);
-      say("Bought an " + message.kind + " at " + message.at.x + "," + message.at.y + (message.cash !== null && message.cash !== undefined ? ". Pool " + message.cash + "." : "."));
+      say(purchaseText(message.kind, message.at, message.cash));
       // One purchase lands, the cursor goes: the next click is a map click again.
       buying = null;
       placement = null;
@@ -1565,10 +1590,17 @@ function connect() {
       }
     }
   });
-  socket.addEventListener("close", () => {
+  socket.addEventListener("close", (event) => {
     if (socket !== selfSocket) return;
     socketState = "closed";
     renderDebug();
+    // A takeover is not a dropped connection: the other tab has the socket on purpose. Say
+    // the one sentence and stay off. Before this, the older tab reconnected and the two tabs
+    // took the socket back and forth every couple of seconds.
+    if ((event && Number(event.code) === TAKEOVER_CODE) || replaced) {
+      standDown();
+      return;
+    }
     // A deploy, a sleeping laptop or a dropped wifi all look the same from here. Reconnect by
     // itself, backing off, and let the welcome message restore the room and its log.
     if (!me) return;

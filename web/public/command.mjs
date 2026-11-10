@@ -30,6 +30,32 @@ export function formatWholeBillions(millions) {
   return String(Math.round(value / MILLIONS_PER_BILLION));
 }
 
+// The noun a purchase is announced with. A bare kind reads wrong for a collective: nobody buys
+// "an infantry". The article follows the noun's first sound, and an explicit table beats a
+// heuristic for the kinds whose spelling lies (intelScan, reconSat).
+const PURCHASE_NOUNS = { infantry: "infantry section" };
+const AN_NOUNS = new Set(["infantry section", "aircraft", "intelScan", "escort"]);
+
+export function articleFor(noun) {
+  const word = String(noun || "").trim();
+  if (!word) return "a";
+  if (AN_NOUNS.has(word)) return "an";
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
+
+// The one line a completed purchase shows. The pool is the server's cash in millions; T-001
+// prints money in billions, so a raw 300 read as "300" and looked like 300 billion. F3.
+export function purchaseText(kind, at, cash) {
+  const noun = PURCHASE_NOUNS[String(kind || "")] || String(kind || "unit");
+  const cellAt = cell(at);
+  const where = cellAt ? " at " + cellAt.x + "," + cellAt.y : "";
+  const value = Number(cash);
+  const pool = cash !== null && cash !== undefined && Number.isFinite(value)
+    ? " Pool " + formatBillions(value) + "b."
+    : "";
+  return "Bought " + articleFor(noun) + " " + noun + where + "." + pool;
+}
+
 function cell(value) {
   if (!value || typeof value !== "object") return null;
   const x = Number(value.x);

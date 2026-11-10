@@ -235,3 +235,68 @@ policy: two clients on one account fight for the socket instead of the loser sta
 is not criterion (a) for one client and not a session/cookie failure, but it is on the list: the
 client that loses a takeover should not reconnect until the player acts, or `lobby.join` should
 close with a reason the page can show instead of a bare 1000.
+
+## T-000 follow-ups F1–F3 (fixed 2026-11-10, before T-002)
+
+The PM accepted T-000 at room 2613 and logged three non-blocking follow-ups. All three are
+fixed here, each with a node test that fails on the old behaviour.
+
+### F1 — two tabs on one session fought over the socket
+
+**Root cause:** `lobby.join` replaced the session's peer with `previous.close()`, which writes
+close code **1000**. A page cannot tell 1000 apart from a deploy or a dropped wifi, so the
+close handler did the only correct thing it knew: reconnect with backoff. The older tab took
+the socket back, the newer tab was closed with 1000 in turn, and the two alternated about every
+2 s — the 8-vs-7 toast counts in `docs/captures/t000-tab-diagnosis.json`.
+
+**Fix:** a takeover is now one way.
+- `web/server/ws.mjs` exports `TAKEOVER_CLOSE_CODE = 4001`.
+- `lobby.join` sends `{op:"replaced", reason:"This session was opened in another tab."}` to the
+  older peer, then closes it with 4001.
+- `web/public/app.js` treats either the message or the close code as final for that tab:
+  `standDown()` shows the sentence once and sets `socketState = "replaced"`; the close handler
+  returns before any reconnect scheduling. A deliberate reconnect (reload, sign-in) clears the
+  flag, so the newer tab can still be replaced by reloading the older one.
+
+**Test:** `web/test/nodes/ws_takeover.mjs` opens two clients on one session, asserts the older
+got exactly one `replaced` notice naming another tab, that its close code is 4001 (not 1000),
+and that over four ping intervals the newer socket survives, presence lists the account once,
+and the surviving socket still opens a room. That last part is what a reconnect cycle would
+break.
+
+### F2 — a silent cut shorter than the ping interval showed no feedback
+
+**Root cause:** the page only spoke about an order when the socket *closed*. A cut shorter than
+the 15 s ping leaves TCP retransmitting on an open socket: the order reached the server (the
+10 s offline Buy in `docs/captures/t000-offline-buy.json`) and the page said nothing until the
+reply arrived. If the reply was lost with the cut, the player saw neither a purchase nor a
+refusal.
+
+**Fix:** `web/public/orderwatch.mjs` — every order id is watched for 2 s (`ACK_WAIT_MS`). No
+ack/bought/reject inside the wait, and the page says "No answer yet for your <kind>. It is
+queued and will be applied when the server answers." Any answer settles the timer. The order is
+still in `orderQueue` and still resent, so this changes the feedback, not the delivery.
+
+**Test:** `web/test/nodes/order_ack_feedback.mjs` holds the ack back and asserts the queued line
+appears exactly once, names the order, and that a settled order produces nothing. It also pins
+`ACK_WAIT_MS` to the 1–3 s band so "about 2 s" cannot drift.
+
+### F3 — "Bought an submarine at 86,61. Pool 300"
+
+Two defects in one line, both in the client's `bought` branch:
+1. the article was the literal string "an" for every kind;
+2. `cash` came off the wire in **millions** (the server's unit) and was printed raw, so 300
+   million read as "Pool 300" — 300 billion to a player, and a violation of T-001's
+   "cash in billions" display rule.
+
+**Fix:** `web/public/command.mjs` exports `articleFor(noun)` and `purchaseText(kind, at, cash)`.
+The purchase noun table gives `infantry -> "infantry section"` (a collective cannot take "an
+infantry"), the article follows the noun's first sound, and the pool is `formatBillions(cash) +
+"b"`. The line now reads **"Bought a submarine at 86,61. Pool 0.3b."** — the pool is the same
+unit as the Economy dialog and the purse line, which already went through `formatBillions`.
+
+**Test:** `web/test/nodes/buy_message_text.mjs` asserts the submarine sentence exactly, asserts
+no `Pool <raw millions>` form survives, and walks every shop kind for the article and the
+billions suffix.
+
+Suite after the three: **54 passed, 0 failed, 0 skipped, WEB_OK**.

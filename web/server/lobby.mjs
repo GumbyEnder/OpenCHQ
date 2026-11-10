@@ -15,6 +15,7 @@ import { logLines } from "./log.mjs";
 import { roundSeconds } from "./rules.mjs";
 import { shopFor } from "./shop.mjs";
 import { compatUnitKind } from "./migrate.mjs";
+import { TAKEOVER_CLOSE_CODE as TAKEOVER_CODE } from "./ws.mjs";
 
 // A player action during a running clock marks the room dirty instead of committing it: the tick
 // writes dirty rooms within FLUSH_SECONDS anyway, and a commit per order is what turned a 0.12 s
@@ -355,10 +356,21 @@ export function createLobby() {
     return roomView(room, username);
   }
 
+  // A second tab on one session takes the socket over, one way only. Before this the older
+  // peer was closed with 1000, which the older tab read as "the server went away" and answered
+  // by reconnecting: two tabs then traded the socket every couple of seconds, each showing
+  // "Connection lost" and "Reconnected" in turn. The replacement now says so explicitly and
+  // closes with 4001, which the page treats as final for that tab.
+  function replace(previous) {
+    if (!previous || previous.closed) return;
+    previous.send({ op: "replaced", reason: "This session was opened in another tab." });
+    previous.close(TAKEOVER_CODE);
+  }
+
   function join(username, peer) {
     const previous = sockets.get(username);
     sockets.set(username, peer);
-    if (previous && previous !== peer) previous.close();
+    if (previous && previous !== peer) replace(previous);
     peer.onclose = () => {
       if (sockets.get(username) !== peer) return;
       sockets.delete(username);

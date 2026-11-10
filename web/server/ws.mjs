@@ -10,6 +10,10 @@ export const PING_MS = Number(process.env.OPENCHQ_WS_PING_MS) > 0
   ? Number(process.env.OPENCHQ_WS_PING_MS)
   : 15000;
 
+// A second socket for one session replaces the first. The close code says "you were replaced",
+// not "the server died", so the older page stops instead of reconnecting and stealing it back.
+export const TAKEOVER_CLOSE_CODE = 4001;
+
 export function acceptWebSocket(req, socket, onPeer) {
   const key = req.headers["sec-websocket-key"];
   const upgrade = String(req.headers.upgrade ?? "");
