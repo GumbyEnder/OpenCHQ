@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { sightCells } from "./rules.mjs";
+import { applyEra } from "./era.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -176,7 +177,7 @@ function neighbourSite(sites, x, y) {
 // oil list names. Unknown kinds pass through untouched. Ids stay stable per cell.
 export function matchSites(era = "1986", board = boardPayload()) {
   // The baked board carries the same grid, site table and wells the extract does, so a host with no
-  // extract plays the same 269-site 1986 map as a developer machine. Gating this on source "extract"
+  // extract plays the same board as a developer machine. Gating this on source "extract"
   // is what left the public host with the 84-site picture list, no docks, nothing owned and no
   // income at all - a dead economy that looked like a rule bug.
   if (!board || (board.source !== "extract" && board.source !== "bundled") || !Array.isArray(board.sites)) return [];
@@ -229,14 +230,17 @@ export function matchSites(era = "1986", board = boardPayload()) {
     wells.push(field);
   }
 
-  return [...base, ...docks, ...wells.map((field) => ({
+  return applyEra([...base, ...docks, ...wells.map((field) => ({
     id: field.id,
     name: field.name,
     x: field.x,
     y: field.y,
     kind: field.kind,
     region: field.region,
-  }))];
+    // The 38 wells are ours, not the original's: no recovered oil-site list places them. Phase B
+    // keeps them and says so on every row instead of deleting them behind the player's back.
+    source: "hand-placed, non-original",
+  }))], era);
 }
 
 // Paints site centers, and neighbors for a site that also covers its block.

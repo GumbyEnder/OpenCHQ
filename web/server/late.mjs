@@ -99,9 +99,12 @@ function nearCapital(match, cell) {
   const radius = Number(cfg.exclusion);
   if (!Number.isFinite(radius) || radius < 1) return false;
   for (const side of ["blue", "red"]) {
-    const capital = match.capitals && match.capitals[side];
-    if (!capital) continue;
-    if (Math.abs(capital.x - cell.x) <= radius && Math.abs(capital.y - cell.y) <= radius) return true;
+    const row = match.capitals && match.capitals[side];
+    const capitals = Array.isArray(row) ? row : row ? [row] : [];
+    for (const capital of capitals) {
+      if (!capital) continue;
+      if (Math.abs(capital.x - cell.x) <= radius && Math.abs(capital.y - cell.y) <= radius) return true;
+    }
   }
   return false;
 }

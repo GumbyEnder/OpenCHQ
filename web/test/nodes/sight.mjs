@@ -3,7 +3,7 @@
 // Pure module test - no server, no sockets. Each match is built directly from openMatch so a
 // failure names the exact rule that broke. Radii come from ctx.config, never from a literal.
 
-import { CELL_W, SEATS } from "../../server/board.mjs";
+import { CELL_W, SEATS, matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { forSeat } from "../../server/view.mjs";
 
@@ -175,8 +175,8 @@ export async function run(ctx) {
   ];
   const blind = forSeat(hiddenMatch, "blue");
   expect(fail, !ids(blind).some((id) => id.startsWith("red:")), "concealed era leaked an enemy piece before the capital was seen");
-  expect(fail, blind.capitals.blue && blind.capitals.blue.x === SEATS.blue.x, "the seat lost its own capital");
-  expect(fail, blind.capitals.red === undefined || blind.capitals.red === null, "concealed era sent the enemy capital before it was seen");
+  expect(fail, blind.capitals.blue.length === 1 && blind.capitals.blue[0].x === SEATS.blue.x, "the seat lost its own capital");
+  expect(fail, blind.capitals.red.length === 0, "concealed era sent the enemy capital before it was seen");
   expect(fail, !blind.sites.some((site) => site.id === "redWell"), "concealed era leaked an enemy-owned site");
   expect(fail, blind.sites.some((site) => site.id === "noMans"), "concealed era dropped neutral sites");
   expect(fail, blind.sites.some((site) => site.id === "blueCity"), "concealed era dropped the seat's own sites");
@@ -186,7 +186,7 @@ export async function run(ctx) {
   hiddenMatch.pieces[0].x = SEATS.red.x - radius;
   hiddenMatch.pieces[0].y = SEATS.red.y;
   const found = forSeat(hiddenMatch, "blue");
-  expect(fail, found.capitals.red && found.capitals.red.x === SEATS.red.x, "seeing the capital did not reveal it");
+  expect(fail, found.capitals.red.length === 1 && found.capitals.red[0].x === SEATS.red.x, "seeing the capital did not reveal it");
   expectPresent(fail, found, "red:patrol", "an enemy next to the revealed capital");
   expect(fail, found.notes.length === 0, "the concealment note outlived the sighting: " + JSON.stringify(found.notes));
   expect(fail, found.sites.some((site) => site.id === "redWell"), "the reveal did not restore the enemy's sites");
@@ -196,19 +196,51 @@ export async function run(ctx) {
   hiddenMatch.pieces[0].x = 10;
   hiddenMatch.pieces[0].y = 10;
   const remembered = forSeat(hiddenMatch, "blue");
-  expect(fail, remembered.capitals.red && remembered.capitals.red.x === SEATS.red.x, "the capital was forgotten after the scout left");
+  expect(fail, remembered.capitals.red.length === 1 && remembered.capitals.red[0].x === SEATS.red.x, "the capital was forgotten after the scout left");
 
   // red is still blind: concealment is per seat, not shared
   const redBlind = forSeat(hiddenMatch, "red");
   expectAbsent(fail, redBlind, "blue:scout", "blue's scout is out of red's sight");
-  expect(fail, redBlind.capitals.blue === undefined || redBlind.capitals.blue === null, "red saw blue's capital without finding it");
+  expect(fail, redBlind.capitals.blue.length === 0, "red saw blue's capital without finding it");
 
   // a normal era never conceals a side
   const openEra = openMatch("1918");
   openEra.pieces = [unit("blue:scout", "blue", 2, 60), unit("red:army", "red", 200, 100)];
   const openView = forSeat(openEra, "blue");
-  expect(fail, openView.capitals.red && openView.capitals.red.x === SEATS.red.x, "the 1918 view concealed the enemy capital");
+  // 1918's red capital is Berlin, not Moscow: the view must carry the era's own capital.
+  expect(fail, openView.capitals.red.length === 1 && openView.capitals.red[0].x === 161 && openView.capitals.red[0].y === 30,
+    "the 1918 view concealed or moved the enemy capital");
   expectAbsent(fail, openView, "red:army", "an enemy far from every blue piece in 1918");
+
+  // ---- concealed era: no enemy capital and no site name until a piece sees the cell ---------
+  // The original's ???? hover prints CAPITAL / CITY instead of the name (ERA_SETUP §7). The seat
+  // view has to do the same, per site, and remember each sighting.
+  const TYPE_WORDS = new Set(["CAPITAL", "CITY", "BASE", "OILFIELD", "DOCK", "FACILITY", "SITE"]);
+  const secret = openMatch("9999", matchSites("9999"), { seed: 11 });
+  const enemyCapital = secret.capitals.red[0];
+  if (!enemyCapital) fail("sight: the rolled ???? match has no red capital");
+  secret.pieces = [unit("blue:scout", "blue", 5, 100), unit("blue:home", "blue", 6, 101)];
+  const blindView = forSeat(secret, "blue");
+  expect(fail, blindView.capitals.red.length === 0, "concealed era sent an enemy capital before it was seen");
+  const leakedNames = blindView.sites.filter((site) => !TYPE_WORDS.has(String(site.name)));
+  expect(fail, leakedNames.length === 0,
+    "concealed era leaked " + leakedNames.length + " site name(s), first: " + JSON.stringify(leakedNames[0]));
+  expect(fail, !JSON.stringify(blindView.sites).includes(enemyCapital.name),
+    "the enemy capital's name travelled inside a site row");
+
+  // Walk the scout onto the enemy capital: the capital and that site's name appear.
+  secret.pieces[0].x = enemyCapital.x;
+  secret.pieces[0].y = enemyCapital.y;
+  const seenView = forSeat(secret, "blue");
+  expect(fail, seenView.capitals.red.length === 1 && seenView.capitals.red[0].x === enemyCapital.x,
+    "seeing the enemy capital did not reveal it");
+  const capitalSite = seenView.sites.find((site) => Number(site.x) === enemyCapital.x && Number(site.y) === enemyCapital.y);
+  expect(fail, capitalSite && capitalSite.name === enemyCapital.name,
+    "the capital's own site row still hides its name after the sighting: " + JSON.stringify(capitalSite));
+  // Names the seat has not seen are still type words.
+  const stillHidden = seenView.sites.filter((site) => !capitalSite || site.id !== capitalSite.id)
+    .filter((site) => !TYPE_WORDS.has(String(site.name)));
+  expect(fail, stillHidden.length === 0, "one sighting un-concealed the whole map: " + JSON.stringify(stillHidden[0]));
 }
 
 function otherLength(value) {

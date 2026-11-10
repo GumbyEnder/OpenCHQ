@@ -119,5 +119,6 @@ export async function run(ctx) {
   must(Array.isArray(emptySites) && emptySites.length === 0, "a missing extract invented sites: " + JSON.stringify(emptySites));
   const bare = openMatch("1986", emptySites);
   must(Array.isArray(bare.sites) && bare.sites.length === 0, "a room with no extract threw or invented sites");
-  must(bare.pieces.length === 4, "a room with no extract lost its opening pieces: " + bare.pieces.length);
+  // 1986's fixture has three blue capitals and one red, each with a land garrison and a ship.
+  must(bare.pieces.length === 6, "a room with no extract lost its opening pieces: " + bare.pieces.length);
 }

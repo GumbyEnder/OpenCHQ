@@ -5,6 +5,7 @@ import { forSeat } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { boardPayload, matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
+import { eraSides, eraTable } from "./era.mjs";
 import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
@@ -131,6 +132,10 @@ export function createLobby() {
       id: room.id,
       mode: room.mode,
       era: room.era,
+      // What each side is called this era - France against Germany, Allies against Axis - with
+      // the source that names it. A lobby that only says "Blue" and "Red" makes 1918 the wrong
+      // war by omission.
+      sides: eraSides(room.era),
       clock: room.clock,
       you,
       blue: { username: room.seats.blue.username, kind: room.seats.blue.kind },
@@ -979,7 +984,14 @@ export function createLobby() {
 // could not be played: there was nothing to click. Seeding at open is the same rule, applied
 // early enough for the view to carry it.
 function opened(era, sites, options = {}) {
-  const match = openMatch(eraOf(era), sites, options);
+  const year = eraOf(era);
+  // 2023 and ???? roll their capitals, owners and unowned count per match. A fresh seed per room
+  // is what makes two new games differ; a test that wants a replayable map passes its own seed.
+  const table = eraTable(year);
+  const seeded = table && table.ownerSource !== "capture" && options.seed === undefined
+    ? { ...options, seed: randomBytes(4).readUInt32LE(0) }
+    : options;
+  const match = openMatch(year, sites, seeded);
   seedOwners(match);
   return match;
 }

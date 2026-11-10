@@ -1,0 +1,4663 @@
+{
+ "_meta": {
+  "what": "Each era's opening: which sites exist, each site's type byte, who owns it at the first bell, and the capital cells. Baked from the Phase A captures and the era type rows by tools/bake_eras.mjs",
+  "not": "This is not the 1990 release's data file. 2023 and ???? ship no owners: those eras roll them per match, and their owner column here is empty on purpose. `type` is not world.json's `kind`.",
+  "generated": "source-fingerprint:33e602fd18805ac3",
+  "extract": "modern/extracted",
+  "sha256_16": {
+   "web/data/world.json": "67beb7ed47165c70",
+   "docs/re/era-captures/era-1918-blue.sites.json": "1a46863811396613",
+   "docs/re/era-captures/era-1918-red.sites.json": "e96dcc6ffe82f7f8",
+   "docs/re/era-captures/era-1942-blue.sites.json": "cf6760a6b0769797",
+   "docs/re/era-captures/era-1942-red.sites.json": "9e7556804bf79b41",
+   "docs/re/era-captures/era-1986-blue.sites.json": "2b846fdb66599bd7",
+   "docs/re/era-captures/era-2023-blue-a.sites.json": "e9cbf6d9729d4fdf",
+   "docs/re/era-captures/era-2023-blue-b.sites.json": "331d922944f14f61",
+   "docs/re/era-captures/era-concealed-blue-a.sites.json": "584ef1ace115a824",
+   "docs/re/era-captures/era-concealed-blue-b.sites.json": "ead92f33790c4706",
+   "data/cbr_type_by_era.json": "b97b968283e62aed"
+  }
+ },
+ "eras": {
+  "1918": {
+   "fileEra": 0,
+   "ownerSource": "capture",
+   "sides": {
+    "blue": {
+     "label": "France",
+     "source": "docs/REA_PASS.md (French flag, PARIS selected)"
+    },
+    "red": {
+     "label": "Germany",
+     "source": "capital is Berlin (capture); manual p.17 calls red the Axis - the name is UNVERIFIED"
+    }
+   },
+   "captures": [
+    "docs/re/era-captures/era-1918-blue.sites.json",
+    "docs/re/era-captures/era-1918-red.sites.json"
+   ],
+   "capitals": {
+    "blue": [
+     {
+      "id": 17,
+      "name": "Paris",
+      "x": 150,
+      "y": 34,
+      "type": 1,
+      "source": "era-1918-blue.sites.json subtype 1 owner blue",
+      "seat": true
+     },
+     {
+      "id": 10,
+      "name": "London",
+      "x": 148,
+      "y": 30,
+      "type": 1,
+      "source": "era-1918-blue.sites.json subtype 1 owner blue"
+     }
+    ],
+    "red": [
+     {
+      "id": 11,
+      "name": "Berlin",
+      "x": 161,
+      "y": 30,
+      "type": 2,
+      "source": "era-1918-blue.sites.json subtype 2 owner red",
+      "seat": true
+     }
+    ]
+   },
+   "seatCapital": {
+    "blue": 17,
+    "red": 11,
+    "source": "docs/REA_PASS.md (1918 blue opens on Paris)"
+   },
+   "sites": [
+    {
+     "id": 0,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 182,
+     "y": 13,
+     "name": "Archangel",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 1,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 133,
+     "y": 14,
+     "name": "Reykjavik",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 2,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 157,
+     "y": 15,
+     "name": "Orland",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 3,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 175,
+     "y": 20,
+     "name": "Leningrad",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 4,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 292,
+     "y": 23,
+     "name": "Kamchatskiy",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 5,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 189,
+     "y": 25,
+     "name": "Gorkiy",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 6,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 219,
+     "y": 26,
+     "name": "Novosibirsk",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 7,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 158,
+     "y": 27,
+     "name": "Hamburg",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 8,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 180,
+     "y": 28,
+     "name": "Smolensk",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 9,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 146,
+     "y": 29,
+     "name": "Birmingham",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 10,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 148,
+     "y": 30,
+     "name": "London",
+     "source": "era-1918-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 11,
+     "type": 2,
+     "owner": "red",
+     "present": true,
+     "x": 161,
+     "y": 30,
+     "name": "Berlin",
+     "source": "era-1918-blue.sites.json (live byte 0x9a)"
+    },
+    {
+     "id": 12,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 168,
+     "y": 30,
+     "name": "Warsaw",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 13,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 268,
+     "y": 30,
+     "name": "Khabarovsk",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 14,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 174,
+     "y": 31,
+     "name": "Kiev",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 15,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 155,
+     "y": 32,
+     "name": "Bonn",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 16,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 181,
+     "y": 33,
+     "name": "Kharkov",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 17,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 150,
+     "y": 34,
+     "name": "Paris",
+     "source": "era-1918-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 18,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 39,
+     "y": 35,
+     "name": "Seattle",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 19,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 167,
+     "y": 35,
+     "name": "Budapest",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 20,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 78,
+     "y": 37,
+     "name": "Toronto",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 21,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 178,
+     "y": 37,
+     "name": "Sevastopol",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 22,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 267,
+     "y": 39,
+     "name": "Vladivostok",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 23,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 153,
+     "y": 39,
+     "name": "Marseille",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 24,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 74,
+     "y": 40,
+     "name": "Detroit",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 25,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 85,
+     "y": 41,
+     "name": "Boston",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 26,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 160,
+     "y": 41,
+     "name": "Rome",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 27,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 70,
+     "y": 42,
+     "name": "Chicago",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 28,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 83,
+     "y": 42,
+     "name": "New York",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 29,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 145,
+     "y": 42,
+     "name": "Madrid",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 30,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 173,
+     "y": 42,
+     "name": "Istanbul",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 31,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 252,
+     "y": 44,
+     "name": "Beijing",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 32,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 39,
+     "y": 44,
+     "name": "San Francisco",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 33,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 54,
+     "y": 44,
+     "name": "Denver",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 34,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 261,
+     "y": 46,
+     "name": "Seoul",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 35,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 272,
+     "y": 45,
+     "name": "Tokyo",
+     "source": "era-1918-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 36,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 80,
+     "y": 46,
+     "name": "Norfolk",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 37,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 270,
+     "y": 46,
+     "name": "Nagoya",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 38,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 68,
+     "y": 47,
+     "name": "St Louis",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 39,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 272,
+     "y": 47,
+     "name": "Yokohama",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 40,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 267,
+     "y": 48,
+     "name": "Hiroshima",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 41,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 269,
+     "y": 48,
+     "name": "Osaka",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 42,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 73,
+     "y": 50,
+     "name": "Atlanta",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 43,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 250,
+     "y": 59,
+     "name": "Hong Kong",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 44,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 45,
+     "y": 51,
+     "name": "Los Angeles",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 45,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 180,
+     "y": 52,
+     "name": "Jerusalem",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 46,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 255,
+     "y": 52,
+     "name": "Shanghai",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 47,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 176,
+     "y": 53,
+     "name": "Cairo",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 48,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 67,
+     "y": 54,
+     "name": "New Orleans",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 49,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 62,
+     "y": 55,
+     "name": "Houston",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 50,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 214,
+     "y": 62,
+     "name": "Bombay",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 51,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 76,
+     "y": 60,
+     "name": "Havana",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 52,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 10,
+     "y": 62,
+     "name": "Pearl Harbor",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 53,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 59,
+     "y": 63,
+     "name": "Mexico City",
+     "source": "era-1918-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 54,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 256,
+     "y": 67,
+     "name": "Manila",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 55,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 245,
+     "y": 69,
+     "name": "Cam Ranh",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 56,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 90,
+     "y": 71,
+     "name": "Caracas",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 57,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 76,
+     "y": 73,
+     "name": "Panama Canal",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 58,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 213,
+     "y": 86,
+     "name": "Diego Garcia",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 59,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 108,
+     "y": 102,
+     "name": "Rio de Janeiro",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 60,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 173,
+     "y": 102,
+     "name": "Johannesburg",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 61,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 282,
+     "y": 110,
+     "name": "Sydney",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 62,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 79,
+     "y": 44,
+     "name": "Washington",
+     "source": "era-1918-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 63,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 183,
+     "y": 25,
+     "name": "Moscow",
+     "source": "era-1918-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 64,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 18,
+     "y": 18,
+     "name": "site_64",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 65,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 218,
+     "y": 23,
+     "name": "site_65",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 66,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 193,
+     "y": 26,
+     "name": "site_66",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 67,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 194,
+     "y": 30,
+     "name": "site_67",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 68,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 55,
+     "y": 33,
+     "name": "site_68",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 69,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 187,
+     "y": 37,
+     "name": "site_69",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 70,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 240,
+     "y": 30,
+     "name": "site_70",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 71,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 62,
+     "y": 47,
+     "name": "site_71",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 72,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 189,
+     "y": 48,
+     "name": "site_72",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 73,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 195,
+     "y": 49,
+     "name": "site_73",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 74,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 60,
+     "y": 51,
+     "name": "site_74",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 75,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 189,
+     "y": 52,
+     "name": "site_75",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 76,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 164,
+     "y": 54,
+     "name": "site_76",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 77,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 189,
+     "y": 56,
+     "name": "site_77",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 78,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 250,
+     "y": 79,
+     "name": "site_78",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 79,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 193,
+     "y": 60,
+     "name": "site_79",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 80,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 199,
+     "y": 60,
+     "name": "site_80",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 81,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 59,
+     "y": 60,
+     "name": "site_81",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 82,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 87,
+     "y": 72,
+     "name": "site_82",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 83,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 151,
+     "y": 73,
+     "name": "site_83",
+     "source": "era-1918-blue.sites.json (live byte 0x0)"
+    }
+   ]
+  },
+  "1942": {
+   "fileEra": 1,
+   "ownerSource": "capture",
+   "sides": {
+    "blue": {
+     "label": "Allies",
+     "source": "manual p.17 (USSR is on the Allied side this era)"
+    },
+    "red": {
+     "label": "Axis",
+     "source": "manual p.17"
+    }
+   },
+   "captures": [
+    "docs/re/era-captures/era-1942-blue.sites.json",
+    "docs/re/era-captures/era-1942-red.sites.json"
+   ],
+   "capitals": {
+    "blue": [
+     {
+      "id": 62,
+      "name": "Washington",
+      "x": 79,
+      "y": 44,
+      "type": 1,
+      "source": "era-1942-blue.sites.json subtype 1 owner blue",
+      "seat": true
+     },
+     {
+      "id": 10,
+      "name": "London",
+      "x": 148,
+      "y": 30,
+      "type": 1,
+      "source": "era-1942-blue.sites.json subtype 1 owner blue"
+     },
+     {
+      "id": 63,
+      "name": "Moscow",
+      "x": 183,
+      "y": 25,
+      "type": 1,
+      "source": "era-1942-blue.sites.json subtype 1 owner blue"
+     }
+    ],
+    "red": [
+     {
+      "id": 11,
+      "name": "Berlin",
+      "x": 161,
+      "y": 30,
+      "type": 2,
+      "source": "era-1942-blue.sites.json subtype 2 owner red",
+      "seat": true
+     },
+     {
+      "id": 17,
+      "name": "Paris",
+      "x": 150,
+      "y": 34,
+      "type": 1,
+      "source": "era-1942-blue.sites.json subtype 1 owner red"
+     },
+     {
+      "id": 35,
+      "name": "Tokyo",
+      "x": 272,
+      "y": 45,
+      "type": 2,
+      "source": "era-1942-blue.sites.json subtype 2 owner red"
+     }
+    ]
+   },
+   "seatCapital": {
+    "blue": 62,
+    "red": 11,
+    "source": "board seat cell (Washington / Berlin nearest)"
+   },
+   "sites": [
+    {
+     "id": 0,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 182,
+     "y": 13,
+     "name": "Archangel",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 1,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 133,
+     "y": 14,
+     "name": "Reykjavik",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 2,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 157,
+     "y": 15,
+     "name": "Orland",
+     "source": "era-1942-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 3,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 175,
+     "y": 20,
+     "name": "Leningrad",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 4,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 292,
+     "y": 23,
+     "name": "Kamchatskiy",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 5,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 189,
+     "y": 25,
+     "name": "Gorkiy",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 6,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 219,
+     "y": 26,
+     "name": "Novosibirsk",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 7,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 158,
+     "y": 27,
+     "name": "Hamburg",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 8,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 180,
+     "y": 28,
+     "name": "Smolensk",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 9,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 146,
+     "y": 29,
+     "name": "Birmingham",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 10,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 148,
+     "y": 30,
+     "name": "London",
+     "source": "era-1942-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 11,
+     "type": 2,
+     "owner": "red",
+     "present": true,
+     "x": 161,
+     "y": 30,
+     "name": "Berlin",
+     "source": "era-1942-blue.sites.json (live byte 0x9a)"
+    },
+    {
+     "id": 12,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 168,
+     "y": 30,
+     "name": "Warsaw",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 13,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 268,
+     "y": 30,
+     "name": "Khabarovsk",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 14,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 174,
+     "y": 31,
+     "name": "Kiev",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 15,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 155,
+     "y": 32,
+     "name": "Bonn",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 16,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 181,
+     "y": 33,
+     "name": "Kharkov",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 17,
+     "type": 1,
+     "owner": "red",
+     "present": true,
+     "x": 150,
+     "y": 34,
+     "name": "Paris",
+     "source": "era-1942-blue.sites.json (live byte 0x99)"
+    },
+    {
+     "id": 18,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 39,
+     "y": 35,
+     "name": "Seattle",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 19,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 167,
+     "y": 35,
+     "name": "Budapest",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 20,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 78,
+     "y": 37,
+     "name": "Toronto",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 21,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 178,
+     "y": 37,
+     "name": "Sevastopol",
+     "source": "era-1942-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 22,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 267,
+     "y": 39,
+     "name": "Vladivostok",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 23,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 153,
+     "y": 39,
+     "name": "Marseille",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 24,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 74,
+     "y": 40,
+     "name": "Detroit",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 25,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 85,
+     "y": 41,
+     "name": "Boston",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 26,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 160,
+     "y": 41,
+     "name": "Rome",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 27,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 70,
+     "y": 42,
+     "name": "Chicago",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 28,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 83,
+     "y": 42,
+     "name": "New York",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 29,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 145,
+     "y": 42,
+     "name": "Madrid",
+     "source": "era-1942-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 30,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 173,
+     "y": 42,
+     "name": "Istanbul",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 31,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 252,
+     "y": 44,
+     "name": "Beijing",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 32,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 39,
+     "y": 44,
+     "name": "San Francisco",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 33,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 54,
+     "y": 44,
+     "name": "Denver",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 34,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 261,
+     "y": 46,
+     "name": "Seoul",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 35,
+     "type": 2,
+     "owner": "red",
+     "present": true,
+     "x": 272,
+     "y": 45,
+     "name": "Tokyo",
+     "source": "era-1942-blue.sites.json (live byte 0x9a)"
+    },
+    {
+     "id": 36,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 80,
+     "y": 46,
+     "name": "Norfolk",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 37,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 270,
+     "y": 46,
+     "name": "Nagoya",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 38,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 68,
+     "y": 47,
+     "name": "St Louis",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 39,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 272,
+     "y": 47,
+     "name": "Yokohama",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 40,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 267,
+     "y": 48,
+     "name": "Hiroshima",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 41,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 269,
+     "y": 48,
+     "name": "Osaka",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 42,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 73,
+     "y": 50,
+     "name": "Atlanta",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 43,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 250,
+     "y": 59,
+     "name": "Hong Kong",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 44,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 45,
+     "y": 51,
+     "name": "Los Angeles",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 45,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 180,
+     "y": 52,
+     "name": "Jerusalem",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 46,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 255,
+     "y": 52,
+     "name": "Shanghai",
+     "source": "era-1942-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 47,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 176,
+     "y": 53,
+     "name": "Cairo",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 48,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 67,
+     "y": 54,
+     "name": "New Orleans",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 49,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 62,
+     "y": 55,
+     "name": "Houston",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 50,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 214,
+     "y": 62,
+     "name": "Bombay",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 51,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 76,
+     "y": 60,
+     "name": "Havana",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 52,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 10,
+     "y": 62,
+     "name": "Pearl Harbor",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 53,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 59,
+     "y": 63,
+     "name": "Mexico City",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 54,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 256,
+     "y": 67,
+     "name": "Manila",
+     "source": "era-1942-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 55,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 245,
+     "y": 69,
+     "name": "Cam Ranh",
+     "source": "era-1942-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 56,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 90,
+     "y": 71,
+     "name": "Caracas",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 57,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 76,
+     "y": 73,
+     "name": "Panama Canal",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 58,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 213,
+     "y": 86,
+     "name": "Diego Garcia",
+     "source": "era-1942-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 59,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 108,
+     "y": 102,
+     "name": "Rio de Janeiro",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 60,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 173,
+     "y": 102,
+     "name": "Johannesburg",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 61,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 282,
+     "y": 110,
+     "name": "Sydney",
+     "source": "era-1942-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 62,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 79,
+     "y": 44,
+     "name": "Washington",
+     "source": "era-1942-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 63,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 183,
+     "y": 25,
+     "name": "Moscow",
+     "source": "era-1942-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 64,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 18,
+     "y": 18,
+     "name": "site_64",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 65,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 218,
+     "y": 23,
+     "name": "site_65",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 66,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 193,
+     "y": 26,
+     "name": "site_66",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 67,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 194,
+     "y": 30,
+     "name": "site_67",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 68,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 55,
+     "y": 33,
+     "name": "site_68",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 69,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 187,
+     "y": 37,
+     "name": "site_69",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 70,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 240,
+     "y": 30,
+     "name": "site_70",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 71,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 62,
+     "y": 47,
+     "name": "site_71",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 72,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 189,
+     "y": 48,
+     "name": "site_72",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 73,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 195,
+     "y": 49,
+     "name": "site_73",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 74,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 60,
+     "y": 51,
+     "name": "site_74",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 75,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 189,
+     "y": 52,
+     "name": "site_75",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 76,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 164,
+     "y": 54,
+     "name": "site_76",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 77,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 189,
+     "y": 56,
+     "name": "site_77",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 78,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 250,
+     "y": 79,
+     "name": "site_78",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 79,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 193,
+     "y": 60,
+     "name": "site_79",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 80,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 199,
+     "y": 60,
+     "name": "site_80",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 81,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 59,
+     "y": 60,
+     "name": "site_81",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 82,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 87,
+     "y": 72,
+     "name": "site_82",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    },
+    {
+     "id": 83,
+     "type": 0,
+     "owner": null,
+     "present": false,
+     "x": 151,
+     "y": 73,
+     "name": "site_83",
+     "source": "era-1942-blue.sites.json (live byte 0x0)"
+    }
+   ]
+  },
+  "1986": {
+   "fileEra": 2,
+   "ownerSource": "capture",
+   "sides": {
+    "blue": {
+     "label": "NATO",
+     "source": "manual p.17"
+    },
+    "red": {
+     "label": "Warsaw Pact",
+     "source": "manual p.17"
+    }
+   },
+   "captures": [
+    "docs/re/era-captures/era-1986-blue.sites.json"
+   ],
+   "capitals": {
+    "blue": [
+     {
+      "id": 62,
+      "name": "Washington",
+      "x": 79,
+      "y": 44,
+      "type": 1,
+      "source": "era-1986-blue.sites.json subtype 1 owner blue",
+      "seat": true
+     },
+     {
+      "id": 10,
+      "name": "London",
+      "x": 148,
+      "y": 30,
+      "type": 1,
+      "source": "era-1986-blue.sites.json subtype 1 owner blue"
+     },
+     {
+      "id": 35,
+      "name": "Tokyo",
+      "x": 272,
+      "y": 45,
+      "type": 1,
+      "source": "era-1986-blue.sites.json subtype 1 owner blue"
+     }
+    ],
+    "red": [
+     {
+      "id": 63,
+      "name": "Moscow",
+      "x": 183,
+      "y": 25,
+      "type": 2,
+      "source": "era-1986-blue.sites.json subtype 2 owner red",
+      "seat": true
+     }
+    ]
+   },
+   "seatCapital": {
+    "blue": 62,
+    "red": 63,
+    "source": "board seat cell (Washington / Moscow)"
+   },
+   "sites": [
+    {
+     "id": 0,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 182,
+     "y": 13,
+     "name": "Archangel",
+     "source": "era-1986-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 1,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 133,
+     "y": 14,
+     "name": "Reykjavik",
+     "source": "era-1986-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 2,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 157,
+     "y": 15,
+     "name": "Orland",
+     "source": "era-1986-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 3,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 175,
+     "y": 20,
+     "name": "Leningrad",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 4,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 292,
+     "y": 23,
+     "name": "Kamchatskiy",
+     "source": "era-1986-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 5,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 189,
+     "y": 25,
+     "name": "Gorkiy",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 6,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 219,
+     "y": 26,
+     "name": "Novosibirsk",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 7,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 158,
+     "y": 27,
+     "name": "Hamburg",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 8,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 180,
+     "y": 28,
+     "name": "Smolensk",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 9,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 146,
+     "y": 29,
+     "name": "Birmingham",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 10,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 148,
+     "y": 30,
+     "name": "London",
+     "source": "era-1986-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 11,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 161,
+     "y": 30,
+     "name": "Berlin",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 12,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 168,
+     "y": 30,
+     "name": "Warsaw",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 13,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 268,
+     "y": 30,
+     "name": "Khabarovsk",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 14,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 174,
+     "y": 31,
+     "name": "Kiev",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 15,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 155,
+     "y": 32,
+     "name": "Bonn",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 16,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 181,
+     "y": 33,
+     "name": "Kharkov",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 17,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 150,
+     "y": 34,
+     "name": "Paris",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 18,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 39,
+     "y": 35,
+     "name": "Seattle",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 19,
+     "type": 4,
+     "owner": "red",
+     "present": true,
+     "x": 167,
+     "y": 35,
+     "name": "Budapest",
+     "source": "era-1986-blue.sites.json (live byte 0x9c)"
+    },
+    {
+     "id": 20,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 78,
+     "y": 37,
+     "name": "Toronto",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 21,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 178,
+     "y": 37,
+     "name": "Sevastopol",
+     "source": "era-1986-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 22,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 267,
+     "y": 39,
+     "name": "Vladivostok",
+     "source": "era-1986-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 23,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 153,
+     "y": 39,
+     "name": "Marseille",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 24,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 74,
+     "y": 40,
+     "name": "Detroit",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 25,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 85,
+     "y": 41,
+     "name": "Boston",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 26,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 160,
+     "y": 41,
+     "name": "Rome",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 27,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 70,
+     "y": 42,
+     "name": "Chicago",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 28,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 83,
+     "y": 42,
+     "name": "New York",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 29,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 145,
+     "y": 42,
+     "name": "Madrid",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 30,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 173,
+     "y": 42,
+     "name": "Istanbul",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 31,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 252,
+     "y": 44,
+     "name": "Beijing",
+     "source": "era-1986-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 32,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 39,
+     "y": 44,
+     "name": "San Francisco",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 33,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 54,
+     "y": 44,
+     "name": "Denver",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 34,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 261,
+     "y": 46,
+     "name": "Seoul",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 35,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 272,
+     "y": 45,
+     "name": "Tokyo",
+     "source": "era-1986-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 36,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 80,
+     "y": 46,
+     "name": "Norfolk",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 37,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 270,
+     "y": 46,
+     "name": "Nagoya",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 38,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 68,
+     "y": 47,
+     "name": "St Louis",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 39,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 272,
+     "y": 47,
+     "name": "Yokohama",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 40,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 267,
+     "y": 48,
+     "name": "Hiroshima",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 41,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 269,
+     "y": 48,
+     "name": "Osaka",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 42,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 73,
+     "y": 50,
+     "name": "Atlanta",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 43,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 250,
+     "y": 59,
+     "name": "Hong Kong",
+     "source": "era-1986-blue.sites.json (live byte 0x1c; §4 owner-bit clear, cause UNVERIFIED)"
+    },
+    {
+     "id": 44,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 45,
+     "y": 51,
+     "name": "Los Angeles",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 45,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 180,
+     "y": 52,
+     "name": "Jerusalem",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 46,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 255,
+     "y": 52,
+     "name": "Shanghai",
+     "source": "era-1986-blue.sites.json (live byte 0x1c; §4 owner-bit clear, cause UNVERIFIED)"
+    },
+    {
+     "id": 47,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 176,
+     "y": 53,
+     "name": "Cairo",
+     "source": "era-1986-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 48,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 67,
+     "y": 54,
+     "name": "New Orleans",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 49,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 62,
+     "y": 55,
+     "name": "Houston",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 50,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 214,
+     "y": 62,
+     "name": "Bombay",
+     "source": "era-1986-blue.sites.json (live byte 0x1c; §4 owner-bit clear, cause UNVERIFIED)"
+    },
+    {
+     "id": 51,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 76,
+     "y": 60,
+     "name": "Havana",
+     "source": "era-1986-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 52,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 10,
+     "y": 62,
+     "name": "Pearl Harbor",
+     "source": "era-1986-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 53,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 59,
+     "y": 63,
+     "name": "Mexico City",
+     "source": "era-1986-blue.sites.json (live byte 0x1c; §4 owner-bit clear, cause UNVERIFIED)"
+    },
+    {
+     "id": 54,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 256,
+     "y": 67,
+     "name": "Manila",
+     "source": "era-1986-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 55,
+     "type": 3,
+     "owner": "red",
+     "present": true,
+     "x": 245,
+     "y": 69,
+     "name": "Cam Ranh",
+     "source": "era-1986-blue.sites.json (live byte 0x9b)"
+    },
+    {
+     "id": 56,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 90,
+     "y": 71,
+     "name": "Caracas",
+     "source": "era-1986-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 57,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 76,
+     "y": 73,
+     "name": "Panama Canal",
+     "source": "era-1986-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 58,
+     "type": 3,
+     "owner": "blue",
+     "present": true,
+     "x": 213,
+     "y": 86,
+     "name": "Diego Garcia",
+     "source": "era-1986-blue.sites.json (live byte 0x5b)"
+    },
+    {
+     "id": 59,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 108,
+     "y": 102,
+     "name": "Rio de Janeiro",
+     "source": "era-1986-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 60,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 173,
+     "y": 102,
+     "name": "Johannesburg",
+     "source": "era-1986-blue.sites.json (live byte 0x1c)"
+    },
+    {
+     "id": 61,
+     "type": 4,
+     "owner": "blue",
+     "present": true,
+     "x": 282,
+     "y": 110,
+     "name": "Sydney",
+     "source": "era-1986-blue.sites.json (live byte 0x5c)"
+    },
+    {
+     "id": 62,
+     "type": 1,
+     "owner": "blue",
+     "present": true,
+     "x": 79,
+     "y": 44,
+     "name": "Washington",
+     "source": "era-1986-blue.sites.json (live byte 0x59)"
+    },
+    {
+     "id": 63,
+     "type": 2,
+     "owner": "red",
+     "present": true,
+     "x": 183,
+     "y": 25,
+     "name": "Moscow",
+     "source": "era-1986-blue.sites.json (live byte 0x9a)"
+    },
+    {
+     "id": 64,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 18,
+     "y": 18,
+     "name": "site_64",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 65,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 218,
+     "y": 23,
+     "name": "site_65",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 66,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 193,
+     "y": 26,
+     "name": "site_66",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 67,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 194,
+     "y": 30,
+     "name": "site_67",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 68,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 55,
+     "y": 33,
+     "name": "site_68",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 69,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 187,
+     "y": 37,
+     "name": "site_69",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 70,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 240,
+     "y": 30,
+     "name": "site_70",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 71,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 62,
+     "y": 47,
+     "name": "site_71",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 72,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 189,
+     "y": 48,
+     "name": "site_72",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 73,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 195,
+     "y": 49,
+     "name": "site_73",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 74,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 60,
+     "y": 51,
+     "name": "site_74",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 75,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 189,
+     "y": 52,
+     "name": "site_75",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 76,
+     "type": 5,
+     "owner": "red",
+     "present": true,
+     "x": 164,
+     "y": 54,
+     "name": "site_76",
+     "source": "era-1986-blue.sites.json (live byte 0x9d)"
+    },
+    {
+     "id": 77,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 189,
+     "y": 56,
+     "name": "site_77",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 78,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 250,
+     "y": 79,
+     "name": "site_78",
+     "source": "era-1986-blue.sites.json (live byte 0x1d)"
+    },
+    {
+     "id": 79,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 193,
+     "y": 60,
+     "name": "site_79",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 80,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 199,
+     "y": 60,
+     "name": "site_80",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 81,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 59,
+     "y": 60,
+     "name": "site_81",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 82,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 87,
+     "y": 72,
+     "name": "site_82",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    },
+    {
+     "id": 83,
+     "type": 5,
+     "owner": "blue",
+     "present": true,
+     "x": 151,
+     "y": 73,
+     "name": "site_83",
+     "source": "era-1986-blue.sites.json (live byte 0x5d)"
+    }
+   ]
+  },
+  "2023": {
+   "fileEra": 3,
+   "ownerSource": "rolled",
+   "sides": {
+    "blue": {
+     "label": "Bloc A",
+     "source": "stand-in: FUN_23aa_0e1c assigns from two power blocs; the bloc table is not recovered"
+    },
+    "red": {
+     "label": "Bloc B",
+     "source": "stand-in: FUN_23aa_0e1c assigns from two power blocs; the bloc table is not recovered"
+    }
+   },
+   "captures": [
+    "docs/re/era-captures/era-2023-blue-a.sites.json",
+    "docs/re/era-captures/era-2023-blue-b.sites.json"
+   ],
+   "rule": {
+    "function": "FUN_23aa_0e1c @ 23aa:0e1c",
+    "capitals": "two sites, one per side, different country ids",
+    "distance": "squared Euclidean distance in map cells with X wrapping at 320 (FUN_188b_0216 @ 188b:0216 returns dx*dx + dy*dy); the capitals must reach 0x271 = 625, i.e. at least 25 cells",
+    "distanceMinSquared": 625,
+    "unowned": "even count in [32, 52]; Phase A observed 52 (run a) and 32 (run b)",
+    "unownedMin": 32,
+    "unownedMax": 52,
+    "ownership": "bloc assignment anchored on the two rolled capitals; the remaining sites split evenly between the sides",
+    "unverified": "the rule is read from the function, but only two live observations exist and the bloc table itself is not recovered"
+   },
+   "capitals": {
+    "blue": [],
+    "red": []
+   },
+   "sites": [
+    {
+     "id": 0,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 182,
+     "y": 13,
+     "name": "Archangel",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 1,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 133,
+     "y": 14,
+     "name": "Reykjavik",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 2,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 157,
+     "y": 15,
+     "name": "Orland",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 3,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 175,
+     "y": 20,
+     "name": "Leningrad",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 4,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 292,
+     "y": 23,
+     "name": "Kamchatskiy",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 5,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 25,
+     "name": "Gorkiy",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 6,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 219,
+     "y": 26,
+     "name": "Novosibirsk",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 7,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 158,
+     "y": 27,
+     "name": "Hamburg",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 8,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 180,
+     "y": 28,
+     "name": "Smolensk",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 9,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 146,
+     "y": 29,
+     "name": "Birmingham",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 10,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 148,
+     "y": 30,
+     "name": "London",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 11,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 161,
+     "y": 30,
+     "name": "Berlin",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 12,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 168,
+     "y": 30,
+     "name": "Warsaw",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 13,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 268,
+     "y": 30,
+     "name": "Khabarovsk",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 14,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 174,
+     "y": 31,
+     "name": "Kiev",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 15,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 155,
+     "y": 32,
+     "name": "Bonn",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 16,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 181,
+     "y": 33,
+     "name": "Kharkov",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 17,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 150,
+     "y": 34,
+     "name": "Paris",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 18,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 39,
+     "y": 35,
+     "name": "Seattle",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 19,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 167,
+     "y": 35,
+     "name": "Budapest",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 20,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 78,
+     "y": 37,
+     "name": "Toronto",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 21,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 178,
+     "y": 37,
+     "name": "Sevastopol",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 22,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 267,
+     "y": 39,
+     "name": "Vladivostok",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 23,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 153,
+     "y": 39,
+     "name": "Marseille",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 24,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 74,
+     "y": 40,
+     "name": "Detroit",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 25,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 85,
+     "y": 41,
+     "name": "Boston",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 26,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 160,
+     "y": 41,
+     "name": "Rome",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 27,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 70,
+     "y": 42,
+     "name": "Chicago",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 28,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 83,
+     "y": 42,
+     "name": "New York",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 29,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 145,
+     "y": 42,
+     "name": "Madrid",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 30,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 173,
+     "y": 42,
+     "name": "Istanbul",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 31,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 252,
+     "y": 44,
+     "name": "Beijing",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 32,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 39,
+     "y": 44,
+     "name": "San Francisco",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 33,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 54,
+     "y": 44,
+     "name": "Denver",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 34,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 261,
+     "y": 46,
+     "name": "Seoul",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 35,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 272,
+     "y": 45,
+     "name": "Tokyo",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 36,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 80,
+     "y": 46,
+     "name": "Norfolk",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 37,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 270,
+     "y": 46,
+     "name": "Nagoya",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 38,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 68,
+     "y": 47,
+     "name": "St Louis",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 39,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 272,
+     "y": 47,
+     "name": "Yokohama",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 40,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 267,
+     "y": 48,
+     "name": "Hiroshima",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 41,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 269,
+     "y": 48,
+     "name": "Osaka",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 42,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 73,
+     "y": 50,
+     "name": "Atlanta",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 43,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 250,
+     "y": 59,
+     "name": "Hong Kong",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 44,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 45,
+     "y": 51,
+     "name": "Los Angeles",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 45,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 180,
+     "y": 52,
+     "name": "Jerusalem",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 46,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 255,
+     "y": 52,
+     "name": "Shanghai",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 47,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 176,
+     "y": 53,
+     "name": "Cairo",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 48,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 67,
+     "y": 54,
+     "name": "New Orleans",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 49,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 62,
+     "y": 55,
+     "name": "Houston",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 50,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 214,
+     "y": 62,
+     "name": "Bombay",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 51,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 76,
+     "y": 60,
+     "name": "Havana",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 52,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 10,
+     "y": 62,
+     "name": "Pearl Harbor",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 53,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 59,
+     "y": 63,
+     "name": "Mexico City",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 54,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 256,
+     "y": 67,
+     "name": "Manila",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 55,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 245,
+     "y": 69,
+     "name": "Cam Ranh",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 56,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 90,
+     "y": 71,
+     "name": "Caracas",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 57,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 76,
+     "y": 73,
+     "name": "Panama Canal",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 58,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 213,
+     "y": 86,
+     "name": "Diego Garcia",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 59,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 108,
+     "y": 102,
+     "name": "Rio de Janeiro",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 60,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 173,
+     "y": 102,
+     "name": "Johannesburg",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 61,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 282,
+     "y": 110,
+     "name": "Sydney",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 62,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 79,
+     "y": 44,
+     "name": "Washington",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 63,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 183,
+     "y": 25,
+     "name": "Moscow",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 64,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 18,
+     "y": 18,
+     "name": "site_64",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 65,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 218,
+     "y": 23,
+     "name": "site_65",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 66,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 193,
+     "y": 26,
+     "name": "site_66",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 67,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 194,
+     "y": 30,
+     "name": "site_67",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 68,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 55,
+     "y": 33,
+     "name": "site_68",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 69,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 187,
+     "y": 37,
+     "name": "site_69",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 70,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 240,
+     "y": 30,
+     "name": "site_70",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 71,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 62,
+     "y": 47,
+     "name": "site_71",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 72,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 48,
+     "name": "site_72",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 73,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 195,
+     "y": 49,
+     "name": "site_73",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 74,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 60,
+     "y": 51,
+     "name": "site_74",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 75,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 52,
+     "name": "site_75",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 76,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 164,
+     "y": 54,
+     "name": "site_76",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 77,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 56,
+     "name": "site_77",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 78,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 250,
+     "y": 79,
+     "name": "site_78",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 79,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 193,
+     "y": 60,
+     "name": "site_79",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 80,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 199,
+     "y": 60,
+     "name": "site_80",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 81,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 59,
+     "y": 60,
+     "name": "site_81",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 82,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 87,
+     "y": 72,
+     "name": "site_82",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 83,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 151,
+     "y": 73,
+     "name": "site_83",
+     "source": "data/cbr_type_by_era.json row 3 (subtype only; the file carries zero owner bits)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    }
+   ]
+  },
+  "9999": {
+   "fileEra": 4,
+   "ownerSource": "stand-in",
+   "sides": {
+    "blue": {
+     "label": "Bloc A",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)"
+    },
+    "red": {
+     "label": "Bloc B",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)"
+    }
+   },
+   "captures": [
+    "docs/re/era-captures/era-concealed-blue-a.sites.json",
+    "docs/re/era-captures/era-concealed-blue-b.sites.json"
+   ],
+   "rule": {
+    "function": "FUN_23aa_0e1c @ 23aa:0e1c",
+    "capitals": "two sites, one per side, different country ids",
+    "distance": "squared Euclidean distance in map cells with X wrapping at 320 (FUN_188b_0216 @ 188b:0216 returns dx*dx + dy*dy); the capitals must reach 0x271 = 625, i.e. at least 25 cells",
+    "distanceMinSquared": 625,
+    "unowned": "even count in [32, 52]; Phase A observed 52 (run a) and 32 (run b)",
+    "unownedMin": 32,
+    "unownedMax": 52,
+    "ownership": "bloc assignment anchored on the two rolled capitals; the remaining sites split evenly between the sides",
+    "unverified": "the rule is read from the function, but only two live observations exist and the bloc table itself is not recovered"
+   },
+   "capitals": {
+    "blue": [],
+    "red": []
+   },
+   "sites": [
+    {
+     "id": 0,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 182,
+     "y": 13,
+     "name": "Archangel",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 1,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 133,
+     "y": 14,
+     "name": "Reykjavik",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 2,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 157,
+     "y": 15,
+     "name": "Orland",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 3,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 175,
+     "y": 20,
+     "name": "Leningrad",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 4,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 292,
+     "y": 23,
+     "name": "Kamchatskiy",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 5,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 25,
+     "name": "Gorkiy",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 6,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 219,
+     "y": 26,
+     "name": "Novosibirsk",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 7,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 158,
+     "y": 27,
+     "name": "Hamburg",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 8,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 180,
+     "y": 28,
+     "name": "Smolensk",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 9,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 146,
+     "y": 29,
+     "name": "Birmingham",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 10,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 148,
+     "y": 30,
+     "name": "London",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 11,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 161,
+     "y": 30,
+     "name": "Berlin",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 12,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 168,
+     "y": 30,
+     "name": "Warsaw",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 13,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 268,
+     "y": 30,
+     "name": "Khabarovsk",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 14,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 174,
+     "y": 31,
+     "name": "Kiev",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 15,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 155,
+     "y": 32,
+     "name": "Bonn",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 16,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 181,
+     "y": 33,
+     "name": "Kharkov",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 17,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 150,
+     "y": 34,
+     "name": "Paris",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 18,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 39,
+     "y": 35,
+     "name": "Seattle",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 19,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 167,
+     "y": 35,
+     "name": "Budapest",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 20,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 78,
+     "y": 37,
+     "name": "Toronto",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 21,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 178,
+     "y": 37,
+     "name": "Sevastopol",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 22,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 267,
+     "y": 39,
+     "name": "Vladivostok",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 23,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 153,
+     "y": 39,
+     "name": "Marseille",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 24,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 74,
+     "y": 40,
+     "name": "Detroit",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 25,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 85,
+     "y": 41,
+     "name": "Boston",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 26,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 160,
+     "y": 41,
+     "name": "Rome",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 27,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 70,
+     "y": 42,
+     "name": "Chicago",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 28,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 83,
+     "y": 42,
+     "name": "New York",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 29,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 145,
+     "y": 42,
+     "name": "Madrid",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 30,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 173,
+     "y": 42,
+     "name": "Istanbul",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 31,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 252,
+     "y": 44,
+     "name": "Beijing",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 32,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 39,
+     "y": 44,
+     "name": "San Francisco",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 33,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 54,
+     "y": 44,
+     "name": "Denver",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 34,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 261,
+     "y": 46,
+     "name": "Seoul",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 35,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 272,
+     "y": 45,
+     "name": "Tokyo",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 36,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 80,
+     "y": 46,
+     "name": "Norfolk",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 37,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 270,
+     "y": 46,
+     "name": "Nagoya",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 38,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 68,
+     "y": 47,
+     "name": "St Louis",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 39,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 272,
+     "y": 47,
+     "name": "Yokohama",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 40,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 267,
+     "y": 48,
+     "name": "Hiroshima",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 41,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 269,
+     "y": 48,
+     "name": "Osaka",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 42,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 73,
+     "y": 50,
+     "name": "Atlanta",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 43,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 250,
+     "y": 59,
+     "name": "Hong Kong",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 44,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 45,
+     "y": 51,
+     "name": "Los Angeles",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 45,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 180,
+     "y": 52,
+     "name": "Jerusalem",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 46,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 255,
+     "y": 52,
+     "name": "Shanghai",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 47,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 176,
+     "y": 53,
+     "name": "Cairo",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 48,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 67,
+     "y": 54,
+     "name": "New Orleans",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 49,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 62,
+     "y": 55,
+     "name": "Houston",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 50,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 214,
+     "y": 62,
+     "name": "Bombay",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 51,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 76,
+     "y": 60,
+     "name": "Havana",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 52,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 10,
+     "y": 62,
+     "name": "Pearl Harbor",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 53,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 59,
+     "y": 63,
+     "name": "Mexico City",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 54,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 256,
+     "y": 67,
+     "name": "Manila",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 55,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 245,
+     "y": 69,
+     "name": "Cam Ranh",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 56,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 90,
+     "y": 71,
+     "name": "Caracas",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 57,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 76,
+     "y": 73,
+     "name": "Panama Canal",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 58,
+     "type": 3,
+     "owner": null,
+     "present": true,
+     "x": 213,
+     "y": 86,
+     "name": "Diego Garcia",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 59,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 108,
+     "y": 102,
+     "name": "Rio de Janeiro",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 60,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 173,
+     "y": 102,
+     "name": "Johannesburg",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 61,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 282,
+     "y": 110,
+     "name": "Sydney",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 62,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 79,
+     "y": 44,
+     "name": "Washington",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 63,
+     "type": 4,
+     "owner": null,
+     "present": true,
+     "x": 183,
+     "y": 25,
+     "name": "Moscow",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 64,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 18,
+     "y": 18,
+     "name": "site_64",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 65,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 218,
+     "y": 23,
+     "name": "site_65",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 66,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 193,
+     "y": 26,
+     "name": "site_66",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 67,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 194,
+     "y": 30,
+     "name": "site_67",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 68,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 55,
+     "y": 33,
+     "name": "site_68",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 69,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 187,
+     "y": 37,
+     "name": "site_69",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 70,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 240,
+     "y": 30,
+     "name": "site_70",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 71,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 62,
+     "y": 47,
+     "name": "site_71",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 72,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 48,
+     "name": "site_72",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 73,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 195,
+     "y": 49,
+     "name": "site_73",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 74,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 60,
+     "y": 51,
+     "name": "site_74",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 75,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 52,
+     "name": "site_75",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 76,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 164,
+     "y": 54,
+     "name": "site_76",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 77,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 189,
+     "y": 56,
+     "name": "site_77",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 78,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 250,
+     "y": 79,
+     "name": "site_78",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 79,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 193,
+     "y": 60,
+     "name": "site_79",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 80,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 199,
+     "y": 60,
+     "name": "site_80",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 81,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 59,
+     "y": 60,
+     "name": "site_81",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 82,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 87,
+     "y": 72,
+     "name": "site_82",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    },
+    {
+     "id": 83,
+     "type": 5,
+     "owner": null,
+     "present": true,
+     "x": 151,
+     "y": 73,
+     "name": "site_83",
+     "source": "stand-in, UNVERIFIED (FUN_23aa_054c not yet traced)",
+     "unverified": "ownership and capitals are rolled per match: Phase A has two observations only"
+    }
+   ]
+  }
+ }
+}

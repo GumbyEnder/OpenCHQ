@@ -24,11 +24,32 @@ const SIDES = ["blue", "red"];
 // board.
 const ALARM_CELLS = 8;
 
+// A capital site is either the asset list's own capital kind, or a cell the era named as a
+// capital (1918 Paris and London are cities in the asset list and capitals in the scenario).
+function isCapitalSite(site) {
+  return Boolean(site) && (site.kind === "capital" || site.capitalSide === "blue" || site.capitalSide === "red");
+}
+
+function siteOnCell(match, cell) {
+  return (match.sites || []).find(
+    (place) => place && Number(place.x) === Number(cell.x) && Number(place.y) === Number(cell.y) && isCapitalSite(place)
+  ) || null;
+}
+
 function capitalName(match, cell) {
-  const site = (match.sites || []).find(
-    (place) => place && place.kind === "capital" && place.x === cell.x && place.y === cell.y
-  );
+  const site = siteOnCell(match, cell);
   return site ? site.name : null;
+}
+
+// One side's capitals. Older rows carried a single cell per side, so both shapes are read.
+export function capitalsOf(match, side) {
+  const row = match && match.capitals ? match.capitals[side] : null;
+  if (Array.isArray(row)) return row.filter(Boolean);
+  return row ? [row] : [];
+}
+
+function otherSide(side) {
+  return side === "blue" ? "red" : "blue";
 }
 
 // Which side holds one capital cell. A piece standing on the cell is the freshest fact; a
@@ -49,24 +70,23 @@ function holderOf(match, cell) {
   }
   if (standing.size === 1) return [...standing][0];
   if (standing.size > 1) return null;
-  const site = (match.sites || []).find(
-    (place) => place && place.kind === "capital" && place.x === cell.x && place.y === cell.y
-  );
+  const site = siteOnCell(match, cell);
   if (site && SIDES.includes(site.owner)) return site.owner;
   return null;
 }
 
-// null until one side holds both capitals. The caller reports the result; this does not change
-// the match.
+// null until one side holds every capital of the other side. The caller reports the result; this
+// does not change the match.
+//
+// A side's own capitals are not won by holding them: the win condition is the enemy's ground. In
+// 1918 blue holds Paris and London and red holds Berlin; blue wins by taking Berlin, red by taking
+// both Paris and London. With one capital a side this is the old "both capitals" rule.
 export function checkWin(match) {
   if (!match || !match.capitals) return null;
-  const held = { blue: 0, red: 0 };
-  for (const key of SIDES) {
-    const holder = holderOf(match, match.capitals[key]);
-    if (holder) held[holder] += 1;
-  }
   for (const side of SIDES) {
-    if (held[side] === SIDES.length) return side;
+    const targets = capitalsOf(match, otherSide(side));
+    if (!targets.length) continue;
+    if (targets.every((cell) => holderOf(match, cell) === side)) return side;
   }
   return null;
 }
@@ -98,17 +118,26 @@ export function tickMatch(match) {
 
   // The alarm: enemy troops closing on a capital. A match can now be won, and the last ten rounds
   // of one used to be silent - the first news was the loss. This notices a new closest approach
-  // and says so once, in that seat's own log.
+  // and says so once, in that seat's own log. A side may hold several capitals, so the closest of
+  // them is the one reported.
   for (const side of SIDES) {
-    const cell = match.capitals && match.capitals[side];
-    if (!cell) continue;
-    const name = capitalName(match, cell) || (side === "blue" ? "your capital" : "the enemy capital");
+    let cell = null;
+    let name = null;
     let nearest = null;
-    for (const piece of match.pieces || []) {
-      if (!piece || piece.side === side || piece.domain !== "land") continue;
-      const dx = Math.abs(Number(piece.x) - Number(cell.x));
-      const dist = Math.max(Math.min(dx, CELL_W - dx), Math.abs(Number(piece.y) - Number(cell.y)));
-      if (nearest === null || dist < nearest) nearest = dist;
+    for (const capital of capitalsOf(match, side)) {
+      let closest = null;
+      for (const piece of match.pieces || []) {
+        if (!piece || piece.side === side || piece.domain !== "land") continue;
+        const dx = Math.abs(Number(piece.x) - Number(capital.x));
+        const dist = Math.max(Math.min(dx, CELL_W - dx), Math.abs(Number(piece.y) - Number(capital.y)));
+        if (closest === null || dist < closest) closest = dist;
+      }
+      if (closest === null) continue;
+      if (nearest === null || closest < nearest) {
+        nearest = closest;
+        cell = capital;
+        name = capitalName(match, capital) || (side === "blue" ? "your capital" : "an enemy capital");
+      }
     }
     if (nearest === null) continue;
     if (!match.alarm) match.alarm = {};
@@ -119,8 +148,8 @@ export function tickMatch(match) {
       continue;
     }
     if (was && was.distance <= nearest) continue;
-    match.alarm[side] = { distance: nearest, round: match.round, name };
-    events.push({ type: "threat", side, name, distance: nearest });
+    match.alarm[side] = { distance: nearest, round: match.round, name, x: cell.x, y: cell.y };
+    events.push({ type: "threat", side, name, distance: nearest, at: { x: cell.x, y: cell.y } });
   }
 
   const winner = checkWin(match);
@@ -128,7 +157,11 @@ export function tickMatch(match) {
     match.winner = winner;
     match.over = true;
     match.clock = "held";
-    events.push({ type: "win", side: winner });
+    // The message names every capital that changed hands: with more than one enemy capital,
+    // "both capitals" is no longer a sentence that tells the player what happened.
+    const taken = capitalsOf(match, otherSide(winner))
+      .map((capital) => capitalName(match, capital) || `${capital.x},${capital.y}`);
+    events.push({ type: "win", side: winner, capitals: taken });
   }
 
   return { match, events };

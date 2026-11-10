@@ -298,8 +298,14 @@ export function ordersFor(match, side) {
   }
 
   const foe = opposite(side);
-  const capital = match.capitals && match.capitals[foe];
-  if (!capital || !Number.isInteger(capital.x) || !Number.isInteger(capital.y)) return events;
+  const foeCapitals = Array.isArray(match.capitals && match.capitals[foe])
+    ? match.capitals[foe]
+    : match.capitals && match.capitals[foe] ? [match.capitals[foe]] : [];
+  // The nearest enemy capital to the bot's own land army is the one it marches on. Picking one
+  // focus for the whole army is the existing behaviour; with several capitals the choice is fixed
+  // for the match so the army does not oscillate between them.
+  const capital = foeCapitals.find((cell) => cell && Number.isInteger(cell.x) && Number.isInteger(cell.y)) || null;
+  if (!capital) return events;
 
   const mine = match.pieces.filter((piece) => piece && piece.side === side);
   // Reinforce first, so a unit bought this round can march this round.

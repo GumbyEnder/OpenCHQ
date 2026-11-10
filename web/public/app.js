@@ -338,7 +338,8 @@ function renderLegend() {
   if (side) {
     const item = document.createElement("span");
     item.className = "swatch you";
-    item.textContent = "you are " + side;
+    const label = room && room.sides && room.sides[side] ? room.sides[side].label : "";
+    item.textContent = "you are " + (label ? label + " (" + side + ")" : side);
     legendBox.append(item);
   }
 }
@@ -823,11 +824,13 @@ function syncShell() {
   paintDialog();
 }
 
-function seatRow(label, seat, yours) {
+function seatRow(label, seat, yours, sideInfo = null) {
   const row = document.createElement("div");
   row.className = "seat " + label.toLowerCase();
   const who = seat.kind === "bot" ? "Bot" : seat.username;
-  row.textContent = label + " · " + who + (yours ? " · you" : "");
+  const name = sideInfo && sideInfo.label ? label + " · " + sideInfo.label : label;
+  row.textContent = name + " · " + who + (yours ? " · you" : "");
+  if (sideInfo && sideInfo.source) row.title = sideInfo.source;
   return row;
 }
 
@@ -851,8 +854,8 @@ function renderRoom() {
   }
   const seats = document.createElement("div");
   seats.className = "seats";
-  seats.append(seatRow("Blue", room.blue, room.you === "blue"));
-  seats.append(seatRow("Red", room.red, room.you === "red"));
+  seats.append(seatRow("Blue", room.blue, room.you === "blue", room.sides && room.sides.blue));
+  seats.append(seatRow("Red", room.red, room.you === "red", room.sides && room.sides.red));
   const meta = document.createElement("p");
   meta.textContent = eraName(room.era) + " · " + (room.mode === "bot" ? "Bot match" : "Human match") + " · clock " + room.clock;
   const note = document.createElement("p");

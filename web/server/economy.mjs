@@ -104,7 +104,13 @@ export function seedOwners(match) {
   if (!match || !Array.isArray(match.sites) || seeded.has(match)) return;
   seeded.add(match);
   for (const site of match.sites) {
-    if (!site || !ownable(site.kind)) continue;
+    if (!site) continue;
+    // A site that came through the era table already carries its verdict - the capture's owner
+    // bits for 1918/1942/1986, or the rolled owner for 2023/????. `type` is stamped by exactly
+    // those rows, so its presence is the marker. Re-deriving from country_id here is what made
+    // every era the USA against the USSR.
+    if (site.type !== undefined) continue;
+    if (!ownable(site.kind)) continue;
     if (site.owner === "blue" || site.owner === "red") continue;
     const side = sideOfRegion(regionOf(site));
     site.owner = side; // null when the country is not one of the two sides

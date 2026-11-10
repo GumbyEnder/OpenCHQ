@@ -49,7 +49,7 @@ export async function run(ctx) {
   // --- the weakest point of the ring is chosen, not the first one found ---------------------
   {
     const match = room();
-    const capital = match.capitals.red;
+    const capital = match.capitals.red[0];
     const army = match.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");
     if (!army) fail("a 1986 room has no blue land piece");
     // Only this army and the garrison: the opening sea piece would otherwise become the focus.
@@ -103,7 +103,7 @@ export async function run(ctx) {
   // --- a free ring cell is still preferred over an attack -----------------------------------
   {
     const match = room();
-    const capital = match.capitals.red;
+    const capital = match.capitals.red[0];
     const army = match.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");
     match.pieces = [army];
     const cells = ring(capital);

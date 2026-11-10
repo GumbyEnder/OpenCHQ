@@ -457,7 +457,12 @@ async function main() {
     }
     if (found.side !== "blue" && found.side !== "red") fail("piece on no side: " + JSON.stringify(found));
   };
-  if (opening.pieces.length !== 2) fail("a blue seat saw " + opening.pieces.length + " pieces at the opening, expected its own 2");
+  // 1986 blue holds three capitals (Washington, London, Tokyo), so the seat sees a garrison on
+  // each plus its ship. The count is derived from the room's own capitals, not typed.
+  const blueCapitals = Array.isArray(opening.capitals.blue) ? opening.capitals.blue.length : 0;
+  if (opening.pieces.length !== blueCapitals + 1) {
+    fail("a blue seat saw " + opening.pieces.length + " pieces at the opening, expected its " + blueCapitals + " capitals + ship");
+  }
   expectUnit("blue:land", "blue", "land", 79, 44);
   expectUnit("blue:sea", "blue", "sea", 0, 15);
   if (unit("red:land") || unit("red:sea")) fail("the other seat's pieces were sent to blue: " + JSON.stringify(opening.pieces));
@@ -465,7 +470,7 @@ async function main() {
   const cellAt = (x, y) => board.cells[y * 320 + x];
   if (cellAt(79, 44) !== 4 || cellAt(183, 25) !== 4) fail("the land pieces are not on the capitals");
   if (cellAt(0, 15) !== 0 || cellAt(300, 70) !== 0) fail("the ships are not on ocean cells");
-  if (new Set(opening.pieces.map((piece) => piece.id)).size !== 2) fail("piece ids are not unique");
+  if (new Set(opening.pieces.map((piece) => piece.id)).size !== opening.pieces.length) fail("piece ids are not unique");
 
   const afterBot = adaBox.length;
   wsAda.send(JSON.stringify({ op: "run" }));
@@ -567,15 +572,17 @@ async function main() {
   }
   const gusHuman = await waitFor(gusBox, 0, (message) => message.op === "room" && message.room && message.room.mode === "human", "gus room");
   if (gusHuman.room.you !== "red") fail("gus side " + gusHuman.room.you);
-  // A human room opens the same match, and each seat gets its own two pieces plus nothing of
-  // the other side's.
-  if (!Array.isArray(human.room.pieces) || human.room.pieces.length !== 2) {
-    fail("1942 blue seat pieces " + JSON.stringify(human.room.pieces));
+  // A human room opens the same match, and each seat gets a garrison on each of its own capitals
+  // plus its ship, and nothing of the other side's.
+  const blueSeatCapitals = Array.isArray(human.room.capitals.blue) ? human.room.capitals.blue.length : 0;
+  if (!Array.isArray(human.room.pieces) || human.room.pieces.length !== blueSeatCapitals + 1) {
+    fail("1986 blue seat pieces " + JSON.stringify(human.room.pieces));
   }
   if (human.room.pieces.filter((piece) => piece.side !== "blue").length !== 0) {
     fail("the human room leaked the other seat's pieces: " + JSON.stringify(human.room.pieces));
   }
-  if (!Array.isArray(gusHuman.room.pieces) || gusHuman.room.pieces.length !== 2 ||
+  const redSeatCapitals = Array.isArray(gusHuman.room.capitals.red) ? gusHuman.room.capitals.red.length : 0;
+  if (!Array.isArray(gusHuman.room.pieces) || gusHuman.room.pieces.length !== redSeatCapitals + 1 ||
       gusHuman.room.pieces.filter((piece) => piece.side !== "red").length !== 0) {
     fail("gus's seat view " + JSON.stringify(gusHuman.room.pieces));
   }

@@ -33,8 +33,8 @@ export async function run() {
   // how the first version of this test failed while the board was fine.
   const match = openMatch("1986", matchSites("1986"));
   match.clock = "running";
-  const blue = match.capitals.blue;
-  const red = match.capitals.red;
+  const blue = match.capitals.blue[0];
+  const red = match.capitals.red[0];
   if (!blue || !red) fail("the 1986 board has no capitals");
 
   // One blue piece, parked beside the enemy capital, and the enemy left with nothing on it.

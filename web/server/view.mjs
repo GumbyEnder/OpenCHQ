@@ -70,22 +70,68 @@ function enemyRoutes(piece) {
   return cloneSteps(piece.path).slice(0, enemyRouteSteps());
 }
 
-// The match carries one remembered fact beyond the contract's shape: which seats have
-// located the other capital in the concealed era. It is a pair of booleans, never a piece.
+// The match carries facts beyond the contract's shape: which seats have located the other side,
+// which enemy capitals each seat has actually seen, and which sites each seat has seen well enough
+// to read a name off. They are booleans and id maps, never pieces.
 function seenMemory(match) {
   if (!match.seen || typeof match.seen !== "object") match.seen = {};
   return match.seen;
 }
 
-function capitalVisible(match, viewer, enemy, ownPieces) {
+function seenCapitals(match) {
+  if (!match.seenCapitals || typeof match.seenCapitals !== "object") match.seenCapitals = {};
+  return match.seenCapitals;
+}
+
+function seenSites(match) {
+  if (!match.seenSites || typeof match.seenSites !== "object") match.seenSites = {};
+  return match.seenSites;
+}
+
+// The word the original's hover panel prints in place of a name in the concealed era:
+// CAPITAL / CITY, with the other types by the same rule.
+const TYPE_WORD = {
+  capital: "CAPITAL",
+  city: "CITY",
+  base: "BASE",
+  oilfield: "OILFIELD",
+  well: "OILFIELD",
+  dock: "DOCK",
+  docks: "DOCK",
+  facility: "FACILITY",
+};
+
+function isPlaceholder(name) {
+  // The extract's own list has placeholder names for a few sites (site_78 .. site_83). A
+  // placeholder is not a place name, so the concealed era conceals it like any other.
+  return !name || /^site_\d+$/i.test(String(name).trim());
+}
+
+function concealName(site) {
+  // A capital is a capital wherever the era names it, even when the asset list calls the cell a
+  // city (1918 Paris). The original's panel printed CAPITAL for those.
+  if (site && (site.capitalSide === "blue" || site.capitalSide === "red" || site.kind === "capital")) return "CAPITAL";
+  const kind = String(site && site.kind);
+  return Object.hasOwn(TYPE_WORD, kind) ? TYPE_WORD[kind] : "SITE";
+}
+
+function capitalKey(cell) {
+  return Number(cell.x) + ":" + Number(cell.y);
+}
+
+// In ???? the enemy capital is not in the seat's view until one of the seat's own pieces has seen
+// the cell; the sighting is remembered, so pulling the scout back does not un-discover it. Any
+// capital seen also reveals that there IS an enemy (the note goes away), but only the capitals
+// actually seen travel: one sighting does not hand over the rest of the map.
+function capitalSeen(match, viewer, cell, ownPieces) {
   if (match.era !== CONCEALED_ERA) return true;
-  const memory = seenMemory(match);
-  if (memory[viewer]) return true;
-  const capital = match.capitals && match.capitals[enemy];
-  if (!capital) return false;
-  const found = ownPieces.some((unit) => withinSight(unit, capital));
-  if (found) {
-    memory[viewer] = true;
+  const seen = seenCapitals(match);
+  if (!seen[viewer] || typeof seen[viewer] !== "object") seen[viewer] = {};
+  const key = capitalKey(cell);
+  if (seen[viewer][key]) return true;
+  if (ownPieces.some((unit) => withinSight(unit, cell))) {
+    seen[viewer][key] = true;
+    seenMemory(match)[viewer] = true;
     return true;
   }
   return false;
@@ -191,8 +237,10 @@ export function forSeat(match, side) {
       routes,
       sites: (match.sites || []).map((site) => ({ ...site })),
       capitals: {
-        blue: match.capitals && match.capitals.blue ? { ...match.capitals.blue } : null,
-        red: match.capitals && match.capitals.red ? { ...match.capitals.red } : null,
+        blue: Array.isArray(match.capitals && match.capitals.blue) ? match.capitals.blue.map((cell) => ({ ...cell }))
+          : match.capitals && match.capitals.blue ? [{ ...match.capitals.blue }] : [],
+        red: Array.isArray(match.capitals && match.capitals.red) ? match.capitals.red.map((cell) => ({ ...cell }))
+          : match.capitals && match.capitals.red ? [{ ...match.capitals.red }] : [],
       },
       seat: null,
       notes: [],
@@ -203,7 +251,28 @@ export function forSeat(match, side) {
 
   const enemySide = otherOf(side);
   const { own, enemy } = seatPieces(match, side);
-  const hidden = !capitalVisible(match, side, enemySide, own);
+
+  // The enemy's capitals, one by one. In ???? a capital is absent until this seat's own pieces
+  // have seen that cell; in every other era all of them travel.
+  const capitals = { blue: [], red: [] };
+  for (const name of SIDES) {
+    const rows = Array.isArray(match.capitals && match.capitals[name])
+      ? match.capitals[name]
+      : match.capitals && match.capitals[name] ? [match.capitals[name]] : [];
+    for (const point of rows) {
+      if (!point) continue;
+      if (name === enemySide && !capitalSeen(match, side, point, own)) continue;
+      capitals[name].push({
+        x: point.x,
+        y: point.y,
+        name: name === enemySide && match.era === CONCEALED_ERA ? "CAPITAL" : (point.name ?? null),
+        siteId: point.siteId ?? null,
+      });
+    }
+  }
+  // The other side stays off the map entirely until one of its capitals has been seen: pieces and
+  // enemy-owned sites included. That is the archive's concealed start.
+  const hidden = match.era === CONCEALED_ERA && capitals[enemySide].length === 0;
 
   const pieces = [];
   const routes = {};
@@ -223,16 +292,21 @@ export function forSeat(match, side) {
     }
   }
 
+  // Site names are hidden in the concealed era until one of this seat's pieces has seen the cell;
+  // the hover/readout prints the type word (CAPITAL / CITY) exactly the way the original's panel
+  // did. The sighting is remembered per site, so a scout moving on does not re-conceal the name.
+  const seen = seenSites(match);
+  if (match.era === CONCEALED_ERA && (!seen[side] || typeof seen[side] !== "object")) seen[side] = {};
   const sites = (match.sites || [])
     .filter((site) => !(hidden && site.owner === enemySide))
-    .map((site) => ({ ...site }));
-
-  const capitals = {};
-  for (const name of SIDES) {
-    if (name === enemySide && hidden) continue;
-    const point = match.capitals && match.capitals[name];
-    if (point) capitals[name] = { x: point.x, y: point.y };
-  }
+    .map((site) => {
+      const copy = { ...site };
+      if (match.era !== CONCEALED_ERA) return copy;
+      const key = String(site.id);
+      if (!seen[side][key] && own.some((unit) => withinSight(unit, site))) seen[side][key] = true;
+      if (!seen[side][key] || isPlaceholder(site.name)) copy.name = concealName(site);
+      return copy;
+    });
 
   // What the seat can spend and when it next gets paid. Without this the page cannot draw a
   // countdown and the clock is dead time: the player has no way to know a payment is coming.

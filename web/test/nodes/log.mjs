@@ -59,7 +59,10 @@ export async function run() {
   must(shots.length === 0, "a single shot must not fill the log");
 
   const win = logLines(match, "blue", [{ type: "win", side: "blue" }], 400);
-  must(win.length === 1 && /both capitals/.test(win[0].text), "a win must be reported in words");
+  must(win.length === 1 && /you hold/.test(win[0].text), "a win must be reported in words");
+  // With more than one enemy capital the sentence names every one of them.
+  const named = logLines(match, "blue", [{ type: "win", side: "blue", capitals: ["Paris", "London"] }], 401);
+  must(named.length === 1 && /Paris and London/.test(named[0].text), "a win must name every capital: " + (named[0] && named[0].text));
 
   // ---- the seam: sight wraps in X, so a fight across the wrap is visible -------------------
   const edge = match.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");

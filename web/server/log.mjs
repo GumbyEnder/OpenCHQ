@@ -196,9 +196,16 @@ export function logLines(match, side, events, round) {
         if (mine) push("a nuke was launched");
         else push("an enemy nuke was launched");
         break;
-      case "win":
-        push(event.side === side ? "you hold both capitals" : "the enemy holds both capitals");
+      case "win": {
+        // Every capital that came into the winner's hands, by name. A match can have more than
+        // two capitals, so "both capitals" was a sentence that stopped being true.
+        const names = (Array.isArray(event.capitals) ? event.capitals : []).filter(Boolean);
+        const list = names.length === 0 ? "the enemy capital"
+          : names.length === 1 ? names[0]
+            : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+        push(event.side === side ? "you hold " + list : "the enemy holds " + list);
         break;
+      }
       default:
         break;
     }
