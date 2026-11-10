@@ -7,7 +7,9 @@ Method: the running original, not the manual. DOSBox 0.74-3 on Xvfb `:99`,
 `e8f1fac5a88ffc1a1875fc3b73f8446168f6fb33e9f692c0615520c4aef1e2da`.
 Harness: `tools/t2/t2-run.py` (one era/side/tag per run), `tools/t2/t2-nudge.py`
 (cursor), `tools/t2/t2-names.py` (contact sheet per run), `tools/t2/t2-sites.py` /
-`tools/t2/read-off.py` (memory reads). Batch driver: `tools/t2/t2-all.sh`.
+`tools/t2/read-off.py` (memory reads), `tools/t2/t2-absent.py` (§2 absent-id lists,
+generated from the captures) and `tools/t2/t2-era-diff.py` (§6 run-a vs run-b counts,
+generated from the captures). Batch driver: `tools/t2/t2-all.sh`.
 Every number below came out of a capture in this document; nothing here is from the
 manual.
 
@@ -54,14 +56,25 @@ Evidence (live table vs `modern/extracted/data/cbr_type_by_era.json`, 84 entries
 
 | Run | Absent sites | Ids | Y mismatches against `sites.json` |
 |---|---|---|---|
-| 1918 blue / red | 59 | 0,1,2,4,5,6,8,13,16,18,19,20,21,22,23,24,26,27,28,29,30,31,32,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83 | 0 of 59 |
+| 1918 blue / red | 59 | 0,1,2,4,5,6,8,13,16,18,20,21,22,24,29,31,33,34,36,37,38,39,40,41,42,43,44,45,46,49,51,52,54,55,56,57,58,59,60,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83 | 0 of 59 |
 | 1942 blue / red | 20 | 64..83 | 0 of 20 |
 | 1986 blue | 0 | — | — |
 | 2023 blue a / b | 0 | — | — |
 | ???? blue a / b | 0 | — | — |
 
-(The 1918 list is 59 ids because the era-0 type file has 59 zero bytes; the count matches
-exactly, which is the check worth repeating in Phase B.)
+The 1918 list is **not typed**, and neither is any other row above. It is the output of
+`tools/t2/t2-absent.py`, which reads the run's `*.sites.json` and derives `absent = (x == 0)`
+from the capture:
+
+```
+python3 tools/t2/t2-absent.py docs/re/era-captures/era-1918-blue.sites.json \
+    --type-file "/mnt/nas/Projects/Command HQ/modern/extracted/data/cbr_type_by_era.json" --era 0
+```
+
+It exits non-zero unless the `x == 0` set is also the capture's `subtype == 0` set and also
+the era-0 file's zero-byte set — 59 ids, 59 zero bytes, all three sets equal. The 1942 row
+(20 ids, 64..83), and the zero-absent rows for 1986 / 2023 / ????, come from the same script
+against their own captures, and all pass both checks. Re-run it rather than editing the table.
 
 ## 3. RULE — `| 0x18` on every live site
 
@@ -139,12 +152,19 @@ LONDON; (161,30) at row 36 shows BERLIN; (150,34) at row 40 shows PARIS. All hov
 | 2023 | 3 | blue ×2 | 0 | a: 29, 43 / b: 33, 34 | 52/84, 32/84 | positions identical between the two runs; **ownership is not** |
 | ???? | 4 | blue ×2 | 0 | a: 38, 49 / b: 10, 49 | n/a | positions differ run to run; a different site is a capital each time |
 
-2023, detail: the two runs share every X/Y pair byte for byte, differ in subtype at 2 sites
-(the two promoted power-capital bases) and in owner bits at 32 and 52 sites. That is the
-overlay `FUN_23aa_0e1c @ 23aa:0e1c`, which picks two sites at least `0x271` apart and then
-assigns each site's owner from the two power blocs — i.e. **the 2023 alliance map is rolled
-per game**, so a single run cannot be used as a fixture. Record the rule (two random
-capitals, distance floor, bloc assignment), not one run's bytes.
+2023, detail: the two runs share every X/Y pair byte for byte (0 of 84 differ) and their
+bytes differ at 52 sites. Of those, **subtype differs at 4 sites** —
+(29: 2→4), (33: 4→2), (34: 4→1), (43: 1→4) — and **owner bits differ at 52 sites**. Both
+runs promote two bases to capitals, but never the same two and never with the same subtype,
+and the owner field of most of the map is re-rolled. The two runs' *unowned* counts (run a
+52, run b 32) are a different number from the 52 owner diffs; only one of them is a diff
+count. All four figures are printed by
+`python3 tools/t2/t2-era-diff.py era-2023-blue-a era-2023-blue-b` — do not retype them.
+
+The overlay behind it is `FUN_23aa_0e1c @ 23aa:0e1c`, which picks two sites at least `0x271`
+apart and then assigns each site's owner from the two power blocs — i.e. **the 2023 alliance
+map is rolled per game**, so a single run cannot be used as a fixture. Record the rule (two
+random capitals, distance floor, bloc assignment), not one run's bytes.
 
 ????, detail: the two runs share no position at all (all 84 X/Y pairs differ), and the
 hover prints only the type word (`CAPITAL` / `CITY`) instead of a site name — see §7. The
