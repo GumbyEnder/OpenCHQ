@@ -23,11 +23,15 @@ export function formatBillions(millions) {
   return text === "" || text === "-0" ? "0" : text;
 }
 
-// Cash in whole billions, as Monitor Four shows it (Manual p.27).
+// Cash in whole billions, as Monitor Four shows it (Manual p.27). The original divides the money
+// slot by 40 with an integer divide (`3711:16f3`: BALANCE = DS:0x148e / 0x28), so 400 units prints
+// `10` and anything short of a whole billion prints the billion below it. Truncate, never round:
+// 1,049 million is `1`, not `1` by luck and not `2`. Amounts under one billion print `0`, which is
+// what the divide gives - UNVERIFIED against the original until a capture shows a sub-1b balance.
 export function formatWholeBillions(millions) {
   const value = Number(millions);
   if (!Number.isFinite(value)) return "";
-  return String(Math.round(value / MILLIONS_PER_BILLION));
+  return String(Math.trunc(value / MILLIONS_PER_BILLION));
 }
 
 // The noun a purchase is announced with. A bare kind reads wrong for a collective: nobody buys
@@ -44,14 +48,17 @@ export function articleFor(noun) {
 }
 
 // The one line a completed purchase shows. The pool is the server's cash in millions; T-001
-// prints money in billions, so a raw 300 read as "300" and looked like 300 billion. F3.
+// prints money in billions, so a raw 300 read as "300" and looked like 300 billion. F3 fixed the
+// unit. F4 corrects the form: the original shows cash in whole billions, truncated (`3711:16f3`),
+// so this line reads `Pool 10b`, not `Pool 0.3b`. Under one billion it prints `0b`, which matches
+// the divide but is UNVERIFIED against a capture.
 export function purchaseText(kind, at, cash) {
   const noun = PURCHASE_NOUNS[String(kind || "")] || String(kind || "unit");
   const cellAt = cell(at);
   const where = cellAt ? " at " + cellAt.x + "," + cellAt.y : "";
   const value = Number(cash);
   const pool = cash !== null && cash !== undefined && Number.isFinite(value)
-    ? " Pool " + formatBillions(value) + "b."
+    ? " Pool " + formatWholeBillions(value) + "b."
     : "";
   return "Bought " + articleFor(noun) + " " + noun + where + "." + pool;
 }
