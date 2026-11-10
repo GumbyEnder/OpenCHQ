@@ -1,0 +1,76 @@
+{
+  "runId": "shiprun-9ytgri",
+  "when": "2026-11-10T00:42:02.224Z",
+  "base": "https://openchq-web-production.up.railway.app",
+  "frames": [
+    {
+      "file": "t000-ship-1-washington.png",
+      "hull": "blue:cruiser:1",
+      "x": 84,
+      "y": 44,
+      "round": 2,
+      "clock": "held",
+      "toast": "Bought an cruiser at 84,44. Pool 300.",
+      "clientStrip": "1986 · blue · round 2 · held",
+      "sha256": "1ebb806c29704d49656b117e94edf4f169115c62be6e470641baa5477fdd70b6"
+    },
+    {
+      "file": "t000-ship-2-mid-atlantic.png",
+      "hull": "blue:cruiser:1",
+      "x": 106,
+      "y": 32,
+      "round": 7,
+      "clock": "running",
+      "toast": "Select one of your pieces.",
+      "clientStrip": "1986 · blue · round 7 · running",
+      "sha256": "54f9ada7919311a93f6fbce7d8078680a6f90c3a0ec7701293aa37ee972e7338"
+    },
+    {
+      "file": "t000-ship-3-arrival.png",
+      "hull": "blue:cruiser:1",
+      "x": 157,
+      "y": 27,
+      "round": 12,
+      "clock": "held",
+      "toast": "Select one of your pieces.",
+      "clientStrip": "1986 · blue · round 12 · held",
+      "sha256": "804b06bd0c4973a2104779efb1ea5b43d8f0b32c60f0862cbba9e48db0579b82"
+    }
+  ],
+  "user": "shipw9ytgts",
+  "bought": {
+    "wanted": [
+      84,
+      44
+    ],
+    "at": [
+      84,
+      44
+    ],
+    "flash": "Bought an cruiser at 84,44. Pool 300."
+  },
+  "hullId": "blue:cruiser:1",
+  "order1": {
+    "to": [
+      106,
+      32
+    ],
+    "preview": "Order sent. 5 rounds to walk.",
+    "flash": "Select one of your pieces."
+  },
+  "preview2": "Order sent. 5 rounds to walk.",
+  "order2": {
+    "to": [
+      157,
+      27
+    ],
+    "flash": "Select one of your pieces."
+  },
+  "monotonic": true,
+  "rounds": [
+    2,
+    7,
+    12
+  ],
+  "published": "2026-11-10T00:43:09.560Z"
+}

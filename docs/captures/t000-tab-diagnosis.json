@@ -1,0 +1,509 @@
+{
+  "runId": "tabdiag-9yrr7f",
+  "when": "2026-11-10T00:40:42.363Z",
+  "base": "https://openchq-web-production.up.railway.app",
+  "steps": {
+    "oneTab": {
+      "pages": 1,
+      "cookie": [
+        {
+          "name": "openchq_session",
+          "httpOnly": true,
+          "secure": true,
+          "sameSite": "Lax",
+          "expiresInDays": 14,
+          "valueSha": "641ff7b78cab"
+        }
+      ],
+      "me": {
+        "status": 200,
+        "user": {
+          "id": 30,
+          "username": "tabdiagw9yrr8z"
+        }
+      },
+      "state": {
+        "flash": "",
+        "round": 1,
+        "gateVisible": false,
+        "signedInText": "tabdiagw9yrr8z Sign out",
+        "origin": 1794271242812.1,
+        "toasts": [],
+        "ws": [
+          {
+            "opens": 1,
+            "closes": [],
+            "frames": 7
+          }
+        ]
+      }
+    },
+    "twoTabsOneContext": {
+      "pages": 2,
+      "cookie": [
+        {
+          "name": "openchq_session",
+          "httpOnly": true,
+          "secure": true,
+          "sameSite": "Lax",
+          "expiresInDays": 14,
+          "valueSha": "641ff7b78cab"
+        }
+      ],
+      "me1": {
+        "status": 200,
+        "user": {
+          "id": 30,
+          "username": "tabdiagw9yrr8z"
+        }
+      },
+      "me2": {
+        "status": 200,
+        "user": {
+          "id": 30,
+          "username": "tabdiagw9yrr8z"
+        }
+      },
+      "page1": {
+        "flash": "Connection lost. Reconnecting…",
+        "round": 3,
+        "gateVisible": false,
+        "signedInText": "tabdiagw9yrr8z Sign out",
+        "origin": 1794271242812.1,
+        "toasts": [
+          {
+            "at": 8,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 9,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 10,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 11,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 12,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 12,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 13,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 14,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 15,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 16,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 16,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 17,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 18,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 19,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 20,
+            "text": "Connection lost. Reconnecting…"
+          }
+        ],
+        "ws": [
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271250957
+              }
+            ],
+            "frames": 7
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271252641
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271254345
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271255882
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271257419
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271259131
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271260840
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271262563
+              }
+            ],
+            "frames": 2
+          }
+        ]
+      },
+      "page2": {
+        "flash": "Reconnected. The match is where you left it.",
+        "round": 3,
+        "gateVisible": false,
+        "signedInText": "tabdiagw9yrr8z Sign out",
+        "origin": 1794271250095.5,
+        "toasts": [
+          {
+            "at": 2,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 3,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 3,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 4,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 5,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 6,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 6,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 7,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 8,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 9,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 10,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 11,
+            "text": "Reconnected. The match is where you left it."
+          },
+          {
+            "at": 12,
+            "text": "Connection lost. Reconnecting…"
+          },
+          {
+            "at": 13,
+            "text": "Reconnected. The match is where you left it."
+          }
+        ],
+        "ws": [
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271251794
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271253497
+              }
+            ],
+            "frames": 4
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271255034
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271256558
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271258275
+              }
+            ],
+            "frames": 4
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271259988
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [
+              {
+                "code": 1000,
+                "reason": "",
+                "at": 1794271261705
+              }
+            ],
+            "frames": 2
+          },
+          {
+            "opens": 1,
+            "closes": [],
+            "frames": 2
+          }
+        ]
+      },
+      "page1DisconnectToasts": 8,
+      "page2DisconnectToasts": 7
+    },
+    "afterSecondTabClosed": {
+      "pages": 1,
+      "cookie": [
+        {
+          "name": "openchq_session",
+          "httpOnly": true,
+          "secure": true,
+          "sameSite": "Lax",
+          "expiresInDays": 14,
+          "valueSha": "641ff7b78cab"
+        }
+      ],
+      "me1": {
+        "status": 200,
+        "user": {
+          "id": 30,
+          "username": "tabdiagw9yrr8z"
+        }
+      },
+      "newToasts": [
+        {
+          "at": 21,
+          "text": "Reconnected. The match is where you left it."
+        }
+      ],
+      "round": 4,
+      "me": {
+        "status": 200,
+        "user": {
+          "id": 30,
+          "username": "tabdiagw9yrr8z"
+        }
+      }
+    },
+    "reload": {
+      "me": {
+        "status": 200,
+        "user": {
+          "id": 30,
+          "username": "tabdiagw9yrr8z"
+        }
+      },
+      "cookie": [
+        {
+          "name": "openchq_session",
+          "httpOnly": true,
+          "secure": true,
+          "sameSite": "Lax",
+          "expiresInDays": 14,
+          "valueSha": "641ff7b78cab"
+        }
+      ],
+      "sameOrigin": false,
+      "state": {
+        "flash": "",
+        "round": 4,
+        "gateVisible": false,
+        "signedInText": "tabdiagw9yrr8z Sign out",
+        "origin": 1794271275237.3,
+        "toasts": [],
+        "ws": [
+          {
+            "opens": 1,
+            "closes": [],
+            "frames": 2
+          }
+        ]
+      }
+    },
+    "newTabAfterClose": {
+      "pages": 1,
+      "me": {
+        "status": 200,
+        "user": {
+          "id": 30,
+          "username": "tabdiagw9yrr8z"
+        }
+      },
+      "cookie": [
+        {
+          "name": "openchq_session",
+          "httpOnly": true,
+          "secure": true,
+          "sameSite": "Lax",
+          "expiresInDays": 14,
+          "valueSha": "641ff7b78cab"
+        }
+      ],
+      "state": {
+        "flash": "",
+        "round": 4,
+        "gateVisible": false,
+        "signedInText": "tabdiagw9yrr8z Sign out",
+        "origin": 1794271278904.4,
+        "toasts": [],
+        "ws": [
+          {
+            "opens": 1,
+            "closes": [],
+            "frames": 2
+          }
+        ]
+      }
+    },
+    "freshContext": {
+      "cookie": [],
+      "me": {
+        "status": 200,
+        "user": null
+      },
+      "state": {
+        "flash": "",
+        "round": 0,
+        "gateVisible": true,
+        "signedInText": "",
+        "origin": 1794271282065.5,
+        "toasts": [],
+        "ws": []
+      }
+    }
+  },
+  "user": "tabdiagw9yrr8z",
+  "verdict": {
+    "cookieSurvivesTwoTabs": true,
+    "cookieSurvivesReload": true,
+    "cookieSurvivesTabClose": true,
+    "takeoverPingPong": true,
+    "singleTabSettles": true,
+    "freshContextHasNoSession": true
+  },
+  "ok": true
+}

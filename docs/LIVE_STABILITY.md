@@ -134,52 +134,104 @@ account (`OPENCHQ_OWNER`, default `shane`) receives in its room view. The Debug 
 them. Test `web/test/nodes/bot_activity.mjs`: within 50 headless rounds the bot bought 7 units,
 issued 10 orders and moved pieces 247 times; the debug rows show the buy and the order.
 
-## Live checks, 2026-11-09 23:55 – 00:10 ET (build 2d4f372)
+## Live checks, 2026-11-10 00:40–00:58 ET (build 2d4f372)
 
-Three manual checks from the task, run against the deployed host, each with the machine-readable
-record kept beside the run (`tools/live_offline_buy.mjs`, `tools/live_ship_capture.mjs`).
+Every check below was run against the deployed host (`GET /api/version` = `2d4f372`, footer
+`build 2d4f372`), and each writes a machine-readable record beside the screenshots. None of these
+frames are hand-picked: the harness refuses to publish a capture unless the client's own round
+counter equals the server's frame for that moment.
 
-**15 minutes, clock running, one tab.** 901 s, round 2 → 182, page never reloaded
-(`performance.timeOrigin` unchanged), **0 "Connection lost" toasts**. The only toast in the window
-is the buy confirmation from the test itself. The transport-level check agrees: `local/live_ws_idle.mjs`
-held one socket for 900 s, 59 server pings answered, `RESULT STILL_OPEN`.
+### 15 minutes, clock running, one tab: zero "Connection lost" toasts
 
-**Network off for 10 s, then a Buy.** The cut was real — an `iptables DROP` on the host's address for
-10 s, removed afterwards; Chrome's own offline emulation leaves an established WebSocket up, so it
-never reaches the client. A cruiser was armed in Buy, the cut started, the highlighted cell was
-clicked, the cut ended. The order landed **exactly once** (`bought an submarine at 86,61`,
-one `bought` frame, no error, no duplicate).
+Tool: `tools/live_soak_ui.mjs` (run `soak-9yrnob`, account `soakw9yrnqm`). Record:
+`docs/captures/t000-soak-15min.json`.
 
-What did **not** happen in that window: the "your order is queued" line. The socket never reported a
-close, because TCP retransmitted the frame when the route came back. `sendOrder` only queues when
-`readyState !== OPEN`, so a silent partition shorter than the 15 s ping does not produce the toast —
-the order survives, the feedback does not. Worth a follow-up: treat "no pong / no frame" as down, or
-show the queued line optimistically.
+- 901 s with the clock running, round **0 → 180**. Start and end counters are read from the
+  status strip, not inferred from time.
+- **0 toasts of any kind** and therefore **0 "Connection lost"** toasts (`toastCount: 0`,
+  `disconnectToasts: 0`). The page's `#flash` is watched by a `MutationObserver`, so a toast that
+  appeared between one-second samples would still be recorded.
+- One WebSocket for the whole run: 1 open, **0 closes**, 396 frames received. `performance.timeOrigin`
+  never changed, one page in the context at the start and at the end, cookie value hash unchanged,
+  and `/api/me` returned the same account after 901 s.
+- Screenshots (sha256 in the JSON):
+  `t000-soak-15-start.png` (round 0), `t000-soak-15-mark.png` (901 s, round 180, clock running),
+  `t000-soak-15-end.png` (round 180, clock stopped so the counter is fixed).
+- The transport soak (`local/live_ws_idle.mjs`) agrees, but this is the client-side measurement the
+  criterion names: the player's toast area stayed empty for the whole quarter-hour.
 
-**Ship from Washington to a European port.** Bought a cruiser at the 84,44 berth (the capital itself
-is inland; the server refuses a hull on land), ordered 106,32 mid-Atlantic (5 rounds), then 157,27
-Hamburg's berth. Captures `docs/captures/t000-ship-{1-washington,2-mid-atlantic,3-arrival}.png` were
-taken only when the server's own room frame put the hull at those cells: round 2 held at 84,44,
-round 20 running at 106,32, round 40 at 157,27.
+### Network off for 10 s, then a Buy: fresh coordinates, applied exactly once
 
-**Two clients on one session loop.** Opening the same account in two tabs produces a takeover
-ping-pong: each `join` closes the other socket with code 1000, each client reconnects with a 0.5 s
-backoff, and both tabs alternate "Connection lost. Reconnecting…" / "Reconnected." every ~2 s. A
-single tab is clean, so this does not affect the criterion above, but it is a real defect in the
-reconnect policy (the loser of a takeover should stand down, not fight back).
+Tool: `tools/live_offline_buy.mjs` (run 00:57, account `t000w9zcn2j`). Record:
+`docs/captures/t000-offline-buy.json`; screenshots `docs/captures/t000-offline-buy-{armed,after}.png`.
 
-**The blank tab.** During the first attempts the automation browser had two page targets open on
-the same account. Both ended at `about:blank` and the second was logged out, which is what looked
-like a page or session fault. Two fixes on the test side, one finding on ours:
+The cut is a real `iptables -I OUTPUT -p tcp --dport 443 -j DROP` on the host's resolved Railway
+edge address for 10 s, removed afterwards (verified: no rule left in `iptables -S OUTPUT`). The
+Buy was armed first; the click point was recomputed **at click time**, after the cut began:
 
-- The harness was driving whichever page had focus, so half the DOM reads and clicks landed on a
-  different tab. Every check in `tools/` now runs in one page with a fresh context.
-- A single tab on a fresh context survived 901 s, 180 rounds and 59 server pings with no reload
-  (`performance.timeOrigin` unchanged) and no `about:blank`. The page did not navigate itself away,
-  and the server did not close a single socket in that run — so the blank tab was the automation
-  browser, not the app or its session cookie.
-- The real defect it exposed stays on the list: **two clients on one session fight for the socket.**
-  `lobby.join` closes the previous peer with 1000, and the "loser" client reconnects and takes it
-  back, so both tabs alternate "Connection lost. Reconnecting…" / "Reconnected." every ~2 s. A
-  takeover is meant to be one-directional: the client that lost the socket should stand down until
-  the player acts, or the server should say why it closed (`bye`), not close with a bare 1000.
+- mask cell: `86,61`; canvas at click time `1280x544`, CSS `1372x583`; click at `(385,336)`.
+- result: **one** `bought` frame, no `error` frame, and the server's own sentence puts the
+  submarine at **86,61** — the same cell the mask marked (`cellMatch: true`). One order, one unit,
+  no duplicate.
+- The socket never reported a close: TCP retransmitted the frame when the route came back, so the
+  page did not enter its queued path and the "queued and will be sent" line did not appear. The
+  order was not lost; the *feedback* during the silent partition is still missing. That remains an
+  open polish item (treat "no frame for >2 ping intervals" as down, or show the queued line
+  optimistically). It is not a lost or double-applied order.
+
+### One ship run, departure to arrival, same hull, increasing rounds
+
+Tool: `tools/live_ship_capture.mjs` (run `shiprun-9ytgri`, account `shipw9ytgts`). Manifest:
+`docs/captures/t000-ship-run.json`.
+
+| frame | file | round | clock | server cell |
+|---|---|---|---|---|
+| departure | `t000-ship-1-washington.png` | 2 | held | 84,44 (Washington berth) |
+| mid-Atlantic | `t000-ship-2-mid-atlantic.png` | 7 | running | 106,32 (ordered waypoint) |
+| arrival | `t000-ship-3-arrival.png` | 12 | held | 157,27 (Hamburg berth) |
+
+One account, one hull id (`blue:cruiser:1`), rounds strictly increasing. Each PNG has a
+burned-in strip: run id, hull id, round, server cell, and the client's status-strip line, so the
+three frames cannot be mixed up after the fact. The harness publishes all three atomically: if
+any invariant fails, nothing in `docs/captures/` is replaced.
+
+**Provenance note on the earlier set.** The three PNGs shipped before this run were also from one
+run — the record now kept at `docs/captures/t000-ship-run-before-atomic-publish.json`
+(2026-11-10T00:00:51Z) says round 2 at 84,44, round 20 at 106,32, round 40 at 157,27, hull
+`blue:cruiser:1`. But the old script wrote each file as it went,
+so a failed run could leave a mixture of headers on disk, and an earlier attempt
+(`proc_11b8a9756571`, 23:57) had latched onto a non-hull piece (`blue:sea`) before failing. A
+frame quoting round 29 is not from the run recorded at 00:00:51Z; the published set is now the
+single run above. The atomic publish and the in-image stamp are the fix for that ambiguity, not
+just a new set of files.
+
+### "The tab died twice and the cookie was dropped": automation, with one real app defect exposed
+
+Tool: `tools/live_tab_diagnosis.mjs` (run `tabdiag-9yrr7f`, account `tabdiagw9yrr8z`). Record:
+`docs/captures/t000-tab-diagnosis.json`.
+
+The two candidates were separated on the live build:
+
+- **Two page targets in one browser context** (the automation case): both pages stayed signed in —
+  `/api/me` returned the same account in page 1 and page 2 — and the shared cookie stayed in the
+  jar. The server closed the older socket each time the second page joined, always with code
+  **1000** (8 closes on page 1, 7 on page 2 in 12 s). Each close produced "Connection lost.
+  Reconnecting…" on the page that lost the socket (8 and 7 toasts respectively) and the loser
+  reconnected and took the socket back: a ping-pong, not a session loss.
+- **Closing the second target** ended it: one page, no further disconnect toasts, one
+  "Reconnected. The match is where you left it.", and the round kept advancing.
+- **Reload**: `/api/me` returned the same account and the same cookie value hash (14 days,
+  HttpOnly, Secure, SameSite=Lax).
+- **Close the last tab, open a new one in the same context**: still signed in, gate hidden.
+- **A fresh browser context**: no cookie and `/api/me` null — a different cookie jar, which is
+  exactly what a logged-out tab looks like. The app never navigates a page to `about:blank`, and
+  the only code that ends a session is `/api/logout` (`signOut`); nothing else clears the cookie.
+
+Verdict: the dead/logged-out tab was the automation browser's second target, which was in a
+different cookie jar or had never navigated to the app — not the page and not the server. In the
+single-tab run above the page stayed on the same document for 901 s with one WebSocket and no
+reload, so criterion (f) holds as written. The real defect the episode exposed is the takeover
+policy: two clients on one account fight for the socket instead of the loser standing down. That
+is not criterion (a) for one client and not a session/cookie failure, but it is on the list: the
+client that loses a takeover should not reconnect until the player acts, or `lobby.join` should
+close with a reason the page can show instead of a bare 1000.

@@ -1,0 +1,62 @@
+{
+  "when": "2026-11-10T00:56:56.597Z",
+  "base": "https://openchq-web-production.up.railway.app",
+  "buy": {
+    "user": "t000w9zcn2j",
+    "footer": "2d4f372",
+    "armed": {
+      "kind": "submarine",
+      "cost": "10b",
+      "maskCells": 7420,
+      "cell": [
+        86,
+        61
+      ]
+    },
+    "flashWhenCut": "Buy submarine: click highlighted coastal water to place it.",
+    "clickAt": {
+      "x": 385,
+      "y": 336,
+      "canvas": [
+        1280,
+        544
+      ],
+      "css": [
+        1372,
+        583
+      ]
+    },
+    "queuedText": "Buy submarine: click highlighted coastal water to place it.",
+    "queuedShown": false,
+    "cutSeconds": 10,
+    "reconnectedAfterMs": 5373,
+    "newBoughtFrames": 1,
+    "boughtFramesTotal": 1,
+    "errorTexts": [],
+    "flashAfter": "Bought an submarine at 86,61. Pool 300.",
+    "stripAfter": "1986 · blue · round 2 · held",
+    "serverCell": [
+      86,
+      61
+    ],
+    "cellMatch": true
+  },
+  "soak": {
+    "seconds": 30,
+    "toasts": [
+      {
+        "at": 0,
+        "text": "Bought an submarine at 86,61. Pool 300."
+      }
+    ],
+    "disconnectToasts": 0,
+    "samples": [
+      {
+        "s": 0,
+        "round": "2"
+      }
+    ],
+    "endRound": "8",
+    "reloaded": null
+  }
+}

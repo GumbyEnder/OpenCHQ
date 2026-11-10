@@ -113,14 +113,22 @@ async function main() {
     const valid = [];
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (bytes[y * bw + x]) valid.push([x, y]);
     const [cx, cy] = valid[Math.floor(valid.length / 2)];
-    const canvas = page.locator("canvas#board");
-    const box = await canvas.boundingBox();
-    const attr = await canvas.evaluate((c) => ({ w: c.width, h: c.height }));
-    log("armed", sea.kind, sea.cost, "| mask", bw + "x" + bh, "valid", valid.length, "| canvas", attr.w + "x" + attr.h, "css", Math.round(box.width) + "x" + Math.round(box.height));
-    const clickX = box.x + (cx + 0.5) * (attr.w / bw) * (box.width / attr.w);
-    const clickY = box.y + (cy + 0.5) * (attr.h / bh) * (box.height / attr.h);
+    // The click point is computed from the canvas as it is at click time, not as it was when the
+    // dialog opened. The Buy panel and the bottom band both resize the canvas, which is how the
+    // first attempt could send a stale coordinate into a legal mask cell.
+    const pointFor = async (x, y) => {
+      const canvas = page.locator("canvas#board");
+      const box = await canvas.boundingBox();
+      const attr = await canvas.evaluate((c) => ({ w: c.width, h: c.height }));
+      return {
+        x: box.x + (x + 0.5) * (attr.w / bw) * (box.width / attr.w),
+        y: box.y + (y + 0.5) * (attr.h / bh) * (box.height / attr.h),
+        box, attr,
+      };
+    };
+    const first = await pointFor(cx, cy);
+    log("armed", sea.kind, sea.cost, "| mask", bw + "x" + bh, "valid", valid.length, "| canvas", first.attr.w + "x" + first.attr.h, "css", Math.round(first.box.width) + "x" + Math.round(first.box.height));
     result.buy.armed = { kind: sea.kind, cost: sea.cost, maskCells: valid.length, cell: [cx, cy] };
-    result.buy.clickAt = { x: Math.round(clickX), y: Math.round(clickY) };
     await page.screenshot({ path: OUT + "/t000-armed.png" });
 
     // --- the 10 s cut ------------------------------------------------------------------------
@@ -131,6 +139,13 @@ async function main() {
     result.buy.flashWhenCut = await flash();
     log("after cut, flash:", JSON.stringify(result.buy.flashWhenCut));
 
+    // Fresh coordinates, measured after the cut began and after the layout has had time to
+    // settle. The cell the server buys must be the cell the mask marked.
+    await sleep(300);
+    const click = await pointFor(cx, cy);
+    const clickX = click.x;
+    const clickY = click.y;
+    result.buy.clickAt = { x: Math.round(clickX), y: Math.round(clickY), canvas: [click.attr.w, click.attr.h], css: [Math.round(click.box.width), Math.round(click.box.height)] };
     await page.mouse.click(clickX, clickY);
     await sleep(800);
     const queued = await flash();
@@ -160,10 +175,17 @@ async function main() {
     result.buy.errorTexts = errors.map((e) => e.error);
     result.buy.flashAfter = await flash();
     result.buy.stripAfter = await strip();
+    const boughtCell = (result.buy.flashAfter.match(/at (\d+),(\d+)/) || []).slice(1).map(Number);
+    result.buy.serverCell = boughtCell;
+    result.buy.cellMatch = boughtCell[0] === cx && boughtCell[1] === cy;
     log("after restore:", JSON.stringify({
       newBought: result.buy.newBoughtFrames, boughtTotal: bought.length,
       errors: result.buy.errorTexts, flash: result.buy.flashAfter,
+      wanted: [cx, cy], serverCell: boughtCell, cellMatch: result.buy.cellMatch,
     }));
+    if (result.buy.newBoughtFrames !== 1 || result.buy.errorTexts.length || !result.buy.cellMatch) {
+      throw new Error("offline buy did not apply exactly once on the masked cell");
+    }
     await page.screenshot({ path: OUT + "/t000-after-reconnect.png" });
     save();
 

@@ -1,0 +1,167 @@
+{
+  "runId": "soak-9yrnob",
+  "when": "2026-11-10T00:40:37.868Z",
+  "base": "https://openchq-web-production.up.railway.app",
+  "requestedSeconds": 900,
+  "screenshots": [
+    {
+      "file": "t000-soak-15-start.png",
+      "sha256": "adb8e215fc75861433cc9c7e96384cb5712629cf0e4548590a3694484cba16a0"
+    },
+    {
+      "file": "t000-soak-15-mark.png",
+      "sha256": "cffc0fde97e4771e48b362648de639041a4cfa245074b92a9da8e0ff34500521"
+    },
+    {
+      "file": "t000-soak-15-end.png",
+      "sha256": "efa0ff5379c6910d663e8c30fb29001ad51d493de66ccbad5bb5e466985ca61a"
+    }
+  ],
+  "user": "soakw9yrnqm",
+  "pagesAtStart": 1,
+  "cookiesBefore": [
+    {
+      "name": "openchq_session",
+      "domain": "openchq-web-production.up.railway.app",
+      "path": "/",
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax",
+      "expiresInDays": 14,
+      "valueSha": "e8c8b705793a"
+    }
+  ],
+  "meBefore": {
+    "id": 28,
+    "username": "soakw9yrnqm"
+  },
+  "timeOrigin": 1794271238207.3,
+  "startRound": 0,
+  "wsAtMark": [
+    {
+      "opens": 1,
+      "closes": [],
+      "frames": 395
+    }
+  ],
+  "seconds": 901,
+  "markRound": 180,
+  "samples": [
+    {
+      "s": 0,
+      "round": 0,
+      "flash": ""
+    },
+    {
+      "s": 60,
+      "round": 12,
+      "flash": ""
+    },
+    {
+      "s": 120,
+      "round": 24,
+      "flash": ""
+    },
+    {
+      "s": 180,
+      "round": 36,
+      "flash": ""
+    },
+    {
+      "s": 240,
+      "round": 48,
+      "flash": ""
+    },
+    {
+      "s": 300,
+      "round": 60,
+      "flash": ""
+    },
+    {
+      "s": 360,
+      "round": 72,
+      "flash": ""
+    },
+    {
+      "s": 420,
+      "round": 84,
+      "flash": ""
+    },
+    {
+      "s": 480,
+      "round": 96,
+      "flash": ""
+    },
+    {
+      "s": 540,
+      "round": 108,
+      "flash": ""
+    },
+    {
+      "s": 600,
+      "round": 120,
+      "flash": ""
+    },
+    {
+      "s": 660,
+      "round": 132,
+      "flash": ""
+    },
+    {
+      "s": 720,
+      "round": 144,
+      "flash": ""
+    },
+    {
+      "s": 780,
+      "round": 156,
+      "flash": ""
+    },
+    {
+      "s": 840,
+      "round": 168,
+      "flash": ""
+    },
+    {
+      "s": 900,
+      "round": 180,
+      "flash": ""
+    }
+  ],
+  "reloaded": null,
+  "endRound": 180,
+  "toasts": [],
+  "toastCount": 0,
+  "disconnectToasts": 0,
+  "reconnectedToasts": 0,
+  "ws": [
+    {
+      "opens": 1,
+      "closes": [],
+      "frames": 396
+    }
+  ],
+  "pagesAtEnd": 1,
+  "cookiesAfter": [
+    {
+      "name": "openchq_session",
+      "domain": "openchq-web-production.up.railway.app",
+      "path": "/",
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax",
+      "expiresInDays": 14,
+      "valueSha": "e8c8b705793a"
+    }
+  ],
+  "meAfter": {
+    "id": 28,
+    "username": "soakw9yrnqm"
+  },
+  "finalFlash": "",
+  "cookieUnchanged": true,
+  "meUsernameBefore": "soakw9yrnqm",
+  "meUsernameAfter": "soakw9yrnqm",
+  "ok": true,
+  "finishedAt": "2026-11-10T00:55:43.553Z"
+}

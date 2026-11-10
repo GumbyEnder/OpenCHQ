@@ -1,0 +1,46 @@
+{
+  "when": "2026-11-10T00:00:51.013Z",
+  "base": "https://openchq-web-production.up.railway.app",
+  "bought": {
+    "at": [
+      84,
+      44
+    ],
+    "flash": "Bought an cruiser at 84,44. Pool 300."
+  },
+  "shipId": "blue:cruiser:1",
+  "capture1": {
+    "strip": "1986 · blue · round 2 · held",
+    "ship": {
+      "x": 84,
+      "y": 44
+    },
+    "route": "Order sent. 5 rounds to walk."
+  },
+  "order": {
+    "to": [
+      106,
+      32
+    ],
+    "route": "Order sent. 5 rounds to walk.",
+    "flash": "Select one of your pieces."
+  },
+  "capture2": {
+    "strip": "1986 · blue · round 20 · running",
+    "ship": {
+      "x": 106,
+      "y": 32
+    },
+    "round": 20,
+    "clock": "running"
+  },
+  "capture3": {
+    "strip": "1986 · blue · round 40 · held",
+    "ship": {
+      "x": 157,
+      "y": 27
+    },
+    "round": 40,
+    "clock": "running"
+  }
+}
