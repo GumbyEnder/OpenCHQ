@@ -5,9 +5,13 @@ Date: 2026-11-10. Owner: openchq-pm. Implementer: game. Basis: `docs/re/ERA_SETU
 Branch: `web`. Nothing here overrides a number in ERA_SETUP.md — where this document and
 that one disagree, ERA_SETUP.md wins and the spec is the thing that is wrong.
 
-Phase B is four tasks, ordered. This document specifies **B-1 in full**. B-2..B-4 are
-outlined only so the shape is visible; each gets its own spec after the one before it lands,
-because each one changes behaviour that 26 test nodes currently assert.
+Phase B is four tasks, ordered. This document specifies **B-1 and B-2 in full**. B-3 and B-4
+are outlined only so the shape is visible; each gets its own spec after the one before it
+lands, because each one changes behaviour that the suite currently asserts.
+
+The B-2 outline said "26 affected test nodes". That number was an estimate and it was wrong.
+Measured on the implementation: 2 nodes changed expectations, 56 still green. The estimate
+was mine, not the implementer's, and nothing was dropped to make it come out.
 
 | Task | What it is | Size |
 |---|---|---|
@@ -156,14 +160,132 @@ does not call it yet.
 
 ---
 
-## B-2 — wire it in (outline only, spec to follow)
+## B-2 — wire it in (specified 2026-11-10, on evidence from `6b1b657`)
 
-`matchSites(era)` filters base sites through `applyEra` and carries `type` on every site;
-owners seed from the table for eras 0–2 instead of from `regionOf`/`country_id`. The hard
-part is not the code, it is the 26 test nodes that open a match and assert counts, routes
-and ownership — each changed expectation must be named in the commit message with the reason,
-not silently relaxed. No new gameplay rule is introduced in B-2; only the opening is
-corrected to what ERA_SETUP.md measured.
+B-2 does one thing: the opening the game plays at round 0 is the opening ERA_SETUP.md
+measured, not one world map for every year. Three call sites move — `board.matchSites`,
+`match.openMatch`, `economy.seedOwners` — and the subtype rides along as `type` **beside**
+`kind`, per R2. No new gameplay rule. Where a change looks like a rule (R6, below) it is a
+ruling about how to read a byte the file already carries, not a mechanic added on top.
+
+### Files
+
+| Path | New/edited | What |
+|---|---|---|
+| `web/server/board.mjs` | edited | `applyEra` inside `matchSites`; carries `type` and the file owner; clears a capital's owner (R6) |
+| `web/server/match.mjs` | edited | `openMatch` copies `type` and the file's owner onto the match's sites |
+| `web/server/economy.mjs` | edited | file years: the table's owner wins, no country fallback for table rows |
+| `web/server/era.mjs` | comment only | header says what is now wired; no behaviour change |
+| `web/test/nodes/era_table.mjs`, `web/test/nodes/ownership.mjs` | edited | changed expectations, each named in the commit message |
+| `DESIGN.md` | edited | the per-era opening, one bullet |
+
+Forbidden in B-2: `web/data/world.json`, `web/data/eras.json`, `tools/`, `config/game.json`,
+any owner roll (B-3), and any edit to `tick.mjs`, `rules.mjs`, `placement.mjs` or the win
+condition. That boundary is A7.
+
+### The ruling — R6: a capital's owner byte is a label, not "held"
+
+The file hands **both** 1942 seats to blue (`0x40`, `0x40`). Taken as the opening, `tick.holderOf`
+reads `site.owner` when no land troop stands on the cell, so `checkWin` would return blue at
+round 0 and freeze the match before a hull could sail — which is exactly what happened the
+first time this wiring ran. The byte means *which side the seat belongs to*, not *who is
+holding it*.
+
+So, ruled:
+
+- `matchSites(era)` sets `owner = null` on every site it returns with `kind === "capital"`,
+  for every era **including** the ones with no table row. The seats open unheld.
+- `eras.json` keeps the byte unchanged. The data is still the record; a later subsystem may
+  read it as a label. B-2 does not get to edit the measurement away.
+- "Held" stays exactly where it is: `tick.holderOf` (land troops on the cell, else the site's
+  owner) and `checkWin`. A capital is not an income site and `seedOwners` never owned it —
+  `ownable()` is city/dock/well — so a capital opening at `null` is the engine's **existing**
+  behaviour and the pre-B-2 opening, not a new rule. Honouring the byte would have been the
+  new rule, and B-2 introduces none.
+- 1942's seats therefore open null while Britain/France/et al. keep their file owner. The test
+  counts the seats as neutral: 38/23/3 rather than the file's 40/23/1.
+
+The evidence that this is the engine's own reading, not a workaround: `capital.mjs` already
+pins that a ship in the harbour does not hold a capital, and `tick.mjs:37` is the only reader
+of a capital's `owner`.
+
+### Acceptance criteria — each one a command and a number, run at the head commit
+
+Environment: `OPENCHQ_DATA=<extract>`; on this host the extract is
+`/mnt/nas/projects/Command HQ/modern/extracted`. `<head>` is the commit under test
+(`6b1b657` as written, or its docs-only rebase; the criteria are tree-based, so a rebase that
+changes no code file needs no rerun).
+
+**A1 — suite green, count unchanged, no node lost.**
+`OPENCHQ_DATA=… npm test` → exit 0, with `node tests: 56 passed, 0 failed, 0 skipped` and
+`WEB_OK`. `git diff --name-only 1042997..<head> -- web/test/nodes` names exactly two files,
+`era_table.mjs` and `ownership.mjs`. With no extract (`env -u OPENCHQ_DATA node web/test/run.mjs`)
+exit 0 and exactly five nodes skipped by name: `fonts`, `lanes`, `board_paint`, `ship_routes`,
+`site_assets`.
+
+**A2 — opened site count, exact.** Per era, `matchSites(era).length` and its split:
+
+| era | sites | 84-row table live | docks + wells |
+|---|---|---|---|
+| 1918 | 184 | 25 | 159 |
+| 1942 | 228 | 64 | 164 |
+| 1986 | 269 | 84 | 185 |
+| 2023 | 271 | 84 | 187 |
+| 9999 | 271 | 84 | 187 |
+
+**A3 — type histogram, exact.** 1918 `{1:2, 2:1, 4:22}`, 1942 `{1:4, 2:2, 3:12, 4:46}`,
+1986 `{1:3, 2:1, 3:12, 4:48, 5:20}`, 2023 `{3:12, 4:52, 5:20}` — the A3 table's four rows,
+unchanged. 9999 carries **no `type` key** on any site.
+
+**A4 — owner bytes from the file, tallied seam-visible.** On the 84 table rows of the opened,
+seeded match: 1918 **13 blue / 8 red / 4 neutral**, 1942 **38 / 23 / 3**, 1986 **48 / 24 / 12**.
+`eras.json` still holds the file's own counts on its *live* rows — 1918 14/9/2 of 25, 1942
+40/23/1 of 64, 1986 49/25/10 of 84 — and the difference is exactly the two seats per R6. This
+must not be tally-only: `ownership.mjs` also walks every live table site id-by-id against
+`eras.json`, comparing the seats as `null` against a file row that says otherwise, so a
+mis-seeded map cannot pass behind a right-sized count.
+
+**A5 — R6 as behaviour, all five eras.** For each era, every `kind === "capital"` site in
+`openMatch(era, matchSites(era))` after `seedOwners` has `owner === null`, and
+`checkWin(match)` is `null` at round 0. 1942's two file bytes remain `"blue"`/`"blue"` in
+`eras.json` — cleared at the call site, not in the data.
+
+**A6 — nothing outside the 84 moves.** For each of the five eras, the non-integer-id sites'
+`id:owner` set after `seedOwners` is **identical** to the same set at `1042997` (159/164/185/
+187 rows, all five eras). This is the load-bearing guard that B-2 changed the 84 and nothing
+else.
+
+**A7 — boundary.** Empty output from
+`git diff --name-only 1042997..<head> -- web/data tools config web/server/tick.mjs web/server/rules.mjs web/server/placement.mjs`;
+`git grep -c "rollEra\|Math.random" <head> -- web/server` → 0; `eras.json` keys are exactly
+`1918, 1942, 1986, 2023` (no `9999`).
+
+**A8 — changed expectations named, none relaxed.** `git show --stat <head>` lists seven files
+(109 insertions, 12 deletions as written). Every changed expectation is in the commit message
+with its reason. An expectation that used to assert a number and now asserts nothing is a
+fail, whatever the suite says. The two 2866 nits (§2 range cell, `t2-era-diff` traceback) are
+doc/tooling and ride with the B-2 doc commit, not with this code commit.
+
+**A9 — branch hygiene.** Clean worktree at `<head>`; `git rev-list --count 1042997..<head>` = 1
+before the docs-only rebase onto the spec commit, 2 after it; no B-2 **code** file reaches
+`web` before acceptance closes (the only commit `web` takes first is the spec commit, which
+touches `docs/re/ERA_PHASE_B_SPEC.md` and nothing else); the commit message records the
+baseline it started from (1042997: 56/0/0, exit 0).
+
+### Evidence already in hand (openchq-pm, 2026-11-10, at `6b1b657`)
+
+Independent run in my own worktree, not game's: `npm test` → `node tests: 56 passed, 0 failed,
+0 skipped`, `WEB_OK`, exit 0; no-extract run → exit 0, five skips as A1; the A2/A3/A4/A5 numbers
+and the A6 "all five eras identical" comparison come from a probe run against both `6b1b657` and
+`1042997`. Game's report agrees on every number I checked. Acceptance is not thereby closed —
+`pippin` runs A1–A9 cold before `web` moves, because I do not sign off my own spec.
+
+### Out of scope for B-2 — do not do these
+
+- 2023's roll (B-3) or any seeded randomness; ???? as a playable fixture (B-4).
+- Subtype 1 vs 2 semantics, or painting the subtype in the client.
+- Any income, price, placement-mask, routing or win-condition change.
+- `web/data/world.json`, `config/game.json`, `tools/bake_eras.mjs`, ERA_SETUP's tables.
 
 ## B-3 — the 2023 rule (outline only, spec to follow)
 
