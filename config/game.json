@@ -8,8 +8,24 @@
     "capitalPays": false
   },
   "startPool": {
-    "2023": 40,
-    "early": 9
+    "1918": 10,
+    "1942": 50,
+    "1986": 50,
+    "2023": 600,
+    "9999": 50
+  },
+  "handicap": {
+    "unit": "billion",
+    "min": 0,
+    "max": 999,
+    "step": 1,
+    "default": {
+      "1918": 10,
+      "1942": 30,
+      "1986": 50,
+      "2023": null,
+      "9999": 150
+    }
   },
   "prices": {
     "infantry": 10,
@@ -48,6 +64,21 @@
     "payEvery": "Manual p.27",
     "cityIncome": "Manual p.27",
     "capitalPays": "UNVERIFIED",
+    "startPool": {
+      "1918": "10b. docs/captures/startmoney-1918-blue-monitor4-own.png (BALANCE: 10) + docs/re/START_MONEY.md; DS:0x148e = 400 read by the capture dump, printed as 400 / 0x28 at 3711:16f3. Setup writes the pool in FUN_20b1_01b6 @ 20b1:01b6.",
+      "1942": "50b. docs/captures/startmoney-1942-blue-monitor4-own.png (BALANCE: 50); DS:0x148e = 2000. FUN_20b1_01b6 @ 20b1:01b6 writes the same slot after the spinner is applied.",
+      "1986": "50b. docs/captures/startmoney-1986-blue-monitor4-own.png; DS:0x148e = 2000 on both sides (both read in the same dump). The 1986 spinner DIALOG was not photographed - the 050 spinner default is inferred from that memory read, not read off the dialog: UNVERIFIED as a spinner default.",
+      "2023": "600b. docs/captures/startmoney-2023-blue-monitor4-own.png (BALANCE: 600). No spinner exists in this era (setup goes straight to the war room).",
+      "9999": "50b. UNVERIFIED. DS:0x148e = 2000 read from memory on the ???? setup; the war room was never reached, so no Monitor Four capture exists. A deliberate stand-in from the only memory read there is."
+    },
+    "handicap": {
+      "1918": "Default 010. docs/captures/startmoney-1918-blue-sgtstan-default.png (OPPONENT'S STARTING MONEY, 010) and the same number written to DS:0x148e as 400 (10b) once accepted; 40 units per spinner point (030 -> 1200 -> 30).",
+      "1942": "Default 030. docs/captures/startmoney-1942-blue-sgtstan-spinner.png. UNVERIFIED as a per-era constant beyond these two eras: the default is not the same across eras, so it is stored per era.",
+      "1986": "50b. UNVERIFIED as a spinner default: no dialog capture. Both sides read DS:0x148e = 2000 in the same dump, so the opponent's pool is 50b - recorded as a stand-in for the spinner value, not a capture.",
+      "2023": "null - no spinner in this era (Manual p.16 large pool; setup skips the dialog). The opponent starts with the same 600b as the player.",
+      "9999": "150. UNVERIFIED. 0_spinner_9999blue.png shows the dialog at 150, but the war room was not reached, so neither side's pool could be read. Deliberate stand-in.",
+      "range": "UNVERIFIED. The three digit columns imply 000-999 with a step of 1 and the unit is billions (p.17 'amount of money'; the dialog's (billion) label), but no capture has clicked a digit to its limits. 0-999/1 is therefore a labelled inference, and whether the digits wrap is unknown."
+    },
     "rosters": {
       "1918": "Manual p.16",
       "1942": "Manual p.16",
@@ -86,7 +117,8 @@
     "prices": "Manual p.28 lists these in billions. config stores the manual's billions; rules.priceOf() converts with money.perBillion and returns integer millions so no float drifts. The sub/cruiser/carrier row order comes from the p.28 icons and is UNVERIFIED until a DOSBox capture.",
     "cityIncome": "Manual p.27: each city produces 50 million (0.05 billion) per round. Kept as integer millions so 3 cities x 10 rounds is exactly 1500.",
     "capitalPays": "UNVERIFIED. The current code has never paid a capital, and the manual names only cities; this flag keeps that behaviour explicit. Set true to make a capital pay like a city.",
-    "startPool": "STAND-IN. The original set the pool with a spinner (REA_PASS); the 9 in the p.28 figure is a mid-game snapshot. Left as is by T-001. Note that at 9 billion the early pool cannot afford the newly-recovered 10-billion infantry until income lands.",
+    "startPool": "Opening cash per era, in billions, for the player's own side. From Monitor Four on the running original (Manual p.27; renderer FUN_3711_16a8 @ 3711:16a8 divides DS:0x148e by 0x28 at 3711:16f3), captured per era in docs/captures/startmoney-<era>-blue-monitor4-own.png and written up in docs/re/START_MONEY.md. 1918 10, 1942 50, 1986 50, 2023 600. 9999 is UNVERIFIED (memory read only) and is a deliberate stand-in. Red has no capture of its own: red is given the Blue value on purpose (a recorded stand-in) rather than an invented number.",
+    "handicap": "OPPONENT'S STARTING MONEY (Manual p.17: 'you are allowed to adjust the amount of money with which your opponent begins the game... a handicapping device'). It is the opponent's pool only, never the player's: 1942 proves it, where the player starts with 50b and the spinner default is 030 (30b). Per-era defaults are stored because they are not constant (010 in 1918, 030 in 1942). 2023 has no spinner (null). Range 0-999 step 1 is an UNVERIFIED inference from the three digit columns; wrap behaviour is unknown. 1986's default and the ???? default are stand-ins, labelled in sources.handicap.",
     "rosters": "Manual p.16. 1918 has no air power, tanks or carriers; 1942 adds them; 1986 adds nukes, aid, satellites and intel. 2023 uses the 1986 set. 9999 is UNVERIFIED and uses the 1986 set.",
     "fuel": "STAND-IN. The archive's fuel reserve and burn were never recovered: 10000 reserve and 1 per round are invented and are here only so a side can run short. Per side, deliberately not the desktop archive's single shared reserve.",
     "steel": "STAND-IN, an owner-designed expansion and not a recovery: the 1990 game had oil only. 40 held and 1 a round are invented so a second kind can be held and consumed. No yield is set on purpose: the archive never recovered one, so the server refuses to hand out steel rather than guess a number. Gated to 1942 and 1986; the other scenarios do not carry it.",

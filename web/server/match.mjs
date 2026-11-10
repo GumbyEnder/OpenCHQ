@@ -8,7 +8,7 @@
 // SEA_BLUE, SEA_RED) - positions, not combat or economy figures.
 
 import { SEATS } from "./board.mjs";
-import { roundSeconds, startPool } from "./rules.mjs";
+import { handicapDefault, opponentPool, roundSeconds, startPool } from "./rules.mjs";
 
 export const ERAS = ["1918", "1942", "1986", "2023", "9999"];
 
@@ -39,9 +39,12 @@ export function openingPieces(era) {
   ];
 }
 
-function sideState(era) {
+// One side's opening state. `cash` is passed in by openMatch because the two sides no longer open
+// on the same number: the player's side gets the era's recovered pool, and the opponent's side gets
+// the starting-money spinner (Manual p.17), which is the handicap and not the player's cash.
+function sideState(era, cash = null) {
   return {
-    cash: startPool(era),
+    cash: cash === null || cash === undefined ? startPool(era) : cash,
     fuel: null, // set from rules().fuel.reserve by economy; null means untouched
     dry: false,
     cities: [],
@@ -52,8 +55,25 @@ function sideState(era) {
 
 // A fresh match. Round 0 is held: no clock, no orders, no movement yet. `sites` is the board
 // asset list with an owner per site, filled by the economy module when oil lands.
-export function openMatch(era, sites = []) {
+//
+// `options.handicapSide` names the side that is NOT the player, and `options.opponentPool` is the
+// spinner value in billions. Without them both sides open on the recovered player pool, which is
+// what a two-human match does: p.17's spinner handicaps an opponent, and there is no bot to
+// handicap when two people sit down.
+export function openMatch(era, sites = [], options = {}) {
   const year = eraOf(era);
+  const side = options && (options.handicapSide === "blue" || options.handicapSide === "red")
+    ? options.handicapSide
+    : null;
+  // The spinner the original would have shown. 2023 has none at all (handicapDefault returns null),
+  // so no value - not even 0 - is applied there: both sides open on the p.16 large pool.
+  const eraSpinner = side === null ? null : handicapDefault(year);
+  const spinner = eraSpinner === null
+    ? null
+    : (options.opponentPool === undefined || options.opponentPool === null
+      ? eraSpinner
+      : Number(options.opponentPool));
+  const opponentCash = side === null ? null : opponentPool(year, spinner);
   return {
     era: year,
     round: 0,
@@ -64,7 +84,14 @@ export function openMatch(era, sites = []) {
       blue: { x: SEATS.blue.x, y: SEATS.blue.y },
       red: { x: SEATS.red.x, y: SEATS.red.y },
     },
-    sides: { blue: sideState(year), red: sideState(year) },
+    sides: {
+      blue: sideState(year, side === "blue" ? opponentCash : null),
+      red: sideState(year, side === "red" ? opponentCash : null),
+    },
+    // What the slot actually holds, so the report and the Economy dialog can say what was set.
+    handicap: side === null || spinner === null || !Number.isFinite(spinner)
+      ? null
+      : { side, billions: spinner, unit: "billion" },
     sites: sites.map((site) => ({
       id: site.id,
       name: site.name,

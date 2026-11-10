@@ -6,7 +6,38 @@ Image under test: `modern/extracted/exe/CHQ_unpacked.EXE`, sha256
 `e8f1fac5a88ffc1a1875fc3b73f8446168f6fb33e9f692c0615520c4aef1e2da`.
 
 Status: **interim — Part A, one era fully closed (1918), three more era rows measured,
-`????` unverified.** No Part B values are wired into `config/game.json` by this note.
+`????` unverified. Part B wired the measured values into `config/game.json`** (2026-11-10).
+
+Status line for the code: `startPool` (player's own pool, per era) and `handicap` (opponent's
+starting-money spinner, p.17) are both in `config/game.json` with a source per value; the spinner is
+in the lobby with the per-era default; `web/test/nodes/start_money.mjs` pins all of it.
+
+## Part B — what is wired, and where
+
+| Era | `startPool` (player) | Source | `handicap.default` (opponent spinner) | Source |
+|---|---|---|---|---|
+| 1918 | 10b | `startmoney-1918-blue-monitor4-own.png`, `DS:0x148e = 400` | 010 | `startmoney-1918-blue-sgtstan-default.png` |
+| 1942 | 50b | `startmoney-1942-blue-monitor4-own.png`, `DS:0x148e = 2000` | 030 | `startmoney-1942-blue-sgtstan-spinner.png` |
+| 1986 | 50b | `startmoney-1986-blue-monitor4-own.png`, `0x148e = 2000` both sides | 050 | **UNVERIFIED stand-in**: inferred from `0x148e = 2000`; no dialog capture |
+| 2023 | 600b | `startmoney-2023-blue-monitor4-own.png`, `BALANCE: 600` | *none* | Manual p.16: no spinner, setup goes straight to the war room |
+| `????` | 50b | **UNVERIFIED**: `0x148e = 2000` from memory only; the war room was never reached | 150 | **UNVERIFIED stand-in**: the dialog showed `150` (`0_spinner_9999blue.png`) |
+
+- Server: `web/server/rules.mjs` `startPool(era)`, `handicapSpec()`, `handicapDefault(era)`,
+  `opponentPool(era, spinner)`. `web/server/match.mjs` `openMatch(era, sites, { handicapSide,
+  opponentPool })` gives the spinner value to the side that is not the player.
+- The spinner is a handicap on the **opponent only** (p.17), and 1942 proves the two numbers are
+  different: player 50b, spinner 030 → opponent 30b. Setting it to 000 empties the bot's pool and
+  leaves the player's alone (`start_money` node).
+- Range: **0-999, step 1, billion** — an inference from the three digit columns, **UNVERIFIED**. No
+  capture has clicked a digit to either end, and wrap behaviour is unknown. `sources.handicap.range`
+  says so.
+- Red side: no capture of its own, so Red is given the **Blue** pool on purpose (a recorded
+  stand-in), not a number of its own. Opponent starting money comes from the spinner, so a Red
+  *player* still opens on the era's Blue pool and handicaps Blue's bot.
+- Live check: `GET /api/setup` serves the same numbers the lobby draws.
+- Screenshot note: `Pool` in the purchase line, the Economy dialog and the buy shop now reads in
+  whole billions **truncated** (`3711:16f3`, `0x148e / 0x28`), so `Pool 0b`, never `Pool 0.3b`
+  (F4). Sub-1b balances are UNVERIFIED against a capture.
 
 ## Headline result (1918, Blue, SGT. STAN STIL, spinner left at its default)
 
@@ -135,9 +166,13 @@ The opponent's spinner writes that slot at 40 per point (`030` → `1200` → `3
 - What `DS:0x1446 = 3000` is.
 - What `DS:0x148c` is.
 
-## Scripts (working tree `local/`, gitignored — on the box, not in the repo)
+## Scripts (`tools/t6/`, in the repo)
 
-- `rea-run.sh` — Xvfb + DOSBox verbs (`start/kill/shoot/key/click/move`).
+The capture rig is committed so a later pass (red side, era 5, spinner limits) starts from the same
+walk instead of being rebuilt from a transcript.
+
+- `rea-run.sh` — Xvfb + DOSBox verbs (`start/kill/shoot/key/click/move`). Mount conf:
+  `/mnt/nas/projects/Command HQ/dosbox_rea_linux.conf`; `dosbox-rea.conf` is the in-repo copy.
 - `t6-final.sh <era 1..5> <side 1|2> <opp 1..6> <tag>` — walks setup, dumps globals,
   captures Monitor Four at `0xe378` = 1 and 2 with the mode byte read beside each shot.
 - `t6-dump.py <pid> [side]` — reads `0x148e/0x1490/0x1446/0x144a/0x144e/0x1452/0x148c/

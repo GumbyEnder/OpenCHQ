@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { changePassword, closeSession, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
 import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
 import { boardPayload, fontPayload } from "./board.mjs";
-import { roundSeconds } from "./rules.mjs";
+import { handicapSpec, roundSeconds, startPool } from "./rules.mjs";
 import { createLobby } from "./lobby.mjs";
 import { acceptWebSocket } from "./ws.mjs";
 
@@ -172,6 +172,22 @@ const server = createServer(async (req, res) => {
     } catch (err) {
       send(res, 500, { error: String(err && err.message ? err.message : err) });
     }
+    return;
+  }
+  // The setup numbers the lobby needs and the report quotes: each era's opening pool and the
+  // opponent's starting-money spinner (Manual p.17). Served rather than typed into the page, so
+  // the lobby default, the test and the server's own validation read one source.
+  if (req.method === "GET" && url.pathname === "/api/setup") {
+    const spec = handicapSpec();
+    const eras = ["1918", "1942", "1986", "2023", "9999"];
+    const pool = {};
+    for (const era of eras) pool[era] = startPool(era);
+    send(res, 200, {
+      eras,
+      startPool: pool,
+      handicap: { unit: spec.unit, min: spec.min, max: spec.max, step: spec.step, defaults: spec.defaults },
+      note: "Handicap is the OPPONENT'S starting money (Manual p.17); 2023 has no spinner.",
+    });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/board") {

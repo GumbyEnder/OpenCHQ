@@ -151,9 +151,49 @@ export function overrunEnabled() {
   return rules().overrun !== false;
 }
 
+// Opening cash. `startPool[era]` is the player's own side, in billions, recovered from Monitor
+// Four on the running original (docs/re/START_MONEY.md); it is not the p.28 "9", which is a
+// mid-game snapshot. An era the original never let us read keeps a labelled stand-in in config
+// rather than a number invented here, so this function has no fallback but 0.
 export function startPool(era) {
   const table = rules().startPool || {};
-  const billions = String(era) === "2023" ? Number(table["2023"]) : Number(table.early);
+  const billions = Number(table[String(era)]);
   const factor = millionsPerBillion();
   return Number.isFinite(billions) && Number.isFinite(factor) ? billions * factor : 0;
+}
+
+// The opponent's starting-money spinner (Manual p.17: the player may adjust the money the
+// OPPONENT begins with, as a handicap). It is a different number from the player's pool - 1942
+// starts the player at 50b with the spinner on 030 - so it is stored separately, per era, because
+// the default is not constant (010 in 1918, 030 in 1942). 2023 has no spinner: `null`.
+export function handicapSpec() {
+  const block = rules().handicap || {};
+  const min = Number(block.min);
+  const max = Number(block.max);
+  const step = Number(block.step);
+  return {
+    unit: String(block.unit || "billion"),
+    min: Number.isFinite(min) ? min : 0,
+    max: Number.isFinite(max) ? max : 999,
+    step: Number.isFinite(step) && step > 0 ? step : 1,
+    defaults: { ...(block.default || {}) },
+  };
+}
+
+// The era's spinner default in billions, or null where the original had no spinner.
+export function handicapDefault(era) {
+  const value = handicapSpec().defaults[String(era)];
+  const number = Number(value);
+  return value === null || value === undefined || !Number.isFinite(number) ? null : number;
+}
+
+// What the opponent's pool opens at. With a spinner value the opponent gets it; without one the
+// opponent gets the same pool the player does (2023, the "large pool" with no handicap).
+export function opponentPool(era, spinnerBillions = null) {
+  const factor = millionsPerBillion();
+  if (spinnerBillions !== null && spinnerBillions !== undefined) {
+    const value = Number(spinnerBillions);
+    if (Number.isFinite(value) && Number.isFinite(factor)) return value * factor;
+  }
+  return startPool(era);
 }

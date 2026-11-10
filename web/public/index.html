@@ -105,8 +105,12 @@
               <option value="red">Red</option>
             </select>
           </label>
+          <label id="handicapRow">Opponent's starting money (bil$)
+            <input name="handicap" type="number" min="0" max="999" step="1" inputmode="numeric" autocomplete="off">
+          </label>
           <button type="submit">Play a bot</button>
         </form>
+        <p class="fine" id="handicapNote">The original's setup asked for the opponent's starting money and used it as a handicap (manual p.17). Your own opening pool comes from the era; the spinner sets only the bot's.</p>
         <p class="fine">You play the side you picked. A bot, or the person who accepts, takes the other side.</p>
         <ul id="people"></ul>
         <div id="invites"></div>

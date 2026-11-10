@@ -1677,10 +1677,52 @@ document.querySelector("#password").addEventListener("submit", async (event) => 
   }
 });
 
+// The opponent's starting-money spinner (Manual p.17). Its per-era default, range and step come
+// from config/game.json through /api/setup; the page types none of them. In 2023 the original had
+// no spinner at all, so the field is disabled and the bot starts on the same large pool.
+const launchForm = document.querySelector("#launch");
+const eraSelect = launchForm ? launchForm.querySelector('select[name="era"]') : null;
+const handicapInput = launchForm ? launchForm.querySelector('input[name="handicap"]') : null;
+const handicapNote = document.getElementById("handicapNote");
+let setupTable = null;
+
+function applyHandicap() {
+  if (!setupTable || !eraSelect || !handicapInput) return;
+  const spec = setupTable.handicap || {};
+  const defaults = spec.defaults || {};
+  const value = defaults[String(eraSelect.value)];
+  handicapInput.min = String(Number.isFinite(Number(spec.min)) ? spec.min : 0);
+  handicapInput.max = String(Number.isFinite(Number(spec.max)) ? spec.max : 999);
+  handicapInput.step = String(Number.isFinite(Number(spec.step)) ? spec.step : 1);
+  const hasSpinner = value !== null && value !== undefined && Number.isFinite(Number(value));
+  handicapInput.disabled = !hasSpinner;
+  handicapInput.value = hasSpinner ? String(value) : "";
+  if (handicapNote) {
+    handicapNote.textContent = hasSpinner
+      ? "The original's spinner (manual p.17) sets what your opponent starts with, in whole billions, as a handicap. Your own opening pool comes from the era."
+      : "This era has no opponent spinner (manual p.16): both sides open on the same large pool.";
+  }
+}
+
+if (eraSelect) eraSelect.addEventListener("change", applyHandicap);
+fetch("/api/setup")
+  .then((res) => res.json())
+  .then((data) => {
+    setupTable = data;
+    applyHandicap();
+  })
+  .catch(() => {});
+
 document.querySelector("#launch").addEventListener("submit", (event) => {
   event.preventDefault();
   const fields = new FormData(event.target);
-  send({ op: "bot", era: fields.get("era"), side: fields.get("side") });
+  const message = { op: "bot", era: fields.get("era"), side: fields.get("side") };
+  // A disabled field sends nothing: the server then uses the era's default, which is the same
+  // number the field would have carried.
+  if (handicapInput && !handicapInput.disabled && String(handicapInput.value).trim() !== "") {
+    message.handicap = Number(handicapInput.value);
+  }
+  send(message);
 });
 
 // Keep the capitals labelled even before a room exists.

@@ -12,7 +12,7 @@ import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
-import { roundSeconds } from "./rules.mjs";
+import { handicapDefault, handicapSpec, roundSeconds } from "./rules.mjs";
 import { shopFor } from "./shop.mjs";
 import { compatUnitKind } from "./migrate.mjs";
 import { TAKEOVER_CLOSE_CODE as TAKEOVER_CODE } from "./ws.mjs";
@@ -434,25 +434,46 @@ export function createLobby() {
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
     const era = room.era;
+    // A new game keeps the handicap the player chose, unless the era has no spinner.
+    const spinner = room.match && room.match.handicap ? room.match.handicap.billions : undefined;
     endRoom(room, username + " started a new game.");
-    return startBot(username, era, mine);
+    return startBot(username, era, mine, spinner);
   }
 
-  function startBot(username, era, side) {
+  function startBot(username, era, side, handicap) {
     if (seatOf.has(username)) return { error: "Leave the current match first." };
     const mine = sideOf(side);
     const other = mine === "blue" ? "red" : "blue";
+    const year = eraOf(era);
+    // The original's setup asked for the OPPONENT'S STARTING MONEY with a three-digit spinner and
+    // used it as a handicap (Manual p.17). The lobby asks the same question with the era's
+    // recovered default. 2023 has no spinner at all, so a value sent for it is ignored rather than
+    // turning a large-pool scenario into a hidden handicap.
+    const spec = handicapSpec();
+    const hasSpinner = handicapDefault(year) !== null;
+    let spinner = null;
+    if (handicap !== undefined && handicap !== null && String(handicap) !== "") {
+      const value = Number(handicap);
+      if (!Number.isInteger(value) || value < spec.min || value > spec.max) {
+        return {
+          error: "The opponent's starting money must be a whole number from " +
+            spec.min + " to " + spec.max + " billion.",
+        };
+      }
+      if (hasSpinner) spinner = value;
+    }
     const room = {
       id: randomBytes(8).toString("hex"),
       mode: "bot",
-      era: eraOf(era),
+      era: year,
       clock: "held",
       note: "Clock held. The board is waiting for orders.",
       seats: {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
       },
-      match: opened(era, sitesForMatch(eraOf(era))),
+      match: opened(year, sitesForMatch(year),
+        spinner === null ? {} : { handicapSide: other, opponentPool: spinner }),
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
@@ -892,7 +913,7 @@ export function createLobby() {
     // lose a purchase when the roster split hulls into cruiser and carrier. The alias lives in
     // migrate.mjs, next to the save migration that does the same rename.
     if (message) message.kind = compatUnitKind(message.kind);
-    if (op === "bot") return startBot(username, message.era, message.side);
+    if (op === "bot") return startBot(username, message.era, message.side, message.handicap);
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
     if (op === "order") return order(username, message);
@@ -957,8 +978,8 @@ export function createLobby() {
 // first purchase, which meant a 2023 board showed no friendly city at all and the empty era
 // could not be played: there was nothing to click. Seeding at open is the same rule, applied
 // early enough for the view to carry it.
-function opened(era, sites) {
-  const match = openMatch(eraOf(era), sites);
+function opened(era, sites, options = {}) {
+  const match = openMatch(eraOf(era), sites, options);
   seedOwners(match);
   return match;
 }

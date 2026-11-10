@@ -75,8 +75,10 @@ The real problem is the **slope**, not the shape:
   payday (19 units) is roughly its fortieth — the first 25 rounds are spent marching, not building.
   That is the "dead time" the log was built to fill, and the log now fills it, but the clock still
   pays nothing for two minutes.
-- `startPool` (9 early, 40 in 2023) is the only thing that lets a player build before the first
-  payday. It is a stand-in, and it is doing more work than anyone intended.
+- `startPool` (10 in 1918, 50 in 1942/1986, 600 in 2023, from Monitor Four; the concealed era's 50 is
+  UNVERIFIED) is the only thing that lets a player build before the first payday. `handicap` is the
+  separate opponent spinner (p.17: 010 in 1918, 030 in 1942, none in 2023). Before T-006 Part B this
+  was one stand-in of 9, which could not buy the recovered 10-billion infantry at all.
 
 ## What to change, and in what order
 
