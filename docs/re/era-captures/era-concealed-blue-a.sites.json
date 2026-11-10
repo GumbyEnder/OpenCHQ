@@ -1,0 +1,715 @@
+{
+ "era_index": 4,
+ "player_side": 0,
+ "sites": [
+  {
+   "id": 0,
+   "x": 240,
+   "y": 30,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 1,
+   "x": 189,
+   "y": 56,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 2,
+   "x": 39,
+   "y": 28,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 3,
+   "x": 155,
+   "y": 32,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 4,
+   "x": 173,
+   "y": 102,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 5,
+   "x": 189,
+   "y": 48,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 6,
+   "x": 48,
+   "y": 43,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 7,
+   "x": 268,
+   "y": 30,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 8,
+   "x": 83,
+   "y": 42,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 9,
+   "x": 256,
+   "y": 67,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 10,
+   "x": 182,
+   "y": 13,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 11,
+   "x": 87,
+   "y": 32,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 12,
+   "x": 193,
+   "y": 26,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 13,
+   "x": 239,
+   "y": 79,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 14,
+   "x": 181,
+   "y": 74,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 15,
+   "x": 59,
+   "y": 63,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 16,
+   "x": 171,
+   "y": 11,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 17,
+   "x": 79,
+   "y": 44,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 18,
+   "x": 76,
+   "y": 60,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 19,
+   "x": 178,
+   "y": 37,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 20,
+   "x": 39,
+   "y": 44,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 21,
+   "x": 180,
+   "y": 52,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 22,
+   "x": 148,
+   "y": 30,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 23,
+   "x": 214,
+   "y": 62,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 24,
+   "x": 84,
+   "y": 114,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 25,
+   "x": 142,
+   "y": 76,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 26,
+   "x": 70,
+   "y": 42,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 27,
+   "x": 129,
+   "y": 14,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 28,
+   "x": 160,
+   "y": 41,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 29,
+   "x": 163,
+   "y": 92,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 30,
+   "x": 183,
+   "y": 25,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 31,
+   "x": 175,
+   "y": 79,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 32,
+   "x": 169,
+   "y": 45,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 33,
+   "x": 210,
+   "y": 58,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 34,
+   "x": 168,
+   "y": 30,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 35,
+   "x": 245,
+   "y": 69,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 36,
+   "x": 176,
+   "y": 53,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 37,
+   "x": 150,
+   "y": 34,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 38,
+   "x": 189,
+   "y": 98,
+   "byte": 73,
+   "subtype": 1,
+   "owner": 1
+  },
+  {
+   "id": 39,
+   "x": 189,
+   "y": 25,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 40,
+   "x": 181,
+   "y": 95,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 41,
+   "x": 181,
+   "y": 33,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 42,
+   "x": 234,
+   "y": 60,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 43,
+   "x": 174,
+   "y": 31,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 44,
+   "x": 85,
+   "y": 64,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 45,
+   "x": 210,
+   "y": 47,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 46,
+   "x": 108,
+   "y": 102,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 47,
+   "x": 210,
+   "y": 37,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 48,
+   "x": 250,
+   "y": 79,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 49,
+   "x": 239,
+   "y": 68,
+   "byte": 146,
+   "subtype": 2,
+   "owner": 2
+  },
+  {
+   "id": 50,
+   "x": 173,
+   "y": 42,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 51,
+   "x": 90,
+   "y": 71,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 52,
+   "x": 158,
+   "y": 27,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 53,
+   "x": 183,
+   "y": 87,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 54,
+   "x": 81,
+   "y": 71,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 55,
+   "x": 80,
+   "y": 93,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 56,
+   "x": 198,
+   "y": 39,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 57,
+   "x": 218,
+   "y": 23,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 58,
+   "x": 272,
+   "y": 47,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 59,
+   "x": 188,
+   "y": 77,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 60,
+   "x": 73,
+   "y": 50,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 61,
+   "x": 255,
+   "y": 52,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 62,
+   "x": 163,
+   "y": 101,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 63,
+   "x": 113,
+   "y": 96,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 64,
+   "x": 109,
+   "y": 97,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 65,
+   "x": 226,
+   "y": 41,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 66,
+   "x": 192,
+   "y": 66,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 67,
+   "x": 151,
+   "y": 46,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 68,
+   "x": 67,
+   "y": 54,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 69,
+   "x": 161,
+   "y": 30,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 70,
+   "x": 175,
+   "y": 20,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 71,
+   "x": 167,
+   "y": 35,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 72,
+   "x": 158,
+   "y": 14,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 73,
+   "x": 252,
+   "y": 44,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 74,
+   "x": 62,
+   "y": 47,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 75,
+   "x": 213,
+   "y": 86,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 76,
+   "x": 187,
+   "y": 37,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 77,
+   "x": 167,
+   "y": 110,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 78,
+   "x": 140,
+   "y": 51,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 79,
+   "x": 164,
+   "y": 54,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 80,
+   "x": 183,
+   "y": 77,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 81,
+   "x": 153,
+   "y": 39,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 82,
+   "x": 85,
+   "y": 41,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 83,
+   "x": 261,
+   "y": 46,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  }
+ ],
+ "cursor": {
+  "col": 157,
+  "row": 46,
+  "zone": 1
+ },
+ "hovers": [
+  {
+   "id": 38,
+   "sites_json_name": "St Louis",
+   "x": 189,
+   "y": 98,
+   "cursor": [
+    189,
+    104
+   ],
+   "arrived": true,
+   "shot": "era-concealed-blue-a-cap-38.png",
+   "nudge": [
+    "ARRIVED col=189 row=104 in 1 steps"
+   ]
+  },
+  {
+   "id": 49,
+   "sites_json_name": "Houston",
+   "x": 239,
+   "y": 68,
+   "cursor": [
+    239,
+    74
+   ],
+   "arrived": true,
+   "shot": "era-concealed-blue-a-cap-49.png",
+   "nudge": [
+    "ARRIVED col=239 row=74 in 5 steps"
+   ]
+  }
+ ]
+}

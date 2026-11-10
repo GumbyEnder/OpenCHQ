@@ -1,0 +1,715 @@
+{
+ "era_index": 4,
+ "player_side": 0,
+ "sites": [
+  {
+   "id": 0,
+   "x": 174,
+   "y": 36,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 1,
+   "x": 39,
+   "y": 44,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 2,
+   "x": 18,
+   "y": 18,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 3,
+   "x": 152,
+   "y": 30,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 4,
+   "x": 213,
+   "y": 86,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 5,
+   "x": 171,
+   "y": 11,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 6,
+   "x": 267,
+   "y": 48,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 7,
+   "x": 175,
+   "y": 79,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 8,
+   "x": 178,
+   "y": 37,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 9,
+   "x": 60,
+   "y": 51,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 10,
+   "x": 250,
+   "y": 59,
+   "byte": 73,
+   "subtype": 1,
+   "owner": 1
+  },
+  {
+   "id": 11,
+   "x": 39,
+   "y": 35,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 12,
+   "x": 91,
+   "y": 38,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 13,
+   "x": 182,
+   "y": 13,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 14,
+   "x": 250,
+   "y": 79,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 15,
+   "x": 10,
+   "y": 62,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 16,
+   "x": 218,
+   "y": 23,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 17,
+   "x": 90,
+   "y": 71,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 18,
+   "x": 270,
+   "y": 46,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 19,
+   "x": 81,
+   "y": 71,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 20,
+   "x": 168,
+   "y": 30,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 21,
+   "x": 85,
+   "y": 41,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 22,
+   "x": 137,
+   "y": 64,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 23,
+   "x": 183,
+   "y": 25,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 24,
+   "x": 252,
+   "y": 44,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 25,
+   "x": 162,
+   "y": 38,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 26,
+   "x": 45,
+   "y": 51,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 27,
+   "x": 188,
+   "y": 77,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 28,
+   "x": 206,
+   "y": 20,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 29,
+   "x": 193,
+   "y": 60,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 30,
+   "x": 240,
+   "y": 30,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 31,
+   "x": 102,
+   "y": 109,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 32,
+   "x": 54,
+   "y": 44,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 33,
+   "x": 62,
+   "y": 55,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 34,
+   "x": 83,
+   "y": 42,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 35,
+   "x": 92,
+   "y": 96,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 36,
+   "x": 145,
+   "y": 42,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 37,
+   "x": 198,
+   "y": 21,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 38,
+   "x": 83,
+   "y": 125,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 39,
+   "x": 155,
+   "y": 32,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 40,
+   "x": 55,
+   "y": 33,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 41,
+   "x": 48,
+   "y": 43,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 42,
+   "x": 161,
+   "y": 18,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 43,
+   "x": 193,
+   "y": 26,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 44,
+   "x": 79,
+   "y": 44,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 45,
+   "x": 277,
+   "y": 85,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 46,
+   "x": 199,
+   "y": 60,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 47,
+   "x": 253,
+   "y": 104,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 48,
+   "x": 109,
+   "y": 97,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 49,
+   "x": 114,
+   "y": 84,
+   "byte": 146,
+   "subtype": 2,
+   "owner": 2
+  },
+  {
+   "id": 50,
+   "x": 140,
+   "y": 51,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 51,
+   "x": 167,
+   "y": 110,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 52,
+   "x": 167,
+   "y": 35,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 53,
+   "x": 80,
+   "y": 46,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 54,
+   "x": 74,
+   "y": 40,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 55,
+   "x": 277,
+   "y": 99,
+   "byte": 3,
+   "subtype": 3,
+   "owner": 0
+  },
+  {
+   "id": 56,
+   "x": 175,
+   "y": 20,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 57,
+   "x": 91,
+   "y": 84,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 58,
+   "x": 256,
+   "y": 67,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 59,
+   "x": 189,
+   "y": 52,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 60,
+   "x": 67,
+   "y": 54,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 61,
+   "x": 150,
+   "y": 34,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 62,
+   "x": 189,
+   "y": 98,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 63,
+   "x": 158,
+   "y": 27,
+   "byte": 4,
+   "subtype": 4,
+   "owner": 0
+  },
+  {
+   "id": 64,
+   "x": 181,
+   "y": 95,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 65,
+   "x": 234,
+   "y": 60,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 66,
+   "x": 91,
+   "y": 93,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 67,
+   "x": 73,
+   "y": 69,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 68,
+   "x": 148,
+   "y": 30,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 69,
+   "x": 173,
+   "y": 102,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 70,
+   "x": 236,
+   "y": 22,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 71,
+   "x": 210,
+   "y": 3,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 72,
+   "x": 146,
+   "y": 29,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 73,
+   "x": 80,
+   "y": 93,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 74,
+   "x": 187,
+   "y": 37,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 75,
+   "x": 169,
+   "y": 45,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 76,
+   "x": 239,
+   "y": 68,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 77,
+   "x": 255,
+   "y": 52,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 78,
+   "x": 64,
+   "y": 39,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 79,
+   "x": 85,
+   "y": 81,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 80,
+   "x": 180,
+   "y": 52,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 81,
+   "x": 215,
+   "y": 45,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 82,
+   "x": 155,
+   "y": 19,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  },
+  {
+   "id": 83,
+   "x": 214,
+   "y": 62,
+   "byte": 5,
+   "subtype": 5,
+   "owner": 0
+  }
+ ],
+ "cursor": {
+  "col": 157,
+  "row": 46,
+  "zone": 1
+ },
+ "hovers": [
+  {
+   "id": 10,
+   "sites_json_name": "London",
+   "x": 250,
+   "y": 59,
+   "cursor": [
+    250,
+    65
+   ],
+   "arrived": true,
+   "shot": "era-concealed-blue-b-cap-10.png",
+   "nudge": [
+    "ARRIVED col=250 row=65 in 14 steps"
+   ]
+  },
+  {
+   "id": 49,
+   "sites_json_name": "Houston",
+   "x": 114,
+   "y": 84,
+   "cursor": [
+    114,
+    90
+   ],
+   "arrived": true,
+   "shot": "era-concealed-blue-b-cap-49.png",
+   "nudge": [
+    "ARRIVED col=114 row=90 in 11 steps"
+   ]
+  }
+ ]
+}

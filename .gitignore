@@ -18,3 +18,7 @@ export/
 
 # Windows junk from the reference extract
 **/Thumbs.db
+
+# Python bytecode from the RE harnesses
+__pycache__/
+*.pyc
