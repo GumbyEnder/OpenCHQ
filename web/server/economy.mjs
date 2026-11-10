@@ -14,6 +14,8 @@ import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace } from "./placement.mjs";
 import { CELL_W } from "./board.mjs";
+// The opening owner bits, for the years the original wrote them from a file.
+import { eraTable } from "./era.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -103,9 +105,18 @@ const seeded = new WeakSet();
 export function seedOwners(match) {
   if (!match || !Array.isArray(match.sites) || seeded.has(match)) return;
   seeded.add(match);
+  // For the years the original wrote owners from a file (1918/1942/1986) that table is the opening:
+  // a site it names keeps the owner it arrived with, including `null` for the neutrals the file
+  // clears. Falling back to the country there would re-own every unaligned city the original leaves
+  // alone, and 1918's blue holds Britain and France, not just country 0. Docks and oil wells are
+  // not in the 84-row table - they carry no `type` - and 2023 rolls its owners in B-3, so both keep
+  // country seeding for now.
+  const table = eraTable(match.era);
+  const fromFile = Boolean(table && table.ownerSource === "file");
   for (const site of match.sites) {
     if (!site || !ownable(site.kind)) continue;
     if (site.owner === "blue" || site.owner === "red") continue;
+    if (fromFile && site.type !== undefined) continue;
     const side = sideOfRegion(regionOf(site));
     site.owner = side; // null when the country is not one of the two sides
   }

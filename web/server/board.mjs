@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { applyEra } from "./era.mjs";
 import { sightCells } from "./rules.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -189,6 +190,20 @@ export function matchSites(era = "1986", board = boardPayload()) {
     country_id: site.country_id,
   }));
 
+  // The era's opening, from the baked table: which of the 84 sites exist that year, the subtype
+  // each carries, and - for 1918/1942/1986 - who holds it. A year with no entry (????, junk) comes
+  // back as the same array, so this is a no-op where the table has nothing to say. Ports are
+  // attributed from the whole asset list, before this runs, so a dock keeps its port's country even
+  // when the port's town is absent that year.
+  const live = applyEra(base, era);
+  // A capital's owner byte in the file is not "held". tick.holderOf reads a capital's owner as the
+  // side holding it, so seeding the seats from the table would award the win condition on the
+  // opening bell: 1942's row gives both seats to blue. The seats stay unheld until troops stand on
+  // them, which is the archive's rule and the one tick.mjs and the suite already pin.
+  for (const site of live) {
+    if (site && site.kind === "capital") site.owner = null;
+  }
+
   const docks = [];
   if (Array.isArray(board.cells)) {
     for (let y = 0; y < CELL_H; y++) {
@@ -229,7 +244,7 @@ export function matchSites(era = "1986", board = boardPayload()) {
     wells.push(field);
   }
 
-  return [...base, ...docks, ...wells.map((field) => ({
+  return [...live, ...docks, ...wells.map((field) => ({
     id: field.id,
     name: field.name,
     x: field.x,

@@ -98,7 +98,11 @@ export function openMatch(era, sites = [], options = {}) {
       x: site.x,
       y: site.y,
       kind: site.kind,
-      owner: null,
+      // The era table's subtype travels beside `kind`, never inside it, and the table's owner is
+      // the opening for the years the original wrote one from a file. Docks and oil wells are not
+      // in the table: neither field reaches them, and the economy seeds them from country/region.
+      ...(site.type === undefined ? {} : { type: site.type }),
+      owner: site.owner === "blue" || site.owner === "red" ? site.owner : null,
       // A dock or a well carries the country or region the asset list named, so ownership
       // seeds from the board rather than from a guess.
       ...(site.country_id === undefined ? {} : { country_id: site.country_id }),

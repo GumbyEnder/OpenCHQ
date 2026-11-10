@@ -214,12 +214,20 @@ export async function run(ctx) {
   }
 
   // ---- R1: absent sites are dropped, nothing else is ---------------------------------------
-  const base1918 = matchSites("1918");
+  // B-2 made matchSites(era) return that era's opening, so the drop now happens at the call site
+  // too. The pure function is still pinned here against an unfiltered 84-row base list, and
+  // matchSites(1918) is pinned to the same live set, so the two cannot drift apart.
+  const base1918 = matchSites("1986").filter((site) => Number.isInteger(site.id));
+  if (base1918.length !== 84) fail("the 1986 opening should carry all 84 table sites, has " + base1918.length);
   const opened1918 = applyEra(base1918, "1918");
   const live1918 = opened1918.filter((site) => Number.isInteger(site.id)).map((site) => site.id);
   const want1918 = world.eras["1918"].sites.filter((site) => site.type !== 0).map((site) => site.id);
   if (!sameJson(live1918, want1918)) {
     fail("applyEra(1918) plays " + JSON.stringify(live1918) + ", the capture has " + JSON.stringify(want1918));
+  }
+  const wired1918 = matchSites("1918").filter((site) => Number.isInteger(site.id)).map((site) => site.id);
+  if (!sameJson(wired1918, want1918)) {
+    fail("matchSites(1918) plays " + JSON.stringify(wired1918) + ", the capture has " + JSON.stringify(want1918));
   }
   if (opened1918.length >= base1918.length) {
     fail("applyEra(1918) dropped no absent site: " + opened1918.length + " of " + base1918.length + " kept");

@@ -68,6 +68,13 @@ clicking faster than your opponent.
   opponent's starting-money spinner (p.17) - 1918 010, 1942 030, no spinner in 2023, and the
   0-999/1 range marked UNVERIFIED because no capture ever clicked a digit to its limit.
 - Original art, stills and the unpacked executable never reach a browser.
+- The opening is per era, not one world map. `web/data/eras.json` (baked by `tools/bake_eras.mjs`
+  from the extract's type byte) says which of the 84 sites exist in a year, the subtype each carries,
+  and - for 1918/1942/1986 - who holds it at the bell: 25/64/84 live sites and the original's own
+  blue/red/neutral bits, including the four 1986 neutrals the loader clears (43, 46, 50, 53). 2023
+  ships its subtype row with no owners (the roll is B-3), and the concealed era has no row at all.
+  The subtype travels as `type` beside `kind`, never inside it. A capital's owner byte is not
+  "held": the seats open unheld and are won by troops standing on them.
 
 ## Current milestone
 

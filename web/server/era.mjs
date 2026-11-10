@@ -4,11 +4,13 @@
 // The data is web/data/eras.json, baked from the extract by tools/bake_eras.mjs and committed, so a
 // host with no extract still plays the original's opening. Nothing here reads the extract at
 // runtime and nothing here touches world.json: the subtype travels as `type` and `kind` keeps the
-// asset list's word, because the two disagree on 34 of 84 sites and mapping one onto the other
+// asset list's word, because the two disagree on 14 of 84 sites and mapping one onto the other
 // would silently reclassify cities, income and the 20 facilities.
 //
-// B-1 lands the table and these two pure functions. No call site uses them yet: matchSites,
-// openMatch and seedOwners are untouched until B-2.
+// B-1 landed the table and these two pure functions. B-2 wired them in: board.matchSites applies
+// the era to the base list and carries `type`, match.openMatch copies `type` and the file's owner
+// onto the match's sites, and economy.seedOwners trusts that owner for the file years instead of
+// guessing from country_id.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

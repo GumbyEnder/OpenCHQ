@@ -1,9 +1,16 @@
 // Node ownership: who holds the world on the opening bell.
 //
-// The default is by country, and it is the shipped game's own field: CBR-SET.DAT carries cbr_cn per
-// site, and the two capitals sit in country 0 (Washington, 17 sites) and country 1 (Moscow, 16).
-// A site whose country has no capital in the game stays neutral — that is the honest reading of a
-// two-side scenario, and it is what the extract's country ids support.
+// For 1918, 1942 and 1986 the answer is the CBR-TYPE.DTn owner byte, which board.matchSites now
+// carries from web/data/eras.json: B-2 replaced the country-only rule for those years. The file hands
+// Britain and France to blue in 1918, leaves two named neutrals unaligned and writes both 1942 seats
+// blue, so a country id cannot reproduce the opening. From the file the two seats still open unheld -
+// a capital's owner is read by tick as "held", the win condition, not as income.
+//
+// 2023 and ???? keep the country rule: 2023's owners are rolled in B-3 and ???? is not modelled at
+// all. There the default is by country, and it is the shipped game's own field: CBR-SET.DAT carries
+// cbr_cn per site, and the two capitals sit in country 0 (Washington, 17 sites) and country 1
+// (Moscow, 16). A site whose country has no capital in the game stays neutral — that is the honest
+// reading of a two-side scenario, and it is what the extract's country ids support.
 //
 // The per-era region files (CBR-REGN.DT0..DT4) do NOT drive this: they are 184 regions by 5 (x,y)
 // points (REGIONS.DAT) with a per-era governing region, and Washington's region 62 governs 4 regions
@@ -13,10 +20,23 @@
 import { matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { seedOwners } from "../../server/economy.mjs";
+import { eraTable } from "../../server/era.mjs";
 
 export const name = "ownership";
 
 const ERAS = ["1918", "1942", "1986", "2023", "9999"];
+
+function tableOf(era) {
+  return eraTable(era);
+}
+
+// The 84-row opening each capture measured, with the two seats counted as neutral: board.matchSites
+// clears a capital's owner byte because tick reads a capital's owner as "held", not as a country.
+const FILE_TALLY = {
+  1918: { blue: 13, red: 8, null: 4 },
+  1942: { blue: 38, red: 23, null: 3 },
+  1986: { blue: 48, red: 24, null: 12 },
+};
 
 export async function run(ctx) {
   const { fail } = ctx;
@@ -42,15 +62,43 @@ export async function run(ctx) {
     if (!blueCities) fail(era + ": blue owns no city, so it cannot buy, repair or base an aircraft");
     if (!redCities) fail(era + ": red owns no city");
 
-    // Country 0 is Washington's country and country 1 is Moscow's: the default must be that field.
-    // Oilfields and wells are named assets, not country sites, so they carry no country id.
+    // From 1918 to 1986 the file's owner bit is the opening - not the country id. The original
+    // hands Britain and France to blue, keeps named neutrals unaligned, and 1942 even writes both
+    // seats blue. So a country-only rule is wrong for those years, and this test pins the file.
+    // The two seats are the exception: board.matchSites clears a capital's owner because tick reads
+    // it as "held", so the seats are counted as neutral here.
+    // Docks and oil wells are outside the 84-row table and still seed from country/region.
+    const table = tableOf(era);
+    const fromFile = Boolean(table && table.ownerSource === "file");
+    if (fromFile) {
+      const rows = match.sites.filter((site) => Number.isInteger(site.id));
+      for (const site of rows) {
+        const row = table.sites[site.id];
+        if (!row) fail(era + ": id " + site.id + " is live but the table has no row for it");
+        const want = site.kind === "capital" ? null : row.owner;
+        const got = site.owner === "blue" || site.owner === "red" ? site.owner : null;
+        if (got !== want) {
+          fail(era + ": id " + site.id + " " + site.name + " opened " + got + ", the file says " + want);
+        }
+      }
+      const tally = { blue: 0, red: 0, null: 0 };
+      for (const site of rows) tally[site.owner === "blue" || site.owner === "red" ? site.owner : "null"] += 1;
+      const want = FILE_TALLY[era];
+      if (tally.blue !== want.blue || tally.red !== want.red || tally.null !== want.null) {
+        fail(era + " opening is blue " + tally.blue + " / red " + tally.red + " / neutral " + tally.null +
+          "; the captures give blue " + want.blue + " / red " + want.red + " / neutral " + want.null);
+      }
+    }
     const countryless = (site) => site.country_id === undefined || site.country_id === null;
     for (const site of own.blue) {
       if (countryless(site)) continue;
+      // A table site's owner came from the file, not from its country.
+      if (fromFile && site.type !== undefined) continue;
       if (site.country_id !== 0) fail(era + ": blue owns " + site.name + " in country " + site.country_id);
     }
     for (const site of own.red) {
       if (countryless(site)) continue;
+      if (fromFile && site.type !== undefined) continue;
       if (site.country_id !== 1) fail(era + ": red owns " + site.name + " in country " + site.country_id);
     }
     for (const site of own.none) {
@@ -58,6 +106,8 @@ export async function run(ctx) {
       if (site.kind === "capital") continue;
       // Facilities are not income sites: the economy only owns cities, docks and wells.
       if (site.kind === "facility") continue;
+      // A table year's neutrals are the file's own ruling, not a country the seeder skipped.
+      if (fromFile && site.type !== undefined) continue;
       if (site.country_id === 0 || site.country_id === 1) {
         fail(era + ": " + site.name + " is in a side's country but has no owner");
       }
