@@ -24,6 +24,7 @@
 
 import { CELL_W } from "./board.mjs";
 import { combatRules, seaRangeFor } from "./rules.mjs";
+import { siteIndex } from "./siteindex.mjs";
 
 // The words that ride the events. The numbers ride as fields, so a test asserts a figure instead
 // of a sentence.
@@ -139,28 +140,24 @@ export function chooseTarget(piece, pieces, combat = null) {
 
 // Damage one piece deals to another. The modifiers the manual names, in one place: flank/rear
 // (land only, p.22) and entrenchment (land only, p.22). Ships are never flanked (p.24).
-export function damageFor(attacker, defender) {
-  const combat = combatRules();
-  const base = Number(combat.baseDamage[String(attacker.kind)] ?? 0);
+export function damageFor(attacker, defender, combat = null) {
+  const block = combat || combatRules();
+  const base = Number(block.baseDamage[String(attacker.kind)] ?? 0);
   let amount = base;
   let flank = false;
   if (attacker.domain !== "sea" && defender.domain !== "sea" && defender.facing) {
     const from = bearing(defender, attacker);
     if (from && from !== defender.facing) {
-      amount *= combat.flankMultiplier;
+      amount *= block.flankMultiplier;
       flank = true;
     }
   }
   let entrenched = false;
   if (defender.domain !== "sea" && defender.entrenched === true) {
-    amount *= combat.entrenchDamageFactor;
+    amount *= block.entrenchDamageFactor;
     entrenched = true;
   }
   return { base, amount, flank, entrenched };
-}
-
-function siteAt(map, cell) {
-  return map.get(Number(cell.y) * CELL_W + Number(cell.x)) || null;
 }
 
 // Target selection for the whole match in one pass over numeric arrays. `chooseTarget` below is
@@ -180,6 +177,15 @@ export function computeTargets(pieces) {
   const sides = new Uint8Array(n);
   const armed = new Uint8Array(n);
   const ranges = new Uint8Array(n);
+  // Per-side bounding box of the armed pieces, and how many each side has. A piece whose nearest
+  // possible enemy is farther than its own reach cannot have a target, and one scan of the box
+  // says so without walking the rest of the room: this is what keeps the pass cheap in a real
+  // 40-piece match, where the pair scan is the whole cost.
+  const box = [
+    null, // unused, sides are numbered from 1
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, count: 0 },
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, count: 0 },
+  ];
   for (let i = 0; i < n; i++) {
     const piece = pieces[i];
     if (!piece) continue;
@@ -188,13 +194,36 @@ export function computeTargets(pieces) {
     sides[i] = piece.side === "blue" ? 1 : piece.side === "red" ? 2 : 0;
     armed[i] = piece.kind === "aircraft" || piece.domain === "air" ? 0 : 1;
     ranges[i] = Math.min(255, Math.max(0, rangeOf(piece, combat)));
+    const side = sides[i];
+    if (!armed[i] || side === 0 || ranges[i] <= 0) continue;
+    const b = box[side];
+    if (xs[i] < b.minX) b.minX = xs[i];
+    if (xs[i] > b.maxX) b.maxX = xs[i];
+    if (ys[i] < b.minY) b.minY = ys[i];
+    if (ys[i] > b.maxY) b.maxY = ys[i];
+    b.count += 1;
   }
+  // A circle of circumference CELL_W: the nearest point of an arc is an endpoint when the piece
+  // is outside it, so the gap to the enemy box's x-span is exact under the board's wrap.
+  const half = CELL_W / 2;
   for (let i = 0; i < n; i++) {
     if (!armed[i] || ranges[i] <= 0 || sides[i] === 0) continue;
     const piece = pieces[i];
     const range = ranges[i];
     const px = xs[i];
     const py = ys[i];
+    const enemy = box[sides[i] === 1 ? 2 : 1];
+    // No armed enemy at all: no contact, no scan.
+    if (enemy.count === 0) continue;
+    const yGap = py < enemy.minY ? enemy.minY - py : py > enemy.maxY ? py - enemy.maxY : 0;
+    if (yGap > range) continue;
+    let xGap = 0;
+    if (px < enemy.minX || px > enemy.maxX) {
+      const toMin = Math.abs(px - enemy.minX);
+      const toMax = Math.abs(px - enemy.maxX);
+      xGap = Math.min(toMin > half ? CELL_W - toMin : toMin, toMax > half ? CELL_W - toMax : toMax);
+    }
+    if (xGap > range) continue;
     let best = -1;
     let bestDistance = Infinity;
     let held = -1;
@@ -279,7 +308,7 @@ export function resolve(match) {
       // A transport is cargo: it does not fire, and it does not survive the exchange.
       if (attacker.transport === true) continue;
       if (Number(combat.baseDamage[String(attacker.kind)] ?? 0) <= 0) continue;
-      hits.push({ attacker, target, ...damageFor(attacker, target) });
+      hits.push({ attacker, target, ...damageFor(attacker, target, combat) });
     }
 
     const doomed = new Set();
@@ -310,13 +339,11 @@ export function resolve(match) {
     // militia, and each attacker pays once that round (p.10, p.23).
     if (combat.militiaDamage > 0) {
       const paid = new Set();
-      const byCell = new Map();
-      for (const site of match.sites || []) {
-        if (!site) continue;
-        byCell.set(Number(site.y) * CELL_W + Number(site.x), site);
-      }
+      // The board's cell index, not a fresh Map of every site every round: the bench builds 1000
+      // rooms' indexes once and then pays one lookup per hit.
+      const byCell = siteIndex(match.sites);
       for (const hit of hits) {
-        const site = siteAt(byCell, hit.target);
+        const site = byCell ? byCell.get(Number(hit.target.y) * CELL_W + Number(hit.target.x)) || null : null;
         if (!site || site.owner !== hit.target.side) continue;
         if (!["city", "base", "dock", "docks", "capital"].includes(site.kind)) continue;
         if (paid.has(hit.attacker.id)) continue;

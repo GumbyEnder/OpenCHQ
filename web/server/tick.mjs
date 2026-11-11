@@ -20,8 +20,7 @@ import { tickAir } from "./air.mjs";
 import { followEscorts } from "./escort.mjs";
 import { holderOf as capitalHolder } from "./capitals.mjs";
 import { CELL_W } from "./board.mjs";
-
-const SIDES = ["blue", "red"];
+import { siteAtCell } from "./siteindex.mjs";
 
 // The alarm speaks when enemy troops are this close to a capital. Eight cells is the sight rule's
 // own radius: inside it, the player can see them coming, so the log should not be quieter than the
@@ -29,10 +28,9 @@ const SIDES = ["blue", "red"];
 const ALARM_CELLS = 8;
 
 function capitalName(match, cell) {
-  const site = (match.sites || []).find(
-    (place) => place && place.kind === "capital" && place.x === cell.x && place.y === cell.y
-  );
-  return site ? site.name : null;
+  // Indexed, not searched: this ran a 84-row find twice per room per round inside the alarm.
+  const site = siteAtCell(match.sites, cell.x, cell.y);
+  return site && site.kind === "capital" ? site.name : null;
 }
 
 // The winner, or null. Read off the era's set alone: every capital owned by one side. A neutral
@@ -82,29 +80,48 @@ export function tickMatch(match) {
 
   // The alarm: enemy troops closing on a capital. A match can now be won, and the last ten rounds
   // of one used to be silent - the first news was the loss. This notices a new closest approach
-  // and says so once, in that seat's own log.
-  for (const side of SIDES) {
-    const cell = match.capitals && match.capitals[side];
-    if (!cell) continue;
-    const name = capitalName(match, cell) || (side === "blue" ? "your capital" : "the enemy capital");
-    let nearest = null;
+  // and says so once, in that seat's own log. One pass over the pieces answers both seats: the
+  // bench pays this on every room every round, and a per-side walk was half of it twice over.
+  const capBlue = match.capitals && match.capitals.blue;
+  const capRed = match.capitals && match.capitals.red;
+  if (capBlue || capRed) {
+    const bx = capBlue ? Number(capBlue.x) : 0;
+    const by = capBlue ? Number(capBlue.y) : 0;
+    const rx = capRed ? Number(capRed.x) : 0;
+    const ry = capRed ? Number(capRed.y) : 0;
+    let nearBlue = null; // nearest enemy of blue = nearest red land piece
+    let nearRed = null;
     for (const piece of match.pieces || []) {
-      if (!piece || piece.side === side || piece.domain !== "land") continue;
-      const dx = Math.abs(Number(piece.x) - Number(cell.x));
-      const dist = Math.max(Math.min(dx, CELL_W - dx), Math.abs(Number(piece.y) - Number(cell.y)));
-      if (nearest === null || dist < nearest) nearest = dist;
+      if (!piece || piece.domain !== "land") continue;
+      const px = Number(piece.x);
+      const py = Number(piece.y);
+      if (capBlue && piece.side !== "blue") {
+        const dx = Math.abs(px - bx);
+        const dist = Math.max(dx > CELL_W / 2 ? CELL_W - dx : dx, Math.abs(py - by));
+        if (nearBlue === null || dist < nearBlue) nearBlue = dist;
+      }
+      if (capRed && piece.side !== "red") {
+        const dx = Math.abs(px - rx);
+        const dist = Math.max(dx > CELL_W / 2 ? CELL_W - dx : dx, Math.abs(py - ry));
+        if (nearRed === null || dist < nearRed) nearRed = dist;
+      }
     }
-    if (nearest === null) continue;
-    if (!match.alarm) match.alarm = {};
-    const was = match.alarm[side];
-    // Quiet at the far end of the board, and each new close approach is said once, not every round.
-    if (nearest > ALARM_CELLS) {
-      if (was) match.alarm[side] = null;
-      continue;
+    const approaches = [["blue", capBlue, nearBlue], ["red", capRed, nearRed]];
+    for (const [side, cell, nearest] of approaches) {
+      if (!cell) continue;
+      const name = capitalName(match, cell) || (side === "blue" ? "your capital" : "the enemy capital");
+      if (nearest === null) continue;
+      if (!match.alarm) match.alarm = {};
+      const was = match.alarm[side];
+      // Quiet at the far end of the board, and each new close approach is said once, not every round.
+      if (nearest > ALARM_CELLS) {
+        if (was) match.alarm[side] = null;
+        continue;
+      }
+      if (was && was.distance <= nearest) continue;
+      match.alarm[side] = { distance: nearest, round: match.round, name };
+      events.push({ type: "threat", side, name, distance: nearest });
     }
-    if (was && was.distance <= nearest) continue;
-    match.alarm[side] = { distance: nearest, round: match.round, name };
-    events.push({ type: "threat", side, name, distance: nearest });
   }
 
   // The win is checked when a capital changes hands, not every round: the original calls its

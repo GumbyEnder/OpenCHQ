@@ -14,6 +14,7 @@ import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace } from "./placement.mjs";
 import { CELL_W } from "./board.mjs";
+import { siteAtCell, siteCells, cellKeyOf } from "./siteindex.mjs";
 // The opening owner bits, for the years the original wrote them from a file.
 import { eraTable } from "./era.mjs";
 // A rolled era's capital set has to be drawn after owners exist, so seeding rebuilds it here.
@@ -137,7 +138,8 @@ function siteAt(match, x, y) {
   const cx = Number(x);
   const cy = Number(y);
   if (!Number.isInteger(cx) || !Number.isInteger(cy)) return null;
-  return match.sites.find((site) => site && Number(site.x) === cx && Number(site.y) === cy) || null;
+  // Indexed per site list, not searched per piece: upkeep asks this once per piece per round.
+  return siteAtCell(match.sites, cx, cy);
 }
 
 function wellAt(match, x, y) {
@@ -311,7 +313,7 @@ export function occupy(match) {
   const byCell = new Map();
   for (const piece of match.pieces) {
     if (!piece || !isSide(piece.side)) continue;
-    const key = Number(piece.y) * CELL_W + Number(piece.x);
+    const key = cellKeyOf(piece);
     byCell.set(key, (byCell.get(key) || 0) | (piece.side === "blue" ? 1 : 2));
   }
 
@@ -322,10 +324,13 @@ export function occupy(match) {
     red: { cities: 0, capitals: 0, wells: 0 },
   };
 
-  for (const site of match.sites) {
+  const sites = match.sites;
+  const cells = siteCells(sites);
+  for (let i = 0; i < sites.length; i++) {
+    const site = sites[i];
     if (!site) continue;
     const kind = site.kind;
-    const holder = occupiable(kind) ? byCell.get(Number(site.y) * CELL_W + Number(site.x)) || 0 : 0;
+    const holder = occupiable(kind) && cells && cells[i] !== null ? byCell.get(cells[i]) || 0 : 0;
 
     // A capital is taken the same way and kept the same way; what makes it different is that the
     // win condition reads it, so a piece standing on it is the freshest fact about the holder.

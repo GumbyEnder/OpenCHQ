@@ -21,6 +21,7 @@
 
 import { rules } from "./rules.mjs";
 import { eraOf } from "./match.mjs";
+import { cellKeyOf, cellsOfKinds } from "./siteindex.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -237,16 +238,10 @@ function refillKinds(spec) {
 }
 
 // Which cells carry a refill site for this kind, built once per round rather than scanned per
-// piece: a full 1986 board is 84 sites and 40 pieces a side.
+// piece: a full 1986 board is 84 sites and 40 pieces a side. The cells come off the site index
+// the rest of the round already built.
 function refillCells(match, kinds) {
-  const cells = new Set();
-  if (!kinds.length || !Array.isArray(match.sites)) return cells;
-  const wanted = new Set(kinds);
-  for (const site of match.sites) {
-    if (!site || !wanted.has(site.kind)) continue;
-    cells.add(Number(site.x) + "," + Number(site.y));
-  }
-  return cells;
+  return cellsOfKinds(match.sites, kinds);
 }
 
 // One running round for every kind the scenario carries, for both sides, in place. A side
@@ -272,7 +267,9 @@ export function upkeepResources(match) {
   if (Array.isArray(match.pieces)) {
     for (const piece of match.pieces) {
       if (!piece || !isSide(piece.side)) continue;
-      occupied[piece.side].add(Number(piece.x) + "," + Number(piece.y));
+      // A numeric cell, the same key the site index uses: a string key per piece per round was
+      // a visible slice of the bench's garbage collector.
+      occupied[piece.side].add(cellKeyOf(piece));
     }
   }
 

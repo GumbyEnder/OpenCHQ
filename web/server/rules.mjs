@@ -13,13 +13,21 @@ const DEFAULT_CONFIG = path.resolve(here, "..", "..", "config", "game.json");
 let cached = null;
 let cachedPath = null;
 
-// Resolved per call so a test can point the whole server at another tunables file without a
-// second process: OPENCHQ_CONFIG is the switch, and a stale cache is keyed by the path.
+// Resolved once per config load, not per read. `process.env` is a proxy and every read costs a few
+// hundred nanoseconds: rules() is read tens of times per piece per round, and the 1000-room bench
+// spent 12% of its samples inside this function. resetRules() clears the memo, so a test that
+// switches OPENCHQ_CONFIG and calls it (web/test/nodes/resources.mjs) still reads the new file.
+let resolvedPath = null;
+
 export function configPath() {
-  return process.env.OPENCHQ_CONFIG || DEFAULT_CONFIG;
+  if (resolvedPath !== null) return resolvedPath;
+  resolvedPath = process.env.OPENCHQ_CONFIG || DEFAULT_CONFIG;
+  return resolvedPath;
 }
 
 export function rules() {
+  // The memo is the same string object every call, so this is an identity compare on the fast path.
+  if (cached && cachedPath === resolvedPath && resolvedPath !== null) return cached;
   const wanted = configPath();
   if (cached && cachedPath === wanted) return cached;
   cached = JSON.parse(readFileSync(wanted, "utf8"));
@@ -30,6 +38,7 @@ export function rules() {
 export function resetRules() {
   cached = null;
   cachedPath = null;
+  resolvedPath = null;
 }
 
 export function roundSeconds() {
