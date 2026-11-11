@@ -73,8 +73,12 @@ clicking faster than your opponent.
   and - for 1918/1942/1986 - who holds it at the bell: 25/64/84 live sites and the original's own
   blue/red/neutral bits, including the four 1986 neutrals the loader clears (43, 46, 50, 53). 2023
   ships its subtype row with no owners (the roll is B-3), and the concealed era has no row at all.
-  The subtype travels as `type` beside `kind`, never inside it. A capital's owner byte is not
-  "held": the seats open unheld and are won by troops standing on them.
+  The subtype travels as `type` beside `kind`, never inside it. A capital's owner byte is the
+  holder at the opening bell: 1918 and 1986 open Washington blue / Moscow red, 1942 opens both
+  blue, and 2023 opens both unowned. A capital is captured when an enemy land unit takes its
+  center cell, and the win needs both seats held with at least one of them taken - so 1942's
+  blue-opens-both is not a round-0 win. Whether the original's win test reads that same byte is
+  UNVERIFIED until the disassembly or a DOSBox turn-0 capture says so.
 
 ## Current milestone
 
