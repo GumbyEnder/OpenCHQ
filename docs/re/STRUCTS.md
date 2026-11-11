@@ -1,11 +1,11 @@
 # STRUCTS.md — Inferred Global Data Structures
 
 
-> **Record moved (2026-11-11).** The canonical copy of this document is `docs/re/STRUCTS.md` in the
-> `openchq-web` repo, added by B-3b at commit `f0551df`: the `0x1102` owner row is measured there
-> (bits 7:6, mask `0xC0`, subtype `&7`, evidence `1c0d:000c`), the `0x906` unit-status row is marked
-> UNVERIFIED, and both carry reviewable diffs. This extract-side copy keeps the same fix as the
-> working evidence trail (backup `STRUCTS.md.bak-20261111`); treat the repo copy as the record.
+> **Record (2026-11-11).** This is the canonical copy of STRUCTS.md, added to `docs/re/` by B-3b at
+> commit `f0551df` on branch `b3b-capitals` (full sha in `git log docs/re/STRUCTS.md`). The `0x1102`
+> owner row below is measured here: **owner = bits 7:6** (mask `0xC0`), **subtype = `&7`**, evidence
+> `1c0d:000c`. The `0x906` unit-status row is marked UNVERIFIED in the row itself and listed in §19.
+> The NAS extract-side working copy carries only a dated one-line pointer to this commit.
 
 > **Confidence: LOW (names re-checked 2026-11-09).** The function names in this document came
 > from a 2026-10-03 Ghidra pass that resolved addresses with `(segment << 4) | offset`. Above
@@ -432,3 +432,7 @@ The following offsets are referenced but their purpose is unclear:
 - `0xc3b4`, `0xc3b6`, `0xc3b7`, `0xc3b8`, `0xc3ba` — percentage/progress values
 - `0x1bc7` — mission queue base, but exact entry format unclear
 - `0xc814` — path generation buffer, 30 bytes
+- `0x906` + `i` (`unit_status`) — **bit assignment unverified.** The row's "bits 6:5 = owner" is
+  inherited from the pre-2026-11-11 site-byte reading, and no routine has been read for this byte. The
+  site-byte fix (`0x1102`: bits 7:6, mask `0xC0`, `1c0d:000c`) does not transfer to the unit tables.
+  Closing this needs a read of the writer of `0x906`, not a re-parse of the table.

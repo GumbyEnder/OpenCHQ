@@ -381,6 +381,35 @@ deviation. Do not touch `tick.mjs` or `ownership.mjs` while gathering it.
   the national flag; enemy-capital and city hovers show the same bloc banner), and Monitor Three is
   the regional minimap. The screen evidence used is Monitor Four's name plus holder-coloured flag.
 
+### B-3b — the win check on the era's capital set (PM ruling, 2026-11-11)
+
+The PM of record settled the two open questions on B-3b's win check. Both are spec input, not
+negotiable at implementation time:
+
+1. **Scope of the check: the era's whole capital set, not the two seats.** 1918 has 3, 1942 has 6,
+   1986 has 4, and 2023 and ???? each **roll two** at launch (`rollCapitals()` in
+   `web/server/capitals.mjs`). A side wins when it holds every capital in that set. The seat pair is
+   a drawing fallback, not the rule.
+2. **Trigger: when a capital is captured, not every tick.** The original calls the routine from the
+   capture handler only. The port moves `checkWin` off the per-tick path and onto capture.
+
+Engine-side line references, as given by the PM (current code at `296c523`, i.e. the code this section
+is telling the implementer to replace):
+
+| Reference | What it is today |
+|---|---|
+| `web/server/tick.mjs:61-73` | `checkWin`, looping both `SIDES` against `match.capitals` — the two seats |
+| `web/server/tick.mjs:69` | the comparison that decides a side has won |
+| `web/server/tick.mjs:126` | the call site inside `tickMatch` — the every-tick trigger that has to go |
+| `web/server/board.mjs:47-50` | `SEATS`, the fixed Washington/Moscow pair |
+| `web/server/board.mjs:393` | `capitals` built from `SEATS`, ignoring the era table |
+| `web/server/ownership.mjs` (test node `web/test/nodes/ownership.mjs:57-78`) | the R6 seat expectation the new set replaces |
+| this spec, `:188`/`:193` | the R6 ruling, which B-3b supersedes |
+
+`web/server/capitals.mjs` (commit `28c7a2b`) already exposes the set the changed check must read:
+`capitalRows`, `capitalSet`, `capitalsFromFile` and `rollCapitals`, pinned by
+`web/test/nodes/capitals_table.mjs`.
+
 ### B-3 (original scope) — the 2023 rule
 
 Two capitals at least `0x271` apart (both in X and Y), bloc ownership from
