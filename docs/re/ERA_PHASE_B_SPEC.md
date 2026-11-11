@@ -250,6 +250,18 @@ is gitignored but present on every working copy. To reproduce the 8-skip run, us
 `local/data_root.txt` aside first. A bare `env -u` is not enough, and the suite is not wrong when
 it reports 57.
 
+Four legs re-run at `6a74a49` (buzzy, 2026-11-11) — the correct reading of A1's two lines:
+
+| tree | env | result |
+|---|---|---|
+| real clone | `OPENCHQ_DATA=<extract>` | 57 passed, 0 failed, 0 skipped, `WEB_OK` |
+| real clone | `env -u OPENCHQ_DATA`, `local/data_root.txt` present | 57/0/0, `WEB_OK` — the defect, reproduced; all 8 nodes resolve through the pointer |
+| `git archive HEAD` export | `env -u` | 49/0/8, `WEB_OK` — the eight skipped are exactly the extract-gated nodes |
+| `git archive HEAD` export | `OPENCHQ_DATA=<extract>` | 57/0/**1** — `drop_godot` skips, an archive has no `origin/desktop-godot` to compare |
+
+So the with-extract leg must run **in a clone** (an archive export also skips `drop_godot` and
+prints 57/0/1) and the no-extract leg must run **in an export with no `local/`**.
+
 **A2 — opened site count, exact.** Per era, `matchSites(era).length` and its split:
 
 | era | sites | 84-row table live | docks + wells |
