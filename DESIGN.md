@@ -1,7 +1,7 @@
 # OpenCHQ
 
 Browser strategy game. Two seats, one world map, one clock. You give orders; the server
-executes them; you win by holding both capitals.
+executes them; you win by holding every capital in the era's set.
 
 ## Pitch
 
@@ -24,7 +24,9 @@ clicking faster than your opponent.
    oil, never cash. Money is held as integer millions and shown in billions.
 5. Two hostile pieces stop one cell short and trade a shot every other round. No damage number
    exists yet — that is a measured gap, not a design choice.
-6. Hold both capitals to win. A dropped player pauses the game; the room stays and is theirs to
+6. Hold every capital in the era's set to win (3 in 1918, 6 in 1942, 4 in 1986, 2 rolled for
+   2023 and ????). The check runs when a capital changes hands, not every round. A dropped player
+   pauses the game; the room stays and is theirs to
    resume.
 
 ## Controls
@@ -73,12 +75,14 @@ clicking faster than your opponent.
   and - for 1918/1942/1986 - who holds it at the bell: 25/64/84 live sites and the original's own
   blue/red/neutral bits, including the four 1986 neutrals the loader clears (43, 46, 50, 53). 2023
   ships its subtype row with no owners (the roll is B-3), and the concealed era has no row at all.
-  The subtype travels as `type` beside `kind`, never inside it. A capital's owner byte is the
-  holder at the opening bell: 1918 and 1986 open Washington blue / Moscow red, 1942 opens both
-  blue, and 2023 opens both unowned. A capital is captured when an enemy land unit takes its
-  center cell, and the win needs both seats held with at least one of them taken - so 1942's
-  blue-opens-both is not a round-0 win. Whether the original's win test reads that same byte is
-  UNVERIFIED until the disassembly or a DOSBox turn-0 capture says so.
+  The subtype travels as `type` beside `kind`, never inside it. A capital is a subtype-1/2 row, so
+  the era's capital set is 3 in 1918, 6 in 1942, 4 in 1986 and 2 rolled for 2023/????; the win is
+  one side owning every one of them (B-3b, from the original's check at `1c0d:000c`). A capital is
+  captured when an enemy land unit takes its centre cell, the check runs on that capture and not
+  every round, and a neutral capital blocks both sides. The owner byte in `eras.json` is a label
+  for now (R6): `board.matchSites` clears it on every capital, so no seat is handed to a side at
+  the bell and no era opens decided. Whether the original seeds a held opening from that byte is
+  still UNVERIFIED - that is the holder half of B-3.
 
 ## Current milestone
 

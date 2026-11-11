@@ -69,7 +69,8 @@ the stills, and `CHQ_unpacked.EXE` never leave this machine.
 
 ## Rules a node must keep
 
-- Two sides only. Blue and Red. Washington and Moscow. Holding both capitals wins.
+- Two sides only. Blue and Red. Washington and Moscow are the seats. Holding every capital in
+  the era's set (`match.capitalSet`) wins, and the check runs when a capital changes hands.
 - The server owns the clock and the pieces. The page sends orders for its own seat.
 - One running round is 0.14 seconds. Hold stops the clock. Tests call the tick function
   directly and never sleep.
@@ -184,7 +185,7 @@ test passes with the feature removed is not done; it is decoration.
 - The server owns the clock, the pieces and the filtered view.
 - Unknown 1990 numbers stay unnamed. Stand-ins live in `config/game.json` and are labelled.
 - A dropped client pauses a game; only an explicit leave deletes one.
-- Two sides only; X wraps, Y does not; wasteland is refused; both capitals wins.
+- Two sides only; X wraps, Y does not; wasteland is refused; every capital in the era's set wins.
 - No original art, stills, or executable bytes in a browser response.
 - `web/` has zero npm dependencies.
 

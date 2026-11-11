@@ -410,6 +410,15 @@ is telling the implementer to replace):
 `capitalRows`, `capitalSet`, `capitalsFromFile` and `rollCapitals`, pinned by
 `web/test/nodes/capitals_table.mjs`.
 
+**Landed.** `match.openMatch` now carries `capitalSet` (the file's rows joined to the live sites,
+`match.capitalSetFor`), `tick.checkWin` reads that list through `capitals.holderOf` and refuses a
+partial set, and `tickMatch` calls it only when a capture event names a site in the set. The
+trigger is membership, not `site.kind`: three of 1986's four capitals are city-kind sites, so a
+London capture emits `kind: "city"` and must still be able to end the match. `rooms.unpackMatch`
+rebuilds the set for rows written before this commit, so a paused live room stays finishable. The
+seats (`match.capitals`) still drive the page label, the alarm and the bot - unchanged payload -
+and R6 still clears the capital owners, so the holder half of B-3 remains open.
+
 ### B-3 (original scope) — the 2023 rule
 
 Two capitals at least `0x271` apart (both in X and Y), bloc ownership from

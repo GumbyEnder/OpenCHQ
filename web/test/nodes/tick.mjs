@@ -4,6 +4,13 @@
 // whatever the caller asks for, so no test here sleeps or waits for an interval. Pieces are
 // placed explicitly with an empty path, so the assertions hold whether move.mjs has landed yet
 // or not - a piece standing still is not evidence either way, and the round counter is.
+//
+// The win half is B-3b: the set is the era's whole capital list (the file's subtype-1/2 rows), the
+// holder is the site record's owner that economy.occupy writes, and the check runs when a capital
+// changes hands. So the match here is a real 1986 board, not two synthetic seat cells: three of
+// 1986's four capitals sit on sites the asset list calls a city, and a win check keyed on
+// kind === "capital" would never see them.
+import { matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { tickMatch, checkWin } from "../../server/tick.mjs";
 
@@ -13,11 +20,8 @@ function piece(id, side, x, y, domain = "land") {
   return { id, side, domain, kind: null, x, y, path: [], pace: 1, facing: null, fighting: null, shots: 0 };
 }
 
-function capitalSites(match) {
-  return [
-    { id: "site:blue-capital", name: "Washington", x: match.capitals.blue.x, y: match.capitals.blue.y, kind: "capital" },
-    { id: "site:red-capital", name: "Moscow", x: match.capitals.red.x, y: match.capitals.red.y, kind: "capital" },
-  ];
+function siteOf(match, capital) {
+  return match.sites.find((site) => Number(site.id) === Number(capital.siteId));
 }
 
 export async function run(ctx) {
@@ -66,32 +70,44 @@ export async function run(ctx) {
   tickMatch(live);
   if (live.round !== frozenAt + 1) fail("one tick advanced " + (live.round - frozenAt) + " rounds, not 1");
 
-  // ---- win: the side that holds both capitals wins ---------------------------------------
-  // prove: "The harness gives one side both capitals, ticks, and sees the winner and a frozen
-  // board on the next tick."
-  const shape = openMatch("1986");
-  const match = openMatch("1986", capitalSites(shape));
+  // ---- win: the era's whole capital set, decided on a capture -----------------------------
+  // prove: "The harness gives one side every capital in the era's set and takes the last one with
+  // troops; the capture ends the match and the next tick freezes the board."
+  const sites = matchSites("1986");
+  if (!sites.length) return ctx.skip("no site list on this host, so the era's capital set cannot be built");
+
+  const match = openMatch("1986", sites);
   match.clock = "running";
-  match.pieces = [
-    piece("blue:land", "blue", match.capitals.blue.x, match.capitals.blue.y),
-    piece("red:land", "red", match.capitals.red.x, match.capitals.red.y),
-  ];
-  if (checkWin(match) !== null) fail("one capital each was called a win: " + checkWin(match));
-  tickMatch(match);
-  if (match.winner !== null || match.over) fail("one capital each ended the match on tick " + match.round);
+  const set = match.capitalSet;
+  if (!set || set.source !== "file") fail("1986 capital set source is " + (set && set.source) + ", the file wrote the owners");
+  if (set.missing.length) fail("1986: capital ids " + set.missing.join(",") + " have no live site");
+  const ids = set.list.map((capital) => Number(capital.siteId)).sort((a, b) => a - b).join(",");
+  if (ids !== "10,35,62,63") fail("the 1986 win set is " + ids + ", the file's capitals are 10,35,62,63");
+  if (checkWin(match) !== null) fail("an opening 1986 match reported " + checkWin(match) + " as the winner");
+  for (const capital of set.list) {
+    const site = siteOf(match, capital);
+    if (!site) fail("the set names " + capital.siteId + ", the match has no such site");
+    if (Number(site.x) !== Number(capital.x) || Number(site.y) !== Number(capital.y)) {
+      fail("the set's cell for " + capital.siteId + " disagrees with the match's site");
+    }
+  }
 
-  // Blue marches onto Moscow; Washington stays blue's, recorded on the capital site.
-  const washington = match.sites.find((site) => site.kind === "capital" && site.x === match.capitals.blue.x);
-  if (!washington) fail("the match has no Washington site: " + JSON.stringify(match.sites));
-  washington.owner = "blue";
-  const redLand = match.pieces.find((unit) => unit.id === "red:land");
-  redLand.x = match.capitals.red.x + 2; // the defender was met and is not on the capital
-  const blueLand = match.pieces.find((unit) => unit.id === "blue:land");
-  blueLand.x = match.capitals.red.x;
-  blueLand.y = match.capitals.red.y;
+  // Three of the four are blue's, recorded the way economy.occupy records a capture. The fourth
+  // is still neutral, so the set is incomplete and nobody has won - most of the capitals is not
+  // all of them, and a neutral capital blocks both sides.
+  for (const capital of set.list.slice(1)) siteOf(match, capital).owner = "blue";
+  const last = siteOf(match, set.list[0]);
+  last.owner = null;
+  if (checkWin(match) !== null) fail("three of four capitals was called a win: " + checkWin(match));
 
-  if (checkWin(match) !== "blue") fail("blue held both capitals but checkWin said " + checkWin(match));
+  // Blue walks onto the last one. That capture is what triggers the check - and the last capital
+  // is a city-kind site, so this also pins that the trigger is set membership, not site kind.
+  match.pieces = [piece("blue:land", "blue", last.x, last.y)];
   const ending = tickMatch(match);
+  const capture = ending.events.find(
+    (event) => event && event.type === "capture" && Number(event.site) === Number(last.id)
+  );
+  if (!capture) fail("walking onto the last capital produced no capture event: " + JSON.stringify(ending.events));
   if (match.winner !== "blue") fail("the winning side was reported as " + JSON.stringify(match.winner));
   if (match.over !== true) fail("the match did not end: over=" + match.over);
   if (match.clock !== "held") fail("the ended match kept clock " + match.clock);
@@ -99,6 +115,19 @@ export async function run(ctx) {
     fail("no win event for blue: " + JSON.stringify(ending.events));
   }
   if (checkWin(match) !== "blue") fail("checkWin forgot the winner after the match ended");
+
+  // ---- win: a quiet round does not end a won-on-paper set --------------------------------
+  // Every capital is blue's and nobody takes one this round. The pre-B-3b engine checked on every
+  // tick and would end the match here; the capture-handler check must not.
+  const quiet = openMatch("1986", matchSites("1986"));
+  quiet.clock = "running";
+  quiet.pieces = [];
+  for (const capital of quiet.capitalSet.list) siteOf(quiet, capital).owner = "blue";
+  if (checkWin(quiet) !== "blue") fail("owning every 1986 capital did not report blue: " + checkWin(quiet));
+  tickMatch(quiet);
+  if (quiet.winner !== null || quiet.over) {
+    fail("a quiet round ended the match on the per-tick path: " + JSON.stringify({ winner: quiet.winner, over: quiet.over }));
+  }
 
   // ---- win: later ticks do not move, pay or burn ------------------------------------------
   match.sides.blue.cash = 0;
@@ -121,33 +150,37 @@ export async function run(ctx) {
   alreadyOver.over = true;
   alreadyOver.winner = "red";
   const overBefore = JSON.stringify(alreadyOver);
-  const quiet = tickMatch(alreadyOver);
-  if (quiet.events.length !== 0) fail("a finished match emitted events: " + JSON.stringify(quiet.events));
+  const silent = tickMatch(alreadyOver);
+  if (silent.events.length !== 0) fail("a finished match emitted events: " + JSON.stringify(silent.events));
   if (alreadyOver.round !== 9) fail("a finished match advanced to round " + alreadyOver.round);
   if (JSON.stringify(alreadyOver) !== overBefore) fail("a finished match changed: " + JSON.stringify(alreadyOver));
 
-  // ---- win: recorded ownership alone, and contested or empty capitals hold nobody ---------
-  const recorded = openMatch("1986", capitalSites(openMatch("1986")));
+  // ---- win: recorded ownership alone, and a neutral capital blocks both sides -------------
+  const recorded = openMatch("1986", matchSites("1986"));
   recorded.pieces = [];
-  if (checkWin(recorded) !== null) fail("an empty, unowned board reported " + checkWin(recorded));
-  for (const site of recorded.sites) site.owner = "red";
-  if (checkWin(recorded) !== "red") fail("red owned both capital sites but checkWin said " + checkWin(recorded));
-  recorded.sites[1].owner = "blue";
+  if (checkWin(recorded) !== null) fail("an unowned 1986 board reported " + checkWin(recorded));
+  for (const capital of recorded.capitalSet.list) siteOf(recorded, capital).owner = "red";
+  if (checkWin(recorded) !== "red") fail("red owned every 1986 capital but checkWin said " + checkWin(recorded));
+  siteOf(recorded, recorded.capitalSet.list[0]).owner = "blue";
   if (checkWin(recorded) !== null) fail("a split ownership of the capitals was called a win: " + checkWin(recorded));
+  siteOf(recorded, recorded.capitalSet.list[0]).owner = null;
+  if (checkWin(recorded) !== null) fail("a neutral capital handed the match to " + checkWin(recorded));
 
-  // Two sides on one capital cell is contested, and a contested cell wins nobody anything.
-  const contested = openMatch("1986", capitalSites(openMatch("1986")));
-  contested.pieces = [
-    piece("blue:land", "blue", contested.capitals.red.x, contested.capitals.red.y),
-    piece("red:land", "red", contested.capitals.red.x, contested.capitals.red.y),
-  ];
-  for (const site of contested.sites) site.owner = "blue";
-  if (checkWin(contested) !== null) fail("a contested capital was handed to " + checkWin(contested));
+  // A set the site list only partly carries decides nothing: a capital silently dropped would make
+  // the win easier than the original's, so the check refuses rather than counting a partial list.
+  const partial = openMatch("1986", matchSites("1986"));
+  partial.capitalSet = { ...partial.capitalSet, missing: [63] };
+  for (const capital of partial.capitalSet.list) siteOf(partial, capital).owner = "blue";
+  if (checkWin(partial) !== null) fail("a partial capital set decided a match: " + checkWin(partial));
 
-  // 2023 opens with no pieces, so nothing is held and nothing is won.
-  const empty = openMatch("2023");
-  empty.clock = "running";
-  tickMatch(empty);
-  if (empty.round !== 1) fail("the empty 2023 match did not tick: round " + empty.round);
-  if (empty.winner !== null) fail("the empty 2023 match was won by " + empty.winner);
+  // 2023 has no subtype-1/2 row, so its set is two rolled capitals, one each: no round-0 win.
+  const rolled = openMatch("2023", matchSites("2023"));
+  rolled.clock = "running";
+  if (!rolled.capitalSet || rolled.capitalSet.list.length !== 2) {
+    fail("2023 rolled " + (rolled.capitalSet ? rolled.capitalSet.list.length : "no") + " capitals, the reading has 2");
+  }
+  if (checkWin(rolled) !== null) fail("the 2023 opening was already won by " + checkWin(rolled));
+  tickMatch(rolled);
+  if (rolled.round !== 1) fail("the empty 2023 match did not tick: round " + rolled.round);
+  if (rolled.winner !== null) fail("the empty 2023 match was won by " + rolled.winner);
 }

@@ -78,9 +78,14 @@ export function tickMatch(match) -> { match, events: [] }   // one running round
 export function checkWin(match) -> null | "blue" | "red"
 ```
 One call = one round: advance pieces through `move.advance`, resolve fights through
-`combat.resolve`, run `economy.upkeep` and `economy.pay`, then `checkWin`. A held match
+`combat.resolve`, run `economy.upkeep` and `economy.pay`, then - only when a capital in
+`match.capitalSet.list` changed hands that round - `checkWin`. A held match
 (`clock !== "running"`) or a finished match (`over`) must return without changing anything.
 Tests call this directly; never `setTimeout` in a test.
+
+`checkWin` reads the era's whole capital set (`match.capitalSet`, the file's subtype-1/2 rows
+joined to the live sites), not the two seats: every capital owned by one side is a win, one neutral
+capital blocks both sides, and a set the site list only partly carries decides nothing.
 
 ### `web/server/move.mjs` — owner A2
 ```js

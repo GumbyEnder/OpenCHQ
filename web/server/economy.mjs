@@ -314,9 +314,7 @@ export function occupy(match) {
     const holder = occupiable(kind) ? byCell.get(Number(site.y) * CELL_W + Number(site.x)) || 0 : 0;
 
     // A capital is taken the same way and kept the same way; what makes it different is that
-    // the win condition reads it, and a piece standing on it is the freshest fact. The byte it
-    // carries at the opening is the scenario's holder, not a capture, which checkWin knows by
-    // reading match.capitalOpen.
+    // the win condition reads it, and a piece standing on it is the freshest fact.
     const side = holder === 1 ? "blue" : holder === 2 ? "red" : null; // contested or empty: nobody holds it
     if (side && site.owner !== side) {
       events.push({ type: "capture", site: site.id, name: site.name, kind, side, from: site.owner ?? null });

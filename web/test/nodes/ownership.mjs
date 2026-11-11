@@ -19,6 +19,8 @@
 // cannot drift into a guess.
 import { matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
+import { capitalSet } from "../../server/capitals.mjs";
+import { checkWin } from "../../server/tick.mjs";
 import { seedOwners } from "../../server/economy.mjs";
 import { eraTable } from "../../server/era.mjs";
 
@@ -47,6 +49,31 @@ export async function run(ctx) {
     if (!sites.length) fail(era + " has no sites to own");
     const match = openMatch(era, sites);
     seedOwners(match);
+
+    // B-3b: the win reads the era's capital set, so the set has to exist, name live sites, and be
+    // nobody's win before the first round. The set is the file's subtype-1/2 rows (or two rolled
+    // capitals for 2023/????) joined to the board this match plays on - not the two seats the page
+    // labels, which is the expectation this node carried before B-3b.
+    const set = match.capitalSet;
+    if (!set || !set.list.length) fail(era + ": the capital set is empty, so no side could ever win");
+    if (set.missing.length) {
+      fail(era + ": capital ids " + set.missing.join(",") + " are in the table and not on the board");
+    }
+    if (set.source === "file") {
+      const want = capitalSet(era, sites);
+      const got = set.list.map((capital) => Number(capital.siteId)).sort((a, b) => a - b).join(",");
+      const expected = want.list.map((capital) => Number(capital.siteId)).sort((a, b) => a - b).join(",");
+      if (got !== expected) fail(era + ": the match's capital set is " + got + ", the file's is " + expected);
+    } else if (set.list.length !== 2) {
+      fail(era + ": rolled " + set.list.length + " capitals, the reading has 2");
+    }
+    for (const capital of set.list) {
+      const site = match.sites.find((place) => Number(place.id) === Number(capital.siteId));
+      if (!site) fail(era + ": the set names " + capital.siteId + " and the match has no such site");
+    }
+    // A capital's owner byte is a label (R6): the seats open unheld, and one side's ground at the
+    // bell is not every capital in the era, so no era may open already decided.
+    if (checkWin(match) !== null) fail(era + " opens already won by " + checkWin(match));
 
     const own = { blue: [], red: [], none: [] };
     for (const site of match.sites) {

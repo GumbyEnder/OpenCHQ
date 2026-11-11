@@ -6,15 +6,19 @@
 // a round happens, and roundSeconds lives in config/game.json. A held clock or a finished
 // match returns before any module runs, so a held room cannot drift, burn fuel or pay income.
 //
-// The win condition is the archive's: the side that holds both capitals has won. A capital is
-// held by the side standing on it, or, when nobody stands there, by the owner the site record
-// already carries (economy.capture writes that). No new number, cell or cost is invented here.
+// The win condition is the archive's (1c0d:000c): the side that owns every capital in the era's
+// set has won. The set is `match.capitalSet`, the file's subtype-1/2 rows joined to the live sites
+// - not the two seats the page labels - and the holder is the site record's owner, which
+// `economy.occupy` writes when troops take a capital's cell. The check runs when a capital changes
+// hands, not every round: a capture is the only event that can complete the set, and that is what
+// the original calls its routine from.
 
 import { advance } from "./move.mjs";
 import { resolve } from "./combat.mjs";
 import { occupy, pay, upkeep } from "./economy.mjs";
 import { tickAir } from "./air.mjs";
 import { followEscorts } from "./escort.mjs";
+import { holderOf as capitalHolder } from "./capitals.mjs";
 import { CELL_W } from "./board.mjs";
 
 const SIDES = ["blue", "red"];
@@ -31,44 +35,23 @@ function capitalName(match, cell) {
   return site ? site.name : null;
 }
 
-// Which side holds one capital cell. A piece standing on the cell is the freshest fact; a
-// cell two sides stand on is contested and belongs to nobody. With nobody standing there the
-// site record's owner decides, and an unowned capital is held by nobody.
-function holderOf(match, cell) {
-  if (!cell) return null;
-  const standing = new Set();
-  for (const piece of match.pieces || []) {
-    if (!piece) continue;
-    if (piece.x !== cell.x || piece.y !== cell.y) continue;
-    // A capital is taken by troops on the ground. A ship in the harbour is not holding the
-    // capital: a played match ended at round 27 because a blue destroyer sailed onto Moscow and
-    // checkWin counted it as the red capital changing hands.
-    if (piece.domain !== "land") continue;
-    if (piece.embarked) continue;
-    if (SIDES.includes(piece.side)) standing.add(piece.side);
-  }
-  if (standing.size === 1) return [...standing][0];
-  if (standing.size > 1) return null;
-  const site = (match.sites || []).find(
-    (place) => place && place.kind === "capital" && place.x === cell.x && place.y === cell.y
-  );
-  if (site && SIDES.includes(site.owner)) return site.owner;
-  return null;
-}
-
-// null until one side holds both capitals. The caller reports the result; this does not change
-// the match.
+// The winner, or null. Read off the era's set alone: every capital owned by one side. A neutral
+// capital blocks both sides, and a set the site list only partly carries decides nothing - the
+// alternative is a win that is easier than the original's because a capital went missing.
+// The caller reports the result; this does not change the match.
 export function checkWin(match) {
-  if (!match || !match.capitals) return null;
-  const held = { blue: 0, red: 0 };
-  for (const key of SIDES) {
-    const holder = holderOf(match, match.capitals[key]);
-    if (holder) held[holder] += 1;
+  if (!match || !match.capitalSet) return null;
+  const list = match.capitalSet.list;
+  if (!Array.isArray(list) || !list.length) return null;
+  if (Array.isArray(match.capitalSet.missing) && match.capitalSet.missing.length) return null;
+  let winner = null;
+  for (const capital of list) {
+    const holder = capitalHolder(match, capital);
+    if (!holder) return null;
+    if (winner === null) winner = holder;
+    else if (winner !== holder) return null;
   }
-  for (const side of SIDES) {
-    if (held[side] === SIDES.length) return side;
-  }
-  return null;
+  return winner;
 }
 
 export function tickMatch(match) {
@@ -123,7 +106,19 @@ export function tickMatch(match) {
     events.push({ type: "threat", side, name, distance: nearest });
   }
 
-  const winner = checkWin(match);
+  // The win is checked when a capital changes hands, not every round: the original calls its
+  // check from the capture handler, and only a capture can complete the set. economy.occupy
+  // writes the owner byte before it emits the event, so the check reads the new holder.
+  //
+  // Membership, not site kind, decides what counts: the file's capitals are subtype-1/2 rows, and
+  // three of 1986's four sit on sites the asset list calls a city, so a capture of London emits
+  // kind "city" and still has to be able to end the match.
+  const set = (match.capitalSet && match.capitalSet.list) || [];
+  const tookCapital = events.some((event) =>
+    event && event.type === "capture" &&
+    set.some((capital) => Number(capital.siteId) === Number(event.site))
+  );
+  const winner = tookCapital ? checkWin(match) : null;
   if (winner) {
     match.winner = winner;
     match.over = true;

@@ -16,6 +16,7 @@
 // time scan of one table, which is cheap at this size.
 
 import { boardPayload } from "./board.mjs";
+import { capitalSetFor } from "./match.mjs";
 import { db } from "./db.mjs";
 import { migrateMatch } from "./migrate.mjs";
 
@@ -121,7 +122,15 @@ export function unpackMatch(packed) {
       ...(unready.has(key) ? { unready: true } : {}),
     });
   }
-  return migrateMatch({ ...rest, sites: rebuilt });
+  const match = migrateMatch({ ...rest, sites: rebuilt });
+  // Rows written before B-3b carry no capital set, and without one the win check refuses every set
+  // and the room could never be finished. Rebuild it from the board the row already carries: the
+  // file years are the same join as at launch, and a rolled year re-rolls from the recorded owners
+  // with its era as the seed (deterministic, though not necessarily the rooms' original draw).
+  if (!match.capitalSet || !Array.isArray(match.capitalSet.list)) {
+    match.capitalSet = capitalSetFor(match.era, match.sites);
+  }
+  return match;
 }
 
 // The row keeps the seats and anything the match will need. It is JSON so the match shape
