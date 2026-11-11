@@ -300,3 +300,47 @@ no `Pool <raw millions>` form survives, and walks every shop kind for the articl
 billions suffix.
 
 Suite after the three: **54 passed, 0 failed, 0 skipped, WEB_OK**.
+
+## T-007 Part 2 — the two connections the 2026-11-10 play-test lost (AC3)
+
+The play-test of `ae3539f` (2026-11-10, ~9:30 PM ET, account `pmtest1110`, 1942 vs bot) lost the
+socket at round 90 and recovered at round 96, and the first "Play a bot" in the 2023 lobby answered
+"The lobby is not connected" until it was clicked a second time. Both are the same class of defect:
+the page treated "not connected right now" as a refusal instead of a wait.
+
+### (a) "Connection lost. Reconnecting..." at round 90
+
+**Root cause — server side.** The deployment's drain sends an `op: "bye"` frame and then closes
+each peer's socket. That is a *planned* restart, but the frame carried nothing the page could tell
+apart from a network failure: every `close` went down the same path, so the page said "Connection
+lost. Reconnecting..." and entered its exponential backoff (1 s, 2 s, 4 s...). Round 90 was inside a
+deploy window: `railway up` replaces the process, so every live room was ended by the restart, and
+the six rounds between the toast and the recovery are the backoff, not a network fault. Round 96
+recovered because the container was back by then.
+
+**Fix.** `op: "bye"` now sets a planned-restart flag on the session. The close that follows retries
+in 250 ms — no backoff for a server the page knows is coming back — and the message reads "The
+server is restarting" instead of "Connection lost". A real cut still backs off and still says
+"Connection lost. Reconnecting...", which is what that sentence is for.
+
+**Note for the deploy lane.** Any deploy ends every live match, planned or not. The soak in
+`tests/e2e/soak.mjs` is the instrument that proves no toast appears on an *undeployed* build;
+deploying during a match and then counting the toast as a defect would measure the deploy, not the
+game.
+
+### (b) the first "Play a bot" said "The lobby is not connected"
+
+**Root cause — client side.** The launch button called `send()` directly. On a fresh page load the
+socket is still connecting (and after a drop it is still backing off), so `socket.readyState` was
+not `OPEN`, and the branch for that case wrote "The lobby is not connected" and dropped the request.
+The retry worked because by then the socket was open. Nothing on the server was wrong: the launch
+request never arrived.
+
+**Fix.** `send()` queues the request in `outbox` (20 deep) whenever the socket is not `OPEN` and
+says "Connecting to the lobby - your request is queued and will be sent as soon as it answers." The
+queue is flushed on `open` and again on `welcome`, in order, once. No launch, order or dialog action
+can be thrown away by a socket that is merely late.
+
+**Test.** `tests/e2e/run.mjs` closes the page's socket, sets the context offline, clicks "Play a
+bot", asserts the queued sentence (and that "not connected" is gone), goes back online and asserts
+the 2023 match opens. Local and live both pass.

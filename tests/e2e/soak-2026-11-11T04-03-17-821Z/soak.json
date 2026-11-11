@@ -1,0 +1,19 @@
+{
+  "base": "https://openchq-web-production.up.railway.app",
+  "era": "1942",
+  "minutes": 30,
+  "startedAt": "2026-11-11T04:03:18.067Z",
+  "lostSeen": [],
+  "samples": [],
+  "pageErrors": [],
+  "outcome": "finished",
+  "account": "soakmwblg66h",
+  "roundAtStart": 0,
+  "poolAtStart": null,
+  "screenshotStart": "/mnt/nas/projects/OpenCHQ/tests/e2e/soak-2026-11-11T04-03-17-821Z/soak-start-round-0.png",
+  "roundAtEnd": 361,
+  "screenshotEnd": "/mnt/nas/projects/OpenCHQ/tests/e2e/soak-2026-11-11T04-03-17-821Z/soak-end-round-361.png",
+  "finishedAt": "2026-11-11T04:33:22.174Z",
+  "roundsPlayed": 361,
+  "lostCount": 0
+}

@@ -47,6 +47,18 @@ bash tools/fire.sh            # WEB_OK -> mark done -> commit -> push origin/web
 
 `OPENCHQ_LOOP_NODEPLOY=1` skips the CLI deploy, `OPENCHQ_LOOP_NOPUSH=1` commits without pushing.
 
+### The GitHub trigger does not ship (measured 2026-11-11)
+
+A push to `origin/web` created Railway deployments, but both of the 2026-11-10 evening pushes
+(21:43 and 21:48) came back `REMOVED` and the live build stayed at `84eff0b` while `origin/web`
+moved through `6a74a49` to `27aa2fb`. `/api/version` is the check that matters: it reads
+`build.json`, so it names the commit actually serving, and it did not move for a push.
+
+What worked, and is now the deploy lane: `railway up -y -d --service openchq-web` from the repo
+root, after `railway status` confirms the project link. That shipped `27aa2fb`/`3e2eba3` in about
+90 seconds. Treat a push as "code is in the branch", never as "code is live"; confirm with
+`curl -s https://openchq-web-production.up.railway.app/api/version`.
+
 ## First deploy, in order (what actually worked)
 
 1. `railway init --name OpenCHQ --json`
