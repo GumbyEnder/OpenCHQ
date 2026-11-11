@@ -6,7 +6,8 @@ The game we are building runs in a web browser. A Node server keeps the accounts
 
 ## The match
 
-One room has two sides, Blue and Red. The side that holds both capitals wins. Washington is Blue. Moscow is Red. A third person is another room, a spectator, or a partner on a side that already exists.
+One room has two sides, Blue and Red. The side that holds every capital of the era's set wins
+(three in 1918, six in 1942, four in 1986, two in a rolled era); two fixed seats is not the rule. Washington is Blue. Moscow is Red. A third person is another room, a spectator, or a partner on a side that already exists.
 
 A player registers, signs in, and either:
 

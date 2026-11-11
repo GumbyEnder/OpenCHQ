@@ -274,9 +274,9 @@
         "tick",
         "pieces"
       ],
-      "title": "Hold both capitals",
-      "work": "The match ends when one side owns both capitals. Further ticks do not move pieces, pay income, or burn fuel. The room tells both seats who won.",
-      "prove": "The harness gives one side both capitals, ticks, and sees the winner and a frozen board on the next tick. WEB_OK."
+      "title": "Hold the era's capital set",
+      "work": "The match ends when one side owns every capital of the era's set (1918 three, 1942 six, 1986 four, a rolled era two). Further ticks do not move pieces, pay income, or burn fuel. The room tells both seats who won.",
+      "prove": "The harness gives one side every capital in the set, ticks, and sees the winner and a frozen board on the next tick; one seat short stays undecided. WEB_OK."
     },
     {
       "id": "load_test",

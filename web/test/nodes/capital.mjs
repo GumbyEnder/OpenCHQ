@@ -1,4 +1,5 @@
-// The endgame, engine-side: a capital can be taken, and taking both ends the match.
+// The endgame, engine-side: a capital can be taken, and taking the era's whole capital set
+// ends the match (B-3b). A pair is not the rule - 1918 has three seats, 1942 six, 1986 four.
 //
 // A thousand played rounds ended with 162 cities against 69 and no winner, so the win path has to
 // be proven directly: put an enemy piece next to a capital, order it in, tick, and read the result.
@@ -59,11 +60,30 @@ export async function run() {
   if (!capitalSite) fail("no capital site sits on the red capital cell");
   if (capitalSite.owner !== "blue") fail("the blue piece stands on the red capital and it is not blue's: owner=" + capitalSite.owner);
 
-  // And the win: both capitals held by blue.
+  // And the win: the era's WHOLE set, not two fixed seats. 1986's four capitals are London,
+  // Tokyo, Washington and Moscow; the file hands three of them to blue and the capture above took
+  // the fourth, so all four carry blue and the match is won. Prove the boundary too: put one of the
+  // four back in red's hands and checkWin must return null, or the check is still reading a pair.
   const winSite = match.sites.find((site) => site.x === blue.x && site.y === blue.y && site.kind === "capital");
   if (winSite) winSite.owner = "blue";
+  const set = (match.capitalSet && match.capitalSet.list) || [];
+  if (set.length !== 4) fail("1986's capital set is " + set.length + ", expected four");
+  // The same join the win check makes: holderOf reads the site record by id, so read it that way
+  // here. Two of 1986's four set entries sit on sites of kind "city" (London id 10, Tokyo id 35),
+  // so a lookup keyed on kind === "capital" finds nothing and would report them as unheld.
+  const siteOf = (capital) => match.sites.find((site) => Number(site.id) === Number(capital.siteId));
+  const owners = set.map((capital) => { const site = siteOf(capital); return site ? site.owner : "NO-SITE"; });
+  if (!owners.every((owner) => owner === "blue")) fail("blue does not hold all four of 1986's capitals: " + JSON.stringify(owners));
   const winner = checkWin(match);
-  if (winner !== "blue") fail("holding both capitals did not win: " + winner);
+  if (winner !== "blue") fail("holding all four capitals did not win: " + winner);
+  const london = set.find((capital) => capital.name !== "Moscow");
+  if (!london) fail("no second blue capital to take back off the set");
+  const londonSite = siteOf(london);
+  const keptOwner = londonSite.owner;
+  londonSite.owner = "red";
+  if (checkWin(match) !== null) fail("three of 1986's four capitals won the match - the check still reads a pair");
+  londonSite.owner = keptOwner;
+  if (checkWin(match) !== "blue") fail("restoring the fourth capital did not restore the win");
 
   // A ship does not hold a capital. A played match once ended at round 27 because a destroyer
   // sailed onto Moscow and the win check counted it.
@@ -97,7 +117,7 @@ export async function run() {
 
   return [
     "a capital is taken by standing on it",
-    "holding both capitals is the win",
+    "holding the era's whole capital set is the win, and one seat short is not",
     "a ship does not hold a capital",
     "enemy troops near a capital raise an alarm once",
   ];
