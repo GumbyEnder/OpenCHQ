@@ -275,10 +275,11 @@ not counted when that number was written. A run that reports five has a partial 
 
 Command caveat (measured 2026-11-11): `env -u OPENCHQ_DATA node web/test/run.mjs` on a dev
 checkout still prints 57/0/0, because `web/test/env.mjs` falls back to `local/data_root.txt`, which
-is gitignored but present on every working copy. To reproduce the 8-skip run, use a tree with no
-`local/` — e.g. `git archive <head> | tar -x -C /tmp/noextract` and run the suite there — or move
-`local/data_root.txt` aside first. A bare `env -u` is not enough, and the suite is not wrong when
-it reports 57.
+is gitignored and present in every *clone*, but not in a git worktree: `local/` is in no ref, so a
+worktree neither carries it nor shares it with the clone. Say "clone" when quoting these numbers.
+To reproduce the 8-skip run, use a tree with no `local/` — e.g. `git archive <head> | tar -x -C
+/tmp/noextract` and run the suite there — or move `local/data_root.txt` aside first. A bare
+`env -u` is not enough, and the suite is not wrong when it reports 57.
 
 Four legs re-run at `6a74a49` (buzzy, 2026-11-11) — the correct reading of A1's two lines:
 
