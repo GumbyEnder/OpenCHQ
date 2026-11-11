@@ -77,9 +77,12 @@ export async function run(ctx) {
   // Ask for the whole room and count the unit. It must be exactly one.
   second.send({ op: "sync" });
   const whole = await second.wait((m) => m.op === "room" && m.room && m.room.id === roomId, "sync room");
+  // T-007 AC9 gives the opening force real kinds, so the board already carries the era's infantry
+  // before the purchase: the count that matters is the one this buy added.
   const infantry = (whole.room.pieces || []).filter((piece) => piece.kind === "infantry");
-  if (infantry.length !== 1) {
-    fail("a buy sent across a drop is on the board " + infantry.length + " time(s), expected 1");
+  const openingInfantry = 1; // every pre-2023 era opens with its infantry on the capital
+  if (infantry.length !== openingInfantry + 1) {
+    fail("a buy sent across a drop is on the board " + (infantry.length - openingInfantry) + " time(s), expected 1");
   }
 
   // An order is idempotent the same way: two copies of one id give one path.

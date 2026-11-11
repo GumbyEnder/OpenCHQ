@@ -7,7 +7,7 @@
 
 import { priceOf, rosterFor, rules } from "./rules.mjs";
 
-const DOMAIN_BY_KIND = Object.freeze({
+export const DOMAIN_BY_KIND = Object.freeze({
   infantry: "land",
   tank: "land",
   aircraft: "land",

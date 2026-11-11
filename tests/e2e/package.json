@@ -1,0 +1,13 @@
+{
+  "name": "openchq-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Playwright end-to-end suite for OpenCHQ. Stands alone: the game itself has no npm dependencies.",
+  "scripts": {
+    "test": "node run.mjs",
+    "live": "node run.mjs --url=https://openchq-web-production.up.railway.app"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

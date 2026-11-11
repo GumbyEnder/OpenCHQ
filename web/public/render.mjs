@@ -680,34 +680,57 @@ export function paintPreview(ctx, preview, view, opts = {}) {
   const path = Array.isArray(preview.path) ? preview.path : [];
   const to = preview.to || (path.length ? path[path.length - 1] : null);
   const ink = preview.error ? PIECE_INK.enemy : ROUTE_INK;
-  ctx.strokeStyle = ink;
-  ctx.lineWidth = Math.max(1, v.scale * 0.7);
+  // Two passes: a dark casing under a bright line. At the whole-world fit a one-pixel hairline in
+  // gold over pale terrain read as nothing at all (T-007 AC10), and the route a player is about to
+  // send is the one thing on the map that must be legible.
+  const width = Math.max(2, v.scale * 1.1);
 
   let started = false;
-  ctx.beginPath();
-  const from = preview.from;
-  if (from && Number.isFinite(Number(from.x)) && Number.isFinite(Number(from.y))) {
-    const at = cellToPixel(wrapX(from.x, v.boardW), Number(from.y), v);
-    ctx.moveTo(at.x, at.y);
-    started = true;
-  }
-  for (const step of path) {
-    if (!step || !Number.isFinite(Number(step.x)) || !Number.isFinite(Number(step.y))) continue;
-    const at = cellToPixel(wrapX(step.x, v.boardW), Number(step.y), v);
-    if (!started) {
+  const trace = () => {
+    started = false;
+    ctx.beginPath();
+    const from = preview.from;
+    if (from && Number.isFinite(Number(from.x)) && Number.isFinite(Number(from.y))) {
+      const at = cellToPixel(wrapX(from.x, v.boardW), Number(from.y), v);
       ctx.moveTo(at.x, at.y);
       started = true;
-    } else {
-      ctx.lineTo(at.x, at.y);
     }
-  }
-  if (started) ctx.stroke();
+    for (const step of path) {
+      if (!step || !Number.isFinite(Number(step.x)) || !Number.isFinite(Number(step.y))) continue;
+      const at = cellToPixel(wrapX(step.x, v.boardW), Number(step.y), v);
+      if (!started) {
+        ctx.moveTo(at.x, at.y);
+        started = true;
+      } else {
+        ctx.lineTo(at.x, at.y);
+      }
+    }
+    if (started) ctx.stroke();
+  };
+
+  // The casing first, then the bright line over it.
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+  ctx.lineWidth = width + 2;
+  trace();
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = width;
+  trace();
 
   if (to && Number.isFinite(Number(to.x)) && Number.isFinite(Number(to.y))) {
+    // The end marker: a filled diamond on a dark ring, so "this is where the order lands" is not a
+    // hairline square nobody can see.
     const at = cellToPixel(wrapX(to.x, v.boardW), Number(to.y), v);
-    const r = Math.max(2, v.scale * 2);
+    const r = Math.max(3, v.scale * 1.6);
     ctx.beginPath();
-    ctx.rect(at.x - r, at.y - r, r * 2, r * 2);
+    ctx.moveTo(at.x, at.y - r);
+    ctx.lineTo(at.x + r, at.y);
+    ctx.lineTo(at.x, at.y + r);
+    ctx.lineTo(at.x - r, at.y);
+    ctx.closePath();
+    ctx.fillStyle = ink;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, width * 0.5);
+    ctx.strokeStyle = "#0b0f14";
     ctx.stroke();
   }
   return path.length;

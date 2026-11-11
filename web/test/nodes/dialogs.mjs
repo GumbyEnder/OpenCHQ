@@ -89,18 +89,22 @@ export async function run(ctx) {
   const empty = buyRows({ shop: room.shop, pieces: [], sites: [], seat: { side: "red", cash: 0 } });
   eq("no pieces means zero held and zero seen", empty.map((row) => [row.own, row.known]).flat(), [0, 0, 0, 0, 0, 0, 0, 0]);
 
-  // The opening force has no recovered order of battle, and the table says so rather than pretending
-  // two untyped armies are zero infantry.
+  // T-007 AC9: the opening force carries the era's own first land and first sea unit, so the Buy
+  // panel counts it instead of saying "two opening units have no recorded type". A saved room from
+  // before this still reports its untyped pieces, which is what the counter stays for.
   eq("typed own pieces are not counted as untyped", untypedCount(room), 0);
-  eq("opening pieces are counted as untyped", untypedCount({
+  eq("a pre-T-007 save is still counted as untyped", untypedCount({
     you: "blue",
     pieces: [{ side: "blue", kind: null }, { side: "blue", kind: null }, { side: "red", kind: null }],
     seat: { side: "blue" },
   }), 2);
   const opening = openMatch("1986", matchSites("1986"));
-  if (untypedCount({ you: "blue", pieces: opening.pieces, seat: { side: "blue" } }) <= 0) {
-    fail("the 1986 opening force is no longer untyped: the dialogue note never fires");
-  }
+  eq("the 1986 opening force is typed", untypedCount({ you: "blue", pieces: opening.pieces, seat: { side: "blue" } }), 0);
+  const openingKinds = opening.pieces.filter((piece) => piece.side === "blue").map((piece) => piece.kind).sort();
+  const roster = ctx.config.rosters["1986"];
+  const firstSea = roster.find((kind) => ["cruiser", "carrier", "submarine"].includes(kind));
+  eq("the opening land piece is the era's first land unit and the sea piece its first hull",
+    openingKinds, ["infantry", firstSea].sort());
 
   // --- the economy dialogue -------------------------------------------------
   const model = economyModel(room);

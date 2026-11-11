@@ -1,7 +1,8 @@
 import {
-  capitalMarkers, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch, panBy,
-  paintPlacement, rememberSeen, sightTable, statusLine, zoomAt,
+  capitalMarkers, cellToPixel, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch,
+  panBy, pixelToCell, paintPlacement, rememberSeen, sightTable, statusLine, wrapX, zoomAt,
 } from "./render.mjs";
+import { unitLabel } from "./units.mjs";
 import {
   PICK_HINT,
   ackText,
@@ -47,6 +48,9 @@ let socket = null;
 let reconnectTimer = null;
 let reconnectTries = 0;
 let wasReconnecting = false;
+// The server said it is restarting (op "bye", sent by the drain on SIGTERM). The next close is
+// expected and is retried immediately rather than treated as a dead network.
+let serverRestarting = false;
 const RECONNECT_TRIES = 8;
 // The server's "another tab took this session" close code. This page does not reconnect after
 // it: two tabs trading one socket is a toast loop, not a connection.
@@ -143,12 +147,26 @@ async function post(url, body) {
   return data;
 }
 
+// A request sent before the socket is up is kept, not refused. The page connects after /api/me
+// answers, so a player who clicks "Play a bot" the instant the lobby paints used to get
+// "The lobby is not connected" and had to click again (T-007 AC4). The queue is short on purpose:
+// it holds what a person can press in the second before the socket opens, never a backlog.
+let outbox = [];
 function send(message) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    say("The lobby is not connected.");
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(message));
     return;
   }
-  socket.send(JSON.stringify(message));
+  outbox.push(message);
+  if (outbox.length > 20) outbox.shift();
+  say("Connecting to the lobby - your request is queued and will be sent as soon as it answers.");
+}
+
+function flushOutbox() {
+  if (!outbox.length || !socket || socket.readyState !== WebSocket.OPEN) return;
+  const queued = outbox;
+  outbox = [];
+  for (const message of queued) socket.send(JSON.stringify(message));
 }
 
 // Canvas is sized to whole cells: 320x136 at scale 2 is 640x272. The camera zooms and pans on
@@ -252,9 +270,10 @@ function viewForCanvas() {
   return camera;
 }
 
-// Follow: the selected piece stays in the middle as the clock runs. Without it, a zoomed view
-// walks off the piece every time it steps.
-let following = true;
+// Follow: the selected piece stays in the middle as the clock runs. It is OFF by default and only
+// ever runs when the player armed it with the Follow button: a camera that moves because a unit was
+// selected, or because a placement is pending, is the camera fighting the player (T-007 AC10).
+let following = false;
 
 // Terrain is the original's map; political is the same map with each city coloured by whoever holds
 // it. The toggle only changes what is drawn on top, never the camera or the board.
@@ -292,6 +311,7 @@ function zoomStep(factor) {
 function setFollow(on) {
   following = Boolean(on);
   const button = document.getElementById("camFollow");
+  if (button) button.setAttribute("aria-pressed", following ? "true" : "false");
   if (button) button.classList.toggle("armed", following);
   drawMatch();
 }
@@ -452,7 +472,8 @@ function drawMatch() {
   let view = viewForCanvas();
   // Follow the selected piece: a zoomed view that leaves the piece behind is a worse camera than
   // no zoom at all.
-  if (following && selected) {
+  // Never while a placement is pending: the cell the player is aiming at must not slide away.
+  if (following && selected && !buying && !placement) {
     camera = centerOn(selected, view);
     view = camera;
   }
@@ -573,9 +594,8 @@ board.addEventListener("click", (event) => {
     selected = mine;
     preview = null;
     hoverKey = mine.id + ":" + mine.x + "," + mine.y;
-    // At the whole-world fit there is nothing to centre; once the player has zoomed, selecting a
-    // piece brings it into the middle.
-    if (userCamera) camera = centerOn(mine, viewForCanvas());
+    // Selecting a piece does not move the camera. It used to centre a zoomed view on the piece,
+    // which read as the map jumping under the click that made the selection (T-007 AC10).
     say(PICK_HINT + " Then pick a destination.");
     drawMatch();
     return;
@@ -843,6 +863,7 @@ function renderRoom() {
     renderDebug();
   }
   if (room && room.over) sayResult(room);
+  syncPauseBanner(room);
   roomBox.className = room ? "" : "room-empty";
   roomBox.textContent = "";
   if (!room) {
@@ -1047,6 +1068,24 @@ function showPlay(on) {
   syncShell();
 }
 
+// The page starts in a "checking your session" state instead of painting the sign-in form and
+// swapping it out when /api/me answers (T-007 AC5): the flash of the gate read as being signed
+// out mid-match. `body.booting` hides the gate, the lobby and the build stamp; the stylesheet
+// draws the waiting line.
+function bootDone() {
+  document.body.classList.remove("booting");
+}
+
+// A match whose clock is not running is paused, and a reloaded page must say so rather than look
+// frozen (T-007 AC11). The banner follows every room frame: Play hides it, Pause brings it back.
+function syncPauseBanner(room) {
+  const banner = document.getElementById("pauseBanner");
+  if (!banner) return;
+  const paused = Boolean(room) && !room.over && String(room.clock || "") !== "running";
+  banner.textContent = paused ? "Paused - press Play to resume" : "";
+  banner.classList.toggle("hidden", !paused);
+}
+
 // ---- the debug window ----------------------------------------------------
 // Top right, closed by default, and opened by a button that is always there. It reports what the
 // page has actually been told - the socket's state, the board's provenance, the room's own fields -
@@ -1201,7 +1240,9 @@ const DIALOG_PAINTERS = {
       icon.className = "uniticon";
       icon.alt = "";
       icon.src = glyphDataUrl(row.kind, "#bfe3ff");
-      name.append(icon, document.createTextNode(row.kind));
+      // The row names the unit the way the sentence that follows a purchase names it (T-007 AC7).
+      name.append(icon, document.createTextNode(unitLabel(row.kind)));
+      line.dataset.kind = row.kind;
       line.append(name, cell(String(row.own)), cell(String(row.known)),
         cell(row.price === null ? "—" : formatBillions(row.price) + "b"));
       if (row.refused) {
@@ -1477,6 +1518,9 @@ function connect() {
     const message = JSON.parse(event.data);
     noteWire(wireLabel(message));
     if (message.op === "welcome") {
+      serverRestarting = false;
+      // The session check is over: the lobby is behind us, so the "checking" state goes away.
+      bootDone();
       if (wasReconnecting) {
         // Say it once, then let the board talk: nothing is worse than a stale "reconnecting".
         wasReconnecting = false;
@@ -1492,13 +1536,17 @@ function connect() {
       renderRoom();
       drawMatch();
       flushOrders();
+      flushOutbox();
     } else if (message.op === "replaced") {
       // The server handed this session's socket to another tab. Say it once and stand down:
       // reconnecting from here would take the socket back and start the ping-pong again.
       standDown(message.reason);
     } else if (message.op === "bye") {
-      // The server is going away on purpose: say so, and keep the room on screen.
-      say(message.reason || "The server is restarting.");
+      // The server is going away on purpose (a deploy drains its sockets). That is not a lost
+      // connection, and it must not turn into one: the close that follows is expected, so it is
+      // answered with an immediate reconnect instead of the backoff meant for a dead network.
+      serverRestarting = true;
+      say(message.reason || "The server is restarting. Your match is saved; this page reconnects by itself.");
     } else if (message.op === "presence") {
       users = message.users || [];
       renderPeople();
@@ -1609,6 +1657,21 @@ function connect() {
       say("Lobby connection closed. Reload the page to rejoin.");
       return;
     }
+    // A deploy told us it was leaving (op "bye"): retry at once, without the network backoff and
+    // without the "Connection lost" sentence, because nothing was lost. Before this the drain's
+    // own message was overwritten 400 ms later by "Connection lost. Reconnecting…" and the page
+    // waited up to 15 s while the new container booted (T-007 AC3(a)).
+    if (serverRestarting) {
+      wasReconnecting = true;
+      say("The server is restarting. Reconnecting…");
+      if (!reconnectTimer) {
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connect();
+        }, 250);
+      }
+      return;
+    }
     reconnectTries += 1;
     wasReconnecting = true;
     // Backoff 0.5, 1, 2, 4, 8, then 15 s and no higher. One toast: a cycle of toasts is noise,
@@ -1624,6 +1687,7 @@ function connect() {
     reconnectTries = 0;
     socketState = "open";
     renderDebug();
+    flushOutbox();
   });
 }
 
@@ -1736,14 +1800,87 @@ fetch("/api/version")
   .then((data) => {
     const line = document.getElementById("buildCommit");
     if (!line) return;
-    line.textContent = "build " + (data.short || "unknown");
-    line.title = String(data.commit || "");
+    // Hidden while booting and empty until the answer: "build unknown" on the way in was the
+    // second half of the reload flash (T-007 AC5).
+    line.textContent = data && data.short ? "build " + data.short : "";
+    line.title = String((data && data.commit) || "");
   })
   .catch(() => {});
 
-fetch("/api/me", { credentials: "same-origin" })
-  .then((res) => res.json())
-  .then((data) => {
-    if (data.user) connect();
-  })
-  .catch(() => {});
+// The session check decides what the page is: a signed-in lobby or the sign-in form. Until it
+// answers the page stays in its "checking" state, so neither flashes (T-007 AC5).
+function startSession() {
+  fetch("/api/me", { credentials: "same-origin", cache: "no-store" })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && data.user) {
+        connect();
+        return;
+      }
+      showPlay(false);
+      bootDone();
+    })
+    .catch(() => {
+      // A server that cannot answer is not a signed-in session: show the form.
+      showPlay(false);
+      bootDone();
+    });
+}
+startSession();
+
+// ---- the E2E hook ---------------------------------------------------------
+// The Playwright suite drives this page like a player: it clicks the lobby, the Buy rows and the
+// canvas. Two things it cannot guess are where a cell is on screen and which cells the server has
+// said a purchase may stand on, so the page answers those from its own camera and its own mask.
+// Nothing here changes a rule or a state; every action still goes through the same send() path a
+// click uses.
+window.__chq = {
+  me: () => me,
+  users: () => users.slice(),
+  room: () => room,
+  socketState: () => socketState,
+  toast: () => flash.textContent || "",
+  outbox: () => outbox.length,
+  wire: () => wireLog.slice(),
+  board: () => boardPayload,
+  log: () => roundLog.slice(),
+  state: () => ({
+    buying,
+    selected: selected ? selected.id : null,
+    placement: Boolean(placement),
+    following,
+    camera: camera ? { scale: camera.scale, left: camera.left, top: camera.top } : null,
+  }),
+  cellToScreen(x, y) {
+    const view = viewForCanvas();
+    const rect = board.getBoundingClientRect();
+    const px = cellToPixel(wrapX(Number(x), view.boardW), Number(y), view);
+    const ratio = board.width / Math.max(1, rect.width);
+    return { x: rect.left + px.x / ratio, y: rect.top + px.y / ratio };
+  },
+  screenToCell(x, y) {
+    const view = viewForCanvas();
+    const rect = board.getBoundingClientRect();
+    const ratio = board.width / Math.max(1, rect.width);
+    return pixelToCell((Number(x) - rect.left) * ratio, (Number(y) - rect.top) * ratio, view);
+  },
+  // The cells the server's own placement mask allows, as a list. `placement.mask` is already a
+  // Uint8Array here (the socket's base64 is decoded on arrival), so index it directly.
+  legalCells(limit = 200) {
+    if (!placement || !placement.mask) return [];
+    const mask = placement.mask;
+    const width = Number(placement.width) || 320;
+    const out = [];
+    for (let i = 0; i < mask.length && out.length < limit; i++) {
+      if (!mask[i]) continue;
+      out.push({ x: i % width, y: Math.floor(i / width) });
+    }
+    return out;
+  },
+  // Kill the lobby socket the way a dead network would, so the suite can prove a Play clicked while
+  // it is down is queued. The page reconnects on its own, exactly as it does after a real drop.
+  dropSocket() {
+    if (socket) socket.close();
+  },
+  send: (message) => send(message),
+};

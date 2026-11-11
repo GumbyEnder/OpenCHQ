@@ -23,7 +23,7 @@ export async function run(ctx) {
   if (/Pool 0\.3b/.test(submarine)) fail("the pool is still printed with a fraction: " + submarine);
 
   const infantry = purchaseText("infantry", { x: 80, y: 45 }, 12000);
-  if (infantry !== "Bought an infantry section at 80,45. Pool 12b.") {
+  if (infantry !== "Bought an infantry at 80,45. Pool 12b.") {
     fail("infantry purchase line: " + JSON.stringify(infantry));
   }
 
@@ -42,7 +42,7 @@ export async function run(ctx) {
     if (/\ba [aeiou]/i.test(line)) fail("wrong article for " + kind + ": " + line);
     if (!/ Pool \d+b\.$/.test(line)) fail("pool is not whole billions for " + kind + ": " + line);
   }
-  if (articleFor("infantry section") !== "an") fail("article for a collective noun");
+  if (articleFor("infantry") !== "an") fail("article for infantry");
   if (articleFor("aircraft") !== "an") fail("article for aircraft");
 
   // No pool figure (a reply that carries none) still reads as a sentence.

@@ -10,6 +10,7 @@ import { boardPayload, fontPayload } from "./board.mjs";
 import { handicapSpec, roundSeconds, startPool } from "./rules.mjs";
 import { createLobby } from "./lobby.mjs";
 import { acceptWebSocket } from "./ws.mjs";
+import { localName } from "./names.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(here, "..", "public");
@@ -158,10 +159,13 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/api/me") {
     const user = userForToken(tokenFrom(req));
+    // The page shows a display name, never the handle it signed in with: a handle may be an email
+    // address (T-007 AC1). The account row keeps the real one.
+    const shown = user ? { id: user.id, username: localName(user.username) } : null;
     // A returning page keeps its session; refresh the cookie's clock so a long-lived tab does
     // not fall off the end of Max-Age mid-match. The value never changes.
     const extra = user ? { "set-cookie": cookie(req, tokenFrom(req), 60 * 60 * 24 * 14) } : {};
-    send(res, 200, { user }, extra);
+    send(res, 200, { user: shown }, extra);
     return;
   }
   // The font atlas is the original's art, so it follows the board's rule: served where the
