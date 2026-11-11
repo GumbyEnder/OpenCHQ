@@ -26,7 +26,11 @@ export async function run() {
   // ---- your own payday is yours to read, the enemy's is not -------------------------------
   const mine = logLines(match, "blue", [{ type: "income", side: "blue", amount: 4, cities: 6 }], 25);
   must(mine.length === 1 && mine[0].round === 25, "an income event must produce one line at its round");
-  must(/paid 4/.test(mine[0].text), "the amount must be the one the economy paid: " + mine[0].text);
+  must(/paid 0\.004b/.test(mine[0].text), "the amount must be the one the economy paid, in billions: " + mine[0].text);
+  // The pool's own display is billions (Manual p.27), so the log's money is billions too: 650
+  // million millions read as 0.65b, not as a bare 650 (T-007 AC8).
+  const payday = logLines(match, "blue", [{ type: "income", side: "blue", amount: 650, cities: 13 }], 26);
+  must(/paid 0\.65b from 13 cities/.test(payday[0].text), "a payday must read in billions with its unit: " + payday[0].text);
   must(/6 cities/.test(mine[0].text), "the city count must be the one the economy counted: " + mine[0].text);
 
   const theirs = logLines(match, "blue", [{ type: "income", side: "red", amount: 9, cities: 9 }], 25);

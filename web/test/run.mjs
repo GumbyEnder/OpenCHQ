@@ -529,7 +529,7 @@ async function main() {
   const nukeRow = shop.find((entry) => entry.kind === "nuke");
   if (!nukeRow || !nukeRow.refused) fail("the shop does not refuse a nuke: " + JSON.stringify(nukeRow));
   if (!shopLabel(nukeRow).includes(nukeRow.refused)) fail("a refused row does not say why: " + shopLabel(nukeRow));
-  if (shopLabel(infantry) !== "infantry " + (Number(infantry.price) / 1000) + "b") fail("a shop row does not name its price: " + shopLabel(infantry));
+  if (shopLabel(infantry) !== "Infantry " + (Number(infantry.price) / 1000) + "b") fail("a shop row does not name its price: " + shopLabel(infantry));
   if (!shopDisabled(infantry, Number(infantry.price) - 1)) fail("a row the seat cannot pay for is enabled");
   if (shopDisabled(infantry, Number(infantry.price))) fail("a row the seat can pay for is disabled");
   if (!shopDisabled(nukeRow, 1000000)) fail("a refused row is enabled with any pool");

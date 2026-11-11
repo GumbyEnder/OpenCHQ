@@ -69,6 +69,12 @@ function recorder() {
     lineTo(x, y) {
       ops.push({ op: "lineTo", x, y });
     },
+    closePath() {
+      ops.push({ op: "close" });
+    },
+    fill() {
+      ops.push({ op: "fill", color: this.fillStyle });
+    },
     rect(x, y, w, h) {
       ops.push({ op: "rect", x, y, w, h, color: this._stroke });
     },
@@ -202,7 +208,9 @@ export async function run(ctx) {
   const steps = paintPreview(drawn.ctx, { from: BLUE_CAPITAL, to: BLUE_STEP, path: plan.path, rounds: plan.rounds }, view);
   eq(fail, "the preview returns its step count", steps, plan.path.length);
   ok(fail, "the preview draws a line", drawn.ops.some((op) => op.op === "lineTo"));
-  ok(fail, "the preview marks the destination", drawn.ops.some((op) => op.op === "rect"));
+  // T-007 AC10 replaced the hairline square with a filled diamond on a dark ring, so the marker is
+  // a close+fill, not a rect: what the check cares about is that the destination is drawn.
+  ok(fail, "the preview marks the destination", drawn.ops.some((op) => op.op === "rect" || op.op === "fill"));
 
   // ---- 4. a real socket: hover, order, ack, refusal -------------------------------------
   const player = await ctx.register("OrdWire");

@@ -8,7 +8,8 @@
 // SEA_BLUE, SEA_RED) - positions, not combat or economy figures.
 
 import { SEATS } from "./board.mjs";
-import { handicapDefault, opponentPool, roundSeconds, startPool } from "./rules.mjs";
+import { handicapDefault, opponentPool, rosterFor, roundSeconds, startPool } from "./rules.mjs";
+import { DOMAIN_BY_KIND } from "./shop.mjs";
 
 export const ERAS = ["1918", "1942", "1986", "2023", "9999"];
 
@@ -23,19 +24,31 @@ export function eraOf(value) {
   return ERAS.includes(era) ? era : "1986";
 }
 
-function piece(side, domain, x, y) {
-  return { id: `${side}:${domain}`, side, domain, kind: null, x, y, path: [], pace: 1, facing: null, fighting: null, shots: 0 };
+function piece(side, domain, x, y, kind = null) {
+  return { id: `${side}:${domain}`, side, domain, kind, x, y, path: [], pace: 1, facing: null, fighting: null, shots: 0 };
+}
+
+// The opening force used to carry `kind: null`, so the Buy panel said "two opening units have no
+// recorded type" (T-007 AC9). The archive's order of battle was never recovered, but the roster
+// was: an era's first land unit and first sea unit are the honest names for the piece the setup
+// puts on each capital and at sea, and they are the era's own names, not invented ones.
+function openingKinds(era) {
+  const roster = rosterFor(era) || [];
+  const firstOf = (domain, fallback) =>
+    roster.find((kind) => DOMAIN_BY_KIND[kind] === domain) || fallback;
+  return { land: firstOf("land", "infantry"), sea: firstOf("sea", "cruiser") };
 }
 
 // Opening pieces for one era. 2023 places none; every other era places a land piece on
 // each capital and a ship at sea.
 export function openingPieces(era) {
   if (eraOf(era) === "2023") return [];
+  const kinds = openingKinds(eraOf(era));
   return [
-    piece("blue", "land", SEATS.blue.x, SEATS.blue.y),
-    piece("blue", "sea", SEAS.blue.x, SEAS.blue.y),
-    piece("red", "land", SEATS.red.x, SEATS.red.y),
-    piece("red", "sea", SEAS.red.x, SEAS.red.y),
+    piece("blue", "land", SEATS.blue.x, SEATS.blue.y, kinds.land),
+    piece("blue", "sea", SEAS.blue.x, SEAS.blue.y, kinds.sea),
+    piece("red", "land", SEATS.red.x, SEATS.red.y, kinds.land),
+    piece("red", "sea", SEAS.red.x, SEAS.red.y, kinds.sea),
   ];
 }
 

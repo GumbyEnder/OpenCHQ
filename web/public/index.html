@@ -6,7 +6,7 @@
   <title>OpenCHQ</title>
   <link rel="stylesheet" href="/app.css">
 </head>
-<body>
+<body class="booting">
   <!-- Before a match this is the page's masthead. Once a match is up the same element becomes the
        one-row strip at the top of the screen (see body.in-match in app.css): the lobby goes away
        and the map takes the whole window. -->
@@ -125,10 +125,11 @@
             <button type="button" id="camIn" title="Zoom in (+)">+</button>
             <button type="button" id="camFit" title="Whole map (0)">Fit</button>
             <button type="button" id="viewToggle" title="Terrain or who holds what (P)">Political</button>
-            <button type="button" id="camFollow" class="armed" title="Follow the selected piece (F)">Follow</button>
+            <button type="button" id="camFollow" title="Follow the selected piece (F)">Follow</button>
             <span id="camNote" class="fine"></span>
           </div>
         </div>
+        <p id="pauseBanner" class="pausebanner hidden" role="status">Paused - press Play to resume</p>
         <p id="alarm" class="alarm hidden" role="alert"></p>
         <div id="mapStage" class="mapstage">
           <canvas id="board" width="960" height="600"></canvas>
@@ -146,9 +147,14 @@
       </section>
     </section>
   </main>
+  <!-- The session check. The page starts here, not on the sign-in form: a returning player saw the
+       gate flash for a moment on every reload (T-007 AC5). -->
+  <div id="boot" class="boot" role="status" aria-live="polite">
+    <p class="bootline">Checking your session…</p>
+  </div>
   <p id="flash" class="flash" role="status"></p>
   <footer id="buildFooter" class="buildfooter">
-    <span id="buildCommit">build unknown</span>
+    <span id="buildCommit"></span>
   </footer>
   <script type="module" src="/app.js"></script>
 </body>

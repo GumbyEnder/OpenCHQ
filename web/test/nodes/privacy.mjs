@@ -65,9 +65,14 @@ export async function run(ctx) {
     // Presence: three accounts, three distinct display names, no address among them.
     const presence = seen().filter((m) => m.op === "presence").pop();
     if (!presence) fail("no presence frame after three sign-ins: " + JSON.stringify(seen().map((m) => m.op)));
-    const shown = presence.users.map((user) => user.username).sort();
-    if (shown.join("|") !== "alpha.probe|beta|beta 2") {
-      fail("the lobby list must show display names, got: " + shown.join("|"));
+    const shown = presence.users.map((user) => user.username);
+    // The suite shares one server, so other nodes' accounts may be online too. What this asserts is
+    // that our three are there, told apart, and that none of the rows is an address.
+    for (const wanted of ["alpha.probe", "beta", "beta 2"]) {
+      if (!shown.includes(wanted)) fail("the lobby list is missing " + wanted + ": " + shown.join("|"));
+    }
+    if (shown.some((name) => looksLikeEmail(name)) || shown.some((name) => /@/.test(name))) {
+      fail("the lobby list carries an address: " + shown.join("|"));
     }
 
     // An invite addressed by display name reaches the right account, and the frame it carries

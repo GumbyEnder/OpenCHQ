@@ -316,6 +316,46 @@ button.ghost {
    stayed visible after sign-in without this. */
 .hidden { display: none !important; }
 
+/* ---- the session check -------------------------------------------------- */
+
+/* Until /api/me answers, the page is neither the gate nor the lobby: it is a waiting line. The
+   alternatives to this were a flash of the sign-in form and a "build unknown" stamp, which is
+   exactly what a reloaded mid-match page showed (T-007 AC5). */
+.boot {
+  display: none;
+  margin: 18vh auto 0;
+  max-width: 420px;
+  text-align: center;
+  color: #cfd6dd;
+}
+
+body.booting .boot {
+  display: block;
+}
+
+body.booting #gate,
+body.booting #play {
+  display: none !important;
+}
+
+body.booting .buildfooter {
+  visibility: hidden;
+}
+
+#buildCommit:empty {
+  display: none;
+}
+
+.pausebanner {
+  margin: 6px 0 0;
+  padding: 5px 10px;
+  border-left: 3px solid var(--gold);
+  background: #2a2418;
+  color: #f0e2bb;
+  font-size: 13px;
+  border-radius: 3px;
+}
+
 /* ---- the debug window, top right, closed by default ---------------------- */
 
 .debugtoggle {

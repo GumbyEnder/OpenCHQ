@@ -6,6 +6,7 @@
 // what an order would cost, send it, and be told plainly when the server refuses it.
 
 import { pixelToCell, wrapX } from "./render.mjs";
+import { articleFor, unitLabel, unitPhrase } from "./units.mjs";
 
 export const PICK_HINT = "Select one of your pieces.";
 export const REFUSED = "The order was refused.";
@@ -34,18 +35,10 @@ export function formatWholeBillions(millions) {
   return String(Math.trunc(value / MILLIONS_PER_BILLION));
 }
 
-// The noun a purchase is announced with. A bare kind reads wrong for a collective: nobody buys
-// "an infantry". The article follows the noun's first sound, and an explicit table beats a
-// heuristic for the kinds whose spelling lies (intelScan, reconSat).
-const PURCHASE_NOUNS = { infantry: "infantry section" };
-const AN_NOUNS = new Set(["infantry section", "aircraft", "intelScan", "escort"]);
-
-export function articleFor(noun) {
-  const word = String(noun || "").trim();
-  if (!word) return "a";
-  if (AN_NOUNS.has(word)) return "an";
-  return /^[aeiou]/i.test(word) ? "an" : "a";
-}
+// The article and the noun live in units.mjs, so the page and the server write one sentence with
+// one rule (T-007 AC7). This module re-exports the article so a caller that only has command.mjs
+// keeps working.
+export { articleFor } from "./units.mjs";
 
 // The one line a completed purchase shows. The pool is the server's cash in millions; T-001
 // prints money in billions, so a raw 300 read as "300" and looked like 300 billion. F3 fixed the
@@ -53,14 +46,14 @@ export function articleFor(noun) {
 // so this line reads `Pool 10b`, not `Pool 0.3b`. Under one billion it prints `0b`, which matches
 // the divide but is UNVERIFIED against a capture.
 export function purchaseText(kind, at, cash) {
-  const noun = PURCHASE_NOUNS[String(kind || "")] || String(kind || "unit");
+  const noun = unitPhrase(kind);
   const cellAt = cell(at);
   const where = cellAt ? " at " + cellAt.x + "," + cellAt.y : "";
   const value = Number(cash);
   const pool = cash !== null && cash !== undefined && Number.isFinite(value)
     ? " Pool " + formatWholeBillions(value) + "b."
     : "";
-  return "Bought " + articleFor(noun) + " " + noun + where + "." + pool;
+  return "Bought " + noun + where + "." + pool;
 }
 
 function cell(value) {
@@ -192,8 +185,9 @@ export function alarmText(alarm) {
 // why instead of pretending it can be bought.
 export function shopLabel(entry) {
   if (!entry || !entry.kind) return "";
-  if (entry.refused) return entry.kind + " - " + entry.refused;
-  return Number.isFinite(entry.price) ? entry.kind + " " + formatBillions(entry.price) + "b" : entry.kind;
+  const label = unitLabel(entry.kind);
+  if (entry.refused) return label + " - " + entry.refused;
+  return Number.isFinite(entry.price) ? label + " " + formatBillions(entry.price) + "b" : label;
 }
 
 export function shopDisabled(entry, cash) {

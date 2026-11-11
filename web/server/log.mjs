@@ -8,7 +8,8 @@
 // amount is whatever the economy paid.
 
 import { CELL_W } from "./board.mjs";
-import { payEvery, sightCells } from "./rules.mjs";
+import { millionsPerBillion, payEvery, sightCells } from "./rules.mjs";
+import { unitPhrase } from "../public/units.mjs";
 import { resourceSpec } from "./resources.mjs";
 import { forSeat } from "./view.mjs";
 
@@ -56,6 +57,17 @@ function siteOf(match, id) {
   return (match.sites || []).find((site) => site.id === id) || null;
 }
 
+// Money is integer millions inside the server and billions everywhere a player reads it (Manual
+// p.27). The round log used to print the raw millions - "paid 650" for a 0.65 billion payday - which
+// read as 650 billion beside a pool that shows 0.65b (T-007 AC8).
+function billionsText(millions) {
+  const value = Number(millions);
+  if (!Number.isFinite(value)) return "";
+  const per = Number(millionsPerBillion()) || 1000;
+  const text = (value / per).toFixed(3).replace(/\.?0+$/, "");
+  return (text === "" || text === "-0" ? "0" : text) + "b";
+}
+
 function amountOf(event) {
   const value = Number(event && event.amount);
   return Number.isFinite(value) ? value : null;
@@ -82,7 +94,7 @@ export function logLines(match, side, events, round) {
         const paid = amountOf(event);
         if (paid === null) break;
         const from = Number(event.cities) || 0;
-        push("paid " + paid + (from ? " from " + from + (from === 1 ? " city" : " cities") : ""));
+        push("paid " + billionsText(paid) + (from ? " from " + from + (from === 1 ? " city" : " cities") : ""));
         break;
       }
       case "threat": {
@@ -115,7 +127,7 @@ export function logLines(match, side, events, round) {
       case "destroyed": {
         const cell = cellOf(event);
         const where = cell ? " at " + cell.x + "," + cell.y : "";
-        if (mine) push("lost a unit" + where);
+        if (mine) push("lost " + (event.kind ? unitPhrase(event.kind) : "a unit") + where);
         else if (legible(match, side, event)) push("an enemy unit was destroyed" + where);
         break;
       }
