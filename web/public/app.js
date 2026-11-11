@@ -1,7 +1,8 @@
 import {
-  capitalMarkers, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch, panBy,
-  paintPlacement, rememberSeen, sightTable, statusLine, zoomAt,
+  capitalMarkers, cellToPixel, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch,
+  panBy, pixelToCell, paintPlacement, rememberSeen, sightTable, statusLine, wrapX, zoomAt,
 } from "./render.mjs";
+import { unitLabel } from "./units.mjs";
 import {
   PICK_HINT,
   ackText,
@@ -1239,7 +1240,9 @@ const DIALOG_PAINTERS = {
       icon.className = "uniticon";
       icon.alt = "";
       icon.src = glyphDataUrl(row.kind, "#bfe3ff");
-      name.append(icon, document.createTextNode(row.kind));
+      // The row names the unit the way the sentence that follows a purchase names it (T-007 AC7).
+      name.append(icon, document.createTextNode(unitLabel(row.kind)));
+      line.dataset.kind = row.kind;
       line.append(name, cell(String(row.own)), cell(String(row.known)),
         cell(row.price === null ? "—" : formatBillions(row.price) + "b"));
       if (row.refused) {
@@ -1824,3 +1827,60 @@ function startSession() {
     });
 }
 startSession();
+
+// ---- the E2E hook ---------------------------------------------------------
+// The Playwright suite drives this page like a player: it clicks the lobby, the Buy rows and the
+// canvas. Two things it cannot guess are where a cell is on screen and which cells the server has
+// said a purchase may stand on, so the page answers those from its own camera and its own mask.
+// Nothing here changes a rule or a state; every action still goes through the same send() path a
+// click uses.
+window.__chq = {
+  me: () => me,
+  users: () => users.slice(),
+  room: () => room,
+  socketState: () => socketState,
+  toast: () => flash.textContent || "",
+  outbox: () => outbox.length,
+  wire: () => wireLog.slice(),
+  board: () => boardPayload,
+  log: () => roundLog.slice(),
+  state: () => ({
+    buying,
+    selected: selected ? selected.id : null,
+    placement: Boolean(placement),
+    following,
+    camera: camera ? { scale: camera.scale, left: camera.left, top: camera.top } : null,
+  }),
+  cellToScreen(x, y) {
+    const view = viewForCanvas();
+    const rect = board.getBoundingClientRect();
+    const px = cellToPixel(wrapX(Number(x), view.boardW), Number(y), view);
+    const ratio = board.width / Math.max(1, rect.width);
+    return { x: rect.left + px.x / ratio, y: rect.top + px.y / ratio };
+  },
+  screenToCell(x, y) {
+    const view = viewForCanvas();
+    const rect = board.getBoundingClientRect();
+    const ratio = board.width / Math.max(1, rect.width);
+    return pixelToCell((Number(x) - rect.left) * ratio, (Number(y) - rect.top) * ratio, view);
+  },
+  // The cells the server's own placement mask allows, as a list. `placement.mask` is already a
+  // Uint8Array here (the socket's base64 is decoded on arrival), so index it directly.
+  legalCells(limit = 200) {
+    if (!placement || !placement.mask) return [];
+    const mask = placement.mask;
+    const width = Number(placement.width) || 320;
+    const out = [];
+    for (let i = 0; i < mask.length && out.length < limit; i++) {
+      if (!mask[i]) continue;
+      out.push({ x: i % width, y: Math.floor(i / width) });
+    }
+    return out;
+  },
+  // Kill the lobby socket the way a dead network would, so the suite can prove a Play clicked while
+  // it is down is queued. The page reconnects on its own, exactly as it does after a real drop.
+  dropSocket() {
+    if (socket) socket.close();
+  },
+  send: (message) => send(message),
+};
