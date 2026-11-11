@@ -1,11 +1,15 @@
 // Node transport_escort: the decision around the sink rule.
 //
-// combat.mjs already decides the outcome — an unarmed transport caught by a warship goes down in the
-// first exchange — and the player had no way to act on it. This node adds the hedge: a warship told
-// to travel with a transport, and the seat told which transports are crossing with nobody watching.
-// Screening reuses the sight radius the game already uses; nothing here invents a number.
+// combat.mjs already decides the outcome — under the T-003 strength model a ship loses strength per
+// shot and a transport is cargo, so the first hit ends it — and the player had no way to act on it.
+// This node adds the hedge: a warship told to travel with a transport, and the seat told which
+// transports are crossing with nobody watching. Screening reuses the sight radius the game already
+// uses; nothing here invents a number. The fixtures carry a strength bar, because that is what the
+// model fights over now; the last block resolves a caught transport and shows the escort lets go.
 import { orderEscort, followEscorts, unscreenedTransports, isWarship, isTransport } from "../../server/escort.mjs";
+import { resolve } from "../../server/combat.mjs";
 import { logLines } from "../../server/log.mjs";
+import { combatRules } from "../../server/rules.mjs";
 import { forSeat } from "../../server/view.mjs";
 
 function fail(message) {
@@ -19,15 +23,18 @@ function eq(message, actual, expected) {
 }
 
 function ship(id, side, x, y, extra = {}) {
-  return { id, side, domain: "sea", kind: "carrier", x, y, path: [], pace: 1, transport: false, ...extra };
+  // A sea piece carries the strength bar the model fights over (T-003); nothing counts hits.
+  const max = combatRules().maxStrength;
+  return { id, side, domain: "sea", kind: "carrier", x, y, path: [], pace: 1, transport: false, strength: max, maxStrength: max, ...extra };
 }
 
 function land(id, side, x, y, extra = {}) {
-  return { id, side, domain: "land", kind: "infantry", x, y, path: [], pace: 1, ...extra };
+  const max = combatRules().maxStrength;
+  return { id, side, domain: "land", kind: "infantry", x, y, path: [], pace: 1, strength: max, maxStrength: max, ...extra };
 }
 
 function match(pieces) {
-  return { round: 1, pieces, capitals: {}, sites: [], sides: {} };
+  return { round: 1, foughtRound: -1, pieces, capitals: {}, sites: [], sides: {} };
 }
 
 export const name = "transport_escort";
@@ -172,5 +179,31 @@ export async function run() {
     const m = match([ship("a", "blue", 10, 10)]);
     eq("nothing to follow", followEscorts(m), []);
     eq("the ship has no path", m.pieces[0].path, []);
+  }
+
+  // --- under the strength model a caught transport is cargo, and the escort lets go --------
+  // The archive's six-shot rule is gone: a warship's shot is a strength hit, and cargo takes the
+  // whole bar on the first one. The escort must survive that round and then release a transport
+  // that is no longer there, rather than trailing a dead id.
+  {
+    const m = match([
+      ship("escort", "blue", 10, 10, { escorting: "t" }),
+      land("t", "blue", 11, 10, { transport: true, escortedBy: "escort" }),
+      ship("wolf", "red", 12, 10),
+    ]);
+    const max = combatRules().maxStrength;
+    m.round = 1;
+    m.foughtRound = -1;
+    resolve(m);
+    const ids = m.pieces.map((piece) => piece.id);
+    if (ids.includes("t")) fail("a caught transport survived the strength model's first hit");
+    if (!ids.includes("escort")) fail("the escorting warship was removed by cargo it was screening");
+    if (!ids.includes("wolf")) fail("a full-strength warship was removed on its first exchange");
+    const wolf = m.pieces.find((piece) => piece.id === "wolf");
+    if (Number(wolf.strength) >= max) fail("the enemy warship took no strength damage");
+    if (Number(wolf.strength) <= 0) fail("the enemy warship lost its whole bar in one shot");
+    followEscorts(m);
+    const escort = m.pieces.find((piece) => piece.id === "escort");
+    eq("the escort releases a transport that is gone", escort.escorting, undefined);
   }
 }

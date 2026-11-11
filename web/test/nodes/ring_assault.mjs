@@ -5,8 +5,14 @@
 // the army had stopped thinking, not settled into a siege. (That run predates this change and its
 // harness is not in local/, so the count below is not a re-measurement.) The engine already treats a move onto an
 // enemy cell as an attack, so the bot now picks the weakest point of the ring and hits it.
+//
+// T-003: the assault is an attack under the strength model, not the archive's six shots. The ring
+// fixtures carry a strength bar, and the last block resolves a ring exchange to show the defender
+// loses strength and is not removed on the first round.
 import { assaultCells, marchOne, ordersFor } from "../../server/bot.mjs";
+import { resolve } from "../../server/combat.mjs";
 import { openMatch } from "../../server/match.mjs";
+import { combatRules } from "../../server/rules.mjs";
 
 export const name = "ring_assault";
 
@@ -38,8 +44,11 @@ function room(era = "1986") {
   return match;
 }
 
-function addPiece(match, id, side, x, y) {
-  match.pieces.push({ id, side, domain: "land", kind: "infantry", x, y, path: [], pace: 1, transport: false, entrenched: false });
+function addPiece(match, id, side, x, y, extra = {}) {
+  // Every piece carries the strength model's bar (T-003). Nothing here counts hits: a ring
+  // defender dies when a hit meets its remaining strength, exactly like any other land piece.
+  const max = combatRules().maxStrength;
+  match.pieces.push({ id, side, domain: "land", kind: "infantry", x, y, path: [], pace: 1, transport: false, entrenched: false, strength: max, maxStrength: max, ...extra });
   return match.pieces[match.pieces.length - 1];
 }
 
@@ -118,5 +127,31 @@ export async function run(ctx) {
       return;
     }
     if (order.assault) fail("the bot attacked although a ring cell was free");
+  }
+
+  // --- an assault on the ring is a strength fight, not a count removal ----------------------
+  // The ring rule only decides where the army attacks. What happens on arrival is combat.mjs:
+  // the defender loses strength per shot and stays until a hit meets what is left (Manual p.23).
+  // Under the archive's hits=6 the first exchange could remove a unit outright; it must not here.
+  {
+    const match = room();
+    const army = match.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");
+    if (!army) fail("a 1986 room has no blue land piece");
+    const capital = match.capitals.red;
+    const cell = ring(capital)[3];
+    const defender = addPiece(match, "ring-defender", "red", cell.x, cell.y);
+    army.x = wrap(cell.x + 1);
+    army.y = cell.y;
+    match.pieces = [army, defender];
+    match.round = 1;
+    match.foughtRound = -1;
+    const max = combatRules().maxStrength;
+    resolve(match);
+    const still = match.pieces.includes(defender);
+    if (Number(defender.strength) >= max) {
+      fail("the ring defender took no strength damage from the assault: " + defender.strength);
+    }
+    if (!still) fail("a full-strength ring defender was removed on the first exchange (the count rule is back)");
+    if (defender.x !== cell.x || defender.y !== cell.y) fail("the defender left the ring cell it holds");
   }
 }
