@@ -58,6 +58,12 @@ function holderOf(match, cell) {
 
 // null until one side holds both capitals. The caller reports the result; this does not change
 // the match.
+//
+// Holding both seats is not by itself a win. The manual's object is "capturing all of the Capital
+// Cities" and a city "is captured by taking its center cell", so the side that opened holding a
+// seat has not captured it. That distinction is load-bearing for 1942: CBR-TYPE.DT1 hands BOTH
+// seats to blue, so reading ownership alone ends the scenario on the opening bell. A capital counts
+// as captured when the side holding it now is not the side the seat opened with.
 export function checkWin(match) {
   if (!match || !match.capitals) return null;
   const held = { blue: 0, red: 0 };
@@ -65,8 +71,13 @@ export function checkWin(match) {
     const holder = holderOf(match, match.capitals[key]);
     if (holder) held[holder] += 1;
   }
+  const open = match.capitalOpen || {};
   for (const side of SIDES) {
-    if (held[side] === SIDES.length) return side;
+    if (held[side] !== SIDES.length) continue;
+    // A seat that opened unowned (2023, ???? - the rolled eras) counts as captured by whoever
+    // takes it, which is what the unheld opening always did.
+    const captured = SIDES.some((key) => open[key] !== side);
+    if (captured) return side;
   }
   return null;
 }

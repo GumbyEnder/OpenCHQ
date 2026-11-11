@@ -53,6 +53,15 @@ function sideState(era, cash = null) {
   };
 }
 
+// The owner byte of the capital sitting on one cell, or null. This is the scenario's opening
+// assignment, not a capture: the era table writes both 1942 seats to blue.
+function openOwnerOf(sites, x, y) {
+  const site = (Array.isArray(sites) ? sites : []).find(
+    (place) => place && place.kind === "capital" && Number(place.x) === x && Number(place.y) === y
+  );
+  return site && (site.owner === "blue" || site.owner === "red") ? site.owner : null;
+}
+
 // A fresh match. Round 0 is held: no clock, no orders, no movement yet. `sites` is the board
 // asset list with an owner per site, filled by the economy module when oil lands.
 //
@@ -83,6 +92,13 @@ export function openMatch(era, sites = [], options = {}) {
     capitals: {
       blue: { x: SEATS.blue.x, y: SEATS.blue.y },
       red: { x: SEATS.red.x, y: SEATS.red.y },
+    },
+    // Who held each seat on the opening bell, as the era table wrote it. checkWin reads this to
+    // tell a capital that was captured from a seat that was already its owner's: 1942's file hands
+    // both seats to blue, and without this the match would be blue's at round 0.
+    capitalOpen: {
+      blue: openOwnerOf(sites, SEATS.blue.x, SEATS.blue.y),
+      red: openOwnerOf(sites, SEATS.red.x, SEATS.red.y),
     },
     sides: {
       blue: sideState(year, side === "blue" ? opponentCash : null),

@@ -30,12 +30,12 @@ function tableOf(era) {
   return eraTable(era);
 }
 
-// The 84-row opening each capture measured, with the two seats counted as neutral: board.matchSites
-// clears a capital's owner byte because tick reads a capital's owner as "held", not as a country.
+// The 84-row opening each capture measured, with the two seats carrying the file's owner byte:
+// tick reads a capital's owner as "held", so the seats are part of the tally that year, not neutral.
 const FILE_TALLY = {
-  1918: { blue: 13, red: 8, null: 4 },
-  1942: { blue: 38, red: 23, null: 3 },
-  1986: { blue: 48, red: 24, null: 12 },
+  1918: { blue: 14, red: 9, null: 2 },
+  1942: { blue: 40, red: 23, null: 1 },
+  1986: { blue: 49, red: 25, null: 10 },
 };
 
 export async function run(ctx) {
@@ -75,7 +75,7 @@ export async function run(ctx) {
       for (const site of rows) {
         const row = table.sites[site.id];
         if (!row) fail(era + ": id " + site.id + " is live but the table has no row for it");
-        const want = site.kind === "capital" ? null : row.owner;
+        const want = row.owner;
         const got = site.owner === "blue" || site.owner === "red" ? site.owner : null;
         if (got !== want) {
           fail(era + ": id " + site.id + " " + site.name + " opened " + got + ", the file says " + want);
@@ -102,7 +102,7 @@ export async function run(ctx) {
       if (site.country_id !== 1) fail(era + ": red owns " + site.name + " in country " + site.country_id);
     }
     for (const site of own.none) {
-      // A capital is deliberately unowned: it is the win condition, not income.
+      // A rolled era's capital opens unowned: 2023's row carries no owner bits at all.
       if (site.kind === "capital") continue;
       // Facilities are not income sites: the economy only owns cities, docks and wells.
       if (site.kind === "facility") continue;
@@ -113,12 +113,15 @@ export async function run(ctx) {
       }
     }
 
-    // A capital is the win condition, not income: it is never owned by this seeding.
+    // A capital is the win condition and not income, but the file's owner byte is still who holds
+    // it: 1918 gives Washington to blue and Moscow to red, and 1942 gives both to blue.
     const capitals = match.sites.filter((site) => site.kind === "capital");
     if (capitals.length !== 2) fail(era + " should have two capitals, has " + capitals.length);
     for (const capital of capitals) {
-      if (capital.owner === "blue" || capital.owner === "red") {
-        fail(era + ": the capital " + capital.name + " was handed to a side by seeding");
+      const want = fromFile ? table.sites[capital.id].owner : null;
+      const got = capital.owner === "blue" || capital.owner === "red" ? capital.owner : null;
+      if (got !== want) {
+        fail(era + ": the capital " + capital.name + " opened " + got + ", the file says " + want);
       }
     }
 

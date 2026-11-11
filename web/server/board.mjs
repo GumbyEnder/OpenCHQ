@@ -196,13 +196,11 @@ export function matchSites(era = "1986", board = boardPayload()) {
   // attributed from the whole asset list, before this runs, so a dock keeps its port's country even
   // when the port's town is absent that year.
   const live = applyEra(base, era);
-  // A capital's owner byte in the file is not "held". tick.holderOf reads a capital's owner as the
-  // side holding it, so seeding the seats from the table would award the win condition on the
-  // opening bell: 1942's row gives both seats to blue. The seats stay unheld until troops stand on
-  // them, which is the archive's rule and the one tick.mjs and the suite already pin.
-  for (const site of live) {
-    if (site && site.kind === "capital") site.owner = null;
-  }
+  // A capital's owner byte is a holder byte, per the archive: the file's owner is the side the seat
+  // belongs to at the opening bell, and the win condition reads who holds it. The bytes are not a
+  // seed for income - the economy never counts a capital as a city - so carrying them here changes
+  // the opening position, not the economy. 1942 hands both seats to blue; that is the file's word
+  // and checkWin's opening-owner guard (tick.mjs) is what keeps it from being a round-0 win.
 
   const docks = [];
   if (Array.isArray(board.cells)) {

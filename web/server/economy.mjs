@@ -24,8 +24,9 @@ const SIDES = Object.freeze(["blue", "red"]);
 const CITY_KINDS = new Set(["city"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
 const WELL_KINDS = new Set(["oilfield", "well"]);
-// A capital is occupiable but is never a country claim: it has no owner until a piece takes
-// it, and losing the piece opens it again. That is the win condition's rule.
+// A capital is occupiable and its owner byte is who holds it: the era table writes the scenario's
+// opening holder (1942 hands both seats to blue), and a capture overwrites the byte. The byte is
+// the win condition's own field, not a country claim - no income is ever counted from a capital.
 const CAPITAL_KINDS = new Set(["capital"]);
 
 function occupiable(kind) {
@@ -283,8 +284,8 @@ export function capture(match, side, x, y) {
 //
 // A well was the only site a piece could take, which left every city and both capitals
 // decorative: income could never move with the map. Standing on a site is now the capture
-// rule. A city or dock changes hands permanently; a capital is held only while a piece stands
-// on it, because that is what the win condition reads.
+// rule. A city or dock changes hands permanently; a capital's owner byte is what the win
+// condition reads, so taking the center cell rewrites it and the seat is whoever took it last.
 export function occupy(match) {
   const events = [];
   if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) return events;
@@ -313,8 +314,9 @@ export function occupy(match) {
     const holder = occupiable(kind) ? byCell.get(Number(site.y) * CELL_W + Number(site.x)) || 0 : 0;
 
     // A capital is taken the same way and kept the same way; what makes it different is that
-    // the win condition reads it, and a piece standing on it is the freshest fact. An open
-    // capital (nobody has taken it) stays open, which is why ownership is never seeded onto one.
+    // the win condition reads it, and a piece standing on it is the freshest fact. The byte it
+    // carries at the opening is the scenario's holder, not a capture, which checkWin knows by
+    // reading match.capitalOpen.
     const side = holder === 1 ? "blue" : holder === 2 ? "red" : null; // contested or empty: nobody holds it
     if (side && site.owner !== side) {
       events.push({ type: "capture", site: site.id, name: site.name, kind, side, from: site.owner ?? null });
