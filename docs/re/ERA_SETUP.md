@@ -148,7 +148,7 @@ LONDON; (161,30) at row 36 shows BERLIN; (150,34) at row 40 shows PARIS. All hov
 |---|---|---|---|---|---|---|
 | 1918 | 0 | blue, red | 59 | 10, 11, 17 | 84/84 both | file is the source of truth for owner |
 | 1942 | 1 | blue, red | 20 | 10, 11, 17, 35, 62, 63 | 84/84 both | file is the source of truth for owner |
-| 1986 | 2 | blue | 0 | 10, 35, 62, 63 | 80/84 | 4 owner bits cleared, §4 |
+| 1986 | 2 | blue, red | 0 | 10, 35, 62, 63 | 80/84 | 4 owner bits cleared, §4 |
 | 2023 | 3 | blue ×2 | 0 | a: 29, 43 / b: 33, 34 | 52/84, 32/84 | positions identical between the two runs; **ownership is not** |
 | ???? | 4 | blue ×2 | 0 | a: 38, 49 / b: 10, 49 | n/a | positions differ run to run; a different site is a capital each time |
 
@@ -204,6 +204,10 @@ individual captures listed in §8.
 | 1986 blue | 35 | Tokyo | VERIFIED | `era-1986-blue-cap-35.png` |
 | 1986 blue | 62 | Washington | VERIFIED | `era-1986-blue-cap-62.png` |
 | 1986 blue | 63 | Moscow | VERIFIED | `era-1986-blue-cap-63.png` |
+| 1986 red | 10 | London | VERIFIED | `era-1986-red-cap-10.png` |
+| 1986 red | 35 | Tokyo | VERIFIED | `era-1986-red-cap-35.png` |
+| 1986 red | 62 | Washington | VERIFIED | `era-1986-red-cap-62.png` |
+| 1986 red | 63 | Moscow | VERIFIED | `era-1986-red-cap-63.png` |
 | 2023 blue a | 29 | Madrid | VERIFIED | `era-2023-blue-a-cap-29.png`, sheet `era-2023-blue-a-names.png` |
 | 2023 blue a | 43 | Hong Kong | VERIFIED | `era-2023-blue-a-cap-43.png` |
 | 2023 blue b | 33 | Denver | VERIFIED | `era-2023-blue-b-cap-33.png`, sheet `era-2023-blue-b-names.png` |
@@ -228,8 +232,19 @@ machine-readable tables and the contact sheets live in `docs/re/era-captures/` (
 deviation) and every file there is listed by name below.
 
 `<what>` values: `warroom` (opening frame), `cap-<id>` (full frame after the nudge),
-`cap-<id>-name` (2× crop of the name panel), `cap-<id>-m2` / `-m4` (Monitor Two / Four
-readouts for that site), `menubar` (Mode Bar open), `ownership` (Show Ownership view).
+`cap-<id>-name` (2× crop of the name panel), `menubar` (Mode Bar open), `ownership`
+(Show Ownership view). Monitor crops are no longer stored per capital: cut them from the full
+frame with `python3 tools/t2/t2-panels.py docs/captures/era-<tag>-cap-<id>.png /tmp/panel`,
+which writes `-m1`..`-m4`. The old `era-1918-blue-cap-*-m2/-m4.png` files are removed because
+they were one pre-hover frame reused for three different sites (the three `-m2` files were
+byte-identical and every `-m4` showed the same ocean tile); they never were per-site evidence.
+
+Monitor Two is **not** a per-site capital marker: on the same 1986 red run, hovering Moscow
+(the player's own capital) shows the USSR flag, while hovering Washington (an enemy capital)
+and Leningrad (a city) show the identical blue-vs-red bloc banner (both crops hash to
+`973b81d2…`). Monitor Three is the regional minimap and does not distinguish capitals either.
+The capital set comes from the turn-0 RAM table and the name/flag on Monitor Four —
+see `docs/re/B3_CAPITALS.md`.
 
 ### docs/re/era-captures/ — every file by name
 
@@ -256,16 +271,10 @@ era-concealed-blue-b.sites.json
 
 ### docs/captures/ — every era-* file by name
 
-    era-1918-blue-cap-10-m2.png
-    era-1918-blue-cap-10-m4.png
     era-1918-blue-cap-10-name.png
     era-1918-blue-cap-10.png
-    era-1918-blue-cap-11-m2.png
-    era-1918-blue-cap-11-m4.png
     era-1918-blue-cap-11-name.png
     era-1918-blue-cap-11.png
-    era-1918-blue-cap-17-m2.png
-    era-1918-blue-cap-17-m4.png
     era-1918-blue-cap-17-name.png
     era-1918-blue-cap-17.png
     era-1918-blue-menubar.png
@@ -321,6 +330,17 @@ era-concealed-blue-b.sites.json
     era-1986-blue-menubar.png
     era-1986-blue-ownership.png
     era-1986-blue-warroom.png
+    era-1986-red-cap-10-name.png
+    era-1986-red-cap-10.png
+    era-1986-red-cap-35-name.png
+    era-1986-red-cap-35.png
+    era-1986-red-cap-62-name.png
+    era-1986-red-cap-62.png
+    era-1986-red-cap-63-name.png
+    era-1986-red-cap-63.png
+    era-1986-red-menubar.png
+    era-1986-red-ownership.png
+    era-1986-red-warroom.png
     era-2023-blue-a-cap-26-name.png
     era-2023-blue-a-cap-26.png
     era-2023-blue-a-cap-29-name.png
@@ -366,4 +386,4 @@ era-concealed-blue-b.sites.json
     era-concealed-blue-b-ownership.png
     era-concealed-blue-b-warroom.png
 
-109 files, one per line.
+114 files, one per line.

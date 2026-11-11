@@ -176,10 +176,11 @@ ruling about how to read a byte the file already carries, not a mechanic added o
 | `web/server/match.mjs` | edited | `openMatch` copies `type` and the file's owner onto the match's sites |
 | `web/server/economy.mjs` | edited | file years: the table's owner wins, no country fallback for table rows |
 | `web/server/era.mjs` | comment only | header names the R2 disagreement count and era; no behaviour change |
+| `tools/bake_eras.mjs`, `web/data/eras.json` | edited/re-baked | **F1 addendum (openchq-pm 2949)**: the baked `_meta.not` now names the same reading (14 of 84 at 1986, city-kind, capitals excluded), so the comment and the data agree. Re-bake is idempotent; `eras.json` was 11713 B / `0eb29c45…`, now 12022 B / `ce145269…`; only `_meta.not` changed, every `eras` row is byte-identical |
 | `web/test/nodes/era_table.mjs`, `web/test/nodes/ownership.mjs`, `web/test/nodes/capital_open.mjs` | edited/new | changed expectations and the R6 seat test, each named in the commit message |
 | `DESIGN.md` | edited | the per-era opening, one bullet |
 
-Forbidden in B-2: `web/data/world.json`, `web/data/eras.json`, `tools/`, `config/game.json`,
+Forbidden in B-2: `web/data/world.json`, `config/game.json`,
 any owner roll (B-3), and **any edit to `tick.mjs`**, `rules.mjs` or `placement.mjs`. The win
 condition is not B-2's to change: R6 (final, below) keeps the seats unheld so the existing
 `checkWin` is already correct. That boundary is A7.
@@ -241,6 +242,13 @@ the two runs and no node is being silently dropped. The earlier "five skips" fig
 was short by three — `server`, `disasm` and `era_table` also gate on the extract and were simply
 not counted when that number was written. A run that reports five has a partial data root
 (`data/` present without `exe/` or `COMMAND/FONTS.CHQ`), not a different suite.
+
+Command caveat (measured 2026-11-11): `env -u OPENCHQ_DATA node web/test/run.mjs` on a dev
+checkout still prints 57/0/0, because `web/test/env.mjs` falls back to `local/data_root.txt`, which
+is gitignored but present on every working copy. To reproduce the 8-skip run, use a tree with no
+`local/` — e.g. `git archive <head> | tar -x -C /tmp/noextract` and run the suite there — or move
+`local/data_root.txt` aside first. A bare `env -u` is not enough, and the suite is not wrong when
+it reports 57.
 
 **A2 — opened site count, exact.** Per era, `matchSites(era).length` and its split:
 
@@ -333,6 +341,25 @@ under the label **B-3a** below. Two tasks now claim "B-3"; the PM settles which 
 Deliverable: a per-era capital table, one row per capital with a source for each row, plus the
 win-check routine's address and the byte it tests. This is the task that replaces the interim R6
 deviation. Do not touch `tick.mjs` or `ownership.mjs` while gathering it.
+
+**B-3a result (2026-11-11) — `docs/re/B3_CAPITALS.md` carries the table, sources and disassembly.**
+
+- Capitals, turn-0 holders: **1918** 10 London blue, 11 Berlin red, 17 Paris blue (3);
+  **1942** 10 London blue, 11 Berlin red, 17 Paris red, 35 Tokyo red, 62 Washington blue,
+  63 Moscow blue (6); **1986** 10 London blue, 35 Tokyo blue, 62 Washington blue, 63 Moscow red (4).
+  Blue and red seat runs are byte-identical; RAM `==` FILE `| 0x18` on every active site, with the
+  1986 43/46/50/53 clear (`0x1C` in RAM) as the only exception.
+- Win check: routine **`1c0d:000c`, file `0xF6DC`**, called from the capture handler at `0xFC34` /
+  `0xFC92` only when the captured site's subtype is `< 3`. It loops `i = 0..83`, skips `byte == 0`,
+  skips `(byte & 7) >= 3`, and fails unless `(byte & 0xC0) == side`; it returns 1 only when every
+  active subtype-`< 3` site is owned by that side. There is no separate capital flag, and a neutral
+  capital fails for both sides.
+- Consequence for R6: the original's capital set is 3 / 6 / 4 by era and is **counted from the map
+  byte**, not from two fixed seats. That is the gap the engine change has to close; the interim R6
+  (seats open null, `tick.mjs` unchanged) stays in force until the PM writes it.
+- Correction to the brief: Monitor Two is not a per-site capital marker (own-capital hover shows
+  the national flag; enemy-capital and city hovers show the same bloc banner), and Monitor Three is
+  the regional minimap. The screen evidence used is Monitor Four's name plus holder-coloured flag.
 
 ### B-3 (original scope) — the 2023 rule
 
