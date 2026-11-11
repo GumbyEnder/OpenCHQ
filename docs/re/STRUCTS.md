@@ -1,15 +1,11 @@
 # STRUCTS.md — Inferred Global Data Structures
 
-> **This repo copy is the record (openchq-pm 2975, item 4).** Copied into `docs/re/` by B-3b so the
-> site-byte fix carries a commit and a sha instead of living in one NAS working tree. The copy is
-> byte-identical to `/mnt/nas/projects/Command HQ/modern/docs/re/STRUCTS.md` at the 2026-11-11 fix,
-> whose backup is `STRUCTS.md.bak-20261111`; the extract side keeps a dated pointer to this file.
->
-> The `0x1102` row below is the **measured** one: owner = bits 7:6 (mask `0xC0`), subtype = `&7`,
-> evidence `1c0d:000c` plus the turn-0 RAM captures (`B3_CAPITALS.md`). The `0x906` unit-status row
-> still reads bits 6:5 and is **UNVERIFIED** — no routine backs it, and the site-byte fix must not be
-> copy-pasted onto the unit tables.
 
+> **Record moved (2026-11-11).** The canonical copy of this document is `docs/re/STRUCTS.md` in the
+> `openchq-web` repo, added by B-3b at commit `f0551df`: the `0x1102` owner row is measured there
+> (bits 7:6, mask `0xC0`, subtype `&7`, evidence `1c0d:000c`), the `0x906` unit-status row is marked
+> UNVERIFIED, and both carry reviewable diffs. This extract-side copy keeps the same fix as the
+> working evidence trail (backup `STRUCTS.md.bak-20261111`); treat the repo copy as the record.
 
 > **Confidence: LOW (names re-checked 2026-11-09).** The function names in this document came
 > from a 2026-10-03 Ghidra pass that resolved addresses with `(segment << 4) | offset`. Above

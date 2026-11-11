@@ -262,6 +262,14 @@ Four legs re-run at `6a74a49` (buzzy, 2026-11-11) — the correct reading of A1'
 So the with-extract leg must run **in a clone** (an archive export also skips `drop_godot` and
 prints 57/0/1) and the no-extract leg must run **in an export with no `local/`**.
 
+The absolute counts move with the tree; the shape does not. The same four legs at `27aa2fb`
+(`web` after T-007, 2026-11-11, re-run here): clone + extract **59/0/0**; clone with
+`local/data_root.txt` and `env -u` **59/0/0**; export + `env -u` **51/0/8** with the same eight
+skipped names; export + extract **59/0/1**, `drop_godot` the one skip. T-007 added two nodes, which
+is the whole +2. 57/49 are the `6a74a49` numbers, not a target: accept A1 on exit 0, `WEB_OK`, an
+empty failed column, and the identity *with-extract total = no-extract passed + 8* (or +9 when the
+with-extract run is an export, where `drop_godot` skips).
+
 **A2 — opened site count, exact.** Per era, `matchSites(era).length` and its split:
 
 | era | sites | 84-row table live | docks + wells |
