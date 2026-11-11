@@ -120,8 +120,9 @@ function say(text) {
 // The end of a match said once, in the player's own terms.
 function sayResult(room) {
   if (!room || !room.over) return;
-  // The server writes the sentence that ended the game: a resignation and a capital win are not the
-  // same loss, and the page must not flatten both into "the enemy holds both capitals".
+  // The server writes the sentence that ended the game - a resignation and a capital win are not the
+  // same loss, and the page must not flatten both into one line of its own. The server's capital
+  // line names the size of the era's set ("every capital (3 of 3)"), so the page never invents it.
   const mine = room.you || (room.seat && room.seat.side);
   const note = typeof room.note === "string" ? room.note.trim() : "";
   if (note) {
