@@ -11,6 +11,7 @@ import {
   buyMessage,
   cargoNote,
   cellAtEvent,
+  missionMessage,
   orderMessage,
   ownPieceAt,
   previewLine,
@@ -605,6 +606,14 @@ board.addEventListener("click", (event) => {
     say(PICK_HINT);
     return;
   }
+  // An aircraft is flown, not walked: the cell the player clicks is the strike's target, and the
+  // plane's own cell stays its base. Without this the only aim the page had was the plane's base
+  // cell, where no enemy ever stands (T-003 hand check 4).
+  if (selected.kind === "aircraft" || selected.domain === "air") {
+    const mission = missionMessage(selected, "strike", cell);
+    if (mission) sendOrder(mission);
+    return;
+  }
   const message = orderMessage(selected, cell);
   if (message) sendOrder(message);
 });
@@ -983,8 +992,19 @@ function toolRow(room) {
           ? "No friendly city, dock or ship in reach."
           : !briefing.ready
             ? "This aircraft is away for " + briefing.roundsLeft + " more rounds."
-            : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
-        button.addEventListener("click", () => send({ op: "mission", piece: selected.id, mode: mission.mode, to: { x: selected.x, y: selected.y } }));
+            : mission.mode === "strike"
+              ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
+              : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
+        button.addEventListener("click", () => {
+          // A strike hits the cell the player names, not the base the plane sits on. A scramble is
+          // a patrol around that base, so its own cell is the right target for it.
+          if (mission.mode === "strike") {
+            say("Strike: pick the target cell on the map.");
+            closeDialog();
+            return;
+          }
+          send({ op: "mission", piece: selected.id, mode: mission.mode, to: { x: selected.x, y: selected.y } });
+        });
         row.append(button);
       }
     }
@@ -1353,6 +1373,16 @@ const DIALOG_PAINTERS = {
         button.title = "Away for " + mission.rounds + " rounds.";
         button.disabled = !plane.ready;
         button.addEventListener("click", () => {
+          // A strike is aimed: the air dialog names the plane and hands the player the map, because
+          // the cell the plane sits on is its base and never holds an enemy (T-003).
+          if (mission.mode === "strike") {
+            const planePiece = (room.pieces || []).find((piece) => piece.id === plane.id);
+            if (planePiece) selected = planePiece;
+            say("Strike: pick the target cell on the map.");
+            closeDialog();
+            drawMatch();
+            return;
+          }
           send({ op: "mission", piece: plane.id, mode: mission.mode, to: { x: plane.x, y: plane.y } });
           say(plane.id + ": " + mission.label + " ordered.");
           closeDialog();

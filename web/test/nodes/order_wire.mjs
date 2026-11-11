@@ -16,6 +16,7 @@ import {
   REFUSED,
   ackText,
   cellAtEvent,
+  missionMessage,
   orderMessage,
   ownPieceAt,
   previewLine,
@@ -143,6 +144,20 @@ export async function run(ctx) {
   });
   // X still wraps when the page names a destination.
   eq(fail, "a wrapped destination", orderMessage(mine, { x: 320, y: 44 }).to, { x: 0, y: 44 });
+
+  // A strike is aimed at the cell the player clicks, never at the plane's base (T-003, Manual p.25):
+  // the dialog only arms the mission, and the map names the target.
+  const plane = { id: "blue:air:1", side: "blue", domain: "air", kind: "aircraft", x: 80, y: 46 };
+  eq(fail, "the strike the page sends", missionMessage(plane, "strike", { x: 81, y: 44 }), {
+    op: "mission",
+    piece: "blue:air:1",
+    mode: "strike",
+    to: { x: 81, y: 44 },
+  });
+  eq(fail, "a strike target wraps like any other cell", missionMessage(plane, "strike", { x: 320, y: 44 }).to, { x: 0, y: 44 });
+  if (missionMessage(plane, "strike", null) !== null) fail("a strike with no target cell built a message");
+  if (missionMessage(null, "strike", { x: 1, y: 1 }) !== null) fail("a strike with no aircraft built a message");
+  if (missionMessage(plane, "strike", { x: 81, y: 44 }).to.x === plane.x) fail("the strike is aimed at the plane's own base");
 
   // Pointer over a CSS-half-size canvas lands on the right cell.
   const view = fitViewport(640, 272);

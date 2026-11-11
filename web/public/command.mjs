@@ -103,6 +103,15 @@ export function orderMessage(piece, target) {
   return { op: "order", piece: piece.id, to };
 }
 
+// An aircraft does not walk, so a click on a cell is not an order to move there: it is the target
+// of the mission (Manual p.25, "an air strike on a land unit"). The plane's own cell is the base it
+// flies from, never the cell it hits — a strike aimed at its own base would find nothing.
+export function missionMessage(piece, mode, target) {
+  const to = cell(target);
+  if (!piece || !to || !mode) return null;
+  return { op: "mission", piece: piece.id, mode: String(mode), to };
+}
+
 export function routeRequest(piece, target) {
   const to = cell(target);
   if (!piece || !to) return null;
