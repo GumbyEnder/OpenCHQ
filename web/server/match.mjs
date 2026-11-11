@@ -9,7 +9,7 @@
 
 import { SEATS } from "./board.mjs";
 import { capitalRows, capitalSet, capitalsFromFile } from "./capitals.mjs";
-import { handicapDefault, opponentPool, rosterFor, roundSeconds, startPool } from "./rules.mjs";
+import { combatRules, handicapDefault, opponentPool, rosterFor, roundSeconds, startPool } from "./rules.mjs";
 import { DOMAIN_BY_KIND } from "./shop.mjs";
 
 export const ERAS = ["1918", "1942", "1986", "2023", "9999"];
@@ -26,7 +26,25 @@ export function eraOf(value) {
 }
 
 function piece(side, domain, x, y, kind = null) {
-  return { id: `${side}:${domain}`, side, domain, kind, x, y, path: [], pace: 1, facing: null, fighting: null, shots: 0 };
+  // Strength is part of the piece's shape now (T-003): a unit opens at the config's maximum and
+  // the page draws the bar from these two fields.
+  const max = combatRules().maxStrength;
+  return {
+    id: `${side}:${domain}`,
+    side,
+    domain,
+    kind,
+    x,
+    y,
+    path: [],
+    pace: 1,
+    facing: null,
+    fighting: null,
+    shots: 0,
+    strength: max,
+    maxStrength: max,
+    pinned: false,
+  };
 }
 
 // The opening force used to carry `kind: null`, so the Buy panel said "two opening units have no

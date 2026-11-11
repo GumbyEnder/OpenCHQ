@@ -8,11 +8,12 @@
 //
 // Sea lanes are lanes.mjs. A land order never becomes a sea route.
 
-import { CELL_W, CELL_H, boardPayload, resolveDataRoot } from "./board.mjs";
-import { landPace, isRefused } from "./rules.mjs";
+import { CELL_W, CELL_H, TERRAIN, boardPayload, resolveDataRoot } from "./board.mjs";
+import { landPace, isRefused, combatRules } from "./rules.mjs";
 import { seaRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked } from "./resources.mjs";
+import { applyDamage, ensureStrength } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -44,6 +45,12 @@ function terrainAt(x, y) {
   if (!grid) return null;
   const index = Number(y) * CELL_W + wrapX(x);
   return grid[index] ?? null;
+}
+
+// The terrain name a strength-draining cell carries, or null where the map has no answer.
+export function terrainNameAt(x, y) {
+  const id = terrainAt(x, y);
+  return id === null ? null : TERRAIN[Number(id)] || null;
 }
 
 // Sea terrain ids: ocean, docks, shallows (board.TERRAIN / rules.seaAccepts class 0).
@@ -259,11 +266,8 @@ export function planOrder(match, side, pieceId, toX, toY) {
 
   // A ship sails the recovered lane graph, never a straight line. The land walker below is
   // deliberately not consulted: it does not know where water is.
-  // An order ends digging or repairing: the archive clears entrench on a move order. Only
-  // touch the keys that exist, so an order does not change a piece's shape - a preview that
-  // writes nothing must leave the piece byte-identical.
-  if (piece.entrenched === true) piece.entrenched = false;
-  if (piece.repairing === true) piece.repairing = false;
+  // A preview writes nothing: entrench, repair and pin are cleared by a real order in issueOrder,
+  // never by hovering.
 
   if (piece.domain === "sea") {
     // A ship ends on water. Without this a destroyer could be ordered onto Moscow's cell, and a
@@ -302,6 +306,13 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   const plan = planOrder(match, side, pieceId, toX, toY);
   if (!plan || plan.error) return plan || { error: "The order was refused." };
   const piece = match.pieces.find((unit) => unit.id === pieceId);
+  // A new order ends digging, repairing and pinning (Manual p.22: a move order loses entrench;
+  // a pinned unit stands until it is re-ordered). The preview never writes these.
+  if (piece.entrenched === true) piece.entrenched = false;
+  if (piece.repairing === true) piece.repairing = false;
+  if (piece.pinned === true) piece.pinned = false;
+  piece.stillRounds = 0;
+  piece.fightRounds = 0;
   if (!plan.path.length) {
     piece.path = [];
     piece.pace = 1;
@@ -333,13 +344,14 @@ export function pieceState(piece, match) {
   if (!piece) return null;
   if (inactiveRounds(piece, match && match.round) > 0) return "inactive";
   if (Array.isArray(piece.path) && piece.path.length > 0) return "moving";
+  if (piece.pinned === true) return "pinned";
   if (piece.repairing === true) return "repairing";
   if (piece.entrenched === true) return "digging";
   return "idle";
 }
 
-export const ENTRENCH_NOTE = "Stand-in. The bonus for entrenching was not recovered.";
-export const REPAIR_NOTE = "Stand-in. Repair has no recovered duration.";
+export const ENTRENCH_NOTE = "Dug in. Incoming hits land at the entrenched factor.";
+export const REPAIR_NOTE = "Repairing. The rate is combat.repairPerRound.";
 
 // Dig in. Infantry only, and only while standing still.
 export function entrench(match, side, pieceId) {
@@ -363,8 +375,9 @@ export function entrench(match, side, pieceId) {
   };
 }
 
-// Repair in place, at a friendly city. No duration recovered, so the state simply holds until
-// the piece is ordered somewhere.
+// Repair in place, at a friendly city, base or oil field; ships only in a dock (Manual p.23).
+// No duration was recovered, so the state holds until the piece is ordered somewhere, while
+// `repairStep` puts `combat.repairPerRound` back each round.
 export function repair(match, side, pieceId) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match." };
   const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
@@ -372,18 +385,156 @@ export function repair(match, side, pieceId) {
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (Array.isArray(piece.path) && piece.path.length > 0) return { error: "That piece is still moving." };
   const site = (match.sites || []).find((entry) => entry && entry.x === piece.x && entry.y === piece.y);
-  if (!site || !["city", "capital", "dock", "docks"].includes(site.kind)) {
-    return { error: "Repair happens at a city or dock." };
+  const allowed = piece.domain === "sea"
+    ? ["dock", "docks"]
+    : ["city", "capital", "base", "oilfield"];
+  if (!site || !allowed.includes(site.kind)) {
+    return { error: "Repair happens at a friendly city or dock (ships only on a dock)." };
   }
   if (site.owner !== side) return { error: `${site.name || "That site"} is not ${side}'s.` };
   piece.repairing = true;
-  piece.entrenched = false;
   return {
     ok: true,
     piece,
     state: "repairing",
     events: [{ type: "repair", side, pieceId: piece.id, site: site.id, name: site.name, round: Number(match.round) || 0, note: REPAIR_NOTE }],
   };
+}
+
+function siteAtPiece(match, piece) {
+  return (match.sites || []).find(
+    (site) => site && Number(site.x) === Number(piece.x) && Number(site.y) === Number(piece.y),
+  ) || null;
+}
+
+// One pass over the site list per round, keyed by cell. repairStep and attritionStep both need
+// "what site is this piece standing on", and a per-piece scan of 84 sites is the difference
+// between the tick inside its budget and outside it.
+// Keyed once per site list, not once per step: attrition and repair both ask for it every round,
+// and rebuilding 84 map entries per room per round was 5% of a 1000-room round in the bench.
+// Ownership is read off the site object, so a capture needs no invalidation - only a new list does.
+const siteCellCache = new WeakMap();
+
+function sitesByCell(match) {
+  const list = match.sites;
+  if (!list) return new Map();
+  const cached = siteCellCache.get(list);
+  if (cached) return cached;
+  const map = new Map();
+  for (const site of list) {
+    if (!site) continue;
+    map.set(Number(site.y) * CELL_W + Number(site.x), site);
+  }
+  siteCellCache.set(list, map);
+  return map;
+}
+
+function siteAtCell(map, piece) {
+  return map.get(Number(piece.y) * CELL_W + Number(piece.x)) || null;
+}
+
+// One round of repair for every stopped, damaged piece on a friendly repair site. Ships only in a
+// dock (p.23); land and air in a city, base or oil field. Never above starting maximum.
+export function repairStep(match) {
+  const events = [];
+  if (!match || !Array.isArray(match.pieces)) return events;
+  const combat = combatRules();
+  const max = combat.maxStrength;
+  const rate = combat.repairPerRound;
+  if (rate <= 0) return events;
+  let byCell = null;
+  for (const piece of match.pieces) {
+    if (!piece) continue;
+    if (piece.kind === "aircraft") continue; // a plane away on a mission is not on the ground
+    // Nothing to do for a piece already at full strength: this is the common case in a bench
+    // room and in a quiet match, so the site table is not even built for it.
+    if (ensureStrength(piece, max) >= max) {
+      if (piece.repairing === true) piece.repairing = false;
+      continue;
+    }
+    const moving = Array.isArray(piece.path) && piece.path.length > 0;
+    if (!byCell) byCell = sitesByCell(match);
+    const site = siteAtCell(byCell, piece);
+    const kinds = piece.domain === "sea" ? ["dock", "docks"] : ["city", "capital", "base", "oilfield"];
+    const friendly = Boolean(site) && site.owner === piece.side && kinds.includes(site.kind);
+    if (!friendly || moving) {
+      if (piece.repairing === true && !friendly) piece.repairing = false;
+      continue;
+    }
+    const before = Number(piece.strength);
+    piece.strength = Math.min(max, before + rate);
+    piece.repairing = true;
+    events.push({
+      type: "repair_tick",
+      side: piece.side,
+      pieceId: piece.id,
+      site: site.id ?? null,
+      name: site.name || null,
+      amount: Number((piece.strength - before).toFixed(2)),
+      strength: piece.strength,
+      round: Number(match.round) || 0,
+    });
+  }
+  return events;
+}
+
+// Attrition per round (Manual p.21). A natural attrition terrain drains every unit on it; a site
+// drains only the units that do not own it. The floor is the rule's own 20% of maximum, except
+// wasteland, which can take a unit to zero. `lookup` is a seam for a test with no board extract.
+export function attritionStep(match, lookup = null) {
+  const events = [];
+  if (!match || !Array.isArray(match.pieces)) return events;
+  const combat = combatRules();
+  const max = combat.maxStrength;
+  const doomed = new Set();
+  let byCell = null;
+  const grid = lookup ? null : cells();
+
+  for (const piece of match.pieces) {
+    if (!piece || piece.kind === "aircraft") continue;
+    let name;
+    if (lookup) {
+      name = lookup(piece, match);
+    } else if (grid) {
+      const id = grid[Number(piece.y) * CELL_W + Number(piece.x)];
+      name = id === undefined || id === null ? null : TERRAIN[Number(id)] || null;
+    } else {
+      name = null;
+    }
+    if (!name) continue;
+    const rate = Number(combat.attritionPerRound[name] || 0);
+    if (rate <= 0) continue;
+    const isSite = ["city", "base", "dock", "docks", "oilfield", "capital"].includes(name);
+    if (isSite) {
+      if (!byCell) byCell = sitesByCell(match);
+      const site = siteAtCell(byCell, piece);
+      if (!site || site.owner === piece.side) continue;
+    }
+    const floor = name === "wasteland" ? 0 : combat.attritionFloor * max;
+    const before = ensureStrength(piece, max);
+    const after = Math.max(floor, before - rate);
+    if (after >= before) continue;
+    piece.strength = after;
+    events.push({
+      type: "attrition",
+      side: piece.side,
+      pieceId: piece.id,
+      terrain: name,
+      amount: Number((before - after).toFixed(2)),
+      strength: after,
+      round: Number(match.round) || 0,
+    });
+    if (after <= 0) doomed.add(piece.id);
+  }
+
+  if (doomed.size > 0) {
+    for (const piece of match.pieces) {
+      if (!doomed.has(piece.id)) continue;
+      events.push({ type: "destroyed", side: piece.side, pieceId: piece.id, by: "attrition", x: piece.x, y: piece.y, strength: 0, note: "Attrition." });
+    }
+    match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));
+  }
+  return events;
 }
 
 export function advance(match) {
@@ -394,6 +545,7 @@ export function advance(match) {
   // a way round once a round, within a budget, and only stands still when there is no way round.
   let detours = 0;
   const DETOUR_BUDGET = 48;
+  const doomed = new Set(); // pieces a round of overrun removed; filtered once, after the walk
   // A dry blocking resource stops that side's pieces; a non-blocking one (steel, which is not in
   // the original) never does. The answer is per side and does not change inside one round.
   const blocked = {};
@@ -412,6 +564,9 @@ export function advance(match) {
     if (isBlocked(piece.side)) continue;
     // An aircraft on a mission is not on the ground to be moved.
     if (inactiveRounds(piece, match.round) > 0) continue;
+    // Pinned (p.22): a heavily engaged land unit stands until it is re-ordered, and issueOrder
+    // is what clears the flag.
+    if (piece.pinned === true) continue;
     // A ship's path comes from the lane graph (lanes.seaRoute), stepped one waypoint at a time;
     // a land piece's comes from a walk. The stepping below is the same either way, so neither
     // domain may be skipped here - skipping sea is what left every routed ship standing still.
@@ -421,27 +576,68 @@ export function advance(match) {
     const ny = Number(next.y);
     const occupant = pieceAt(match, nx, ny, piece.id);
     if (occupant) {
-      // Stop one short: the walker never shares a cell, and the clash is combat's job. Going
-      // round costs a route, so a piece gets a few tries per order and the round gets a budget.
-      // An enemy in the way is contact, not an obstacle: the path stops and combat decides.
-      const goal = occupant.side === piece.side ? piece.path[piece.path.length - 1] : null;
-      const tries = Number(piece.detours) || 0;
-      if (goal && tries < 4 && detours < DETOUR_BUDGET) {
-        const around = route(match, { x: piece.x, y: piece.y }, goal, piece.side);
-        if (around && around.length) {
-          piece.path = around;
-          piece.pace = Math.max(1, Number(around[0].pace) || 1);
-          piece.detours = tries + 1;
-          detours += 1;
-          events.push({ type: "detour", pieceId: piece.id, by: occupant.id, x: nx, y: ny, rounds: around.length });
+      // Overrun is the tank's (Manual p.9): a tank ordered into infantry fights through it,
+      // taking losses, and carries on into the cell if the infantry is destroyed. The path is
+      // never dropped here; a tank that is held keeps its order and tries again next round.
+      const overrun =
+        occupant.side !== piece.side &&
+        piece.kind === "tank" &&
+        piece.domain === "land" &&
+        occupant.domain === "land" &&
+        occupant.kind === "infantry" &&
+        occupant.transport !== true;
+      if (overrun) {
+        const combat = combatRules();
+        const foot = applyDamage(occupant, Number(combat.baseDamage.tank ?? 0));
+        const hull = applyDamage(piece, Number(combat.baseDamage.infantry ?? 0));
+        events.push({
+          type: "overrun",
+          side: piece.side,
+          pieceId: piece.id,
+          by: occupant.id,
+          target: occupant.id,
+          x: nx,
+          y: ny,
+          tankLoss: hull.dealt,
+          infantryStrength: foot.after,
+          tankStrength: hull.after,
+          round: Number(match.round) || 0,
+        });
+        if (foot.dead) {
+          doomed.add(occupant.id);
+          events.push({ type: "destroyed", side: occupant.side, pieceId: occupant.id, by: piece.id, x: nx, y: ny, strength: 0, round: Number(match.round) || 0, note: "Overrun." });
+          // fall through: the cell is free this round and the tank steps into it
+        } else if (hull.dead) {
+          doomed.add(piece.id);
+          events.push({ type: "destroyed", side: piece.side, pieceId: piece.id, by: occupant.id, x: piece.x, y: piece.y, strength: 0, round: Number(match.round) || 0, note: "Overrun. The tank was lost." });
+          continue;
+        } else {
+          events.push({ type: "overrun_hold", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
           continue;
         }
+      } else {
+        // Stop one short: the walker never shares a cell, and the clash is combat's job. Going
+        // round costs a route, so a piece gets a few tries per order and the round gets a budget.
+        // An enemy in the way is contact, not an obstacle: the path stops and combat decides.
+        const goal = occupant.side === piece.side ? piece.path[piece.path.length - 1] : null;
+        const tries = Number(piece.detours) || 0;
+        if (goal && tries < 4 && detours < DETOUR_BUDGET) {
+          const around = route(match, { x: piece.x, y: piece.y }, goal, piece.side);
+          if (around && around.length) {
+            piece.path = around;
+            piece.pace = Math.max(1, Number(around[0].pace) || 1);
+            piece.detours = tries + 1;
+            detours += 1;
+            events.push({ type: "detour", pieceId: piece.id, by: occupant.id, x: nx, y: ny, rounds: around.length });
+            continue;
+          }
+        }
+        piece.path = [];
+        piece.pace = 1;
+        piece.detours = 0;
+        events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
+        continue;
       }
-      piece.path = [];
-      piece.pace = 1;
-      piece.detours = 0;
-      events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
-      continue;
     }
 
     const owed = Math.max(1, Number(piece.pace) || 1);
@@ -470,6 +666,15 @@ export function advance(match) {
         x: nx,
         y: ny,
       });
+    }
+  }
+  if (doomed.size > 0) {
+    match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));
+    for (const piece of match.pieces) {
+      if (piece.fighting && doomed.has(piece.fighting)) {
+        piece.fighting = null;
+        piece.fightRounds = 0;
+      }
     }
   }
   return events;

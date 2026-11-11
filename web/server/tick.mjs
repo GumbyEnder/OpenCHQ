@@ -13,8 +13,8 @@
 // hands, not every round: a capture is the only event that can complete the set, and that is what
 // the original calls its routine from.
 
-import { advance } from "./move.mjs";
-import { resolve } from "./combat.mjs";
+import { advance, attritionStep, repairStep } from "./move.mjs";
+import { resolve, tickEntrench } from "./combat.mjs";
 import { occupy, pay, upkeep } from "./economy.mjs";
 import { tickAir } from "./air.mjs";
 import { followEscorts } from "./escort.mjs";
@@ -73,8 +73,9 @@ export function tickMatch(match) {
   // than chasing the cell it just left.
   followEscorts(match);
   // Modules that are still stubs return [] (or nothing). A round does not depend on them
-  // producing events; it only depends on them being called in this order.
-  for (const step of [advance, resolve, occupy, tickAir, upkeep, pay]) {
+  // producing events; it only depends on them being called in this order: advance, attrition,
+  // combat, entrench, repair, capture, air, upkeep, pay (T-003's order, from Manual p.20-25).
+  for (const step of [advance, attritionStep, resolve, tickEntrench, repairStep, occupy, tickAir, upkeep, pay]) {
     const produced = step(match);
     if (Array.isArray(produced)) events.push(...produced);
   }

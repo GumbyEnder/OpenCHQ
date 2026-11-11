@@ -79,6 +79,7 @@ export async function run(ctx) {
   sea.transport = true;
   const hunter = piece("red:ship", "red", 11, 10);
   hunter.domain = "sea";
+  hunter.kind = "cruiser"; // T-003: damage is per kind, so a hull has to name its kind
   const seaMatch = openMatch("1986", []);
   seaMatch.clock = "running";
   seaMatch.round = 1; // a fight fires on the first round a pair is in contact

@@ -7,7 +7,8 @@
 // that can be measured, and says so.
 
 import { CELL_W } from "./board.mjs";
-import { rules } from "./rules.mjs";
+import { rules, combatRules } from "./rules.mjs";
+import { applyDamage, ensureStrength } from "./combat.mjs";
 
 // The mission costs in rounds. They are tunables, so they live in config/game.json's air block and
 // nowhere else: this module used to keep its own copy (8 and 4), which is a second source of truth
@@ -29,8 +30,9 @@ function modeFor(name) {
   return null;
 }
 
-export const STRIKE_NOTE = "Stand-in strike. The shot has no damage yet.";
+export const STRIKE_NOTE = "Air strike.";
 export const REACH_NOTE = "Stand-in reach. The aircraft range was not recovered.";
+export const PARADROP_NOTE = "Paradrop. The infantry pays its strength cost.";
 
 export function isAircraft(piece) {
   return Boolean(piece) && piece.kind === "aircraft";
@@ -138,19 +140,91 @@ export function sendMission(match, side, pieceId, mode, target) {
     note: mission.type === "strike" ? STRIKE_NOTE : REACH_NOTE,
   });
 
-  // What a strike can actually do: cargo cannot defend itself. Anything else is a shot with
-  // no damage figure, exactly as the archive's fights are.
+  // What a strike actually does (Manual p.25): a land unit loses half its remaining strength; a
+  // sea unit takes a constant amount, so three strikes from full sink it. Cargo still cannot
+  // defend itself and is lost.
   if (mission.type === "strike") {
-    const caught = (match.pieces || []).find(
-      (piece) => piece && piece.side !== side && piece.x === at.x && piece.y === at.y && piece.transport === true,
+    const combat = combatRules();
+    const max = combat.maxStrength;
+    const doomed = new Set();
+    const caught = (match.pieces || []).filter(
+      (piece) => piece && piece.side !== side && Number(piece.x) === at.x && Number(piece.y) === at.y,
     );
-    if (caught) {
-      match.pieces = match.pieces.filter((piece) => piece.id !== caught.id);
-      events.push({ type: "destroyed", side: caught.side, pieceId: caught.id, by: plane.id, x: caught.x, y: caught.y, note: "Stand-in strike. The transport is gone." });
+    for (const target of caught) {
+      if (target.transport === true) {
+        doomed.add(target.id);
+        events.push({ type: "destroyed", side: target.side, pieceId: target.id, by: plane.id, x: target.x, y: target.y, strength: 0, round: Number(match.round) || 0, note: "Strike. The transport is gone." });
+        continue;
+      }
+      const before = ensureStrength(target, max);
+      if (target.domain === "sea") {
+        const amount = Number((max * combat.airStrikeSeaAmount).toFixed(2));
+        const hit = applyDamage(target, amount, max);
+        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: "sea", amount, before, strength: hit.after, round: Number(match.round) || 0, note: STRIKE_NOTE });
+        if (hit.dead) doomed.add(target.id);
+      } else {
+        target.strength = Number((before * combat.airStrikeLandFactor).toFixed(2));
+        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: target.domain, factor: combat.airStrikeLandFactor, before, strength: target.strength, round: Number(match.round) || 0, note: STRIKE_NOTE });
+        if (target.strength <= 0) doomed.add(target.id);
+      }
+    }
+    if (doomed.size > 0) {
+      for (const target of match.pieces || []) {
+        if (!doomed.has(target.id)) continue;
+        if (target.transport === true) continue; // already reported
+        events.push({ type: "destroyed", side: target.side, pieceId: target.id, by: plane.id, x: target.x, y: target.y, strength: 0, round: Number(match.round) || 0, note: "Strike. The unit is gone." });
+      }
+      match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));
     }
   }
 
   return { ok: true, piece: plane, events };
+}
+
+// A paradrop costs the infantry 25% of the strength it had before the drop (Manual p.50). The unit
+// lands on the named cell; nothing else about the order is invented here, so a caller that has no
+// paradrop UI yet can still exercise the rule.
+export function paradrop(match, side, pieceId, cell) {
+  if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to drop into." };
+  if (match.over) return { error: "The match is over." };
+  const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
+  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
+  if (piece.kind !== "infantry") return { error: "Only infantry can drop." };
+  if (piece.domain === "sea" || piece.transport === true) return { error: "A transport cannot drop." };
+  const x = Number(cell && cell.x);
+  const y = Number(cell && cell.y);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || y < 0 || y > 135) return { error: "The drop cell is off the map." };
+  const held = match.pieces.find((unit) => unit !== piece && Number(unit.x) === ((x % CELL_W) + CELL_W) % CELL_W && Number(unit.y) === y);
+  if (held) return { error: "Another piece holds that cell (" + held.id + ")." };
+
+  const combat = combatRules();
+  const max = combat.maxStrength;
+  const before = ensureStrength(piece, max);
+  const loss = Number((before * combat.paradropLoss).toFixed(2));
+  piece.strength = Math.max(0, Number((before - loss).toFixed(2)));
+  piece.x = ((x % CELL_W) + CELL_W) % CELL_W;
+  piece.y = y;
+  piece.path = [];
+  piece.pace = 1;
+  piece.movedRound = Number(match.round) || 0;
+  piece.entrenched = false;
+  return {
+    ok: true,
+    piece,
+    events: [{
+      type: "paradrop",
+      side,
+      pieceId: piece.id,
+      x: piece.x,
+      y: piece.y,
+      loss,
+      before,
+      strength: piece.strength,
+      round: Number(match.round) || 0,
+      note: PARADROP_NOTE,
+    }],
+  };
 }
 
 // Called once a round: says when an aircraft is flyable again, so the badge has an event.

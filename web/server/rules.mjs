@@ -136,20 +136,91 @@ export function enemyRouteSteps() {
   return Number(rules().enemyRouteSteps);
 }
 
-// The archive's HITS: how many shots in one continuous fight remove the defender.
-// See docs/POLISH_LOOP.md - it is a stand-in fight, not a damage model.
-export function hitsToKill() {
-  const value = Number(rules().hits);
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+// --- combat block (T-003) -------------------------------------------------------------------
+//
+// Every number the strength model uses lives in config.combat, and every key there carries its
+// own `source` string. A key with a `{ value, source }` shape is read through `combatValue`;
+// `combatSource` is what the AC that forbids an unsourced tunable reads back.
+export function combatBlock() {
+  return rules().combat || {};
 }
 
-// Overrun. The owner's own list of what combat is missing names overrun, so the archive had it;
-// how much more force it took was never recovered. The rule used here invents no number: the
-// attacker overruns when it has strictly more friendly pieces on the defender's cell than the
-// defender has - a comparison a player can count on the screen.
-export function overrunEnabled() {
-  return rules().overrun !== false;
+export function combatKeys() {
+  return Object.keys(combatBlock());
 }
+
+export function combatValue(key, fallback = null) {
+  const entry = combatBlock()[key];
+  const value = entry && typeof entry === "object" && Object.hasOwn(entry, "value") ? entry.value : entry;
+  return value === undefined || value === null ? fallback : value;
+}
+
+export function combatSource(key) {
+  const entry = combatBlock()[key];
+  const source = entry && typeof entry === "object" ? entry.source : undefined;
+  return typeof source === "string" ? source : "";
+}
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+// One object per config load, cached against the config object itself. combatRules() is read in
+// the hot paths - every piece's strength default, every engagement range - and rebuilding six
+// objects per read was measurable in the 1000-room bench. resetRules() makes a new config object,
+// so the cache follows an edit without a second key.
+const combatCache = new WeakMap();
+
+export function combatRules() {
+  const config = rules();
+  const cachedCombat = combatCache.get(config);
+  if (cachedCombat) return cachedCombat;
+  const damage = combatValue("baseDamage", {}) || {};
+  const sea = combatValue("seaRangeCells", {}) || {};
+  const attrition = combatValue("attritionPerRound", {}) || {};
+  const maxStrength = Math.max(1, finiteNumber(combatValue("maxStrength"), 100));
+  const built = {
+    maxStrength,
+    shotEveryRounds: Math.max(1, Math.floor(finiteNumber(combatValue("shotEveryRounds"), 2))),
+    baseDamage: Object.fromEntries(Object.entries(damage).map(([kind, value]) => [kind, Math.max(0, finiteNumber(value, 0))])),
+    flankMultiplier: Math.max(1, finiteNumber(combatValue("flankMultiplier"), 1)),
+    entrenchDamageFactor: finiteNumber(combatValue("entrenchDamageFactor"), 1),
+    entrenchRounds: Math.max(0, Math.floor(finiteNumber(combatValue("entrenchRounds"), 0))),
+    landEngageCells: Math.max(1, Math.floor(finiteNumber(combatValue("landEngageCells"), 1))),
+    seaRangeCells: Object.fromEntries(Object.entries(sea).map(([kind, value]) => [kind, Math.max(0, Math.floor(finiteNumber(value, 0)))])),
+    attritionPerRound: Object.fromEntries(Object.entries(attrition).map(([terrain, value]) => [terrain, Math.max(0, finiteNumber(value, 0))])),
+    attritionFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("attritionFloor"), 0))),
+    repairPerRound: Math.max(0, finiteNumber(combatValue("repairPerRound"), 0)),
+    airStrikeLandFactor: Math.min(1, Math.max(0, finiteNumber(combatValue("airStrikeLandFactor"), 0))),
+    airStrikeSeaAmount: Math.max(0, finiteNumber(combatValue("airStrikeSeaAmount"), 0)),
+    paradropLoss: Math.min(1, Math.max(0, finiteNumber(combatValue("paradropLoss"), 0))),
+    bombardFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("bombardFloor"), 0))),
+    militiaDamage: Math.max(0, finiteNumber(combatValue("militiaDamage"), 0)),
+    pinRounds: Math.max(0, Math.floor(finiteNumber(combatValue("pinRounds"), 0))),
+  };
+  combatCache.set(config, built);
+  return built;
+}
+
+// A ranged value for one sea kind. A 0 in the file means "never recovered"; the land range is
+// then the floor, so a hull still fights at contact range instead of being unable to shoot.
+export function seaRangeFor(kind, combat = null) {
+  combat = combat || combatRules();
+  const range = combat.seaRangeCells[String(kind)] || 0;
+  return range > 0 ? range : combat.landEngageCells;
+}
+
+// How much of the config is a stand-in rather than a recovered figure, for the UI and for a
+// report. README prose is not a source: this reads only the block.
+export function combatUnmeasured() {
+  const out = [];
+  for (const key of combatKeys()) {
+    if (/UNMEASURED|STAND-IN/i.test(combatSource(key))) out.push(key);
+  }
+  return out;
+}
+
 
 // Opening cash. `startPool[era]` is the player's own side, in billions, recovered from Monitor
 // Four on the running original (docs/re/START_MONEY.md); it is not the p.28 "9", which is a

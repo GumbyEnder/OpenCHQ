@@ -7,7 +7,7 @@
 import { openMatch } from "../../server/match.mjs";
 import { advance, issueOrder } from "../../server/move.mjs";
 import { tickMatch } from "../../server/tick.mjs";
-import { inactiveRounds, sendMission, tickAir } from "../../server/air.mjs";
+import { inactiveRounds, sendMission, tickAir, STRIKE_NOTE } from "../../server/air.mjs";
 import { rules } from "../../server/rules.mjs";
 
 export const name = "air";
@@ -100,7 +100,29 @@ export async function run(ctx) {
   if (!sea.pieces.some((piece) => piece.id === "red:land2")) fail("a strike on land removed a piece it has no rule for");
   const note = caught.events.find((event) => event.type === "strike").note;
   if (/[0-9$]/.test(String(note))) fail("the strike note invented a number: " + note);
-  if (!/Stand-in/.test(String(note))) fail("a stand-in strike did not say it was a stand-in: " + note);
+  if (note !== STRIKE_NOTE) fail("the strike event lost its note: " + note);
+
+  // --- a strike halves a land target, and three sink a ship (T-003) -------------------
+  const land = freshMatch();
+  const bomber = plane("blue:air", "blue", 80, 40);
+  const target = { id: "red:inf", side: "red", domain: "land", kind: "infantry", x: 82, y: 40, path: [], pace: 1, facing: null, fighting: null, shots: 0, strength: 100, maxStrength: 100 };
+  land.pieces = [bomber, target];
+  land.round = 1;
+  const halved = sendMission(land, "blue", "blue:air", "strike", { x: 82, y: 40 });
+  if (halved.error) fail("the strike on a land unit was refused: " + halved.error);
+  if (target.strength !== 50) fail("a strike did not halve a land unit: " + target.strength);
+
+  const fleet = freshMatch();
+  const flyer = plane("blue:air", "blue", 80, 40);
+  const hull = { id: "red:ship", side: "red", domain: "sea", kind: "cruiser", x: 82, y: 40, path: [], pace: 1, facing: null, fighting: null, shots: 0, strength: 100, maxStrength: 100 };
+  fleet.pieces = [flyer, hull];
+  for (let i = 0; i < 3; i++) {
+    flyer.inactiveUntil = 0;
+    fleet.round = i + 1;
+    const hit = sendMission(fleet, "blue", "blue:air", "strike", { x: 82, y: 40 });
+    if (hit.error) fail("sea strike " + (i + 1) + " was refused: " + hit.error);
+  }
+  if (fleet.pieces.some((piece) => piece.id === "red:ship")) fail("three strikes did not sink a ship");
 
   // --- the tick keeps running with an aircraft in the match --------------------------
   const live = freshMatch();

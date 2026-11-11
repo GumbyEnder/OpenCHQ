@@ -514,6 +514,64 @@ export function paintPieces(ctx, pieces, view, opts = {}) {
   return drawn;
 }
 
+// The strength bar and the states under it (T-003). A piece carries current and maximum strength;
+// the bar is the fraction between them, so a player can see a hit land before anybody names a
+// number. A dug-in piece gets a second, narrower bar; a pinned piece gets an orange tick and a
+// repairing piece a pale cross. The facing notch points the way the piece last stepped.
+export function paintStrengthBars(ctx, pieces, view, opts = {}) {
+  if (!Array.isArray(pieces)) return 0;
+  let drawn = 0;
+  for (const piece of pieces) {
+    if (!piece || !Number.isFinite(Number(piece.x)) || !Number.isFinite(Number(piece.y))) continue;
+    const max = Number(piece.maxStrength);
+    const strength = Number(piece.strength);
+    if (!Number.isFinite(max) || max <= 0 || !Number.isFinite(strength)) continue;
+    const at = cellToPixel(piece.x, piece.y, view);
+    const width = Math.max(6, view.scale * 3);
+    const height = Math.max(2, view.scale * 0.4);
+    const x = at.x - width / 2;
+    const y = at.y + Math.max(2, view.scale * 1.3);
+    const fraction = Math.max(0, Math.min(1, strength / max));
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = pieceColor(piece) || sideColor(piece.side);
+    ctx.fillRect(x, y, width * fraction, height);
+
+    // Entrench: a second bar, drawn only when the state is set (p.22).
+    if (piece.entrenched === true) {
+      ctx.fillStyle = "#d9d2a6";
+      ctx.fillRect(x, y + height + 1, width * 0.55, Math.max(1, height * 0.6));
+    }
+    // Pinned (p.22): orange tick over the bar.
+    if (piece.pinned === true) {
+      ctx.fillStyle = "#ff9d4c";
+      ctx.fillRect(x, y - Math.max(2, height + 1), Math.max(2, width * 0.35), Math.max(1, height * 0.8));
+    }
+    // Repairing: a pale cross at the right end of the bar.
+    if (piece.repairing === true) {
+      ctx.strokeStyle = "#e8f0d0";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + width + 2, y - 1);
+      ctx.lineTo(x + width + 2, y + height + 1);
+      ctx.moveTo(x + width + 1, y + height / 2);
+      ctx.lineTo(x + width + 3, y + height / 2);
+      ctx.stroke();
+    }
+    // Facing: a one-pixel notch on the side the piece faces.
+    if (piece.facing) {
+      const notch = Math.max(1, view.scale * 0.35);
+      const nx = piece.facing === "e" ? at.x + notch * 2 : piece.facing === "w" ? at.x - notch * 2 : at.x;
+      const ny = piece.facing === "s" ? at.y + notch * 2 : piece.facing === "n" ? at.y - notch * 2 : at.y;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
+      ctx.fillRect(nx, ny, Math.max(1, notch), Math.max(1, notch));
+    }
+    drawn++;
+  }
+  return drawn;
+}
+
 // City names on the board, once the camera is close enough to read them.
 //
 // The original kept place names in its panels, not on the map. These labels are this page's
@@ -773,6 +831,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
     paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale });
     const preview = paintPreview(ctx, opts.preview, flat, opts);
     const pieces = paintPieces(ctx, room && room.pieces, flat, opts);
+    paintStrengthBars(ctx, room && room.pieces, flat, opts);
     const capitals = paintCapitals(ctx, capitalMarkers(board), flat);
     return { mode, painted: 0, pieces, capitals, preview, message: EXTRACT_MISSING, view: flat };
   }
@@ -782,6 +841,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   }
   const preview = paintPreview(ctx, opts.preview, view, opts);
   const pieces = paintPieces(ctx, room && room.pieces, view, opts);
+  const bars = paintStrengthBars(ctx, room && room.pieces, view, opts);
   const capitals = paintCapitals(ctx, capitalMarkers(board), view);
   // Political view: the same board with each city coloured by whoever holds it. The terrain under it
   // is untouched, so switching back is switching back and nothing else.
@@ -794,7 +854,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   }
   const labels = visibleLabels(room && room.sites, view);
   const labelled = paintLabels(ctx, opts.atlas, labels);
-  return { mode, painted, fogged, pieces, capitals, labels: labelled, political, tally, preview, message: "", view };
+  return { mode, painted, fogged, pieces, bars, capitals, labels: labelled, political, tally, preview, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.

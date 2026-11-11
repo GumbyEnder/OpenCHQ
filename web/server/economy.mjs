@@ -9,7 +9,7 @@
 // starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
 // because no duration was recovered.
 
-import { payEvery, priceOf, cityIncome, capitalPays } from "./rules.mjs";
+import { payEvery, priceOf, cityIncome, capitalPays, combatRules } from "./rules.mjs";
 import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace } from "./placement.mjs";
@@ -224,6 +224,7 @@ export function buy(match, side, kind, x, y, board = null) {
     id = `${side}:${unitKind}:${serial}`;
   }
 
+  const max = combatRules().maxStrength;
   const piece = {
     id,
     side,
@@ -236,6 +237,9 @@ export function buy(match, side, kind, x, y, board = null) {
     facing: null,
     fighting: null,
     shots: 0,
+    strength: max,
+    maxStrength: max,
+    pinned: false,
   };
   match.pieces.push(piece);
   return { ok: true, piece };

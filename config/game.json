@@ -110,7 +110,34 @@
   },
   "sightCells": 8,
   "enemyRouteSteps": 3,
-  "hits": 6,
+  "combat": {
+    "maxStrength": { "value": 100, "source": "UNMEASURED (scale only; the manual shows a bar, p.20)" },
+    "shotEveryRounds": { "value": 2, "source": "Manual p.22" },
+    "baseDamage": {
+      "value": { "infantry": 20, "tank": 30, "cruiser": 40, "carrier": 25, "submarine": 35 },
+      "source": "STAND-IN, UNMEASURED (the manual prints damage as a bar, p.20, never a figure; tank > infantry is p.22)"
+    },
+    "flankMultiplier": { "value": 1.5, "source": "STAND-IN, UNMEASURED (Manual p.22: more than 1)" },
+    "entrenchDamageFactor": { "value": 0.5, "source": "STAND-IN, UNMEASURED (Manual p.22: less than 1)" },
+    "entrenchRounds": { "value": 3, "source": "UNMEASURED (Manual p.22: infantry that has not moved or fought)" },
+    "landEngageCells": { "value": 2, "source": "UNVERIFIED inference: 3x3 icons overlap (p.7, p.22)" },
+    "seaRangeCells": {
+      "value": { "submarine": 2, "cruiser": 3, "carrier": 4 },
+      "source": "sub 2: Manual p.24; cruiser 3, carrier 4: STAND-IN, UNMEASURED (Manual p.42 states sub < cruiser < carrier)"
+    },
+    "attritionPerRound": {
+      "value": { "desert": 0.5, "jungle": 0.5, "polar": 0.5, "lake": 0.5, "wasteland": 1, "city": 0.5, "base": 0.5, "dock": 0.5, "oilfield": 0.5 },
+      "source": "STAND-IN, UNMEASURED (which terrains: Manual p.21)"
+    },
+    "attritionFloor": { "value": 0.2, "source": "Manual p.21" },
+    "repairPerRound": { "value": 5, "source": "STAND-IN, UNMEASURED (Manual p.23: repair is a rate; no figure)" },
+    "airStrikeLandFactor": { "value": 0.5, "source": "Manual p.25" },
+    "airStrikeSeaAmount": { "value": 0.34, "source": "Manual p.25 (3 strikes sink a ship); exact amount UNMEASURED" },
+    "paradropLoss": { "value": 0.25, "source": "Manual p.50" },
+    "bombardFloor": { "value": 0.2, "source": "Manual p.42" },
+    "militiaDamage": { "value": 10, "source": "STAND-IN, UNMEASURED (exists: Manual p.10, p.23)" },
+    "pinRounds": { "value": 4, "source": "STAND-IN, UNMEASURED (Manual p.22 names pinning; no figure)" }
+  },
   "notes": {
     "roundSeconds": "5 s chosen 2026-11-06 by the owner. At 1 cell per round the Washington-Moscow march is ~104 cells, about 8.7 minutes. The original felt like a campaign, not a 24-second war, and 0.14 s made income land every 3.5 s.",
     "payEvery": "Rounds between income payments. 1: a city pays every round (Manual p.27).",
@@ -122,10 +149,10 @@
     "rosters": "Manual p.16. 1918 has no air power, tanks or carriers; 1942 adds them; 1986 adds nukes, aid, satellites and intel. 2023 uses the 1986 set. 9999 is UNVERIFIED and uses the 1986 set.",
     "fuel": "STAND-IN. The archive's fuel reserve and burn were never recovered: 10000 reserve and 1 per round are invented and are here only so a side can run short. Per side, deliberately not the desktop archive's single shared reserve.",
     "steel": "STAND-IN, an owner-designed expansion and not a recovery: the 1990 game had oil only. 40 held and 1 a round are invented so a second kind can be held and consumed. No yield is set on purpose: the archive never recovered one, so the server refuses to hand out steel rather than guess a number. Gated to 1942 and 1986; the other scenarios do not carry it.",
-    "hits": "The archive's HITS is 6. Do not raise it: the desktop Washington-to-Moscow march meets one cell short and Red holds both capitals.",
+    "combat": "T-003 replaces the desktop archive's stand-in fight (after HITS shots the defender is gone) with the manual's strength model (p.20-25). Every key in `combat` carries its own source. A value marked STAND-IN, UNMEASURED is a working number the owner may replace, not a recovered one; the combat panel says 'unmeasured' for those. Damage removes a unit only when a hit meets or exceeds its remaining strength (p.23). Relatives the manual states are kept: tank > infantry, entrenched takes less, flank takes more, sub < cruiser < carrier range.",
     "air": "The 8 and 4 are the booklet counts (docs/POLISH_LOOP.md: air mission inactive 8 rounds, scramble 4). The reach of 10 is a STAND-IN: the archive's aircraft range was not recovered.",
     "nukes": "A nuke is refused by default and the archive's own stand-in deals no damage and paints no wasteland. exclusion 2 is a STAND-IN guard around a capital; the archive kept a home-ground guard but never printed its size. The launch limit (three fired or three absorbed) is the booklet count and stays in code.",
-    "overrun": "Overrun existed in the archive (the owner's list of missing combat depth names it); how much more force it took was never recovered. The rule therefore compares counts rather than inventing a threshold: when one side has strictly more friendly pieces standing on the defender's cell than the defender has, the defender is removed at once. Set false to return to a pure grinding front.",
+    "overrun": "Overrun is the tank's (Manual p.9): an ordered tank that meets enemy infantry in the next cell fights through it, taking losses, and enters the cell and continues if the infantry is destroyed. There is no count-based instant removal. The losses are `combat.baseDamage` for both sides.",
     "placement": "STAND-IN. The archive printed where a purchase goes - land and air in any friendly city or base, ships only on docks - and the owner widened it: land and air anywhere in your own zone, ships into coastal water. Neither reach was ever printed, so 8 cells from a site you hold and 4 cells from a land cell are invented to make the rule exist. Change them here; the server refuses and the page highlights from this same block."
   },
   "air": {
@@ -137,7 +164,6 @@
     "enabled": false,
     "exclusion": 2
   },
-  "overrun": true,
   "placement": {
     "homeZoneCells": 8,
     "coastCells": 4

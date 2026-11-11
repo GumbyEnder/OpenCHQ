@@ -14,11 +14,12 @@
 // pulling the scout back does not un-discover the enemy.
 
 import { CELL_W, SEATS } from "./board.mjs";
-import { enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
+import { combatRules, enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
 import { metersFor } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing } from "./late.mjs";
+import { ensureStrength } from "./combat.mjs";
 // The payday itself, so the economy dialog shows the figure the tick will pay rather than a page-side
 // copy of the rule.
 import { payoutFor } from "./economy.mjs";
@@ -109,6 +110,8 @@ function visibleEnemy(unit, ownPieces, match) {
 }
 
 function viewPiece(unit, steps, round) {
+  const max = combatRules().maxStrength;
+  const strength = ensureStrength(unit, max);
   return {
     id: unit.id,
     side: unit.side,
@@ -121,9 +124,14 @@ function viewPiece(unit, steps, round) {
     facing: unit.facing ?? null,
     fighting: unit.fighting ?? null,
     shots: unit.shots ?? 0,
-    // The five words the unit list uses. Derived, never stored twice.
+    // The strength bar (T-003): current and maximum, so the page draws the same fraction the
+    // server fights with. Nothing is derived twice.
+    strength,
+    maxStrength: Number(unit.maxStrength) || max,
+    // The five words the unit list uses, plus the pinned state (p.22). Derived, never stored twice.
     transport: unit.transport === true,
     entrenched: unit.entrenched === true,
+    pinned: unit.pinned === true,
     // How many rounds until an aircraft can fly again. `state` says "inactive"; the page needs the
     // number, or a mission is an unexplained absence rather than a cost.
     inactive: inactiveRounds(unit, round),
@@ -135,6 +143,7 @@ function stateOf(unit, round) {
   const until = Number(unit.inactiveUntil);
   if (Number.isFinite(until) && until > (Number(round) || 0)) return "inactive";
   if (Array.isArray(unit.path) && unit.path.length > 0) return "moving";
+  if (unit.pinned === true) return "pinned";
   if (unit.repairing === true) return "repairing";
   if (unit.entrenched === true) return "digging";
   return "idle";
