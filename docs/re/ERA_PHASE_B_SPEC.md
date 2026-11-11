@@ -172,59 +172,54 @@ ruling about how to read a byte the file already carries, not a mechanic added o
 
 | Path | New/edited | What |
 |---|---|---|
-| `web/server/board.mjs` | edited | `applyEra` inside `matchSites`; carries `type` and the file owner, **including the two seats** (R6, revised) |
-| `web/server/match.mjs` | edited | `openMatch` copies `type` and the file's owner onto the match's sites, and records `capitalOpen` |
-| `web/server/tick.mjs` | edited | `checkWin` only counts a seat as captured when it is not the seat's opening owner (R6, revised) |
+| `web/server/board.mjs` | edited | `applyEra` inside `matchSites`; carries `type` and the file owner, and clears a capital's owner (R6) |
+| `web/server/match.mjs` | edited | `openMatch` copies `type` and the file's owner onto the match's sites |
 | `web/server/economy.mjs` | edited | file years: the table's owner wins, no country fallback for table rows |
-| `web/server/era.mjs` | comment only | header says what is now wired; no behaviour change |
-| `web/test/nodes/era_table.mjs`, `web/test/nodes/ownership.mjs`, `web/test/nodes/capital_open.mjs` | edited/new | changed expectations and the two R6-reversal tests, each named in the commit message |
+| `web/server/era.mjs` | comment only | header names the R2 disagreement count and era; no behaviour change |
+| `web/test/nodes/era_table.mjs`, `web/test/nodes/ownership.mjs`, `web/test/nodes/capital_open.mjs` | edited/new | changed expectations and the R6 seat test, each named in the commit message |
 | `DESIGN.md` | edited | the per-era opening, one bullet |
 
 Forbidden in B-2: `web/data/world.json`, `web/data/eras.json`, `tools/`, `config/game.json`,
-any owner roll (B-3), and any edit to `rules.mjs` or `placement.mjs`. `tick.mjs` was on that
-list while R6 held; the revised ruling (below) needs one guard inside `checkWin` and nothing
-else in the engine, so `tick.mjs` is in scope for that guard only — no other win-condition
-change, and `rules.mjs`/`placement.mjs` stay shut. That boundary is A7.
+any owner roll (B-3), and **any edit to `tick.mjs`**, `rules.mjs` or `placement.mjs`. The win
+condition is not B-2's to change: R6 (final, below) keeps the seats unheld so the existing
+`checkWin` is already correct. That boundary is A7.
 
-### The ruling — R6 (revised 2026-11-11): a capital's owner byte is the holder at the opening
+### The ruling — R6 (FINAL, 2026-11-11): the seats open unheld — a deliberate interim deviation
 
-**R6 as first written is overturned.** The first version read the file's owner byte as a
-scenario label and cleared it in `matchSites`, so the seats opened unheld. The PM of record
-(openchq-pm, room post 2934) rules the other way: at match start each capital is held by the
-side its owner byte names, and a capital is captured when an enemy unit takes its center cell.
+The PM of record (openchq-pm) has now ruled this three times. Final, room post 2949:
 
-The reason it was written the other way is worth keeping, because it is the reason the second
-half of this ruling exists: the file hands **both 1942 seats to blue** (`0x41`, `0x41` —
-subtype 1, owner `0x40`). A win rule that only counts ownership therefore ends 1942 on the
-opening bell. The revised ruling keeps the byte and fixes the *win*, not the data:
+> R6 stands for B-2 as written. Seats open null, and eras.json keeps the bytes as labels. Record it
+> in ERA_PHASE_B_SPEC.md as a DELIBERATE INTERIM DEVIATION, pending B-3.
 
-- `matchSites(era)` carries the file's owner onto every site it returns, the two seats included.
-  `openMatch` records those two opening owners as `match.capitalOpen`.
-- `checkWin(match)` returns a side only when that side holds **both** seats **and** at least one
-  of them is not the seat's opening owner. Holding a seat you opened holding is not capturing
-  it. 1918 and 1986 open Washington blue / Moscow red, so each side wins by taking the other's
-  seat; 1942 opens both blue, so blue has won nothing at round 0 and red wins only by taking
-  both; 2023 and ???? open unowned, so any capture counts and the pre-B-2 behaviour is intact.
-- `eras.json` keeps every byte unchanged. B-2 does not get to edit the measurement away.
-- `economy.seedOwners` still never invents a capital owner: `ownable()` is city/dock/well, and
-  for the file years it leaves a site whose owner the table already names alone.
+The sequence matters because the reason survives the reversal. Version one read the owner byte as a
+scenario label and cleared it; version two (2949's predecessor, 2934) read it as a holder byte and
+fixed the win instead. What killed version two is **data, not wording**: the extract marks capitals
+by name only, and 1942's row hands **both** capital-kind seats (62/63) to blue (`0x41`, `0x41`;
+subtype 1, owner `0x40`), so a held opening with a garrison that steps off ends the scenario on the
+opening bell. The manual says each side has its own capital and may have "other friendly capitals"
+(manual p.5), and the win is capturing every enemy capital — so 1942 is almost certainly missing
+red's capitals from the extract, which leaves no honest way to seed a held opening there. That is
+UNVERIFIED and it is B-3's job.
 
-**UNVERIFIED — the win-check source.** That the original's win test reads these same owner bits,
-rather than a separate control field, has not been confirmed in Ghidra or DOSBox. The two checks
-that would settle it:
+So, as merged and shipped by B-2:
 
-- (a) disassembly: find the win-check routine and say which byte it tests;
-- (b) DOSBox: start 1918, read Monitor Three and each capital's flag on Monitor Two at turn 0 —
-  the expectation is that own capitals show your flag.
+- `matchSites(era)` clears `owner` on every site it returns with `kind === "capital"`, for every
+  era **including** the ones with no table row. The seats open unheld.
+- `eras.json` keeps every byte unchanged — the file's bytes are the measurement and B-2 does not get
+  to edit the measurement away. They are read as **labels** until B-3 settles what the original
+  win-check tests.
+- `tick.mjs` is untouched: `holderOf` (land troops on the cell, else the site's owner) and
+  `checkWin` (both seats held) are the pre-B-2 engine. A match cannot be decided at round 0 because
+  no seat starts held.
+- `economy.seedOwners` still never invents a capital owner: `ownable()` is city/dock/well.
+- **This is an interim deviation from the original, not a claim about it.** B-3 replaces it with the
+  original's real capital set and holder per era, from DOSBox turn-0 reads plus the win-check
+  routine in Ghidra. Anything that treats the current opening as fidelity is wrong.
 
-Until (a) or (b) lands, this section is a ruling about how to read a byte, not a measurement of
-the original's win test.
-
-Historical note: the engine's own reading, `tick.mjs` `holderOf` (land troops on the cell, else
-the site's owner), `capital.mjs` (a ship in the harbour does not hold a capital), and the bake's
-`NEUTRAL_1986` override (the original clears four 1986 owner bits after the loader, so the loader
-post-processes holder bytes) all point the same way: the byte is the holder and the loader is the
-only thing that ever rewrites it.
+Historical note, kept because B-3 needs it: `tick.mjs` `holderOf`, `capital.mjs` (a ship in the
+harbour does not hold a capital) and the bake's `NEUTRAL_1986` override (the original clears four
+1986 owner bits after the loader, so the loader post-processes holder bytes) all read the byte as a
+holder — the opposite of the interim reading. That mismatch is exactly what B-3 is for.
 
 ### Acceptance criteria — each one a command and a number, run at the head commit
 
@@ -262,19 +257,20 @@ not counted when that number was written. A run that reports five has a partial 
 unchanged. 9999 carries **no `type` key** on any site.
 
 **A4 — owner bytes from the file, tallied seam-visible.** On the 84 table rows of the opened,
-seeded match: 1918 **14 blue / 9 red / 2 neutral**, 1942 **40 / 23 / 1**, 1986 **49 / 25 / 10** —
-identical to `eras.json`'s own counts on its live rows, because the seats now carry the file's
-byte instead of being cleared. This must not be tally-only: `ownership.mjs` also walks every live
-table site id-by-id against `eras.json`, the two seats included, so a mis-seeded map cannot pass
-behind a right-sized count.
+seeded match: 1918 **13 blue / 8 red / 4 neutral**, 1942 **38 / 23 / 3**, 1986 **48 / 24 / 12**.
+`eras.json` still holds the file's own counts on its *live* rows — 1918 14/9/2 of 25, 1942
+40/23/1 of 64, 1986 49/25/10 of 84 — and the difference is exactly the two seats, which R6 clears.
+This must not be tally-only: `ownership.mjs` also walks every live table site id-by-id against
+`eras.json`, comparing the seats as `null` against a file row that says otherwise, so a
+mis-seeded map cannot pass behind a right-sized count.
 
 **A5 — R6 as behaviour, all five eras.** For each era, every `kind === "capital"` site in
-`openMatch(era, matchSites(era))` after `seedOwners` carries the owner `eras.json` names for it
-(1918 blue/red, 1942 blue/blue, 1986 blue/red, 2023 unowned), `match.capitalOpen` agrees, and
-`checkWin(match)` is `null` at round 0 — **no seat starts the match having already won or lost**.
-Two further behaviours are pinned by `capital_open.mjs`: taking one enemy capital flips exactly
-that one site's `id:owner` entry and nothing else, and 1942's blue-opens-both is not a win while
-red holding Washington and blue holding Moscow produces none either.
+`openMatch(era, matchSites(era))` after `seedOwners` has `owner === null`, and `checkWin(match)`
+is `null` at round 0 — **no seat starts the match having already won or lost**. 1942's two file
+bytes stay `"blue"`/`"blue"` in `eras.json` — cleared at the call site, not in the data. Two
+further behaviours are pinned by `capital_open.mjs`: taking the enemy seat in 1986 (or either
+seat in 1942, where both open unheld) flips exactly that one site's `id:owner` entry and nothing
+else, and a side that then holds both seats wins.
 
 **A6 — nothing outside the 84 moves.** For each of the five eras, the non-integer-id sites'
 `id:owner` set after `seedOwners` is **identical** to the same set at `1042997` (159/164/185/
@@ -282,51 +278,63 @@ red holding Washington and blue holding Moscow produces none either.
 else.
 
 **A7 — boundary.** Empty output from
-`git diff --name-only 1042997..<head> -- web/data tools config web/server/rules.mjs web/server/placement.mjs`;
+`git diff --name-only 1042997..<head> -- web/data tools config web/server/tick.mjs web/server/rules.mjs web/server/placement.mjs`;
 `git grep -c "rollEra\|Math.random" <head> -- web/server` → 0; `eras.json` keys are exactly
-`1918, 1942, 1986, 2023` (no `9999`). `tick.mjs` is now allowed **only** for the opening-owner
-guard: `git diff 1042997..<head> -- web/server/tick.mjs` must touch `checkWin` and nothing else
-in that file — no `holderOf`, no `tickMatch`, no movement, income or combat path.
+`1918, 1942, 1986, 2023` (no `9999`). `tick.mjs` is back inside the boundary for good: `head` must
+be byte-identical to `1042997` on that path, because the final R6 needs no win-condition change.
 
-**A8 — changed expectations named, none relaxed.** The B-2 **code** commit lists six files
-(200 insertions, 24 deletions): `board.mjs`, `match.mjs`, `tick.mjs`, `economy.mjs` (comments
-only), `ownership.mjs`, and the new `capital_open.mjs`. The **docs** commit lists two:
-`docs/re/ERA_PHASE_B_SPEC.md` and `DESIGN.md`. Every changed expectation is in the code commit
-message with its reason. An expectation that used to assert a number and now asserts nothing is a
-fail, whatever the suite says. The two 2866 nits (§2 range cell, `t2-era-diff` traceback) are
-doc/tooling and ride with the B-2 doc commit, not with this code commit.
+**A8 — changed expectations named, none relaxed.** This revision's **code** commit lists six
+files: `board.mjs`, `match.mjs`, `tick.mjs` and `ownership.mjs` restored to their pre-2934
+behaviour (the strike), `era.mjs` comment only (F1), and the new `capital_open.mjs`. The **docs**
+commit lists one: `docs/re/ERA_PHASE_B_SPEC.md`. No expectation is relaxed: `ownership.mjs` is
+byte-identical to `fe88ead` again (13/8/4, 38/23/3, 48/24/12, seats compared to null), and the
+merged B-2 code tree is `fe88ead` plus one trailing test file.
 
-**A9 — branch hygiene.** Clean worktree at `<head>`; `git rev-list --count 1042997..<head>` = 4:
-`057f2fc` (the spec commit), `fe88ead` (B-2 as first written), then this revision's code commit
-and docs commit. No B-2 **code** file reaches `web` before acceptance closes. Ordering note: the
-spec commit now describes `match.capitalOpen`, which lands with the code, so spec-then-code is
-still the right order on `web` but the docs commit alone is not a runnable description of `web`
-until the code follows. The code commit message records the baseline it started from (1042997:
+**A9 — branch hygiene.** Clean worktree at `<head>`; `git rev-list --count 1042997..<head>` = 6,
+and history is linear, not rewritten: `057f2fc` (the spec commit), `fe88ead` (B-2 as first
+written), `db30368` + `22d0fbb` (the held-opening implementation of the struck 2934 ruling, kept on
+the branch as history with its spec), `35cf147` (this strike: R6 as finally ruled, F1, the seat
+test) and this docs commit. No B-2 **code** file reached `web` before acceptance; nothing in B-2
+was force-pushed over. The code commit message records the baseline it started from (1042997:
 56/0/0 with the extract, 49/8/0 without).
 
-### Evidence already in hand (openchq-pm, 2026-11-10, at `6b1b657`) — superseded by the revised R6
+### Evidence already in hand (openchq-pm, 2026-11-10, at `6b1b657`) — numbers still valid
 
 Independent run in my own worktree, not game's: `npm test` → `node tests: 56 passed, 0 failed,
 0 skipped`, `WEB_OK`, exit 0; no-extract run → exit 0, five skips as A1; the A2/A3/A4/A5 numbers
 and the A6 "all five eras identical" comparison come from a probe run against both `6b1b657` and
-`1042997`. Game's report agrees on every number I checked. Acceptance is not thereby closed —
-`pippin` runs A1–A9 cold before `web` moves, because I do not sign off my own spec.
+`1042997`. Game's report agrees on every number I checked. Acceptance of the *revised* branch is
+not thereby closed — `pippin` runs A1–A9 cold before `web` moves.
 
-These numbers were measured under the **first** R6 (seats cleared, 56 nodes, 38/23/3 for 1942)
-and no longer describe the branch: the revised ruling adds `capital_open.mjs` (57 nodes) and puts
-the seats back in the tally (40/23/1 for 1942). The A2/A3/A6 numbers are unaffected — B-2 still
-moves only the 84 — so they stand. A1/A4/A5/A7/A8 below are rewritten for the revision.
+One correction to that list, already applied to A1: the no-extract run skips **eight** nodes, not
+five (`server`, `disasm`, `era_table`, `fonts`, `lanes`, `board_paint`, `ship_routes`,
+`site_assets`), and 49 + 8 = 57. The "five" was a partial data root, not a smaller suite.
 
 ### Out of scope for B-2 — do not do these
 
 - 2023's roll (B-3) or any seeded randomness; ???? as a playable fixture (B-4).
 - Subtype 1 vs 2 semantics, or painting the subtype in the client.
 - Any income, price, placement-mask or routing change.
-- Any win-condition change beyond the R6 opening-owner guard in `checkWin` (added by the
-  revised ruling; anything else in the win path is out of scope).
+- Any win-condition change. `tick.mjs` does not move in B-2; the interim R6 is expressed entirely
+  by clearing the seats at the call site.
 - `web/data/world.json`, `config/game.json`, `tools/bake_eras.mjs`, ERA_SETUP's tables.
 
 ## B-3 — the 2023 rule (outline only, spec to follow)
+
+**Numbering note (openchq-pm, room 2949).** The PM's "NEXT, B-3" is not this section: he asked for
+the **per-era capital set and each capital's starting holder in the original** — (a) DOSBox turn-0
+reads of the capital markers and flags on Monitor Two/Three for 1918, 1942 and 1986, both seats;
+(b) the win-check routine in Ghidra, naming the byte or field it tests — with no engine change, and
+the engine change written by the PM from the findings. That work is queued ahead of the 2023 roll
+under the label **B-3a** below. Two tasks now claim "B-3"; the PM settles which keeps the number.
+
+### B-3a — the original's capital set and holder per era (PM's NEXT, no engine change)
+
+Deliverable: a per-era capital table, one row per capital with a source for each row, plus the
+win-check routine's address and the byte it tests. This is the task that replaces the interim R6
+deviation. Do not touch `tick.mjs` or `ownership.mjs` while gathering it.
+
+### B-3 (original scope) — the 2023 rule
 
 Two capitals at least `0x271` apart (both in X and Y), bloc ownership from
 `FUN_23aa_0e1c @ 23aa:0e1c`, unowned count rolled in 32–52. Seeded, so a test can replay one
