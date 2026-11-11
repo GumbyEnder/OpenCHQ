@@ -106,7 +106,7 @@ function packMatch(match) {
 // still migrated for unit kinds and the money scale.
 export function unpackMatch(packed) {
   if (!packed || typeof packed !== "object") return null;
-  if (!packed.siteOwners && Array.isArray(packed.sites)) return migrateMatch({ ...packed });
+  if (!packed.siteOwners && Array.isArray(packed.sites)) return withCapitalSet(migrateMatch({ ...packed }));
   const { siteOwners, sitesUnready, sites, ...rest } = packed;
   const owners = new Map();
   for (const side of SIDES) {
@@ -123,10 +123,19 @@ export function unpackMatch(packed) {
     });
   }
   const match = migrateMatch({ ...rest, sites: rebuilt });
-  // Rows written before B-3b carry no capital set, and without one the win check refuses every set
-  // and the room could never be finished. Rebuild it from the board the row already carries: the
-  // file years are the same join as at launch, and a rolled year re-rolls from the recorded owners
-  // with its era as the seed (deterministic, though not necessarily the rooms' original draw).
+  return withCapitalSet(match);
+}
+
+// Rows written before B-3b carry no capital set, and without one the win check refuses every set and
+// the room could never be finished. Rebuild it from the board the row already carries: the file years
+// are the same join as at launch, and a rolled year re-rolls from the recorded owners with its era as
+// the seed (deterministic, though not necessarily the rooms' original draw).
+//
+// This runs on every unpack path, including the pre-T-001 one above: a legacy row hits the same wall
+// on load, and putting the rebuild after that early return left exactly the hole this guard exists
+// to close.
+function withCapitalSet(match) {
+  if (!match) return match;
   if (!match.capitalSet || !Array.isArray(match.capitalSet.list)) {
     match.capitalSet = capitalSetFor(match.era, match.sites);
   }

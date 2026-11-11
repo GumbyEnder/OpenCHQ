@@ -16,6 +16,8 @@ import { canPlace } from "./placement.mjs";
 import { CELL_W } from "./board.mjs";
 // The opening owner bits, for the years the original wrote them from a file.
 import { eraTable } from "./era.mjs";
+// A rolled era's capital set has to be drawn after owners exist, so seeding rebuilds it here.
+import { capitalSetFor } from "./match.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -120,6 +122,14 @@ export function seedOwners(match) {
     if (fromFile && site.type !== undefined) continue;
     const side = sideOfRegion(regionOf(site));
     site.owner = side; // null when the country is not one of the two sides
+  }
+  // A rolled era draws its two capitals from the sites a side already owns, so the draw has to run
+  // after this seeding. openMatch built the set on the unseeded board, where every owner was still
+  // null: both 2023 and the concealed year came back with two NEUTRAL capitals, which blocks both
+  // sides and is not the rule rollCapitals states. Same seed, so the draw stays replayable.
+  if (match.capitalSet && match.capitalSet.source === "rolled") {
+    const seed = match.capitalSeed === undefined || match.capitalSeed === null ? match.era : match.capitalSeed;
+    match.capitalSet = capitalSetFor(match.era, match.sites, seed);
   }
 }
 
@@ -313,8 +323,8 @@ export function occupy(match) {
     const kind = site.kind;
     const holder = occupiable(kind) ? byCell.get(Number(site.y) * CELL_W + Number(site.x)) || 0 : 0;
 
-    // A capital is taken the same way and kept the same way; what makes it different is that
-    // the win condition reads it, and a piece standing on it is the freshest fact.
+    // A capital is taken the same way and kept the same way; what makes it different is that the
+    // win condition reads it, so a piece standing on it is the freshest fact about the holder.
     const side = holder === 1 ? "blue" : holder === 2 ? "red" : null; // contested or empty: nobody holds it
     if (side && site.owner !== side) {
       events.push({ type: "capture", site: site.id, name: site.name, kind, side, from: site.owner ?? null });

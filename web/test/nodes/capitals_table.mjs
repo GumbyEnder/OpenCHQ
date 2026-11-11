@@ -9,7 +9,8 @@
 //   1942: 6 capitals - 10 London blue, 11 Berlin red, 17 Paris red, 35 Tokyo red,
 //                      62 Washington blue, 63 Moscow blue
 //   1986: 4 capitals - 10 London blue, 35 Tokyo blue, 62 Washington blue, 63 Moscow red
-//   2023, ????: no subtype-1/2 row at all, so two rolled capitals at launch.
+//   2023, 9999 (the concealed start, shown as ????): no subtype-1/2 row at all, so two rolled
+//                 capitals at launch, drawn after seeding.
 //
 // The counts and owners come from web/data/eras.json alone, which ships with the repo, so this half
 // always runs. The names and cells need the site list (the extract); without it that half is skipped
@@ -56,7 +57,7 @@ export async function run(ctx) {
   }
 
   // 2. The rolled years ship no capital row. If that ever changes, this node says so instead of
-  //    letting the roll hide a data change. 2023 has a baked row with no subtype-1/2 entry; ???? has
+  //    letting the roll hide a data change. 2023 has a baked row with no subtype-1/2 entry; 9999 has
   //    no baked row at all (tools/bake_eras.mjs refuses row 4), so its source is "none".
   for (const [era, wantSource] of [["2023", "rolled"], ["9999", "none"]]) {
     const { rows, source } = capitalRows(era);
@@ -65,20 +66,25 @@ export async function run(ctx) {
   }
 
   // 3. A neutral capital counts for neither side: the winner is nobody unless one side owns every
-  //    capital in the set.
+  //    capital in the set. Pinned against tick.checkWin - the single implementation - rather than
+  //    against a copy in capitals.mjs.
+  const { checkWin } = await import("../../server/tick.mjs");
+  const matchOf = (list) => ({
+    sites: list.map((c) => ({ id: c.siteId, owner: c.owner })),
+    capitalSet: { list, missing: [] },
+  });
   const mixed = [
     { siteId: 10, owner: "blue" },
     { siteId: 11, owner: null },
   ];
-  const { winnerOf } = await import("../../server/capitals.mjs");
-  if (winnerOf({ sites: mixed.map((c) => ({ id: c.siteId, owner: c.owner })), capitals: { list: mixed } }) !== null) {
+  if (checkWin(matchOf(mixed)) !== null) {
     fail("a neutral capital did not block both sides");
   }
   const blueAll = [
     { siteId: 10, owner: "blue" },
     { siteId: 11, owner: "blue" },
   ];
-  if (winnerOf({ sites: blueAll.map((c) => ({ id: c.siteId, owner: c.owner })), capitals: { list: blueAll } }) !== "blue") {
+  if (checkWin(matchOf(blueAll)) !== "blue") {
     fail("owning every capital is not a win");
   }
 
@@ -94,15 +100,16 @@ export async function run(ctx) {
     if (capital.name !== want) fail("1986: id " + capital.siteId + " is " + capital.name + ", measured " + want);
   }
 
-  // 5. A rolled year gives each side one capital inside its own ground, and the same seed gives the
-  //    same two capitals twice.
+  // 5. A rolled year gives each side one capital, drawn from the sites that side owns (so on a board
+  //    where nobody owns anything yet, both picks fall back to any holdable site and `owner` is null -
+  //    the side that drew it is `drawnBy`). The same seed gives the same two capitals twice.
   for (const era of ["2023", "9999"]) {
     const list = matchSites(era);
     if (!list.length) continue;
     const set = capitalSet(era, list, "capitals-table-seed");
     if (set.source !== "rolled") fail(era + ": capital source is " + set.source + ", expected rolled");
     if (set.list.length !== 2) fail(era + ": rolled " + set.list.length + " capitals, the original has 2");
-    const sides = new Set(set.list.map((capital) => capital.owner));
+    const sides = new Set(set.list.map((capital) => capital.drawnBy));
     if (sides.size !== 2) fail(era + ": the roll gave both capitals to " + [...sides].join(","));
     const again = capitalSet(era, list, "capitals-table-seed");
     if (JSON.stringify(again.list) !== JSON.stringify(set.list)) fail(era + ": the same seed rolled different capitals");

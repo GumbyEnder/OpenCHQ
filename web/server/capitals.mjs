@@ -11,8 +11,11 @@
 //   1942: 10 London blue, 11 Berlin red, 17 Paris red, 35 Tokyo red,
 //         62 Washington blue, 63 Moscow blue                                  (6)
 //   1986: 10 London blue, 35 Tokyo blue, 62 Washington blue, 63 Moscow red    (4)
-// 2023 and ???? carry no subtype-1/2 row at all, so their two capitals cannot come from the data:
-// they are rolled at launch by rollCapitals() below.
+// 2023 and the concealed year ("9999", shown as ???? in the UI) carry no subtype-1/2 row at all, so
+// their two capitals cannot come from the data: they are rolled at launch by rollCapitals() below.
+// That draw runs after seedOwners, not inside openMatch - see economy.seedOwners - because the pool is
+// "sites the side already owns", and on the unseeded board every owner is still null. A literal "????"
+// string is not an era id: eraOf sends it to 1986, so only the code's own 9999 rolls.
 import { eraTable } from "./era.mjs";
 
 export const CAPITAL_TYPES = [1, 2];
@@ -123,7 +126,11 @@ export function rollCapitals(sites, seed) {
       name: site.name,
       x: Number(site.x),
       y: Number(site.y),
-      owner: side,
+      // `drawnBy` is the side that drew it, not a claim about the board: the holder is the site
+      // record, and after seeding that side owns the site (pinned in capital_open). Keeping it under
+      // its own name means nothing reads it as a holder - holderOf never looks at the list.
+      drawnBy: side,
+      owner: SIDES.includes(site.owner) ? site.owner : null,
       rolled: true,
     });
   }
@@ -147,20 +154,7 @@ export function holderOf(match, capital) {
   return SIDES.includes(site.owner) ? site.owner : null;
 }
 
-// The original's win condition: one side owns every active capital. Returns that side or null.
-// Called from the capture path only - a capital changing hands is the only thing that can end a
-// match, so the check never runs on a quiet round.
-export function winnerOf(match) {
-  const list = (match.capitals && match.capitals.list) || [];
-  if (!list.length) return null;
-  let winner = null;
-  for (const capital of list) {
-    const holder = holderOf(match, capital);
-    if (!holder) return null;
-    if (winner === null) winner = holder;
-    else if (winner !== holder) return null;
-  }
-  return winner;
-}
-
-export const CAPITAL_SIDES = SIDES.slice();
+// The original's win condition lives in tick.checkWin, which reads the era's capital set through
+// holderOf. This module used to carry a second copy (winnerOf) over a `match.capitals.list` shape
+// nothing writes; two win implementations drift, so it is gone. The neutral-capital rule it pinned
+// is pinned against checkWin in web/test/nodes/capitals_table.mjs.

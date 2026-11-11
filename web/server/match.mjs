@@ -133,7 +133,10 @@ export function openMatch(era, sites = [], options = {}) {
       blue: { x: SEATS.blue.x, y: SEATS.blue.y },
       red: { x: SEATS.red.x, y: SEATS.red.y },
     },
+    // The original's site array. `capitalSet` is the win condition (B-3b); `capitalSeed` is what a
+    // rolled era drew it with, kept on the match so a reload re-rolls the same two capitals.
     capitalSet: capitalSetFor(year, opening, options && options.seed),
+    capitalSeed: options && options.seed,
     sides: {
       blue: sideState(year, side === "blue" ? opponentCash : null),
       red: sideState(year, side === "red" ? opponentCash : null),

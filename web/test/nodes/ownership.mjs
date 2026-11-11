@@ -3,8 +3,10 @@
 // For 1918, 1942 and 1986 the answer is the CBR-TYPE.DTn owner byte, which board.matchSites now
 // carries from web/data/eras.json: B-2 replaced the country-only rule for those years. The file hands
 // Britain and France to blue in 1918, leaves two named neutrals unaligned and writes both 1942 seats
-// blue, so a country id cannot reproduce the opening. From the file the two seats still open unheld -
-// a capital's owner is read by tick as "held", the win condition, not as income.
+// blue, so a country id cannot reproduce the opening. From the file a capital's owner is live like any
+// other site's (B-3b supersedes R6): the original's turn-0 RAM carries 0x59 blue on London and 0x9A red
+// on Berlin before any order, and the win check reads that same byte, so nothing is cleared on the way
+// in.
 //
 // 2023 and ???? keep the country rule: 2023's owners are rolled in B-3 and ???? is not modelled at
 // all. There the default is by country, and it is the shipped game's own field: CBR-SET.DAT carries
@@ -26,18 +28,19 @@ import { eraTable } from "../../server/era.mjs";
 
 export const name = "ownership";
 
-const ERAS = ["1918", "1942", "1986", "2023", "9999"];
+const ERAS = ["1918", "1942", "1986", "2023"];
 
 function tableOf(era) {
   return eraTable(era);
 }
 
-// The 84-row opening each capture measured, with the two seats counted as neutral: board.matchSites
-// clears a capital's owner byte because tick reads a capital's owner as "held", not as a country.
+// The 84-row opening each capture measured, from the file's bytes: B-3b made a capital's owner byte
+// live at the bell (it supersedes R6), so these are the file's own counts, not counts with the seats
+// deducted. docs/re/B3_CAPITALS.md §3 has the same numbers against the original's turn-0 RAM.
 const FILE_TALLY = {
-  1918: { blue: 13, red: 8, null: 4 },
-  1942: { blue: 38, red: 23, null: 3 },
-  1986: { blue: 48, red: 24, null: 12 },
+  1918: { blue: 14, red: 9, null: 2 },
+  1942: { blue: 40, red: 23, null: 1 },
+  1986: { blue: 49, red: 25, null: 10 },
 };
 
 export async function run(ctx) {
@@ -50,10 +53,9 @@ export async function run(ctx) {
     const match = openMatch(era, sites);
     seedOwners(match);
 
-    // B-3b: the win reads the era's capital set, so the set has to exist, name live sites, and be
-    // nobody's win before the first round. The set is the file's subtype-1/2 rows (or two rolled
-    // capitals for 2023/????) joined to the board this match plays on - not the two seats the page
-    // labels, which is the expectation this node carried before B-3b.
+    // The capital set opens exactly as the file leaves it, and no era hands every capital to one side
+    // at round 0 - measured, not assumed. The set is the file's subtype-1/2 rows (or two rolled
+    // capitals for 2023) joined to the board this match plays on, not the two seats the page labels.
     const set = match.capitalSet;
     if (!set || !set.list.length) fail(era + ": the capital set is empty, so no side could ever win");
     if (set.missing.length) {
@@ -71,8 +73,7 @@ export async function run(ctx) {
       const site = match.sites.find((place) => Number(place.id) === Number(capital.siteId));
       if (!site) fail(era + ": the set names " + capital.siteId + " and the match has no such site");
     }
-    // A capital's owner byte is a label (R6): the seats open unheld, and one side's ground at the
-    // bell is not every capital in the era, so no era may open already decided.
+    // 2023 rolls its set, so its members cannot come from the file; every other era's members must.
     if (checkWin(match) !== null) fail(era + " opens already won by " + checkWin(match));
 
     const own = { blue: [], red: [], none: [] };
@@ -92,9 +93,11 @@ export async function run(ctx) {
     // From 1918 to 1986 the file's owner bit is the opening - not the country id. The original
     // hands Britain and France to blue, keeps named neutrals unaligned, and 1942 even writes both
     // seats blue. So a country-only rule is wrong for those years, and this test pins the file.
-    // The two seats are the exception: board.matchSites clears a capital's owner because tick reads
-    // it as "held", so the seats are counted as neutral here.
-    // Docks and oil wells are outside the 84-row table and still seed from country/region.
+    // The file's owner bit is the opening for 1918/1942/1986 - not the country id. The original
+    // hands Britain and France to blue, keeps named neutrals unaligned, and 1942 writes both seats
+    // blue. A capital's byte is live like any other site's (B-3b supersedes R6), so it is compared
+    // here the same way. Docks and oil wells are outside the 84-row table and still seed from
+    // country/region.
     const table = tableOf(era);
     const fromFile = Boolean(table && table.ownerSource === "file");
     if (fromFile) {
@@ -102,7 +105,7 @@ export async function run(ctx) {
       for (const site of rows) {
         const row = table.sites[site.id];
         if (!row) fail(era + ": id " + site.id + " is live but the table has no row for it");
-        const want = site.kind === "capital" ? null : row.owner;
+        const want = row.owner;
         const got = site.owner === "blue" || site.owner === "red" ? site.owner : null;
         if (got !== want) {
           fail(era + ": id " + site.id + " " + site.name + " opened " + got + ", the file says " + want);
@@ -129,7 +132,8 @@ export async function run(ctx) {
       if (site.country_id !== 1) fail(era + ": red owns " + site.name + " in country " + site.country_id);
     }
     for (const site of own.none) {
-      // A capital is deliberately unowned: it is the win condition, not income.
+      // A neutral capital is legal - it is what a rolled era can draw, and a neutral capital blocks
+      // both sides at the win check rather than being a missing owner.
       if (site.kind === "capital") continue;
       // Facilities are not income sites: the economy only owns cities, docks and wells.
       if (site.kind === "facility") continue;
@@ -140,15 +144,6 @@ export async function run(ctx) {
       }
     }
 
-    // A capital is the win condition, not income: it is never owned by this seeding.
-    const capitals = match.sites.filter((site) => site.kind === "capital");
-    if (capitals.length !== 2) fail(era + " should have two capitals, has " + capitals.length);
-    for (const capital of capitals) {
-      if (capital.owner === "blue" || capital.owner === "red") {
-        fail(era + ": the capital " + capital.name + " was handed to a side by seeding");
-      }
-    }
-
     // Seeding is idempotent: a capture made later is never undone by a second pass.
     const before = match.sites.map((site) => site.owner ?? null);
     seedOwners(match);
@@ -156,6 +151,23 @@ export async function run(ctx) {
     if (JSON.stringify(before) !== JSON.stringify(after)) fail(era + ": a second seeding changed owners");
 
     counts[era] = { blue: own.blue.length, red: own.red.length, none: own.none.length };
+  }
+
+  // 9999 is the concealed start and it rolls like 2023: "9999" is in match.ERAS, so eraOf passes it
+  // through instead of coercing it. The draw runs after seedOwners, so it lands inside owned ground
+  // rather than on an ownerless board. A literal "????" label is not an era id - only that falls to 1986.
+  const odd = openMatch("9999", matchSites("9999"));
+  seedOwners(odd);
+  if (String(odd.era) !== "9999") fail("openMatch(9999) reports era " + odd.era + ", expected 9999");
+  if (odd.capitalSet.source !== "rolled" || odd.capitalSet.list.length !== 2) {
+    fail("openMatch(9999) carries " + odd.capitalSet.source + " with " + odd.capitalSet.list.length + " capitals");
+  }
+  const oddOwners = odd.capitalSet.list.map((capital) => {
+    const site = odd.sites.find((place) => Number(place.id) === Number(capital.siteId));
+    return site && (site.owner === "blue" || site.owner === "red") ? site.owner : null;
+  });
+  if (oddOwners.includes(null) || new Set(oddOwners).size !== 2) {
+    fail("9999's capitals are not one per side: " + JSON.stringify(oddOwners));
   }
 
   // The board grows with the era, and ownership grows with it but never to the whole earth: a

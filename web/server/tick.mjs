@@ -111,8 +111,8 @@ export function tickMatch(match) {
   // writes the owner byte before it emits the event, so the check reads the new holder.
   //
   // Membership, not site kind, decides what counts: the file's capitals are subtype-1/2 rows, and
-  // three of 1986's four sit on sites the asset list calls a city, so a capture of London emits
-  // kind "city" and still has to be able to end the match.
+  // Two of 1986's four capitals sit on sites the asset list calls a city (London, Tokyo), so a
+  // capture of London emits kind "city" and still has to be able to end the match.
   const set = (match.capitalSet && match.capitalSet.list) || [];
   const tookCapital = events.some((event) =>
     event && event.type === "capture" &&

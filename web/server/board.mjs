@@ -196,13 +196,13 @@ export function matchSites(era = "1986", board = boardPayload()) {
   // attributed from the whole asset list, before this runs, so a dock keeps its port's country even
   // when the port's town is absent that year.
   const live = applyEra(base, era);
-  // A capital's owner byte in the file is not "held". tick.holderOf reads a capital's owner as the
-  // side holding it, so seeding the seats from the table would award the win condition on the
-  // opening bell: 1942's row gives both seats to blue. The seats stay unheld until troops stand on
-  // them, which is the archive's rule and the one tick.mjs and the suite already pin.
-  for (const site of live) {
-    if (site && site.kind === "capital") site.owner = null;
-  }
+  // The file's owner byte is live from the bell. R6 cleared it as an interim deviation, when the win
+  // check still counted the two seats and a held opening would have decided 1942 on the opening
+  // bell; the original's turn-0 RAM says otherwise - London is 0x59 and Berlin 0x9A before any order
+  // (docs/re/B3_CAPITALS.md §2), and the win check at 1c0d:000c reads that same byte. B-3b moves the
+  // win onto the era's whole set, which removes R6's reason: measured on the file, no era opens with
+  // every capital held by one side (1918 2 blue / 1 red, 1942 3/3, 1986 3/1), so nothing is decided
+  // at the bell and no clear is needed to prevent it. Ruled explicitly here, superseding R6.
 
   const docks = [];
   if (Array.isArray(board.cells)) {

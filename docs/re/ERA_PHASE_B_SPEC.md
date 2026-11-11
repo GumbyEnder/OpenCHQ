@@ -202,6 +202,36 @@ opening bell. The manual says each side has its own capital and may have "other 
 red's capitals from the extract, which leaves no honest way to seed a held opening there. That is
 UNVERIFIED and it is B-3's job.
 
+### SUPERSEDED — B-3b (2026-11-11): the owner byte is live
+
+B-3's captures settle what this spec called UNVERIFIED: the original's turn-0 RAM carries the owner
+bits (London `0x59` blue, Berlin `0x9A` red, before any order — `docs/re/B3_CAPITALS.md` §2) and the
+win check at `1c0d:000c` reads that same byte. B-3b therefore removes the R6 clear rather than
+extending it, which the task table above already records as this spec's own supersession (`:407`).
+
+R6's reason does not survive the win change. R6 existed to stop a held opening deciding 1942 on the
+bell, which it did while the win counted two fixed seats. The win now counts the era's whole set, and
+measured on the file no era hands every capital to one side: 1918 2 blue / 1 red, 1942 3 blue / 3 red,
+1986 3 blue / 1 red. `capital_open.mjs` pins `checkWin === null` at round 0 for every playable era and
+pins the reach of the ruling — blue finishes 1918 by taking Berlin and 1986 by taking Moscow, while
+red needs three in 1986.
+
+Two consequences, stated rather than discovered:
+
+- **Served payload moves by two fields per era.** `matchSites` no longer clears, so ids 62
+  (Washington) and 63 (Moscow) carry a side instead of `null` in 1918/1942/1986. Nothing else on the
+  board payload changes: London, Berlin, Paris and Tokyo are `kind: "city"`, and R6's kind-keyed clear
+  never touched them — that gap is exactly why the docs and the code disagreed.
+- **Rolled years draw after seeding.** `openMatch` built the set on an unseeded board, so both 2023's
+  and 9999's capitals came back NEUTRAL — which blocks both sides and contradicts the "drawn from the
+  sites that side already owns" rule in `capitals.mjs`. `economy.seedOwners` now re-rolls with
+  `match.capitalSeed`, so the draw stays replayable. 9999 is the concealed start and it rolls like
+  2023; `"9999"` is in `match.ERAS`, so `eraOf` passes it through. Only the literal `"????"` label
+  falls through to 1986.
+
+A4 and A5 below describe the pre-B-3b behaviour and were rewritten with this change: the seeded
+tallies are the file's own 1918 14/9/2, 1942 40/23/1, 1986 49/25/10.
+
 So, as merged and shipped by B-2:
 
 - `matchSites(era)` clears `owner` on every site it returns with `kind === "capital"`, for every
@@ -285,20 +315,18 @@ with-extract run is an export, where `drop_godot` skips).
 unchanged. 9999 carries **no `type` key** on any site.
 
 **A4 — owner bytes from the file, tallied seam-visible.** On the 84 table rows of the opened,
-seeded match: 1918 **13 blue / 8 red / 4 neutral**, 1942 **38 / 23 / 3**, 1986 **48 / 24 / 12**.
-`eras.json` still holds the file's own counts on its *live* rows — 1918 14/9/2 of 25, 1942
-40/23/1 of 64, 1986 49/25/10 of 84 — and the difference is exactly the two seats, which R6 clears.
-This must not be tally-only: `ownership.mjs` also walks every live table site id-by-id against
-`eras.json`, comparing the seats as `null` against a file row that says otherwise, so a
-mis-seeded map cannot pass behind a right-sized count.
+seeded match: 1918 **14 blue / 9 red / 2 neutral**, 1942 **40 / 23 / 1**, 1986 **49 / 25 / 10** —
+the file's own counts, with no seat deducted (B-3b removed the clear). `eras.json` holds the same
+counts on its *live* rows. This must not be tally-only: `ownership.mjs` also walks every live table
+site id-by-id against `eras.json`, comparing a capital's owner the same way it compares any other
+site's, so a mis-seeded map cannot pass behind a right-sized count.
 
-**A5 — R6 as behaviour, all five eras.** For each era, every `kind === "capital"` site in
-`openMatch(era, matchSites(era))` after `seedOwners` has `owner === null`, and `checkWin(match)`
-is `null` at round 0 — **no seat starts the match having already won or lost**. 1942's two file
-bytes stay `"blue"`/`"blue"` in `eras.json` — cleared at the call site, not in the data. Two
-further behaviours are pinned by `capital_open.mjs`: taking the enemy seat in 1986 (or either
-seat in 1942, where both open unheld) flips exactly that one site's `id:owner` entry and nothing
-else, and a side that then holds both seats wins.
+**A5 — the opening bell, all four playable eras.** For each era, every capital in the match's set
+carries the owner its file row carries after `openMatch(era, matchSites(era))` + `seedOwners`, and
+`checkWin(match)` is `null` at round 0 — **no era opens decided**, measured rather than assumed (1918
+2 blue / 1 red, 1942 3/3, 1986 3 blue / 1 red). 1942's two file bytes stay `"blue"`/`"blue"` in
+`eras.json`. `capital_open.mjs` pins the reach: blue taking Berlin in 1918 and Moscow in 1986 ends
+the match, red taking London in 1986 does not, and a quiet round on a held opening decides nothing.
 
 **A6 — nothing outside the 84 moves.** For each of the five eras, the non-integer-id sites'
 `id:owner` set after `seedOwners` is **identical** to the same set at `1042997` (159/164/185/
@@ -413,11 +441,13 @@ is telling the implementer to replace):
 **Landed.** `match.openMatch` now carries `capitalSet` (the file's rows joined to the live sites,
 `match.capitalSetFor`), `tick.checkWin` reads that list through `capitals.holderOf` and refuses a
 partial set, and `tickMatch` calls it only when a capture event names a site in the set. The
-trigger is membership, not `site.kind`: three of 1986's four capitals are city-kind sites, so a
-London capture emits `kind: "city"` and must still be able to end the match. `rooms.unpackMatch`
-rebuilds the set for rows written before this commit, so a paused live room stays finishable. The
-seats (`match.capitals`) still drive the page label, the alarm and the bot - unchanged payload -
-and R6 still clears the capital owners, so the holder half of B-3 remains open.
+The trigger is membership, not `site.kind`: two of 1986's four capitals (London, Tokyo) are city-kind
+sites, so a London capture emits `kind: "city"` and must still be able to end the match.
+`rooms.unpackMatch` rebuilds the set for rows written before this commit, on every unpack path
+including the pre-T-001 one, so a paused live room stays finishable. The seats (`match.capitals`)
+still drive the page label, the alarm and the bot - unchanged payload. R6's clear is gone (see the
+SUPERSEDED section above): the owner byte is live from the bell, which closes the holder half of B-3
+and makes the board payload move on exactly two ids per file era.
 
 ### B-3 (original scope) — the 2023 rule
 

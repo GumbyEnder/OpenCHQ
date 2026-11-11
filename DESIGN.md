@@ -76,13 +76,15 @@ clicking faster than your opponent.
   blue/red/neutral bits, including the four 1986 neutrals the loader clears (43, 46, 50, 53). 2023
   ships its subtype row with no owners (the roll is B-3), and the concealed era has no row at all.
   The subtype travels as `type` beside `kind`, never inside it. A capital is a subtype-1/2 row, so
-  the era's capital set is 3 in 1918, 6 in 1942, 4 in 1986 and 2 rolled for 2023/????; the win is
-  one side owning every one of them (B-3b, from the original's check at `1c0d:000c`). A capital is
-  captured when an enemy land unit takes its centre cell, the check runs on that capture and not
-  every round, and a neutral capital blocks both sides. The owner byte in `eras.json` is a label
-  for now (R6): `board.matchSites` clears it on every capital, so no seat is handed to a side at
-  the bell and no era opens decided. Whether the original seeds a held opening from that byte is
-  still UNVERIFIED - that is the holder half of B-3.
+  the era's capital set is 3 in 1918, 6 in 1942, 4 in 1986 and 2 rolled for 2023 and the concealed
+  year (9999, shown as ????); the win is one side owning every one of them (B-3b, from the original's
+  check at `1c0d:000c`). A capital is captured when an enemy land unit takes its centre cell, the
+  check runs on that capture and not every round, and a neutral capital blocks both sides. The owner
+  byte in `eras.json` is LIVE: the original's turn-0 RAM already carries it (London `0x59`, Berlin
+  `0x9A`, before any order), and B-3b supersedes the interim R6 clear on the strength of that capture
+  - no era opens with every capital held by one side (1918 2 blue / 1 red, 1942 3/3, 1986 3 blue /
+  1 red). What that costs: blue can finish 1918 by taking Berlin and 1986 by taking Moscow, while red
+  needs three in 1986. That asymmetry is in the data and in the original's own check, not in the port.
 
 ## Current milestone
 
