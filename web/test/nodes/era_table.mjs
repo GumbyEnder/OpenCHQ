@@ -7,8 +7,9 @@
 // the extract, the baked file must still agree with it, id by id, and name the first disagreement.
 //
 // Deliberately not asserted: the meaning of subtype 1 vs 2, and any mapping of `type` onto `kind`.
-// The file and world.json disagree on 34 of 84 sites; mapping would reclassify income and the 20
-// facilities in one keystroke, so `kind` staying put is itself a check.
+// The file and world.json disagree on 14 of 84 sites at 1986 (city-kind, capitals excluded);
+// mapping would reclassify income and the 20 facilities in one keystroke, so `kind` staying put is
+// itself a check.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";

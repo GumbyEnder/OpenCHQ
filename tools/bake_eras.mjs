@@ -84,7 +84,7 @@ for (const { label, fileEra, ownerSource } of ERA_ROWS) {
 const payload = {
   _meta: {
     what: "Per-era site table: subtype (byte & 7) and owner bits (0x40 blue / 0x80 red) for all 84 site ids, read from the extract by tools/bake_eras.mjs",
-    not: "This is not the extract and it is not world.json's kind. No data file of the 1990 release is shipped, and the subtype is not mapped onto kind - the two disagree on 34 of 84 sites.",
+    not: "This is not the extract and it is not world.json's kind. No data file of the 1990 release is shipped, and the subtype is not mapped onto kind: the two disagree on 14 of 84 sites at 1986 (city-kind, capitals excluded) - the 12 sites whose 1986 row is type 3 that world.json calls city (0, 1, 2, 4, 21, 22, 51, 52, 54, 55, 57, 58) plus ids 10 London and 35 Tokyo, which the file calls type 1 and world.json calls city. The capital-kind ids 62/63 agree, and so do the 20 facility ids 64..83.",
     generated: "pinned to " + sourceFile + " sha256_16 " + hash,
     extract: path.basename(path.dirname(root)) + "/" + path.basename(root),
     sha256_16: { [sourceFile]: hash },

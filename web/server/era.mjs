@@ -4,13 +4,14 @@
 // The data is web/data/eras.json, baked from the extract by tools/bake_eras.mjs and committed, so a
 // host with no extract still plays the original's opening. Nothing here reads the extract at
 // runtime and nothing here touches world.json: the subtype travels as `type` and `kind` keeps the
-// asset list's word, because the two disagree on 14 of 84 sites at 1986 and mapping one onto the
-// other would silently reclassify cities, income and the 20 facilities. That 14 is the whole
-// disagreement under the only mapping that exists (1/2 = capital, 4 = city, 5 = facility): the 12
-// sites whose 1986 row is type 3 and world.json calls city (0, 1, 2, 4, 21, 22, 51, 52, 54, 55, 57,
-// 58), plus id 10 London and id 35 Tokyo, which the file calls type 1 and world.json calls city.
-// Note eras.json's own _meta still says "34 of 84": that figure is stale (an earlier derivation),
-// the reproducible count is 14, and the baked _meta is not B-2's to edit - re-bake corrects it.
+// asset list's word, because the two disagree on 14 of 84 sites at 1986 (city-kind, capitals
+// excluded) and mapping one onto the other would silently reclassify cities, income and the 20
+// facilities. That 14 is the whole disagreement under the only mapping that exists (1/2 = capital,
+// 4 = city, 5 = facility): the 12 sites whose 1986 row is type 3 and world.json calls city (0, 1,
+// 2, 4, 21, 22, 51, 52, 54, 55, 57, 58), plus id 10 London and id 35 Tokyo, which the file calls
+// type 1 and world.json calls city. eras.json's own _meta carries that same reading, written by
+// tools/bake_eras.mjs; the earlier "34 of 84" was an earlier derivation and included the 20
+// facility rows, which agree.
 //
 // B-1 landed the table and these two pure functions. B-2 wired them in: board.matchSites applies
 // the era to the base list and carries `type`, match.openMatch copies `type` and the file's owner
