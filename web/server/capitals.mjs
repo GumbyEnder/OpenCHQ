@@ -58,12 +58,17 @@ export function capitalsFromFile(era, sites) {
       missing.push(Number(row.id));
       continue;
     }
+    // The label is read off the site record, not off the row: the site's owner byte is what the win
+    // check reads, so a list that carries its own copy can disagree with the board and report a
+    // holder nobody has. The row is the fallback only for a caller that hands in sites with no
+    // owner field at all (a fabricated fixture), and there it is still the file's answer.
+    const byte = Object.prototype.hasOwnProperty.call(site, "owner") ? site.owner : row.owner;
     list.push({
       siteId: Number(row.id),
       name: site.name,
       x: Number(site.x),
       y: Number(site.y),
-      owner: SIDES.includes(row.owner) ? row.owner : null,
+      owner: SIDES.includes(byte) ? byte : null,
     });
   }
   return { era: String(era), source, list, missing };
@@ -102,7 +107,7 @@ function holdable(site) {
   return kind === "city" || kind === "capital" || kind === "base";
 }
 
-// ROLLED YEARS (2023, ????): two capitals, one for each side, drawn at launch from the sites that
+// ROLLED YEARS (2023, and 9999 - the concealed start, labelled ???? in the UI): two capitals, one for each side, drawn at launch from the sites that
 // side already owns, so a rolled capital is always inside its own territory and never lands in
 // enemy ground at round 0. Deterministic in `seed`, distinct by construction, and blue draws first.
 //

@@ -73,8 +73,10 @@ function sideState(era, cash = null) {
 //
 // A file year whose site list does not carry every row keeps the gap in `missing` rather than
 // rolling replacements: the win check refuses to decide a match on a partial set, because a
-// capital silently dropped would make the win easier than the original's. Rolled years (2023,
-// ????) have no rows and get the two rolled capitals, which is the reading that ships.
+// capital silently dropped would make the win easier than the original's. The years with no capital
+// rows (2023 and the concealed 9999) get the two rolled capitals, which is the reading that ships.
+// The literal "????" label is not an era id: eraOf sends it to 1986, so it inherits 1986's four
+// file capitals rather than rolling - a test-only path, pinned in capital_open.
 export function capitalSetFor(year, sites, seed) {
   const { rows } = capitalRows(year);
   if (!rows.length) return capitalSet(year, sites, seed);

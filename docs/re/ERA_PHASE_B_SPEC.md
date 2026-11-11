@@ -421,6 +421,16 @@ negotiable at implementation time:
 2. **Trigger: when a capital is captured, not every tick.** The original calls the routine from the
    capture handler only. The port moves `checkWin` off the per-tick path and onto capture.
 
+*Correction, 2026-11-11 (measured, after the ruling was recorded).* Item 1's parenthetical says
+"2023 and ???? each roll two at launch". Through `openMatch` only the concealed year's era id
+`"9999"` rolls: it is in `match.ERAS`, so `eraOf` passes it through and `rollCapitals` draws its two.
+`"????"` is the UI label for 9999, not an era id, and the literal string is coerced to 1986 by
+`eraOf` - `matchSites("????")` therefore yields 1986's four file capitals over a neutral board.
+`capitalSet()` called directly does roll on any non-file year, which is why `capitals_table` and the
+"all five" phrasing looked true; `capital_open` now pins both halves (`openMatch` for a non-era label
+vs `capitalSet` called directly). Ruling unchanged: the check is the era's whole file set, two rolled
+capitals only for the years the file ships no rows for.
+
 Engine-side line references, as given by the PM (current code at `296c523`, i.e. the code this section
 is telling the implementer to replace):
 
@@ -440,7 +450,7 @@ is telling the implementer to replace):
 
 **Landed.** `match.openMatch` now carries `capitalSet` (the file's rows joined to the live sites,
 `match.capitalSetFor`), `tick.checkWin` reads that list through `capitals.holderOf` and refuses a
-partial set, and `tickMatch` calls it only when a capture event names a site in the set. The
+partial set, and `tickMatch` calls it only when a capture event names a site in the set.
 The trigger is membership, not `site.kind`: two of 1986's four capitals (London, Tokyo) are city-kind
 sites, so a London capture emits `kind: "city"` and must still be able to end the match.
 `rooms.unpackMatch` rebuilds the set for rows written before this commit, on every unpack path

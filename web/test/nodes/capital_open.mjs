@@ -164,6 +164,16 @@ export async function run() {
     fail("the literal ???? label should fall through to 1986's four capitals, got " +
       labelled.era + " with " + labelled.capitalSet.list.length);
   }
+  // And the fall-through set must not label owners its sites do not carry: the board there is the
+  // neutral 1986 template, so every label has to read neutral too. This is the exact drift the
+  // rolled-year fix removed, one path over.
+  for (const capital of labelled.capitalSet.list) {
+    const site = capitalSite(labelled, capital.siteId);
+    const owner = site.owner === "blue" || site.owner === "red" ? site.owner : null;
+    if (capital.owner !== owner) {
+      fail("????: the set labels " + site.name + " " + capital.owner + " and the site says " + owner);
+    }
+  }
 
   // eras.json is untouched by any of this: the 1942 seats are still blue's in the data.
   const row = eraTable("1942");
