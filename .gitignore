@@ -22,3 +22,7 @@ export/
 # Python bytecode from the RE harnesses
 __pycache__/
 *.pyc
+
+# Soak runs write screenshots and a json per run. The T-007 AC6 run is committed as evidence;
+# later runs stay on the machine.
+tests/e2e/soak-*/
