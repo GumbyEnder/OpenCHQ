@@ -77,6 +77,17 @@ export async function run() {
   must(earlyWin.length === 1 && /every capital \(3 of 3\)/.test(earlyWin[0].text),
     "the win line must read 1918's three capitals, not a fixed pair: " + (earlyWin[0] && earlyWin[0].text));
 
+  // The size is read off the set, so it must move with the era: 1942 carries six and a rolled
+  // era carries the two seats. Pin both, or a hard-coded "every capital (4 of 4)" passes here.
+  const six = openMatch("1942", sites);
+  const sixWin = logLines(six, "blue", [{ type: "win", side: "blue" }], 403);
+  must(sixWin.length === 1 && /every capital \(6 of 6\)/.test(sixWin[0].text),
+    "the win line must read 1942's six capitals: " + (sixWin[0] && sixWin[0].text));
+  const rolled = openMatch("2023", sites);
+  const rolledLoss = logLines(rolled, "blue", [{ type: "win", side: "red" }], 404);
+  must(rolledLoss.length === 1 && /the enemy holds every capital \(2 of 2\)/.test(rolledLoss[0].text),
+    "a rolled era's win line must read its two seats: " + (rolledLoss[0] && rolledLoss[0].text));
+
   // ---- the seam: sight wraps in X, so a fight across the wrap is visible -------------------
   const edge = match.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");
   edge.x = 1;
