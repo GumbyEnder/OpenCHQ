@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const warned = new Set();
 
 // The extracted data root. OPENCHQ_DATA is the runner's variable; OPENCHQ_EXTRACT is the older
 // name the single-node scripts used. An untracked local/data_root.txt can name it too, but only on
@@ -17,7 +18,16 @@ const projectDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 export function extractRoot() {
   for (const key of ["OPENCHQ_DATA", "OPENCHQ_EXTRACT"]) {
     const value = process.env[key];
-    if (value) return path.resolve(value);
+    if (!value) continue;
+    const resolved = path.resolve(value);
+    // A set-but-wrong path has to behave like an unset one. Returned unchecked it is worse than a
+    // skip: this host measured `OPENCHQ_DATA=/nope/nothing` as 58 passed / 0 failed / 2 skipped and
+    // exit 0, a green summary over a run that never saw the original bytes.
+    if (existsSync(resolved)) return resolved;
+    if (!warned.has(key)) {
+      warned.add(key);
+      console.error("env.mjs: " + key + " is set to " + value + ", which does not exist; treating it as unset");
+    }
   }
   const pointer = path.join(projectDir, "local", "data_root.txt");
   if (existsSync(pointer)) {
