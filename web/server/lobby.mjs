@@ -16,6 +16,7 @@ import { handicapDefault, handicapSpec, roundSeconds } from "./rules.mjs";
 import { shopFor } from "./shop.mjs";
 import { compatUnitKind } from "./migrate.mjs";
 import { TAKEOVER_CLOSE_CODE as TAKEOVER_CODE } from "./ws.mjs";
+import { displayNames, localName } from "./names.mjs";
 
 // A player action during a running clock marks the room dirty instead of committing it: the tick
 // writes dirty rooms within FLUSH_SECONDS anyway, and a commit per order is what turned a 0.12 s
@@ -70,6 +71,38 @@ export function createLobby() {
   const invites = new Map();
   const rooms = new Map();
   const seatOf = new Map();
+  // account -> the name another player sees, and the reverse. Built here, never sent out of the
+  // handle: `names.mjs` owns the rule, this keeps it stable while the account is online.
+  const displayOf = new Map();
+
+  function nameOf(account) {
+    if (!account) return "";
+    return displayOf.get(account) || localName(account);
+  }
+
+  function claimName(account) {
+    if (displayOf.has(account)) return displayOf.get(account);
+    const got = displayNames([account], displayOf).get(account);
+    displayOf.set(account, got);
+    return got;
+  }
+
+  function releaseName(account) {
+    const name = displayOf.get(account);
+    displayOf.delete(account);
+    return name;
+  }
+
+  // A display name (what a client sends when it invites) back to the account that holds it.
+  function accountFor(name) {
+    const wanted = String(name ?? "").trim().toLowerCase();
+    if (!wanted) return "";
+    for (const [account, display] of displayOf) {
+      if (String(display).toLowerCase() === wanted) return account;
+    }
+    // A caller that already holds a real handle (a test harness, an owner tool) still works.
+    return sockets.has(name) ? name : "";
+  }
 
   // The site list a match plays on: cities and capitals from the asset list, docks from the
   // painted terrain, wells from the oil layer. Missing extract -> no sites, the hosted case.
@@ -107,7 +140,7 @@ export function createLobby() {
   function presence() {
     const users = [];
     for (const [username, peer] of sockets) {
-      users.push({ username, busy: seatOf.has(username), roomId: seatOf.get(username) ?? "" });
+      users.push({ username: nameOf(username), busy: seatOf.has(username), roomId: seatOf.get(username) ?? "" });
     }
     users.sort((a, b) => a.username.localeCompare(b.username));
     return users;
@@ -133,8 +166,8 @@ export function createLobby() {
       era: room.era,
       clock: room.clock,
       you,
-      blue: { username: room.seats.blue.username, kind: room.seats.blue.kind },
-      red: { username: room.seats.red.username, kind: room.seats.red.kind },
+      blue: { username: room.seats.blue.kind === "bot" ? "Bot" : nameOf(room.seats.blue.username), kind: room.seats.blue.kind },
+      red: { username: room.seats.red.kind === "bot" ? "Bot" : nameOf(room.seats.red.username), kind: room.seats.red.kind },
       round: room.match ? room.match.round : 0,
       // The round the server is running, so the page draws the same clock the server does instead
       // of keeping a copy of a tunable. Without it the TIME LEFT bar had nothing to run down.
@@ -368,6 +401,7 @@ export function createLobby() {
   }
 
   function join(username, peer) {
+    claimName(username);
     const previous = sockets.get(username);
     sockets.set(username, peer);
     if (previous && previous !== peer) replace(previous);
@@ -376,11 +410,13 @@ export function createLobby() {
       sockets.delete(username);
       const roomId = seatOf.get(username);
       if (roomId && rooms.has(roomId)) {
-        holdRoom(rooms.get(roomId), username + " disconnected. The match is paused and still yours.");
+        holdRoom(rooms.get(roomId), nameOf(username) + " disconnected. The match is paused and still yours.");
       }
       for (const [id, invite] of invites) {
         if (invite.from === username || invite.to === username) invites.delete(id);
       }
+      // The name is released only once the account is really offline: a takeover keeps it.
+      if (!seatOf.has(username)) releaseName(username);
       sendPresence();
     };
     const roomId = seatOf.get(username);
@@ -391,7 +427,7 @@ export function createLobby() {
     if (room) forgetSeat(room, room.seats.blue.username === username ? "blue" : "red");
     peer.send({
       op: "welcome",
-      username,
+      username: nameOf(username),
       users: presence(),
       room: view,
     });
@@ -403,7 +439,7 @@ export function createLobby() {
   function leave(username) {
     const roomId = seatOf.get(username);
     if (!roomId || !rooms.has(roomId)) return { error: "You are not in a match." };
-    endRoom(rooms.get(roomId), username + " left the match.");
+    endRoom(rooms.get(roomId), nameOf(username) + " left the match.");
     return { ok: true };
   }
 
@@ -420,7 +456,7 @@ export function createLobby() {
     room.match.winner = other;
     room.clock = "held";
     room.match.clock = "held";
-    room.note = username + " resigned. " + other + " wins.";
+    room.note = nameOf(username) + " resigned. " + other + " wins.";
     saveRoom(room);
     tellRoom(room);
     return { ok: true };
@@ -436,7 +472,7 @@ export function createLobby() {
     const era = room.era;
     // A new game keeps the handicap the player chose, unless the era has no spinner.
     const spinner = room.match && room.match.handicap ? room.match.handicap.billions : undefined;
-    endRoom(room, username + " started a new game.");
+    endRoom(room, nameOf(username) + " started a new game.");
     return startBot(username, era, mine, spinner);
   }
 
@@ -486,25 +522,39 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // An invite names a display name; the server resolves it back to the one account, so the real
+  // handle is never asked for and never echoed.
   function invite(from, toName, era, side) {
-    if (from === toName) return { error: "Invite someone else." };
-    if (!sockets.has(toName)) return { error: "That player is not online." };
-    if (seatOf.has(from) || seatOf.has(toName)) return { error: "One of you is already in a match." };
+    const to = accountFor(toName);
+    if (!to) return { error: "That player is not online." };
+    if (from === to) return { error: "Invite someone else." };
+    if (seatOf.has(from) || seatOf.has(to)) return { error: "One of you is already in a match." };
     const id = randomBytes(8).toString("hex");
     const inviteRow = {
       id,
       from,
-      to: toName,
+      to,
       era: eraOf(era),
       side: sideOf(side),
     };
     for (const [oldId, old] of invites) {
-      if (old.from === from && old.to === toName) invites.delete(oldId);
+      if (old.from === from && old.to === to) invites.delete(oldId);
     }
     invites.set(id, inviteRow);
-    sockets.get(toName).send({ op: "invite", invite: publicInvite(inviteRow) });
+    sockets.get(to).send({ op: "invite", invite: publicInvite(inviteRow) });
     sockets.get(from).send({ op: "invited", invite: publicInvite(inviteRow) });
     return { ok: true };
+  }
+
+  // What an invite looks like off the server: display names only.
+  function publicInvite(inviteRow) {
+    return {
+      id: inviteRow.id,
+      from: nameOf(inviteRow.from),
+      to: nameOf(inviteRow.to),
+      era: inviteRow.era,
+      side: inviteRow.side,
+    };
   }
 
   function answer(username, inviteId, accept) {
@@ -513,7 +563,7 @@ export function createLobby() {
     invites.delete(inviteRow.id);
     const sender = sockets.get(inviteRow.from);
     if (!accept) {
-      if (sender) sender.send({ op: "declined", by: username });
+      if (sender) sender.send({ op: "declined", by: nameOf(username) });
       return { ok: true };
     }
     if (!sender) return { error: "That player left." };
@@ -984,12 +1034,4 @@ function opened(era, sites, options = {}) {
   return match;
 }
 
-function publicInvite(invite) {
-  return {
-    id: invite.id,
-    from: invite.from,
-    to: invite.to,
-    era: invite.era,
-    side: invite.side,
-  };
-}
+
