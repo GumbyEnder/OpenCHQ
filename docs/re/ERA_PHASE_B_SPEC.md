@@ -207,7 +207,7 @@ UNVERIFIED and it is B-3's job.
 B-3's captures settle what this spec called UNVERIFIED: the original's turn-0 RAM carries the owner
 bits (London `0x59` blue, Berlin `0x9A` red, before any order — `docs/re/B3_CAPITALS.md` §2) and the
 win check at `1c0d:000c` reads that same byte. B-3b therefore removes the R6 clear rather than
-extending it, which the task table above already records as this spec's own supersession (`406-408`).
+extending it, which the supersession table below already records as this spec's own (`:448`).
 
 R6's reason does not survive the win change. R6 existed to stop a held opening deciding 1942 on the
 bell, which it did while the win counted two fixed seats. The win now counts the era's whole set, and
