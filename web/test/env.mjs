@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 const projectDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // The extracted data root. OPENCHQ_DATA is the runner's variable; OPENCHQ_EXTRACT is the older
-// name the single-node scripts used; local/data_root.txt is the committed development pointer.
+// name the single-node scripts used. An untracked local/data_root.txt can name it too, but only on
+// a dev checkout: `local/` is in .gitignore and in no ref (`git log --all -- local/` is empty), so
+// a published tree has no pointer, resolves from env alone, and skips when env is unset. Never call
+// that file "committed" - that wording has already been mistaken for a shipped fallback.
 export function extractRoot() {
   for (const key of ["OPENCHQ_DATA", "OPENCHQ_EXTRACT"]) {
     const value = process.env[key];
