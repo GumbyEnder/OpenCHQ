@@ -29,7 +29,15 @@ export function capitalRows(era) {
   const table = eraTable(era);
   if (!table) return { era: String(era), source: "none", rows: [] };
   const rows = table.sites.filter((row) => isCapitalType(row.type));
-  const source = table.ownerSource === "file" ? "file" : rows.length ? "file" : "rolled";
+  // `source` is read as evidence (the A4 drift guard), so it is derived from the rows themselves:
+  // rows present means the file named the owners, no rows means the year rolled them. The old
+  // ownerSource-first form had a dead branch - with rows present it always answered "file" - and a
+  // table that claims rolled owners while carrying capital rows would have been reported as file.
+  // That is a baked-data contradiction, so it fails rather than being papered over.
+  const source = rows.length ? "file" : "rolled";
+  if (rows.length && table.ownerSource !== "file") {
+    throw new Error("era " + era + " carries capital rows but ownerSource is " + JSON.stringify(table.ownerSource));
+  }
   return { era: String(era), source, rows };
 }
 

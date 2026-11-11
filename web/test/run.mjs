@@ -714,6 +714,12 @@ async function main() {
   wsAfter.close();
 
   // ---- drop_godot: this branch carries only the browser game --------------------------
+  // This block sits inside the server-suite try and records no pass of its own, so on a host with
+  // no extract it is never evaluated at all: main() has already recorded the "server suite" skip
+  // and returned before this try is entered. That is why a no-extract run reports 8 skips, not 9 -
+  // drop_godot is the missing one. Do not "fix" the 8 by hoisting this block: the no-extract skip
+  // is the early return in main(), and the godot-tree assertion is the check that would catch the
+  // tree coming back. If the extract gate ever moves off the server suite, this becomes 9.
   const godotLeftovers = ["project.godot", "scenes", "scripts", "icon.svg", "icon.svg.import", "run-windows.bat"];
   for (const leftover of godotLeftovers) {
     if (existsSync(path.join(root, leftover))) fail("the Godot tree is still on the web branch: " + leftover);
