@@ -207,7 +207,7 @@ UNVERIFIED and it is B-3's job.
 B-3's captures settle what this spec called UNVERIFIED: the original's turn-0 RAM carries the owner
 bits (London `0x59` blue, Berlin `0x9A` red, before any order — `docs/re/B3_CAPITALS.md` §2) and the
 win check at `1c0d:000c` reads that same byte. B-3b therefore removes the R6 clear rather than
-extending it, which the task table above already records as this spec's own supersession (`:407`).
+extending it, which the task table above already records as this spec's own supersession (`406-408`).
 
 R6's reason does not survive the win change. R6 existed to stop a held opening deciding 1942 on the
 bell, which it did while the win counted two fixed seats. The win now counts the era's whole set, and
@@ -274,12 +274,14 @@ not counted when that number was written. A run that reports five has a partial 
 (`data/` present without `exe/` or `COMMAND/FONTS.CHQ`), not a different suite.
 
 Command caveat (measured 2026-11-11): `env -u OPENCHQ_DATA node web/test/run.mjs` on a dev
-checkout still prints 57/0/0, because `web/test/env.mjs` falls back to `local/data_root.txt`, which
-is gitignored and present in every *clone*, but not in a git worktree: `local/` is in no ref, so a
-worktree neither carries it nor shares it with the clone. Say "clone" when quoting these numbers.
-To reproduce the 8-skip run, use a tree with no `local/` — e.g. `git archive <head> | tar -x -C
-/tmp/noextract` and run the suite there — or move `local/data_root.txt` aside first. A bare
-`env -u` is not enough, and the suite is not wrong when it reports 57.
+checkout still prints 57/0/0, because `web/test/env.mjs` falls back to `local/data_root.txt`. That
+file is in no ref: it is an untracked override that exists only in a workstation checkout where
+someone created it. A fresh clone has no `local/` either — measured,
+`git clone --branch b3b-wincheck` has none and prints 52/0/8 at `8e6092c` — so the honest phrase is
+"this checkout", never "every clone" and never "every working copy". To reproduce the 8-skip run,
+use a tree with no `local/` — e.g. `git archive <head> | tar -x -C /tmp/noextract` and run the
+suite there — or move `local/data_root.txt` aside first. A bare `env -u` is not enough, and the
+suite is not wrong when it reports 57.
 
 Four legs re-run at `6a74a49` (buzzy, 2026-11-11) — the correct reading of A1's two lines:
 

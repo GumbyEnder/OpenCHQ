@@ -14,8 +14,10 @@
 //   3. the consequence, stated and pinned rather than discovered later: 1918 is one blue capture
 //      (Berlin) and 1986 is one blue capture (Moscow), while red needs three in 1986. The asymmetry
 //      is in the data and in the original's own check, not in this port;
-//   4. a 2023 rolled capital reports the holder its site record carries, and 9999 is 1986 through
-//      openMatch (eraOf coerces anything outside ERAS).
+//   4. a rolled capital reports the holder its site record carries - both for 2023 and for the era
+//      id "9999", which IS in match.ERAS and rolls through openMatch. The one name that does not
+//      roll is the literal "????": it is a label, not an era id, so eraOf sends it to 1986 and it
+//      plays 1986's four file capitals. That is the only place the two names diverge.
 
 import { matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";

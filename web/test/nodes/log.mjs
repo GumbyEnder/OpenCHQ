@@ -62,8 +62,20 @@ export async function run() {
   const shots = logLines(match, "blue", [{ type: "shot", side: "red", x: blue.x, y: blue.y }], 34);
   must(shots.length === 0, "a single shot must not fill the log");
 
+  // The win line reports the era's whole set, not two seats: 1986 has four capitals and 1918 has
+  // three, so a fixed "both capitals" would be false for every era this port plays.
   const win = logLines(match, "blue", [{ type: "win", side: "blue" }], 400);
-  must(win.length === 1 && /both capitals/.test(win[0].text), "a win must be reported in words");
+  must(win.length === 1 && /you hold every capital \(4 of 4\)/.test(win[0].text),
+    "a win must be reported in words, with the size of the set that decided it: " + (win[0] && win[0].text));
+  must(!/both capitals/.test(win[0].text), "the win line must not say two seats: " + win[0].text);
+  const loss = logLines(match, "blue", [{ type: "win", side: "red" }], 401);
+  must(loss.length === 1 && /the enemy holds every capital \(4 of 4\)/.test(loss[0].text),
+    "a loss must report the same set size: " + (loss[0] && loss[0].text));
+
+  const early = openMatch("1918", sites);
+  const earlyWin = logLines(early, "blue", [{ type: "win", side: "blue" }], 402);
+  must(earlyWin.length === 1 && /every capital \(3 of 3\)/.test(earlyWin[0].text),
+    "the win line must read 1918's three capitals, not a fixed pair: " + (earlyWin[0] && earlyWin[0].text));
 
   // ---- the seam: sight wraps in X, so a fight across the wrap is visible -------------------
   const edge = match.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");

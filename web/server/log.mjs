@@ -208,9 +208,17 @@ export function logLines(match, side, events, round) {
         if (mine) push("a nuke was launched");
         else push("an enemy nuke was launched");
         break;
-      case "win":
-        push(event.side === side ? "you hold both capitals" : "the enemy holds both capitals");
+      case "win": {
+        // The set is the era's, not two fixed seats: 1918 is won by holding London, Berlin and
+        // Paris, and neither of those last two is 62 or 63. Report the size the match actually
+        // decided on, so the last line the player reads agrees with the rule that ended it.
+        const size = match && match.capitalSet && Array.isArray(match.capitalSet.list)
+          ? match.capitalSet.list.length
+          : 0;
+        const set = size ? "every capital (" + size + " of " + size + ")" : "every capital";
+        push(event.side === side ? "you hold " + set : "the enemy holds " + set);
         break;
+      }
       default:
         break;
     }
