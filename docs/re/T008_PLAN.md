@@ -104,3 +104,57 @@ Reading `decompiled.c` against the live DGROUP narrows S1 a lot:
   a measurement script has to answer it to get a second round.
 - DOSBox `cycles=auto` settled on **3000 cycles** for this game (title bar), which is the
   number to record with the AC2 table.
+
+## S1 status 2026-11-12 — the speed control found, the clock measured, one hypothesis dead
+
+**The speed control is the war room's `+` / `-` keys, not a menu item.** `DS:0xc700` is the
+speed byte: the `+`/`-` handler (`decompiled.c:10371-10389`, inside the `0xefee == 0x2b/0x2d`
+branch) adds or subtracts 1 (3 with a modifier bit), clamps to 0..6, and `FUN_259b_0e6a`
+renders it as `Speed N` (`decompiled.c:19252`: `FUN_23aa_012e(0x2368, 0xe342, 0xc)` with the
+`Speed ` string at `DS:0x2368`). Verified on screen: pressing `-` from 6 produces the game's
+own red `SPEED 5` line in the mode bar, and the byte reads 5. F10's war-room menu bar
+(`RESTART / SAVE / RESUME / CHAT / VOLUME / SHOW=WHO`, six items, Left/Right wraps) has no
+speed entry, so the menu is not the route.
+
+**Measured: the round clock does not change with speed on an idle board.**
+Probe `~/agents/game/notes/t008/speed_rate2.py`, 1986 war room, Xvfb `:99`, DOSBox
+`cycles=auto` (3000 cycles), countdown re-seeded to `0x1dde` between legs:
+
+    speed   units/s   s per 7646-unit round   ratio to real time
+      0      59.17          129.23                0.92x
+      1      59.17          129.23                0.92x
+      2      59.00          129.59                0.92x
+      3      59.17          129.23                0.92x
+      4      59.17          129.23                0.92x
+      5      59.17          129.23                0.92x
+      6      59.17          129.23                0.92x
+
+Two independent runs (dwell 8 s and 6 s) agree to 0.2 units/s. So on an idle board the
+countdown is a **wall clock**: 59.17 units/s against the nominal 64, i.e. ~7.5 % slow under
+`cycles=auto`, and a round is ~129 s of wall time at every speed, speed 0 included.
+
+**This kills the plan's S1 hypothesis**, which was that speed scales the tick rate that
+decrements `DS:0x157e`. It also corrects the plan's run-flag sentence: `DS:0xc6fe` reads **0**
+while the clock is running at 59.17 units/s, so `0xc6fe != 1` is a round-end write
+(`decompiled.c:13548`), not a global paused-game gate, and a probe reading the clock at
+`0xc6fe == 0` is not measuring a paused game.
+
+**What the speed byte does drive.** `DS:0x3e91` is the per-frame delay the piece-animation
+loop uses (`decompiled.c:4381-4471`): `7 - speed` frames, `(7 - speed) * 20` in one branch,
+and a `& 0xf` / `& 3` / `& 1` mask ladder at speeds 6 / 5 / 4. That is world-action pacing,
+not round length. The open question S1 now carries is whether the countdown is *also*
+paced by that same delay when the board is busy — an idle board cannot see it, so the next
+leg measures the clock rate with a unit under orders at speed 1 vs speed 6.
+
+**Speed 0 is not yet a stop.** On an idle board the clock runs at 59.17 units/s at speed 0,
+which contradicts "at speed 0, game-time does not pass" (Manual p.35) unless the freeze is
+scoped to piece/combat ticks rather than the round panel. AC2's "speed 0 confirmed as a full
+stop" is therefore **UNMEASURED**: the decisive leg is a unit under orders at speed 0, which
+is the same leg as the busy-board clock test above.
+
+**Harness facts for the next leg.** The single-player boundary is real and it does not
+auto-advance: `0x1478 == 2` plus `0x19e ∈ {2,3}` re-arms the clock, but that branch is
+`0x1478 == 2 && 0xeff0 == 0`; in this 1986 walk `0x1478 == 2`, `0x19e == 2`, `0x1a0 == 1`,
+`0xeff2 == 0`, and at the boundary the counter sits at `0xffff` and ignores plain `Return`.
+The probe therefore seeds `0x157e` itself (countdown only, never the speed byte) instead of
+trying to answer the prompt.
