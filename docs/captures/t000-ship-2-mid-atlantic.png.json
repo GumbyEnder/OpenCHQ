@@ -2,8 +2,8 @@
   "hull": "blue:cruiser:1",
   "x": 106,
   "y": 32,
-  "round": 7,
+  "round": 10,
   "clock": "running",
-  "clientRound": 7,
-  "strip": "1986 · blue · round 7 · running"
+  "clientRound": 10,
+  "strip": "1986 · blue · round 10 · running"
 }
