@@ -11,6 +11,8 @@
 // Nothing here knows about money, readiness or the piece list beyond "a cell is occupied".
 
 import { placementRules } from "./rules.mjs";
+import { resolveDataRoot } from "./board.mjs";
+import { sailableWater } from "./lanes.mjs";
 
 const SEA_KINDS = new Set(["cruiser", "carrier", "submarine"]);
 // Terrain ids from the board payload's own table: 0 ocean, 2 shallows, 3 lake.
@@ -82,12 +84,18 @@ export function placementMask(match, side, kind, board) {
         queue[tail++] = nid;
       }
     }
+    // A synthetic board (the tests' grid, or a host with no board at all) is not the map the lane
+    // table was decoded from, so its water cells are not judged against the lane graph. Only a real
+    // board is: there, water no lane reaches is water a purchased hull could never leave.
+    const realBoard = board.source === "extract" || board.source === "bundled";
+    const sailable = realBoard ? sailableWater(resolveDataRoot()) : null;
     for (let id = 0; id < w * h; id++) {
       const d = dist[id];
       if (d <= 0 || d > coast) continue;
       if (!isSeaWater(cells[id])) continue; // a lake is not a harbour
       const x = id % w;
       const y = (id - x) / w;
+      if (sailable && !sailable.has(x + "," + y)) continue; // water no lane reaches
       if (taken.has(x + "," + y)) continue;
       mask[id] = 1;
       count += 1;

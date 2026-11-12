@@ -31,12 +31,10 @@ const AT_EDGES = 0x3736;
 const AT_END = 0x3de2; // exclusive
 
 const EXE_NAME = "CHQ_unpacked.EXE";
-const TERRAIN_STRIDE = 162; // same packing as board.mjs: 320x136 nibbles
 const CELL_W = 320;
 const CELL_H = 136;
 
 const graphCache = new Map();
-const terrainCache = new Map();
 
 function exeCandidates(dataRoot) {
   if (!dataRoot) return [];
@@ -243,54 +241,66 @@ export function laneGraph(dataRoot) {
 
 export function resetLaneCache() {
   graphCache.clear();
-  terrainCache.clear();
+  legCache.clear();
+  sailCache.clear();
 }
 
-// Terrain ids are the same packing board.mjs reads. Only used to tell a land
-// endpoint from a water one; nothing about the map leaves this module either.
-function terrainRow(dataRoot, y) {
+// Every water cell a hull can actually sail to: the water connected to at least one lane
+// waypoint, walked one cell at a time. The terrain map has 105 one-cell water pockets on this
+// board (row 0 and a few inland holes); a ship bought there could never move, because the only
+// way out was a jump the lanes do not make. Placement asks this set, so the highlight a player
+// clicks is water the hull can leave.
+const sailCache = new Map();
+
+export function sailableWater(dataRoot) {
   const key = String(dataRoot || "");
-  let terrain = terrainCache.get(key);
-  if (!terrain) {
-    const file = path.join(key, "data", "tmap.bin");
-    if (!key || !existsSync(file)) {
-      terrainCache.set(key, null);
-      return null;
+  const hit = sailCache.get(key);
+  if (hit) return hit;
+  const graph = laneGraph(key);
+  const set = new Set();
+  if (!graph.error && graph.waypoints.length) {
+    const queue = [];
+    for (const wp of graph.waypoints) {
+      if (!isWater(cellId(key, wp.x, wp.y))) continue;
+      const cellKey = wp.x + "," + wp.y;
+      if (set.has(cellKey)) continue;
+      set.add(cellKey);
+      queue.push({ x: wp.x, y: wp.y });
     }
-    try {
-      const fd = openSync(file, "r");
-      try {
-        const row = Buffer.alloc(TERRAIN_STRIDE * CELL_H);
-        const read = readSync(fd, row, 0, row.length, 0);
-        terrain = read >= TERRAIN_STRIDE ? row : null;
-      } finally {
-        closeSync(fd);
+    let head = 0;
+    while (head < queue.length) {
+      const cell = queue[head++];
+      for (const hop of WATER_HOPS) {
+        const x = (cell.x + hop.dx + CELL_W) % CELL_W;
+        const y = cell.y + hop.dy;
+        if (y < 0 || y >= CELL_H) continue;
+        const cellKey = x + "," + y;
+        if (set.has(cellKey)) continue;
+        if (!isWater(cellId(key, x, y))) continue;
+        set.add(cellKey);
+        queue.push({ x, y });
       }
-    } catch {
-      terrain = null;
     }
-    terrainCache.set(key, terrain);
   }
-  if (!terrain || y < 0 || y >= CELL_H) return null;
-  return terrain;
+  sailCache.set(key, set);
+  return set;
 }
 
+// A cell's terrain as the SERVER SERVES IT: boardPayload's grid, which is the raw tmap.bin plus
+// the site painter. Reading tmap.bin here and stopping there was a lie the gate caught - the
+// painter lays a city (id 6), capital (4) or base (5) over cells the raw map paints as water, so
+// 267,48 is water to a raw reader and Tokyo's city block to the player, and a lane leg could
+// stand a hull on it. The hull is drawn on boardPayload's cells, so that is the map it sails.
 function cellId(dataRoot, x, y) {
-  const rows = terrainRow(dataRoot, y);
-  if (!rows) {
-    // No tmap.bin (the public host): the baked board carries the same terrain codes.
-    try {
-      const cells = boardPayload().cells;
-      if (!Array.isArray(cells)) return null;
-      const cx = ((Math.trunc(x) % CELL_W) + CELL_W) % CELL_W;
-      return cells[y * CELL_W + cx] ?? null;
-    } catch {
-      return null;
-    }
+  if (y < 0 || y >= CELL_H) return null;
+  try {
+    const cells = boardPayload().cells;
+    if (!Array.isArray(cells)) return null;
+    const cx = ((Math.trunc(x) % CELL_W) + CELL_W) % CELL_W;
+    return cells[y * CELL_W + cx] ?? null;
+  } catch {
+    return null;
   }
-  const cx = ((Math.trunc(x) % CELL_W) + CELL_W) % CELL_W;
-  const value = rows[y * TERRAIN_STRIDE + (cx >> 1)];
-  return cx % 2 === 0 ? (value >> 4) & 0x0f : value & 0x0f;
 }
 
 // 0 ocean, 1 docks, 2 shallows. Anything above is dry ground.
@@ -387,9 +397,11 @@ export function joinLane(dataRoot, cell, accept = null) {
 }
 
 // One lane leg, expanded to the cells a hull actually crosses. `cellId` decides what counts as
-// water: the archive's lanes are coarser than its terrain map, so 27 of the 151 waypoints sit on a
-// cell painted as ground. A ship cannot stand on those, so they are stepped over rather than
-// returned - the sea segment of a path is water cells only (T-004 AC4).
+// water: the archive's lanes are coarser than its terrain map, so 26 of the 151 waypoints sit on a
+// cell painted as ground. Dropping those cells would leave a hole in the leg, and a hole is a
+// teleport: the hull skips a cell, never meets what stands on it, and lands on dry ground if the
+// hole is at an anchor. So a leg is expanded cell by cell, and where the straight lane line is
+// interrupted by ground the leg is walked around it through water (waterLeg between two points).
 function legCells(dataRoot, a, b) {
   const dx = b.x - a.x;
   const gap = Math.abs(dx);
@@ -405,8 +417,7 @@ function legCells(dataRoot, a, b) {
   const out = [];
   let guard = 0;
   while (guard++ <= CELL_W) {
-    const id = cellId(dataRoot, x, y);
-    if (isWater(id)) out.push({ x, y });
+    out.push({ x, y });
     if (x === b.x && y === b.y) break;
     const e2 = 2 * err;
     if (e2 > -distY && distX > 0) { err -= distY; x = (x + stepX + CELL_W) % CELL_W; }
@@ -416,10 +427,87 @@ function legCells(dataRoot, a, b) {
   return out;
 }
 
-// Waypoints from `from` to `to`, in order, or null when the lane graph cannot
-// join them. Refuses outright when both endpoints are dry land: a land order is
-// move.mjs's business and must never turn into a sea route.
-export function seaRoute(dataRoot, from, to) {
+// How far apart two cells are, with the cylinder folded in.
+function stepGap(a, b) {
+  const raw = Math.abs(b.x - a.x);
+  const dx = Math.min(raw, CELL_W - raw);
+  return Math.max(dx, Math.abs(b.y - a.y));
+}
+
+// A path a hull can actually sail: every consecutive pair is one cell apart.
+function isContiguous(cells) {
+  for (let i = 1; i < cells.length; i++) if (stepGap(cells[i - 1], cells[i]) !== 1) return false;
+  return true;
+}
+
+const WATER_HOPS = [];
+for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) if (dx !== 0 || dy !== 0) WATER_HOPS.push({ dx, dy });
+
+// The water cells between two points, one cell at a time, going around ground. Breadth-first
+// because every hop is one cell, so the first path found is the shortest in cells. The goal may
+// itself be dry (a lane waypoint the terrain map paints as coast): it is the destination, so it is
+// allowed as the last cell, but nothing before it may stand on land.
+function waterWalk(dataRoot, from, to, limit = CELL_W * CELL_H) {
+  const goalKey = to.x + "," + to.y;
+  const startKey = from.x + "," + from.y;
+  if (startKey === goalKey) return [from];
+  const passable = (x, y) => {
+    if (y < 0 || y >= CELL_H) return false;
+    if (x === to.x && y === to.y) return true;
+    return isWater(cellId(dataRoot, x, y));
+  };
+  const parent = new Map();
+  parent.set(startKey, null);
+  const queue = [from];
+  let head = 0;
+  while (head < queue.length && head < limit) {
+    const cell = queue[head++];
+    for (const hop of WATER_HOPS) {
+      const x = (cell.x + hop.dx + CELL_W) % CELL_W;
+      const y = cell.y + hop.dy;
+      const key = x + "," + y;
+      if (parent.has(key) || !passable(x, y)) continue;
+      parent.set(key, cell);
+      if (key === goalKey) {
+        const path = [{ x, y }];
+        let back = cell;
+        while (back) {
+          path.push({ x: back.x, y: back.y });
+          back = parent.get(back.x + "," + back.y);
+        }
+        return path.reverse();
+      }
+      queue.push({ x, y });
+    }
+  }
+  return null;
+}
+
+const legCache = new Map();
+
+// One lane leg as water cells a hull crosses, contiguous from end to end. The straight lane line
+// when it is already water the whole way; otherwise a water walk around the ground it crosses.
+function waterLeg(dataRoot, a, b) {
+  const keyIn = dataRoot + "|" + a.x + "," + a.y + "|" + b.x + "," + b.y;
+  const hit = legCache.get(keyIn);
+  if (hit !== undefined) return hit;
+
+  const line = legCells(dataRoot, a, b);
+  const lineOk = line.length > 1 &&
+    line.every((cell) => isWater(cellId(dataRoot, cell.x, cell.y))) &&
+    isContiguous(line) &&
+    line[0].x === a.x && line[0].y === a.y &&
+    line[line.length - 1].x === b.x && line[line.length - 1].y === b.y;
+  const result = lineOk ? line : waterWalk(dataRoot, a, b);
+  legCache.set(keyIn, result);
+  return result;
+}
+
+// The lane plan from `from` to `to`: the water cells a hull crosses, and the lane waypoint
+// indices it actually anchors to, in order. Null when the lane graph cannot join them. Refuses
+// outright when both endpoints are dry land: a land order is move.mjs's business and must never
+// turn into a sea route.
+function lanePlan(dataRoot, from, to) {
   const start = point(from);
   const end = point(to);
   if (!start || !end) return null;
@@ -456,16 +544,14 @@ export function seaRoute(dataRoot, from, to) {
   }
 
   // A lane step has to be water. Some of the recovered waypoints sit on a cell the terrain map
-  // paints as ground (the archive's lanes are coarser than its terrain); skip those waypoints,
-  // because a ship cannot stand on them.
+  // paints as ground (the archive's lanes are coarser than its terrain); those are not anchors a
+  // hull can stand on, and forcing them in (as this used to) put a ship on dry land. They are
+  // skipped, and the legs around them are walked through water instead.
   const wet = legs.filter((index) => isWater(cellId(dataRoot, graph.waypoints[index].x, graph.waypoints[index].y)));
-  const usable = wet.length >= 2 ? wet : legs.filter((index) => index === startIndex || index === goalIndex || wet.includes(index));
 
-  // The anchors: where the hull is, the lane waypoints it passes, and where it ends. The legs
-  // between them are expanded to cells so a path is the water a ship actually crosses, not a set of
-  // jumps between coarsely spaced waypoints.
+  // The anchors: where the hull is, the water lane waypoints it passes, and where it ends.
   const anchors = [{ x: start.x, y: start.y }];
-  for (const index of usable) {
+  for (const index of wet) {
     const wp = graph.waypoints[index];
     const prev = anchors[anchors.length - 1];
     if (prev.x === wp.x && prev.y === wp.y) continue;
@@ -474,22 +560,38 @@ export function seaRoute(dataRoot, from, to) {
   const lastAnchor = anchors[anchors.length - 1];
   if (lastAnchor.x !== end.x || lastAnchor.y !== end.y) anchors.push({ x: end.x, y: end.y });
 
+  // Every leg between anchors is one cell at a time through water. A leg that cannot be walked
+  // (a lake, a lane table that crosses a continent with no water gap) refuses the whole route
+  // rather than handing back a jump the hull would make through a cell it never visits.
+  //
+  // Cells are appended as the walk gives them, and only an exact repeat of the cell just pushed is
+  // dropped. A global "already seen" set looked tidier but cut loops: a leg that walked back
+  // through an earlier cell lost it, and the path jumped two cells instead of one.
   const steps = [];
-  const seen = new Set();
   const push = (cell) => {
-    const key = cell.x + "," + cell.y;
-    if (seen.has(key)) return;
-    seen.add(key);
+    const prev = steps[steps.length - 1];
+    if (prev && prev.x === cell.x && prev.y === cell.y) return;
     steps.push({ x: cell.x, y: cell.y });
   };
   push(anchors[0]);
   for (let i = 1; i < anchors.length; i++) {
-    const leg = legCells(dataRoot, anchors[i - 1], anchors[i]);
+    const leg = waterLeg(dataRoot, anchors[i - 1], anchors[i]);
+    if (!leg) return null;
     for (const cell of leg) push(cell);
-    // The anchor is always part of the route, even when the map paints it dry: the lane table says
-    // the ship goes there, and dropping it would silently reroute the voyage.
-    push(anchors[i]);
   }
   if (steps.length < 2) return null;
-  return steps;
+  return { steps, waypoints: wet.slice() };
+}
+
+// The water cells of a sea route, for a hull to follow step by step.
+export function seaRoute(dataRoot, from, to) {
+  const plan = lanePlan(dataRoot, from, to);
+  return plan ? plan.steps : null;
+}
+
+// The lane waypoints a sea route anchors to, in lane order. A test asks this instead of scraping
+// the cells, because a water walk may pass over a waypoint cell that is not on the chain.
+export function seaWaypoints(dataRoot, from, to) {
+  const plan = lanePlan(dataRoot, from, to);
+  return plan ? plan.waypoints : null;
 }
