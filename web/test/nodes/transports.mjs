@@ -262,16 +262,18 @@ export async function run(ctx) {
     });
   }
   // ---- AC4 across the whole table -----------------------------------------------------------
+  // Two counts, both zero here and both large at 28a4012 (frodo's 3177 gate):
+  //   1. planned land crossings between 1986 site pairs that contain a non-adjacent step
+  //      (28a4012: 48,265 of 60,874);
+  //   2. water-waypoint seaRoutes that contain a cell the map paints dry, over every ordered
+  //      pair of the graph's 124 water waypoints (28a4012: 488 of 15,252).
   // Three pinned crossings prove a shape; a lane or site edit can rot every other route and no
-  // test notices. Every ordered pair of the era's sites through planOrder, on one reused match:
-  // no jump (a hull that skips a cell never meets what stands on it) and no dry cell between two
-  // water cells (a hull standing on land mid-sea). Both were real on 28a4012 and the all-pairs
-  // sweep is the only thing that measured them.
+  // test notices. These two sweeps are the only thing that measured the rest of the table.
   const allMatch = openMatch("1986", []);
   allMatch.clock = "running";
   const probe = piece("blue:probe", "blue", 0, 0);
   allMatch.pieces = [probe];
-  const all = { pairs: 0, planned: 0, refused: 0, jumps: 0, dry: 0 };
+  const all = { pairs: 0, planned: 0, refused: 0, jumpy: 0, jumps: 0, routes: 0, dryRoutes: 0, dryCells: 0, noRoute: 0 };
   let firstJump = null;
   let firstDry = null;
   for (const a of cities) {
@@ -285,25 +287,53 @@ export async function run(ctx) {
       if (!line || line.error) { all.refused += 1; continue; }
       all.planned += 1;
       const route = line.path;
+      let jumped = false;
       for (let i = 1; i < route.length; i++) {
         if (stepGap(route[i - 1], route[i]) !== 1) {
           all.jumps += 1;
+          jumped = true;
           if (!firstJump) {
             firstJump = a.name + " -> " + b.name + " index " + i + " gap " + stepGap(route[i - 1], route[i]) +
               " " + JSON.stringify(route.slice(Math.max(0, i - 1), i + 1));
           }
         }
       }
-      for (let i = 1; i < route.length - 1; i++) {
-        if (!isSea(route[i].x, route[i].y) && isSea(route[i - 1].x, route[i - 1].y) && isSea(route[i + 1].x, route[i + 1].y)) {
-          all.dry += 1;
-          if (!firstDry) firstDry = a.name + " -> " + b.name + " at index " + i + " " + JSON.stringify(route[i]);
-        }
-      }
+      if (jumped) all.jumpy += 1;
     }
   }
-  if (all.jumps) fail("an order jumps cells somewhere on the table (" + all.jumps + "): " + firstJump);
-  if (all.dry) fail("a hull stands on land mid-sea somewhere on the table (" + all.dry + "): " + firstDry);
+  // The sea leg is the lane route itself: every ordered pair of water lane waypoints. A dry
+  // cell anywhere in it is a hull standing on land mid-voyage, not a land leg.
+  for (let x = 0; x < graph.waypoints.length; x++) {
+    const from = graph.waypoints[x];
+    if (!isSea(from.x, from.y)) continue;
+    for (let y = 0; y < graph.waypoints.length; y++) {
+      if (x === y) continue;
+      const to = graph.waypoints[y];
+      if (!isSea(to.x, to.y)) continue;
+      all.routes += 1;
+      const sea = seaRoute(root, from, to);
+      if (!sea) {
+        // No water-only path: the order is refused (lanes.mjs), not given a jump. Count it so a
+        // regression that makes crossings vanish is not silently green.
+        all.noRoute += 1;
+        continue;
+      }
+      let dryHere = 0;
+      for (const cell of sea) {
+        if (isSea(cell.x, cell.y)) continue;
+        all.dryCells += 1;
+        dryHere += 1;
+        if (!firstDry) firstDry = x + "->" + y + " at " + cell.x + "," + cell.y +
+          " terrain " + terrainAtCell(cell.x, cell.y);
+      }
+      if (dryHere) all.dryRoutes += 1;
+    }
+  }
+  if (all.jumpy) fail("an order jumps cells somewhere on the table (" + all.jumpy + " planned paths, " +
+    all.jumps + " non-adjacent steps): " + firstJump);
+  if (all.dryRoutes) fail("a sea leg stands on land somewhere on the table (" + all.dryRoutes +
+    " of " + all.routes + " routes, " + all.dryCells + " dry cells): " + firstDry);
+  if (all.noRoute) fail("the lanes refuse " + all.noRoute + " of " + all.routes + " water-waypoint crossings");
 
   const paris = ac4[0];
   console.log(
@@ -312,7 +342,9 @@ export async function run(ctx) {
       " steps, land leg " + paris.land + ", sea leg " + paris.sea + " water cells, land leg " + paris.tail +
       ", waypoints " + paris.waypoints + " in lane order; " + ac4.slice(1).map((row) =>
         row.spec.from + "->" + row.spec.to + " " + row.route.length + " steps, " + row.sea +
-        " sea cells, waypoints " + row.waypoints).join("; ") + "; 0 jumps in all three; all pairs " +
-      all.planned + " planned / " + all.refused + " refused, " + all.jumps + " jumps, " + all.dry + " dry"
+        " sea cells, waypoints " + row.waypoints).join("; ") + "; 0 jumps in all three; all 1986 site pairs " +
+      all.planned + " planned / " + all.refused + " refused, " + all.jumpy +
+      " paths with a non-adjacent step (28a4012: 48,265), " + all.dryRoutes + " of " + all.routes +
+      " water-waypoint sea routes with a dry cell (28a4012: 488 of 15,252), " + all.dryCells + " dry cells"
   );
 }

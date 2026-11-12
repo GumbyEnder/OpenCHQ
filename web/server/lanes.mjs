@@ -397,11 +397,13 @@ export function joinLane(dataRoot, cell, accept = null) {
 }
 
 // One lane leg, expanded to the cells a hull actually crosses. `cellId` decides what counts as
-// water: the archive's lanes are coarser than its terrain map, so 26 of the 151 waypoints sit on a
+// water: the archive's lanes are coarser than its terrain map, so 27 of the 151 waypoints sit on a
 // cell painted as ground. Dropping those cells would leave a hole in the leg, and a hole is a
 // teleport: the hull skips a cell, never meets what stands on it, and lands on dry ground if the
 // hole is at an anchor. So a leg is expanded cell by cell, and where the straight lane line is
 // interrupted by ground the leg is walked around it through water (waterLeg between two points).
+// No leg ever stands on a dry cell: a lane waypoint painted dry is not an anchor, and if the water
+// walk between two wet anchors fails, the order is refused rather than given a jump.
 function legCells(dataRoot, a, b) {
   const dx = b.x - a.x;
   const gap = Math.abs(dx);
@@ -444,16 +446,16 @@ const WATER_HOPS = [];
 for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) if (dx !== 0 || dy !== 0) WATER_HOPS.push({ dx, dy });
 
 // The water cells between two points, one cell at a time, going around ground. Breadth-first
-// because every hop is one cell, so the first path found is the shortest in cells. The goal may
-// itself be dry (a lane waypoint the terrain map paints as coast): it is the destination, so it is
-// allowed as the last cell, but nothing before it may stand on land.
+// because every hop is one cell, so the first path found is the shortest in cells. Both ends must
+// be water as well: a leg that cannot begin and finish on water has no water-only path, and the
+// caller refuses the order instead of handing back a jump or a hull standing on dry ground.
 function waterWalk(dataRoot, from, to, limit = CELL_W * CELL_H) {
   const goalKey = to.x + "," + to.y;
   const startKey = from.x + "," + from.y;
+  if (!isWater(cellId(dataRoot, from.x, from.y)) || !isWater(cellId(dataRoot, to.x, to.y))) return null;
   if (startKey === goalKey) return [from];
   const passable = (x, y) => {
     if (y < 0 || y >= CELL_H) return false;
-    if (x === to.x && y === to.y) return true;
     return isWater(cellId(dataRoot, x, y));
   };
   const parent = new Map();
@@ -514,19 +516,12 @@ function lanePlan(dataRoot, from, to) {
   if (start.y < 0 || start.y >= CELL_H || end.y < 0 || end.y >= CELL_H) return null;
   if (start.x === end.x && start.y === end.y) return null;
 
-  // Both ends dry: this is a land order and must never become a sea route.
-  // One dry end is allowed on purpose — 27 of the 151 waypoints sit on a dry
-  // cell according to tmap.bin (the eastern terminal at 318,10 is one), so the
-  // lane graph, not the terrain map, decides where the sea legs run.
+  // A sea leg starts and ends on water. A dry endpoint is a land order (move.mjs owns it) or a
+  // lake cell the lanes never reach; either way a sea route would have to stand a hull on dry
+  // ground, so refuse instead of inventing a path.
   const startTerrain = cellId(dataRoot, start.x, start.y);
   const endTerrain = cellId(dataRoot, end.x, end.y);
-  // A lake is water the sea lanes never reach: it is the cut-off case the page is allowed to
-  // refuse. Only sea water (ocean, docks, shallows) may be an endpoint.
-  if (startTerrain === 3 || endTerrain === 3) return null;
-  if (startTerrain !== null && endTerrain !== null &&
-    !isWater(startTerrain) && !isWater(endTerrain)) {
-    return null;
-  }
+  if (!isWater(startTerrain) || !isWater(endTerrain)) return null;
 
   const graph = laneGraph(dataRoot);
   if (graph.error || !graph.waypoints.length) return null;

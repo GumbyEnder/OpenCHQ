@@ -70,7 +70,12 @@ function candidates(text) {
 
 // Same order the desktop archive used: OPENCHQ_DATA, then local/data_root.txt,
 // then a bundled data/, then the extract that sits beside this project.
+//
+// OPENCHQ_NO_EXTRACT=1 skips every candidate and returns "". That is the public-host case, and it
+// exists so the suite's no-extract leg is reproducible on a machine that does have the extract
+// beside the checkout instead of resting on a developer's log.
 export function resolveDataRoot(env = process.env) {
+  if (String(env.OPENCHQ_NO_EXTRACT || "") === "1") return "";
   const tries = [];
   tries.push(env.OPENCHQ_DATA);
   const localFile = path.join(projectDir, "local", "data_root.txt");
