@@ -10,7 +10,7 @@
 
 import { CELL_W, CELL_H, TERRAIN, boardPayload, resolveDataRoot } from "./board.mjs";
 import { landPace, isRefused, combatRules, cellsPerRound } from "./rules.mjs";
-import { seaRoute } from "./lanes.mjs";
+import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked } from "./resources.mjs";
 import { applyDamage, ensureStrength } from "./combat.mjs";
@@ -207,7 +207,16 @@ const SHORT_HOP_CELLS = 3;
 
 function seaLeg(from, to, waterCells) {
   if (waterCells.length <= SHORT_HOP_CELLS) {
-    return waterCells.map((cell) => ({ x: cell.x, y: cell.y, pace: 1 }));
+    // The hop's cells as the straight line gave them, but walked through water: the line between
+    // two docks can pass over the port city, and a hull does not stand on land on its way in.
+    let hop = null;
+    try {
+      hop = waterStepRoute(resolveDataRoot() || "", from, to);
+    } catch {
+      hop = null;
+    }
+    if (!hop || hop.length < 1) return null;
+    return hop.map((cell) => ({ x: cell.x, y: cell.y, pace: 1 }));
   }
   let route = null;
   try {

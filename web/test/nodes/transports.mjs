@@ -261,6 +261,50 @@ export async function run(ctx) {
       waypoints: visited.map((hit) => hit.index).join("->"),
     });
   }
+  // ---- AC4 across the whole table -----------------------------------------------------------
+  // Three pinned crossings prove a shape; a lane or site edit can rot every other route and no
+  // test notices. Every ordered pair of the era's sites through planOrder, on one reused match:
+  // no jump (a hull that skips a cell never meets what stands on it) and no dry cell between two
+  // water cells (a hull standing on land mid-sea). Both were real on 28a4012 and the all-pairs
+  // sweep is the only thing that measured them.
+  const allMatch = openMatch("1986", []);
+  allMatch.clock = "running";
+  const probe = piece("blue:probe", "blue", 0, 0);
+  allMatch.pieces = [probe];
+  const all = { pairs: 0, planned: 0, refused: 0, jumps: 0, dry: 0 };
+  let firstJump = null;
+  let firstDry = null;
+  for (const a of cities) {
+    for (const b of cities) {
+      if (a === b) continue;
+      all.pairs += 1;
+      probe.x = a.x;
+      probe.y = a.y;
+      probe.path = [];
+      const line = planOrder(allMatch, "blue", "blue:probe", b.x, b.y);
+      if (!line || line.error) { all.refused += 1; continue; }
+      all.planned += 1;
+      const route = line.path;
+      for (let i = 1; i < route.length; i++) {
+        if (stepGap(route[i - 1], route[i]) !== 1) {
+          all.jumps += 1;
+          if (!firstJump) {
+            firstJump = a.name + " -> " + b.name + " index " + i + " gap " + stepGap(route[i - 1], route[i]) +
+              " " + JSON.stringify(route.slice(Math.max(0, i - 1), i + 1));
+          }
+        }
+      }
+      for (let i = 1; i < route.length - 1; i++) {
+        if (!isSea(route[i].x, route[i].y) && isSea(route[i - 1].x, route[i - 1].y) && isSea(route[i + 1].x, route[i + 1].y)) {
+          all.dry += 1;
+          if (!firstDry) firstDry = a.name + " -> " + b.name + " at index " + i + " " + JSON.stringify(route[i]);
+        }
+      }
+    }
+  }
+  if (all.jumps) fail("an order jumps cells somewhere on the table (" + all.jumps + "): " + firstJump);
+  if (all.dry) fail("a hull stands on land mid-sea somewhere on the table (" + all.dry + "): " + firstDry);
+
   const paris = ac4[0];
   console.log(
     "transports AC4: Paris(" + byName.get("Paris").x + "," + byName.get("Paris").y + ") -> New York(" +
@@ -268,6 +312,7 @@ export async function run(ctx) {
       " steps, land leg " + paris.land + ", sea leg " + paris.sea + " water cells, land leg " + paris.tail +
       ", waypoints " + paris.waypoints + " in lane order; " + ac4.slice(1).map((row) =>
         row.spec.from + "->" + row.spec.to + " " + row.route.length + " steps, " + row.sea +
-        " sea cells, waypoints " + row.waypoints).join("; ") + "; 0 jumps in all three"
+        " sea cells, waypoints " + row.waypoints).join("; ") + "; 0 jumps in all three; all pairs " +
+      all.planned + " planned / " + all.refused + " refused, " + all.jumps + " jumps, " + all.dry + " dry"
   );
 }

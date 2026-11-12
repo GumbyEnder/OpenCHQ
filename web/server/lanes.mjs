@@ -589,6 +589,20 @@ export function seaRoute(dataRoot, from, to) {
   return plan ? plan.steps : null;
 }
 
+// A short water hop, walked cell by cell around any ground the straight line crosses. A land
+// order's sea leg uses this when the crossing is only a few cells long: the lanes are for
+// voyages, and sending a unit to a waypoint thirty cells away would be a teleport. Walking it
+// (rather than taking the line's cells as they come) is what keeps a hull off the port city that
+// sits between two dock cells on a straight line - 209 of the 60,874 planned land routes did
+// step onto that city at the final hop.
+export function waterStepRoute(dataRoot, from, to) {
+  const a = point(from);
+  const b = point(to);
+  if (!a || !b) return null;
+  const path = waterWalk(dataRoot, a, b);
+  return path ? path.map((cell) => ({ x: cell.x, y: cell.y })) : null;
+}
+
 // The lane waypoints a sea route anchors to, in lane order. A test asks this instead of scraping
 // the cells, because a water walk may pass over a waypoint cell that is not on the chain.
 export function seaWaypoints(dataRoot, from, to) {

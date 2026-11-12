@@ -103,6 +103,36 @@ export async function run(ctx) {
     if (round >= 2 && moved !== B) fail("a cruiser moved " + moved + " cells in settled round " + round + ", not " + B);
   }
 
+  // The other half of AC5, on a served piece: a land unit on the same water is cargo, sails at
+  // the transport rate, and therefore trails the hull. Frodo's hold on 6c1c396: this was only
+  // ever a synthetic object before.
+  const cargoMatch = openMatch("1986", []);
+  cargoMatch.clock = "running";
+  const footAtSea = {
+    id: "blue:cargo", side: "blue", domain: "land", kind: "infantry",
+    x: 8, y: 0, path: [], pace: 1, facing: null, fighting: null, shots: 0,
+  };
+  cargoMatch.pieces = [footAtSea];
+  const cargoOrder = issueOrder(cargoMatch, "blue", footAtSea.id, 38, 0);
+  if (cargoOrder.error) fail("a land unit ordered across open water was refused: " + cargoOrder.error);
+  const cargoMoved = [];
+  for (let round = 1; round <= 3; round++) {
+    const x0 = footAtSea.x;
+    advance(cargoMatch);
+    const moved = wrapGap(x0, footAtSea.x);
+    cargoMoved.push(moved);
+    if (footAtSea.transport !== true) {
+      fail("a land unit on water is not flagged transport on round " + round + " - it would fight as if on foot");
+    }
+    if (cellsPerRound(footAtSea) !== C) {
+      fail("a transported land unit moves at " + cellsPerRound(footAtSea) + " cells/round, not the transport rate " + C);
+    }
+    if (round >= 2 && moved !== C) fail("a transported land unit moved " + moved + " cells in settled round " + round + ", not " + C);
+  }
+  if (!(cargoMoved[1] < B)) {
+    fail("a transported land unit (" + cargoMoved[1] + " cells) does not trail a hull (" + B + ") on the same water");
+  }
+
   // ---- AC6: speeds 0-6, and speed 0 lets no time pass --------------------------------------
   const table = speedTable();
   if (table.length !== SPEED_MAX + 1) fail("the speed table has " + table.length + " slots, not 7");
