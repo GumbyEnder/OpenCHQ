@@ -365,6 +365,33 @@ export async function run(ctx) {
       if (dryHere) all.dryRoutes += 1;
     }
   }
+  // A sea leg may not begin or finish on ground. 27 of the 151 lane waypoints are painted dry, and
+  // the sweep above asks only water-to-water pairs, so the both-ends-water rule in lanes.mjs
+  // (waterWalk, lanePlan) was pinned by no test: reverting it left this node green. At aa458de
+  // 2,852 of these 3,348 ordered wet<->dry waypoint pairs planned a route whose last cell stood on
+  // dry ground; at 846e8ef every one is refused. That is the count the loop below keeps.
+  const dryPairs = { tried: 0, routed: 0, firstRouted: null };
+  for (let x = 0; x < graph.waypoints.length; x += 1) {
+    const start = graph.waypoints[x];
+    for (let y = 0; y < graph.waypoints.length; y += 1) {
+      if (x === y) continue;
+      const goal = graph.waypoints[y];
+      if (isSea(start.x, start.y) === isSea(goal.x, goal.y)) continue;
+      dryPairs.tried += 1;
+      const sea = seaRoute(root, start, goal);
+      if (!sea) continue;
+      dryPairs.routed += 1;
+      if (!dryPairs.firstRouted) {
+        const last = sea[sea.length - 1];
+        dryPairs.firstRouted = x + "->" + y + " ends " + JSON.stringify(last) +
+          " terrain " + terrainAtCell(last.x, last.y);
+      }
+    }
+  }
+  if (dryPairs.routed) {
+    fail("a sea leg starts or ends on ground (" + dryPairs.routed + " of " + dryPairs.tried +
+      " wet<->dry waypoint pairs): " + dryPairs.firstRouted);
+  }
   if (all.jumpy) fail("an order jumps cells somewhere on the table (" + all.jumpy + " planned paths, " +
     all.jumps + " non-adjacent steps): " + firstJump);
   if (all.dryRoutes) fail("a sea leg stands on land somewhere on the table (" + all.dryRoutes +
@@ -381,6 +408,7 @@ export async function run(ctx) {
         " sea cells, waypoints " + row.waypoints).join("; ") + "; 0 jumps in all three; all 1986 site pairs " +
       all.planned + " planned / " + all.refused + " refused, " + all.jumpy +
       " paths with a non-adjacent step (28a4012: 48,265), " + all.dryRoutes + " of " + all.routes +
-      " water-waypoint sea routes with a dry cell (28a4012: 488 of 15,252), " + all.dryCells + " dry cells"
+      " water-waypoint sea routes with a dry cell (28a4012: 488 of 15,252), " + all.dryCells + " dry cells; " +
+      dryPairs.tried + " wet<->dry waypoint pairs, " + dryPairs.routed + " routed (aa458de: 2,852)"
   );
 }
