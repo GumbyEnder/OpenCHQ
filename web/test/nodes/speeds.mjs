@@ -172,8 +172,12 @@ export async function run(ctx) {
   if (!(speedSeconds(6) < speedSeconds(1))) {
     fail("speed 6 (" + speedSeconds(6) + " s) is not shorter than speed 1 (" + speedSeconds(1) + " s)");
   }
-  if (typeof config.sources.speeds !== "string" || !/UNMEASURED|STAND-IN/i.test(config.sources.speeds)) {
-    fail("config.sources.speeds does not label the round lengths UNMEASURED");
+  // T-008 replaced the guess with a measurement: the original's round is 119.5 s at every
+  // speed. The runtime table here is now a labelled deviation, so the label must say so
+  // (measured_round.mjs pins the numbers themselves).
+  if (typeof config.sources.speeds !== "string" || !/MEASURED/i.test(config.sources.speeds) ||
+      !/DEVIATION/.test(config.sources.speeds)) {
+    fail("config.sources.speeds does not label the round lengths as a measured deviation");
   }
 
   // Speed 0 never becomes due, at any elapsed time up to three speed-1 intervals.

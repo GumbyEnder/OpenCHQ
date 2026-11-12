@@ -32,3 +32,32 @@ than the original.
   embark, or walk?
 
 **Until then: UNVERIFIED.** Do not "fix" the walker to match a guess.
+
+
+## 2. Speed 0: the manual says game-time stops, the round clock does not — MEASURED, not yet a ruling
+
+**The manual line**, printed page 35, "Other Commands", exact text:
+
+> "At speed 0, game-time does not pass at all. It is similar to a pause, but units can still be
+> given orders, and air strikes can still be carried out."
+
+**What the game does**, measured 2026-11-12 in DOSBox 0.74-3 at 3000 cycles, 1986 war room
+(`docs/re/MOVEMENT.md` "Speed 0 vs Manual p.35"; logs `notes/t008/speed_table-2026-11-12.log`
+and `pass_rate-2026-11-12.log`):
+
+- the per-piece pass does not advance at all at speed 0 — 0 cursor increments at `DS:0x147c`
+  in 8 s, against 7.37/s at speed 1 — so no piece, combat tick or piece animation progresses;
+- `DS:0x157e` (the round countdown) still decrements at 59.19 units/s, the same rate as speeds
+  1, 3 and 6.
+
+So the manual's "game-time" is true for world time and false for the countdown panel: the
+original has two clocks and speed 0 freezes one of them. The piece freeze matches the manual;
+the running panel does not.
+
+**Status.** This is a measured fact, not a defect and not a workload item. It changes nothing
+in the browser game under D-017 (the runtime keeps its own 5 s round and speed ramp).
+
+**Open question for the owner, not for RE.** Should the browser's round clock also stop at
+speed 0? The remake currently does not model the original's two-clock split. Do not "fix"
+`rules.mjs` toward either behaviour until that is decided; the only thing already pinned is
+that pieces stop at speed 0 while the round clock does not.
