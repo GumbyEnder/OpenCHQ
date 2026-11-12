@@ -802,6 +802,26 @@ const clockBtn = document.getElementById("clockBtn");
 const resignBtn = document.getElementById("resignBtn");
 const newBtn = document.getElementById("newBtn");
 const quitBtn = document.getElementById("quitBtn");
+const speedDown = document.getElementById("speedDown");
+const speedUp = document.getElementById("speedUp");
+const speedReadout = document.getElementById("speedReadout");
+
+// The speed the server says the room is at (manual p.34-35). The readout shows the room's number,
+// never a local counter: the other seat can change it, and a control that disagrees with the clock
+// is worse than no control.
+function roomSpeed() {
+  const value = Number(room && room.speed);
+  return Number.isFinite(value) ? value : 1;
+}
+
+function syncSpeed() {
+  const speed = roomSpeed();
+  if (speedReadout) {
+    speedReadout.textContent = "Speed " + speed + (speed === 0 ? " \u00b7 paused" : "");
+  }
+  if (speedDown) speedDown.disabled = !room || speed <= 0;
+  if (speedUp) speedUp.disabled = !room || speed >= 6;
+}
 
 function syncGameButtons() {
   const running = Boolean(room && room.clock === "running");
@@ -811,11 +831,20 @@ function syncGameButtons() {
     clockBtn.title = running ? "Pause the clock" : "Play the clock";
   }
   for (const button of [resignBtn, newBtn, quitBtn]) if (button) button.disabled = !room;
+  syncSpeed();
 }
 
 clockBtn?.addEventListener("click", () => {
   if (!room) return;
   send({ op: room.clock === "running" ? "hold" : "run" });
+});
+speedDown?.addEventListener("click", () => {
+  if (!room) return;
+  send({ op: "speed", delta: -1 });
+});
+speedUp?.addEventListener("click", () => {
+  if (!room) return;
+  send({ op: "speed", delta: 1 });
 });
 resignBtn?.addEventListener("click", () => {
   if (!room) return;
@@ -1068,6 +1097,7 @@ function applyDelta(delta) {
     // useful in the round it becomes true.
     alarm: delta.alarm === undefined ? room.alarm : delta.alarm,
     roundSeconds: delta.roundSeconds === undefined ? room.roundSeconds : delta.roundSeconds,
+    speed: delta.speed === undefined ? room.speed : delta.speed,
     // Which of this seat's transports are crossing naked rides every delta for the same reason the
     // alarm does: the warning is only worth anything in the round it is true.
     unscreened: Array.isArray(delta.unscreened) ? delta.unscreened : (room.unscreened || []),

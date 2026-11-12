@@ -145,7 +145,14 @@ function withCapitalSet(match) {
 // The row keeps the seats and anything the match will need. It is JSON so the match shape
 // can grow without a migration per node.
 export function saveRoom(room) {
-  const state = JSON.stringify({ seats: room.seats ?? {}, match: packMatch(room.match), resume: room.resume === true });
+  const state = JSON.stringify({
+    seats: room.seats ?? {},
+    match: packMatch(room.match),
+    resume: room.resume === true,
+    // The room's own clock speed (T-004, Manual p.34-35). It lives in the row's state JSON because
+    // the table's columns are the room's identity, not its settings.
+    speed: Number.isInteger(room.speed) ? room.speed : 1,
+  });
   let created = createdById.get(room.id);
   if (!created) {
     try {
@@ -244,6 +251,9 @@ export function loadRooms() {
       note: resuming ? "Resumed after a deploy." : String(row.note || ""),
       seats: state.seats ?? {},
       match,
+      // A row written before T-004 carries no speed: it plays at the old single clock, which is
+      // speed 1.
+      speed: Number.isInteger(state.speed) ? Math.min(6, Math.max(0, state.speed)) : 1,
       savedAt: row.saved_at,
     };
   });

@@ -86,15 +86,26 @@ export async function run(ctx) {
     fail("resources_stall: the army stood still from round 30 to 41: " + JSON.stringify([pick(30), pick(41)]));
   }
   if (same(pick(90), pick(100))) {
-    fail("resources_stall: the army stood still from round 90 to 100: " + JSON.stringify([pick(90), pick(100)]));
+    // T-004 makes the march a straight line, so the army reaches the Moscow ring sooner than the
+    // old bent A* route and then stands there. Standing still at the destination is arrival, not a
+    // stall - the stall this test exists for is steel stopping the march, reported below.
+    const arrived = { x: pick(90).x, y: pick(90).y };
+    const atDest = Math.abs(arrived.x - dest.x) <= 1 && Math.abs(arrived.y - dest.y) <= 1;
+    if (!atDest) {
+      fail("resources_stall: the army stood still from round 90 to 100 away from its destination: " +
+        JSON.stringify([pick(90), pick(100), dest]));
+    }
   }
   // And the step is a real step in the round, not a teleport between samples: a slow cell costs
   // two rounds, so the window is a few rounds wide rather than exactly 41.
   if (!movedAt.some((round) => round >= 39 && round <= 43)) {
     fail("resources_stall: no step was taken around round 41; moves " + JSON.stringify(movedAt.slice(0, 8)));
   }
-  if (!movedAt.some((round) => round >= 96 && round <= 104)) {
-    fail("resources_stall: no step was taken around round 100; moves " + JSON.stringify(movedAt.slice(-8)));
+  if (!movedAt.some((round) => round > 41)) {
+    fail("resources_stall: no step was taken after the steel meter ran out; moves " + JSON.stringify(movedAt));
+  }
+  if (movedAt.length < 40) {
+    fail("resources_stall: the march took only " + movedAt.length + " moving rounds");
   }
   if (movementBlocked(match, "blue") !== null) {
     fail("resources_stall: steel is blocking movement for blue: " + movementBlocked(match, "blue"));

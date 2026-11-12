@@ -1,19 +1,22 @@
-// detour — a piece goes round a friend instead of standing still.
+// detour — a straight line is a straight line. There is no going round.
 //
 // What fails if this is removed:
-//   - advance() re-routes a piece whose next cell is held by a friend   -> every jammed army goes
-//     stiff, which is what 13,075 route refusals in a 400-round bot match looked like
-//   - a detour is bounded (tries per order, budget per round)           -> a jammed cell would BFS
-//     the whole map every round for every blocked piece
-//   - an ENEMY in the way is never a detour                             -> contact would turn into
-//     pathfinding and armies would walk around each other forever
+//   - advance() re-routes a piece whose next cell is held by a friend   -> the walker would be an
+//     A* again, and a land route would bend around terrain, which is the game T-004 removed
+//   - a blocked piece stops one short and drops its order              -> it would walk through a
+//     friendly piece, i.e. two units on one cell
+//   - an ENEMY in the way is never a detour                             -> contact is combat's job
+//
+// T-004 replaced the A* the older version of this test pinned. The behaviour it asserted (a piece
+// finding its way round a friend) is exactly what the original does not do: a move is a Bresenham
+// line with no obstacle search (RULES.md section 2). This test pins that instead.
 //
 // The board is the real extract: the test finds an open land run on it rather than trusting a
 // remembered coordinate.
 
 import { boardPayload, CELL_W } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
-import { issueOrder, advance, wrapX } from "../../server/move.mjs";
+import { issueOrder, advance, wrapX, bresenham } from "../../server/move.mjs";
 import { landPace } from "../../server/rules.mjs";
 
 export const name = "detour";
@@ -45,16 +48,21 @@ export async function run(ctx) {
   const walker = match.pieces.find((piece) => piece.id === "blue:land");
   must(walker, "1986 has no blue:land");
 
-  // Walk along the run with a friend parked on the second cell.
+  // ---- the order is the straight line, not a search --------------------------------------
   walker.x = run.x;
   walker.y = run.y;
   walker.path = [];
-  // The order is planned on an open board, and only then does a friend step into the plan. That
-  // is the case that used to freeze: a route that was clear when it was given, and a cell that
-  // is held when the piece gets there.
   const ordered = issueOrder(match, "blue", walker.id, run.x + 4, run.y);
-  must(ordered.ok, "the order past a friend must still be accepted: " + JSON.stringify(ordered));
-  must(ordered.path.length >= 4, "the walk must be more than a step: " + JSON.stringify(ordered.path));
+  must(ordered.ok, "the order along the run must be accepted: " + JSON.stringify(ordered));
+  const expected = bresenham({ x: run.x, y: run.y }, { x: run.x + 4, y: run.y }).slice(1);
+  must(ordered.path.length === expected.length,
+    "the order is " + ordered.path.length + " steps, the straight line is " + expected.length);
+  for (let i = 0; i < expected.length; i++) {
+    must(ordered.path[i].x === expected[i].x && ordered.path[i].y === expected[i].y,
+      "step " + i + " is " + ordered.path[i].x + "," + ordered.path[i].y + " not " + expected[i].x + "," + expected[i].y);
+  }
+
+  // ---- a friend standing on the line stops the piece one short, and it stays stopped -------
   match.pieces.push({
     id: "blue:blocker",
     side: "blue",
@@ -70,25 +78,24 @@ export async function run(ctx) {
   let arrived = false;
   for (let round = 0; round < 24; round++) {
     for (const event of advance(match)) {
-      if (event.type === "detour" && event.pieceId === walker.id) detours += 1;
-      if (event.type === "blocked" && event.pieceId === walker.id) blocked += 1;
+      if (event.pieceId !== walker.id) continue;
+      if (event.type === "detour") detours += 1;
+      if (event.type === "blocked") blocked += 1;
     }
-    if (wrapX(walker.x) === wrapX(run.x + 4) && walker.y === run.y) {
-      arrived = true;
-      break;
-    }
+    if (wrapX(walker.x) === wrapX(run.x + 4) && walker.y === run.y) arrived = true;
+    // It must never stand on the friend's cell, whatever happens.
+    must(!(wrapX(walker.x) === wrapX(run.x + 1) && walker.y === run.y),
+      "the walker stood on a friendly piece's cell");
   }
-  must(arrived, "the walker must get round the friend and reach the destination: at " +
-    JSON.stringify({ x: walker.x, y: walker.y }) + " after " + JSON.stringify({ detours, blocked }));
-  must(detours >= 1, "getting round a friend must be recorded as a detour, not silence");
+  must(!arrived, "a straight line has no way round a friend, so the piece cannot arrive");
+  must(detours === 0, "a friend in the way was routed around: the walker is searching again");
+  must(blocked >= 1, "a friend in the way was not reported as blocked");
+  must(walker.path.length === 0, "a blocked piece kept its order: " + JSON.stringify(walker.path));
 
-  // ---- an enemy in the way stops the path: contact is combat's job --------------------------
+  // ---- an enemy in the way is contact, not an obstacle -------------------------------------
   walker.x = run.x;
   walker.y = run.y;
   walker.path = [];
-  walker.detours = 0;
-  // The friend from the first half is still standing there; move it clear so this half is only
-  // about the enemy.
   const blocker = match.pieces.find((piece) => piece.id === "blue:blocker");
   if (blocker) {
     blocker.x = run.x;
@@ -111,4 +118,6 @@ export async function run(ctx) {
   }
   must(sawBlocked, "an enemy in the way must stop the walker (blocked), not be routed around");
   must(!sawDetour, "an enemy must never be treated as an obstacle to walk around");
+
+  console.log("detour: straight line " + expected.length + " steps; a friend blocks and is not routed around; an enemy is contact");
 }

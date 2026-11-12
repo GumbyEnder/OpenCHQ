@@ -1,6 +1,19 @@
 {
   "_comment": "Player-facing tunables. Prices and city income are recovered from the 1990 manual and the executable (see `sources` below). Everything else here that was never recovered is a labelled stand-in the owner accepted or set, and meant to be changed by editing this file, not by editing code.",
   "roundSeconds": 5,
+  "speeds": [0, 5, 3.5, 2.4, 1.6, 1, 0.6],
+  "move": {
+    "cellsPerRound": {
+      "value": {
+        "infantry": 1,
+        "tank": 2,
+        "transport": 2,
+        "warship": 3,
+        "submarine": 3
+      },
+      "source": "STAND-IN, UNMEASURED (orderings only: Manual p.9 tank at most 2x infantry; p.21 sea faster than land, transports slightly slower than other ships). No per-round cell rate was ever printed."
+    }
+  },
   "payEvery": 1,
   "money": {
     "perBillion": 1000,
@@ -85,7 +98,9 @@
       "1986": "Manual p.16",
       "2023": "Manual p.16",
       "9999": "UNVERIFIED: manual does not name this era's roster; uses the 1986 set"
-    }
+    },
+    "speeds": "Speeds 0-6 exist: Manual p.34-35. Speed 0 accepts orders and air strikes but game time does not pass (p.34). The seven round lengths themselves are UNMEASURED stand-ins; only the ordering (a higher speed is shorter, 6 much faster than 1) is binding.",
+    "move": "cellsPerRound: STAND-IN, UNMEASURED. Orderings only - tank > infantry and no more than 2x (p.9), ship > transport > infantry (p.21). The map's own path costs (DS:0x011C, docs/re/RULES.md section 1) are recovered facts and live in rules.mjs, not here."
   },
   "resources": {
     "fuel": {
@@ -147,6 +162,8 @@
     "startPool": "Opening cash per era, in billions, for the player's own side. From Monitor Four on the running original (Manual p.27; renderer FUN_3711_16a8 @ 3711:16a8 divides DS:0x148e by 0x28 at 3711:16f3), captured per era in docs/captures/startmoney-<era>-blue-monitor4-own.png and written up in docs/re/START_MONEY.md. 1918 10, 1942 50, 1986 50, 2023 600. 9999 is UNVERIFIED (memory read only) and is a deliberate stand-in. Red has no capture of its own: red is given the Blue value on purpose (a recorded stand-in) rather than an invented number.",
     "handicap": "OPPONENT'S STARTING MONEY (Manual p.17: 'you are allowed to adjust the amount of money with which your opponent begins the game... a handicapping device'). It is the opponent's pool only, never the player's: 1942 proves it, where the player starts with 50b and the spinner default is 030 (30b). Per-era defaults are stored because they are not constant (010 in 1918, 030 in 1942). 2023 has no spinner (null). Range 0-999 step 1 is an UNVERIFIED inference from the three digit columns; wrap behaviour is unknown. 1986's default and the ???? default are stand-ins, labelled in sources.handicap.",
     "rosters": "Manual p.16. 1918 has no air power, tanks or carriers; 1942 adds them; 1986 adds nukes, aid, satellites and intel. 2023 uses the 1986 set. 9999 is UNVERIFIED and uses the 1986 set.",
+    "speeds": "The seven slot lengths for speeds 0-6, in seconds per round; index 0 is the original's 'time does not pass' setting (Manual p.34-35). All seven numbers are UNMEASURED stand-ins chosen so speed 1 keeps the old 5 s round and speed 6 is a hundred rounds a minute. A room carries its own speed and either seat may change it; both seat views see the number.",
+    "move": "cellsPerRound is the number of cells a kind may enter in one round. STAND-IN, UNMEASURED: only the manual's orderings are binding (tank up to 2x infantry, p.9; sea faster than land and transports slightly slower than other ships, p.21). The walker's route test uses the archive's own DS:0x011C cost bytes, which are recovered, not tuned, and stay in rules.mjs.",
     "fuel": "STAND-IN. The archive's fuel reserve and burn were never recovered: 10000 reserve and 1 per round are invented and are here only so a side can run short. Per side, deliberately not the desktop archive's single shared reserve.",
     "steel": "STAND-IN, an owner-designed expansion and not a recovery: the 1990 game had oil only. 40 held and 1 a round are invented so a second kind can be held and consumed. No yield is set on purpose: the archive never recovered one, so the server refuses to hand out steel rather than guess a number. Gated to 1942 and 1986; the other scenarios do not carry it.",
     "combat": "T-003 replaces the desktop archive's stand-in fight (after HITS shots the defender is gone) with the manual's strength model (p.20-25). Every key in `combat` carries its own source. A value marked STAND-IN, UNMEASURED is a working number the owner may replace, not a recovered one; the combat panel says 'unmeasured' for those. Damage removes a unit only when a hit meets or exceeds its remaining strength (p.23). Relatives the manual states are kept: tank > infantry, entrenched takes less, flank takes more, sub < cruiser < carrier range.",

@@ -300,10 +300,14 @@ export async function run(ctx) {
     if (match.pieces.some((piece) => piece.id === "red:f")) fail("the overrun did not remove the infantry");
     if (!match.pieces.some((piece) => piece.id === "blue:t")) fail("the tank did not survive");
     if (!near(tank.strength, cfg.maxStrength - cfg.baseDamage.infantry)) fail("the tank took no losses: " + tank.strength);
-    if (tank.x !== 41) fail("the tank did not enter the overrun cell: " + tank.x);
+    // A tank walks two cells a round (T-004, config.move.cellsPerRound), so one round carries it
+    // through the overrun cell and on toward the destination. It must have entered the cell.
+    if (!(tank.x >= 41 && tank.x <= 43)) fail("the tank did not enter the overrun cell: " + tank.x);
     if (!Array.isArray(tank.path) || tank.path.length === 0) fail("the tank dropped its path at the overrun");
     advance(match);
-    if (tank.x !== 42) fail("the tank did not carry on past the cell: " + tank.x);
+    // Two cells a round: the second round finishes the three-cell order.
+    if (tank.x !== 43) fail("the tank did not carry on past the cell: " + tank.x);
+    if (tank.path.length !== 0) fail("the tank did not finish its order: " + JSON.stringify(tank.path));
   }
 
   // --- AC13: death only when a hit meets the remaining strength ----------------------------

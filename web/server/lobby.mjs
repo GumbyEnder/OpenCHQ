@@ -12,7 +12,7 @@ import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
-import { handicapDefault, handicapSpec, roundSeconds } from "./rules.mjs";
+import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
 import { shopFor } from "./shop.mjs";
 import { compatUnitKind } from "./migrate.mjs";
 import { TAKEOVER_CLOSE_CODE as TAKEOVER_CODE } from "./ws.mjs";
@@ -64,6 +64,19 @@ function isOwner(username) {
     .map((name) => name.trim().toLowerCase())
     .filter(Boolean);
   return list.includes(String(username || "").toLowerCase());
+}
+
+// The room's clock speed (T-004): 0-6, where 0 accepts orders and lets no time pass (Manual
+// p.34-35). A row or a message that carries nothing usable plays at 1, which is the old single
+// round length - a bad speed must not invent a clock.
+function speedOf(room) {
+  const whole = clampSpeed(room && room.speed);
+  return whole === null ? 1 : whole;
+}
+
+// A room's round length in seconds, read from config.speeds. Speed 0 is 0: time does not pass.
+function roomSeconds(room) {
+  return speedSeconds(speedOf(room));
 }
 
 export function createLobby() {
@@ -169,9 +182,13 @@ export function createLobby() {
       blue: { username: room.seats.blue.kind === "bot" ? "Bot" : nameOf(room.seats.blue.username), kind: room.seats.blue.kind },
       red: { username: room.seats.red.kind === "bot" ? "Bot" : nameOf(room.seats.red.username), kind: room.seats.red.kind },
       round: room.match ? room.match.round : 0,
+      // The speed this room runs at, and the round length that follows from it. Both seats see the
+      // number, because either seat may change it (Manual p.34: the game speed is an agreed
+      // setting, not a hidden one).
+      speed: speedOf(room),
       // The round the server is running, so the page draws the same clock the server does instead
       // of keeping a copy of a tunable. Without it the TIME LEFT bar had nothing to run down.
-      roundSeconds: seen ? seen.roundSeconds : null,
+      roundSeconds: roomSeconds(room),
       // Which of this seat's transports are crossing with no warship able to see them. The page
       // cannot work this out for itself without keeping a second copy of the sight rule.
       unscreened: seen && Array.isArray(seen.unscreened) ? seen.unscreened : [],
@@ -291,6 +308,7 @@ export function createLobby() {
       // may be twenty-five rounds away — long enough for the capital to fall first.
       alarm: view.alarm || null,
       roundSeconds: view.roundSeconds || null,
+      speed: view.speed,
       over: Boolean(view.over),
       winner: view.winner || null,
       clock: view.clock,
@@ -503,6 +521,8 @@ export function createLobby() {
       mode: "bot",
       era: year,
       clock: "held",
+      // T-004: a room carries its own clock speed (0-6). 1 is the old single 5 s round.
+      speed: 1,
       note: "Clock held. The board is waiting for orders.",
       seats: {
         blue: { username: "Bot", kind: "bot" },
@@ -575,6 +595,7 @@ export function createLobby() {
       mode: "human",
       era: inviteRow.era,
       clock: "held",
+      speed: 1,
       note: "Clock held. The board is waiting for orders.",
       seats: { blue: null, red: null },
       match: opened(inviteRow.era, sitesForMatch(inviteRow.era)),
@@ -780,6 +801,8 @@ export function createLobby() {
     const room = roomId ? rooms.get(roomId) : null;
     if (!room) return { error: "You are not in a match." };
     room.clock = running ? "running" : "held";
+    // A started clock begins its own round now, not at whatever the last held room left behind.
+    if (running) room.tickedAt = Date.now();
     if (room.match) room.match.clock = room.clock;
     room.note = running
       ? "Clock running. Pieces move one cell a round."
@@ -789,16 +812,73 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // Manual p.34-35: the game speed is 0 through 6, and speed 0 still accepts orders and air
+  // strikes while game time does not pass. Either seat may change it - the simplest reading of an
+  // agreed setting - and both seats see the same number, because the room's view carries it.
+  function setSpeed(username, message) {
+    const room = roomFor(username);
+    if (!room) return { error: "You are not in a match." };
+    if (!seatUsername(room, username)) return { error: "You do not hold a seat in this match." };
+    const current = speedOf(room);
+    let wanted = message && message.speed !== undefined ? clampSpeed(message.speed) : null;
+    if (wanted === null && message && message.delta !== undefined) {
+      const delta = Number(message.delta);
+      if (!Number.isFinite(delta) || delta === 0) {
+        return { error: "The speed must be a whole number from " + SPEED_MIN + " to " + SPEED_MAX + "." };
+      }
+      wanted = clampSpeed(current + Math.sign(delta));
+    }
+    if (wanted === null) {
+      return { error: "The speed must be a whole number from " + SPEED_MIN + " to " + SPEED_MAX + "." };
+    }
+    room.speed = wanted;
+    // A change of speed restarts the room's round clock, so a slow round already half spent does
+    // not make a fast speed look slow for one beat.
+    if (room.clock === "running") room.tickedAt = Date.now();
+    room.note = wanted === 0
+      ? "Speed 0. Orders are accepted; game time does not pass."
+      : "Speed " + wanted + ".";
+    touch(room);
+    tellRoom(room);
+    const peer = sockets.get(username);
+    if (peer) {
+      peer.send({ op: "speed", speed: room.speed, roundSeconds: roomSeconds(room), clock: room.clock });
+    }
+    return { ok: true, speed: room.speed };
+  }
+
   // The server owns the clock. main.mjs calls this once per configured round; every room whose
   // clock is running advances exactly one round and is marked dirty. The store takes a slice
   // of the dirty rooms each round (rooms.flushRooms), so 1000 running rooms are all durable
   // within a few rounds without any single round paying for all of them. A held, finished or
   // unwatched room costs nothing.
   let flushCursor = 0;
-  function tickRooms() {
+  // `now` is the wall clock in ms. Without it every call is one round - the shape the whole test
+  // suite and every harness was written against - and with it the room advances only when its own
+  // speed's round length has elapsed (T-004, Manual p.34-35).
+  function tickRooms(now) {
+    const stamp = now === undefined || now === null ? null : Number(now);
     const events = [];
     for (const room of rooms.values()) {
       if (!room.match || room.match.over || room.clock !== "running") continue;
+      if (stamp !== null) {
+        const speed = speedOf(room);
+        // Speed 0: orders and air strikes are still accepted, but game time does not pass.
+        if (speedSeconds(speed) <= 0) {
+          room.tickedAt = stamp;
+          continue;
+        }
+        const lastAt = Number(room.tickedAt);
+        if (!Number.isFinite(lastAt) || lastAt <= 0) {
+          room.tickedAt = stamp;
+          continue;
+        }
+        if (!speedDue(speed, stamp - lastAt)) continue;
+        // Exactly one round per due call, and no backlog: the base interval is 50 ms, so a
+        // process that stalled must not fast-forward a match by minutes of rounds.
+        const ms = Math.max(20, Math.round(speedSeconds(speed) * 1000));
+        room.tickedAt = lastAt + Math.floor((stamp - lastAt) / ms) * ms;
+      }
       // Bot orders belong to bot seats, never to a room mode. A human room has no bot seat,
       // so neither side is given orders there; a bot seat in any room is still a bot.
       for (const side of ["blue", "red"]) {
@@ -977,6 +1057,7 @@ export function createLobby() {
     if (op === "escort") return escortOp(username, message);
     if (op === "run") return setClock(username, true);
     if (op === "hold") return setClock(username, false);
+    if (op === "speed") return setSpeed(username, message);
     if (op === "sync") return syncSeat(username);
     if (op === "fullframes") {
       if (message.on === false) verbose.delete(username);

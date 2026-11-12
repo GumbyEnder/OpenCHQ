@@ -9,7 +9,7 @@
 // Sea lanes are lanes.mjs. A land order never becomes a sea route.
 
 import { CELL_W, CELL_H, TERRAIN, boardPayload, resolveDataRoot } from "./board.mjs";
-import { landPace, isRefused, combatRules } from "./rules.mjs";
+import { landPace, isRefused, combatRules, cellsPerRound } from "./rules.mjs";
 import { seaRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked } from "./resources.mjs";
@@ -100,148 +100,154 @@ export function blockedCells(match, side = null) {
   return out;
 }
 
-// A* over the cylinder, with a wrap-aware Manhattan heuristic. Entering a cell costs
-// rules.landPace of that cell; refused cells (wasteland) are never entered, and held cells are
-// skipped unless they are the destination (which issueOrder has already rejected).
+// --- the straight-line walker (RULES.md section 2, FUN_16ee_0728) ----------------------------
 //
-// This used to be a dial-weighted breadth-first search that allocated and filled two 43,520-entry
-// arrays per order: 5.65 ms an order, and the order is what a player sends. The arrays are now
-// reused with a generation stamp, and the heap is a flat Int32Array - a search explores a corridor
-// instead of the whole board.
-const CELLS = CELL_W * CELL_H;
-const DIST = new Int32Array(CELLS);
-const PREV = new Int32Array(CELLS);
-const SEEN = new Int32Array(CELLS);
-let generation = 0;
+// The original does not pathfind. A move is a Bresenham line, and the walk is accepted or refused
+// by a class test over the cells the line crosses. X wraps the short way round the cylinder
+// (FUN_188b_01da), so a 305-cell westward order is walked as a 15-cell eastward one. There is no
+// search here and there must not be: a route that bends around terrain is a different game.
+//
+// The path-cost bytes are the archive's own DS:0x011C table (RULES.md section 1). They are recovered
+// facts, not tunables: desert 3, jungle 9, polar 13, wasteland 77, every other id 0. A class-3/4
+// walk fails once the sum reaches 100.
+export const WALK_COST_LIMIT = 100;
+export const PATH_COST = Object.freeze([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 9, 13, 77]);
 
-// Binary min-heap of cell indices, ordered by f = g + h. Two parallel Int32Arrays, no objects.
-const HEAP_NODE = new Int32Array(CELLS + 1);
-const HEAP_KEY = new Int32Array(CELLS + 1);
-let heapSize = 0;
-
-function heapPush(node, key) {
-  let i = heapSize++;
-  HEAP_NODE[i] = node;
-  HEAP_KEY[i] = key;
-  while (i > 0) {
-    const up = (i - 1) >> 1;
-    if (HEAP_KEY[up] <= HEAP_KEY[i]) break;
-    const n = HEAP_NODE[up];
-    const k = HEAP_KEY[up];
-    HEAP_NODE[up] = HEAP_NODE[i];
-    HEAP_KEY[up] = HEAP_KEY[i];
-    HEAP_NODE[i] = n;
-    HEAP_KEY[i] = k;
-    i = up;
-  }
+// The class table, as the binary applies it:
+//   0    ocean, docks and the second ocean only (ids 0-2)
+//   1    ocean and docks only (ids 0-1)
+//   2    the opposite: water ids 0-2 fail, every land id passes
+//   3,4  wasteland (14) fails, the cost bytes add up, and a sum of 100 fails the route
+//   5+   the same cost sum, but wasteland does not hard-fail
+export function walkClassAllows(classByte, terrainId) {
+  const cls = Number(classByte);
+  const id = terrainId === null || terrainId === undefined ? 8 : Number(terrainId);
+  if (!Number.isFinite(cls)) return true;
+  if (cls === 0) return id <= 2;
+  if (cls === 1) return id <= 1;
+  if (cls === 2) return id >= 3;
+  if (cls === 3 || cls === 4) return id !== 14;
+  return true;
 }
 
-function heapPop() {
-  const node = HEAP_NODE[0];
-  heapSize -= 1;
-  HEAP_NODE[0] = HEAP_NODE[heapSize];
-  HEAP_KEY[0] = HEAP_KEY[heapSize];
-  let i = 0;
-  for (;;) {
-    const left = i * 2 + 1;
-    if (left >= heapSize) break;
-    const right = left + 1;
-    const small = right < heapSize && HEAP_KEY[right] < HEAP_KEY[left] ? right : left;
-    if (HEAP_KEY[i] <= HEAP_KEY[small]) break;
-    const n = HEAP_NODE[small];
-    const k = HEAP_KEY[small];
-    HEAP_NODE[small] = HEAP_NODE[i];
-    HEAP_KEY[small] = HEAP_KEY[i];
-    HEAP_NODE[i] = n;
-    HEAP_KEY[i] = k;
-    i = small;
-  }
-  return node;
-}
-
-// Cheap and admissible: every cell costs at least one round, so the cell distance never
-// overestimates the remaining cost.
-function lowerBound(x, y, gx, gy) {
-  const rawX = Math.abs(x - gx);
-  return Math.min(rawX, CELL_W - rawX) + Math.abs(y - gy);
-}
-
-function route(match, from, to, side = null) {
-  const sx = wrapX(from.x);
-  const sy = Number(from.y);
+// The cell sequence of a straight line, start included, on the cylinder. Integer Bresenham: one
+// cell per step and the short way in X. The loop is bounded by the longer axis, so a bad
+// coordinate cannot spin here.
+export function bresenham(from, to) {
+  const sx0 = wrapX(from.x);
+  const sy0 = Math.trunc(Number(from.y));
   const gx = wrapX(to.x);
-  const gy = Number(to.y);
-  if (sy < 0 || sy >= CELL_H || gy < 0 || gy >= CELL_H) return null;
-  if (sx === gx && sy === gy) return [];
-
-  const start = sy * CELL_W + sx;
-  const goal = gy * CELL_W + gx;
-  // Two marks per search: visited and settled. One mark would let the previous search's settled
-  // cells look settled in this one, which is how half these orders came back "no route".
-  generation += 2;
-  if (generation > 2000000000) {
-    SEEN.fill(0);
-    generation = 2;
-  }
-  const mark = generation;
-  const held = blockedCells(match, side);
-
-  heapSize = 0;
-  DIST[start] = 0;
-  PREV[start] = -1;
-  SEEN[start] = mark;
-  heapPush(start, lowerBound(sx, sy, gx, gy));
-
-  let found = false;
-  const steps = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-  while (heapSize > 0) {
-    const i = heapPop();
-    if (SEEN[i] === mark + 1) continue; // already settled with a shorter walk
-    SEEN[i] = mark + 1;
-    if (i === goal) {
-      found = true;
-      break;
+  const gy = Math.trunc(Number(to.y));
+  const dx = wrapDelta(sx0, gx);
+  const adx = Math.abs(dx);
+  const stepX = adx === 0 ? 0 : dx > 0 ? 1 : -1;
+  const dy = gy - sy0;
+  const ady = Math.abs(dy);
+  const stepY = ady === 0 ? 0 : dy > 0 ? 1 : -1;
+  const cells = [{ x: sx0, y: sy0 }];
+  let x = sx0;
+  let y = sy0;
+  let err = adx - ady;
+  const limit = Math.max(adx, ady) + 2;
+  for (let i = 0; i < limit && (x !== gx || y !== gy); i++) {
+    const e2 = 2 * err;
+    if (e2 > -ady) {
+      err -= ady;
+      x = wrapX(x + stepX);
     }
+    if (e2 < adx) {
+      err += adx;
+      y += stepY;
+    }
+    cells.push({ x, y });
+  }
+  return cells;
+}
 
-    const x = i % CELL_W;
-    const y = (i - x) / CELL_W;
-    const g = DIST[i];
-    for (const [dx, dy] of steps) {
-      const ny = y + dy;
-      if (ny < 0 || ny >= CELL_H) continue;
-      const nx = wrapX(x + dx);
-      const ni = ny * CELL_W + nx;
-      if (SEEN[ni] === mark + 1) continue;
-      const pace = paceAt(nx, ny);
-      if (pace < 0) continue;
-      if (ni !== goal && held.has(nx + "," + ny)) continue;
-      const nd = g + pace;
-      if (SEEN[ni] === mark && DIST[ni] <= nd) continue;
-      SEEN[ni] = mark;
-      DIST[ni] = nd;
-      PREV[ni] = i;
-      heapPush(ni, nd + lowerBound(nx, ny, gx, gy));
+// One order's line, tested against a walker class. Returns the cells (start..end), the accumulated
+// path cost, and the reason a refusal happened. Start equals end is the walker's immediate return
+// of 1: one cell, no test, no cost.
+//
+// `lookup` lets a test walk a synthetic grid; the server passes the board's own terrain.
+export function walkLine(from, to, classByte, lookup = null) {
+  const cells = bresenham(from, to);
+  const cls = Number(classByte);
+  // The binary's return is a step count, and a walk that starts where it ends returns 1 (RULES §2).
+  const moves = (count) => (count <= 1 ? 1 : count - 1);
+  if (cells.length <= 1) return { ok: true, cells, steps: 1, cost: 0, fail: null };
+  let cost = 0;
+  for (let i = 1; i < cells.length; i++) {
+    const cell = cells[i];
+    const raw = lookup ? lookup(cell.x, cell.y) : terrainAt(cell.x, cell.y);
+    const terrain = raw === null || raw === undefined ? 8 : Number(raw);
+    if (!walkClassAllows(cls, terrain)) {
+      return { ok: false, cells: cells.slice(0, i + 1), steps: moves(i), cost, fail: "terrain" };
+    }
+    if (cls >= 3) {
+      cost += PATH_COST[terrain] || 0;
+      if (cost >= WALK_COST_LIMIT) {
+        return { ok: false, cells: cells.slice(0, i + 1), steps: moves(i), cost, fail: "cost" };
+      }
     }
   }
+  return { ok: true, cells, steps: moves(cells.length), cost, fail: null };
+}
 
-  if (!found || SEEN[goal] !== mark + 1) return null;
+// A sea leg between two water cells on an order's line. A short hop is the straight water line -
+// stepping one cell offshore is beaching, not a voyage, and sending a unit to a lane waypoint
+// thirty cells away would be a teleport. A real crossing follows the lane graph (Manual p.21-22).
+const SHORT_HOP_CELLS = 3;
 
-  const path = [];
-  let walk = goal;
-  let safety = 0;
-  while (walk !== start) {
-    if (SEEN[walk] !== mark && SEEN[walk] !== mark + 1) return null;
-    if (walk !== goal && PREV[walk] < 0) return null;
-    const px = walk % CELL_W;
-    const py = (walk - px) / CELL_W;
-    path.push({ x: px, y: py, pace: Math.max(1, paceAt(px, py)) });
-    walk = PREV[walk];
-    safety += 1;
-    if (safety > CELL_W * CELL_H) return null;
+function seaLeg(from, to, waterCells) {
+  if (waterCells.length <= SHORT_HOP_CELLS) {
+    return waterCells.map((cell) => ({ x: cell.x, y: cell.y, pace: 1 }));
   }
-  path.reverse();
-  return path;
+  let route = null;
+  try {
+    route = seaRoute(resolveDataRoot() || "", from, to);
+  } catch {
+    route = null;
+  }
+  if (!route || route.length < 2) return null;
+  return route.map((cell) => ({ x: cell.x, y: cell.y, pace: 1 }));
+}
+
+function landStep(cell) {
+  return { x: cell.x, y: cell.y, pace: Math.max(1, paceAt(cell.x, cell.y)) };
+}
+
+// A land order's path: the straight line, and where the line crosses water, a land leg, a sea leg
+// on the lanes, then the land leg on the far shore (Manual p.21).
+function planLandPath(piece, toX, toY) {
+  const from = { x: piece.x, y: piece.y };
+  if (wrapX(from.x) === wrapX(toX) && Number(from.y) === Number(toY)) return { path: [] };
+  const walk = walkLine(from, { x: toX, y: toY }, 3);
+  if (!walk.ok) {
+    return {
+      error: walk.fail === "cost"
+        ? "No route: the ground on that line costs more than a march (Manual p.21, path cost 100)."
+        : "No route: wasteland is refused (Manual p.21).",
+    };
+  }
+  const cells = walk.cells;
+  let first = -1;
+  let last = -1;
+  for (let i = 1; i < cells.length; i++) {
+    if (!isWater(cells[i].x, cells[i].y)) continue;
+    if (first < 0) first = i;
+    last = i;
+  }
+  if (first < 0) return { path: cells.slice(1).map(landStep) };
+
+  const sea = seaLeg(cells[first], cells[last], cells.slice(first, last + 1));
+  if (!sea) return { error: "No sea lane reaches that crossing." };
+  return {
+    path: [
+      ...cells.slice(1, first).map(landStep),
+      ...sea,
+      ...cells.slice(last + 1).map(landStep),
+    ],
+  };
 }
 
 // The route an order WOULD take, without touching the match. The page hovers with this, so
@@ -296,8 +302,11 @@ export function planOrder(match, side, pieceId, toX, toY) {
   const attacking = Boolean(holder) && holder.side !== side;
   if (holder && !attacking) return { error: "Another piece holds that cell (" + holder.id + ")." };
 
-  const path = route(match, piece, { x, y }, side);
-  if (path === null) return { error: "No route. Wasteland is refused and a held cell is not entered." };
+  // A land order is a straight line (Manual p.21; RULES.md section 2). Where that line crosses
+  // water, the walk becomes a crossing: land leg, sea leg on the lanes, land leg.
+  const planned = planLandPath(piece, x, y);
+  if (planned.error) return { error: planned.error };
+  const path = planned.path;
   const rounds = path.reduce((sum, step) => sum + Math.max(1, Number(step.pace) || 1), 0);
   return { ok: true, path, rounds };
 }
@@ -320,6 +329,7 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   }
   piece.path = plan.path;
   piece.pace = Math.max(1, Number(plan.path[0].pace) || 1);
+  piece.credit = 0;
   piece.detours = 0;
   return { ok: true, path: plan.path.map((step) => ({ ...step })), rounds: plan.rounds };
 }
@@ -540,11 +550,6 @@ export function attritionStep(match, lookup = null) {
 export function advance(match) {
   const events = [];
   if (!match || !Array.isArray(match.pieces) || match.over) return events;
-  // A piece whose next cell is held used to drop its whole path and stand still, which is what
-  // made an army in contact go stiff: 13,075 refusals in a 400-round bot match. It now looks for
-  // a way round once a round, within a budget, and only stands still when there is no way round.
-  let detours = 0;
-  const DETOUR_BUDGET = 48;
   const doomed = new Set(); // pieces a round of overrun removed; filtered once, after the walk
   // A dry blocking resource stops that side's pieces; a non-blocking one (steel, which is not in
   // the original) never does. The answer is per side and does not change inside one round.
@@ -567,26 +572,44 @@ export function advance(match) {
     // Pinned (p.22): a heavily engaged land unit stands until it is re-ordered, and issueOrder
     // is what clears the flag.
     if (piece.pinned === true) continue;
-    // A ship's path comes from the lane graph (lanes.seaRoute), stepped one waypoint at a time;
-    // a land piece's comes from a walk. The stepping below is the same either way, so neither
-    // domain may be skipped here - skipping sea is what left every routed ship standing still.
 
-    const next = piece.path[0];
-    const nx = wrapX(next.x);
-    const ny = Number(next.y);
-    const occupant = pieceAt(match, nx, ny, piece.id);
-    if (occupant) {
-      // Overrun is the tank's (Manual p.9): a tank ordered into infantry fights through it,
-      // taking losses, and carries on into the cell if the infantry is destroyed. The path is
-      // never dropped here; a tank that is held keeps its order and tries again next round.
-      const overrun =
-        occupant.side !== piece.side &&
-        piece.kind === "tank" &&
-        piece.domain === "land" &&
-        occupant.domain === "land" &&
-        occupant.kind === "infantry" &&
-        occupant.transport !== true;
-      if (overrun) {
+    // Cells per round (T-004; Manual p.9, p.21). The credit is the walking a piece has in hand:
+    // an infantry gains 1 a round, a tank 2, a hull 3. Slow ground still costs a beat, so a
+    // pace-2 cell takes two rounds of an infantry's credit and one round of a tank's.
+    //
+    // The walking is a straight line, so there is no way round anything: the walker stops one
+    // cell short of a held cell and the clash belongs to combat (or to the tank's overrun, p.9).
+    const rate = cellsPerRound(piece);
+    let credit = (Number(piece.credit) || 0) + rate;
+    let spent = 0;
+    let stopped = false;
+    while (piece.path.length > 0 && spent < rate) {
+      const next = piece.path[0];
+      const nx = wrapX(next.x);
+      const ny = Number(next.y);
+      const pace = Math.max(1, Number(next.pace) || 1);
+      if (credit < pace) break;
+      const occupant = pieceAt(match, nx, ny, piece.id);
+      if (occupant) {
+        // Overrun is the tank's (Manual p.9): a tank ordered into infantry fights through it,
+        // taking losses, and carries on into the cell if the infantry is destroyed. The path is
+        // never dropped here; a tank that is held keeps its order and tries again next round.
+        const overrun =
+          occupant.side !== piece.side &&
+          piece.kind === "tank" &&
+          piece.domain === "land" &&
+          occupant.domain === "land" &&
+          occupant.kind === "infantry" &&
+          occupant.transport !== true;
+        if (!overrun) {
+          // Stop one short: the walker never shares a cell, and the clash is combat's job.
+          piece.path = [];
+          piece.pace = 1;
+          piece.detours = 0;
+          events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
+          stopped = true;
+          break;
+        }
         const combat = combatRules();
         const foot = applyDamage(occupant, Number(combat.baseDamage.tank ?? 0));
         const hull = applyDamage(piece, Number(combat.baseDamage.infantry ?? 0));
@@ -610,63 +633,40 @@ export function advance(match) {
         } else if (hull.dead) {
           doomed.add(piece.id);
           events.push({ type: "destroyed", side: piece.side, pieceId: piece.id, by: occupant.id, x: piece.x, y: piece.y, strength: 0, round: Number(match.round) || 0, note: "Overrun. The tank was lost." });
-          continue;
+          stopped = true;
+          break;
         } else {
           events.push({ type: "overrun_hold", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
-          continue;
+          stopped = true;
+          break;
         }
-      } else {
-        // Stop one short: the walker never shares a cell, and the clash is combat's job. Going
-        // round costs a route, so a piece gets a few tries per order and the round gets a budget.
-        // An enemy in the way is contact, not an obstacle: the path stops and combat decides.
-        const goal = occupant.side === piece.side ? piece.path[piece.path.length - 1] : null;
-        const tries = Number(piece.detours) || 0;
-        if (goal && tries < 4 && detours < DETOUR_BUDGET) {
-          const around = route(match, { x: piece.x, y: piece.y }, goal, piece.side);
-          if (around && around.length) {
-            piece.path = around;
-            piece.pace = Math.max(1, Number(around[0].pace) || 1);
-            piece.detours = tries + 1;
-            detours += 1;
-            events.push({ type: "detour", pieceId: piece.id, by: occupant.id, x: nx, y: ny, rounds: around.length });
-            continue;
-          }
-        }
-        piece.path = [];
-        piece.pace = 1;
-        piece.detours = 0;
-        events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
-        continue;
+      }
+
+      const fromX = piece.x;
+      const fromY = piece.y;
+      piece.facing = facingFor(fromX, fromY, nx, ny);
+      piece.x = nx;
+      piece.y = ny;
+      piece.path.shift();
+      credit -= pace;
+      spent += 1;
+      piece.pace = piece.path.length > 0 ? Math.max(1, Number(piece.path[0].pace) || 1) : 1;
+      // Combat needs to know who advanced into contact: the mover attacks, the piece that has
+      // been sitting still defends. Nothing else reads this.
+      piece.movedRound = Number(match.round) || 0;
+      const changed = syncTransport(piece, nx, ny);
+      events.push({ type: "move", pieceId: piece.id, x: nx, y: ny, transport: piece.transport });
+      if (changed) {
+        events.push({
+          type: piece.transport ? "embarked" : "landed",
+          pieceId: piece.id,
+          side: piece.side,
+          x: nx,
+          y: ny,
+        });
       }
     }
-
-    const owed = Math.max(1, Number(piece.pace) || 1);
-    if (owed > 1) {
-      piece.pace = owed - 1;
-      continue;
-    }
-
-    const fromX = piece.x;
-    const fromY = piece.y;
-    piece.facing = facingFor(fromX, fromY, nx, ny);
-    piece.x = nx;
-    piece.y = ny;
-    piece.path.shift();
-    piece.pace = piece.path.length > 0 ? Math.max(1, Number(piece.path[0].pace) || 1) : 1;
-    // Combat needs to know who advanced into contact: the mover attacks, the piece that has
-    // been sitting still defends. Nothing else reads this.
-    piece.movedRound = Number(match.round) || 0;
-    const changed = syncTransport(piece, nx, ny);
-    events.push({ type: "move", pieceId: piece.id, x: nx, y: ny, transport: piece.transport });
-    if (changed) {
-      events.push({
-        type: piece.transport ? "embarked" : "landed",
-        pieceId: piece.id,
-        side: piece.side,
-        x: nx,
-        y: ny,
-      });
-    }
+    piece.credit = stopped ? 0 : Math.max(0, credit);
   }
   if (doomed.size > 0) {
     match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));

@@ -369,6 +369,53 @@ function shortestChain(graph, start, goal) {
   return chain;
 }
 
+// The waypoint nearest a cell that the terrain map paints as water. This is the seam T-004 asks
+// for: a ship or a transport may sit anywhere on the ocean, but the lane graph only joins its 151
+// waypoints, so an arbitrary water cell has to be joined to one of them before it can sail.
+//
+// The nearest wet waypoint wins; the nearest waypoint of any kind is the fallback for a caller that
+// does not pass an accept test, and for a graph whose every neighbour is painted dry.
+export function joinLane(dataRoot, cell, accept = null) {
+  const graph = laneGraph(dataRoot);
+  if (graph.error || !graph.waypoints.length) return null;
+  const target = point(cell);
+  if (!target) return null;
+  const wet = accept || ((i) => isWater(cellId(dataRoot, graph.waypoints[i].x, graph.waypoints[i].y)));
+  const index = nearestWaypoint(graph, target, wet);
+  if (index < 0) return null;
+  return { index, waypoint: graph.waypoints[index], graph };
+}
+
+// One lane leg, expanded to the cells a hull actually crosses. `cellId` decides what counts as
+// water: the archive's lanes are coarser than its terrain map, so 27 of the 151 waypoints sit on a
+// cell painted as ground. A ship cannot stand on those, so they are stepped over rather than
+// returned - the sea segment of a path is water cells only (T-004 AC4).
+function legCells(dataRoot, a, b) {
+  const dx = b.x - a.x;
+  const gap = Math.abs(dx);
+  const sx = dx === 0 ? 0 : dx > 0 ? 1 : -1;
+  // The short way round the cylinder: a 305-cell westward leg is a 15-cell eastward one.
+  const stepX = gap > CELL_W / 2 ? -sx : sx;
+  let x = a.x;
+  let y = a.y;
+  const distX = gap > CELL_W / 2 ? CELL_W - gap : gap;
+  const distY = Math.abs(b.y - a.y);
+  let err = distX - distY;
+  const sy = b.y === a.y ? 0 : b.y > a.y ? 1 : -1;
+  const out = [];
+  let guard = 0;
+  while (guard++ <= CELL_W) {
+    const id = cellId(dataRoot, x, y);
+    if (isWater(id)) out.push({ x, y });
+    if (x === b.x && y === b.y) break;
+    const e2 = 2 * err;
+    if (e2 > -distY && distX > 0) { err -= distY; x = (x + stepX + CELL_W) % CELL_W; }
+    if (e2 < distX && distY > 0) { err += distX; y += sy; }
+    if (distX === 0) y += sy;
+  }
+  return out;
+}
+
 // Waypoints from `from` to `to`, in order, or null when the lane graph cannot
 // join them. Refuses outright when both endpoints are dry land: a land order is
 // move.mjs's business and must never turn into a sea route.
@@ -409,22 +456,40 @@ export function seaRoute(dataRoot, from, to) {
   }
 
   // A lane step has to be water. Some of the recovered waypoints sit on a cell the terrain map
-  // paints as ground (the archive's lanes are coarser than its terrain); return those waypoints
-  // only as a last resort, because a ship cannot stand on them.
+  // paints as ground (the archive's lanes are coarser than its terrain); skip those waypoints,
+  // because a ship cannot stand on them.
   const wet = legs.filter((index) => isWater(cellId(dataRoot, graph.waypoints[index].x, graph.waypoints[index].y)));
-  const usable = wet.length >= 2 ? wet : legs;
+  const usable = wet.length >= 2 ? wet : legs.filter((index) => index === startIndex || index === goalIndex || wet.includes(index));
 
-  const steps = [{ x: start.x, y: start.y }];
-  const seen = new Set([start.x + "," + start.y]);
+  // The anchors: where the hull is, the lane waypoints it passes, and where it ends. The legs
+  // between them are expanded to cells so a path is the water a ship actually crosses, not a set of
+  // jumps between coarsely spaced waypoints.
+  const anchors = [{ x: start.x, y: start.y }];
   for (const index of usable) {
     const wp = graph.waypoints[index];
-    const key = wp.x + "," + wp.y;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    steps.push({ x: wp.x, y: wp.y });
+    const prev = anchors[anchors.length - 1];
+    if (prev.x === wp.x && prev.y === wp.y) continue;
+    anchors.push({ x: wp.x, y: wp.y });
   }
-  const last = steps[steps.length - 1];
-  if (last.x !== end.x || last.y !== end.y) steps.push({ x: end.x, y: end.y });
+  const lastAnchor = anchors[anchors.length - 1];
+  if (lastAnchor.x !== end.x || lastAnchor.y !== end.y) anchors.push({ x: end.x, y: end.y });
+
+  const steps = [];
+  const seen = new Set();
+  const push = (cell) => {
+    const key = cell.x + "," + cell.y;
+    if (seen.has(key)) return;
+    seen.add(key);
+    steps.push({ x: cell.x, y: cell.y });
+  };
+  push(anchors[0]);
+  for (let i = 1; i < anchors.length; i++) {
+    const leg = legCells(dataRoot, anchors[i - 1], anchors[i]);
+    for (const cell of leg) push(cell);
+    // The anchor is always part of the route, even when the map paints it dry: the lane table says
+    // the ship goes there, and dropping it would silently reroute the voyage.
+    push(anchors[i]);
+  }
   if (steps.length < 2) return null;
   return steps;
 }

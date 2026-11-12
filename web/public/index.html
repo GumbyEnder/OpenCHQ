@@ -21,6 +21,13 @@
          each opens a dialogue over the map (see dialogs.mjs). -->
     <button type="button" id="clockBtn" class="navbtn clockbtn" aria-pressed="false"
             title="Play or pause the clock">&#9654;</button>
+    <!-- Game speed 0-6 (manual p.34-35). Speed 0 accepts orders and does not let time pass. Either
+         seat may change it; the readout is the room's own number, not a local guess. -->
+    <div class="speedctl" role="group" aria-label="Game speed">
+      <button type="button" id="speedDown" class="navbtn speedbtn" title="Slower (speed -)">&#8722;</button>
+      <span id="speedReadout" class="speedreadout" aria-live="polite">Speed 1</span>
+      <button type="button" id="speedUp" class="navbtn speedbtn" title="Faster (speed +)">+</button>
+    </div>
     <nav id="nav" class="nav" aria-label="Match commands"></nav>
     <div class="gamebtns">
       <button type="button" id="resignBtn" class="navbtn danger" title="Concede: the other side wins">Resign</button>

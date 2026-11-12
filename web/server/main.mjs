@@ -308,9 +308,9 @@ server.listen(port, host, () => {
   console.log(`OpenCHQ web shell http://${host}:${port}`);
 });
 
-// The one clock. Round length is a tunable, not a constant: config/game.json -> roundSeconds.
-// Every running room advances one round per beat; held and finished rooms are skipped, so
-// nothing ticks for a game nobody is playing.
+// The one clock. Each room carries its own speed (T-004, Manual p.34-35): the ticker beats at a
+// fixed base interval and lobby.tickRooms(now) advances only the rooms whose own round length has
+// elapsed. A room at speed 0 is never advanced, and its orders still land.
 // Expired sessions are not worth the row. One sweep at boot, one an hour.
 pruneSessions();
 setInterval(() => {
@@ -321,16 +321,18 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000).unref();
 
-const beat = Math.max(1, Math.round(roundSeconds() * 1000));
+// The base beat has to divide the shortest round length so a fast room is not visibly late. At the
+// shipped speeds the shortest round is 0.6 s; 50 ms gives it twelve chances a round.
+const beat = 50;
 const ticker = setInterval(() => {
   try {
-    lobby.tickRooms();
+    lobby.tickRooms(Date.now());
   } catch (err) {
     console.error("tick failed:", err && err.message ? err.message : err);
   }
 }, beat);
 ticker.unref();
-console.log(`round length ${roundSeconds()} s (${beat} ms)`);
+console.log(`round length ${roundSeconds()} s at speed 1; base beat ${beat} ms; speeds 0-6`);
 
 // A deploy sends SIGTERM and the process used to die mid-round with live sockets. Now it stops
 // the clock, tells the seats, writes every room and leaves: the rooms that were running with a

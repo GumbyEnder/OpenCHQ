@@ -216,6 +216,29 @@ export function marchOne(match, side, piece, capital, events) {
     }
     last = (result && result.error) || "no path";
   }
+  // A very long straight march can exceed the walker's 100-cost limit (RULES.md section 2), and
+  // the original refuses such an order with a warning rather than bending the line. A bot still has
+  // to close the distance, so it marches in stages: half the gap, then a quarter, then an eighth.
+  // This is a bot decision, not a movement rule: the engine still walks straight.
+  for (const fraction of [0.5, 0.25, 0.125]) {
+    const mid = {
+      x: wrapX(piece.x + Math.round(wrapDelta(piece.x, capital.x) * fraction)),
+      y: Math.max(0, Math.min(CELL_H - 1, Number(piece.y) + Math.round((Number(capital.y) - Number(piece.y)) * fraction))),
+    };
+    if (mid.x === wrapX(piece.x) && mid.y === Number(piece.y)) continue;
+    let result;
+    try {
+      result = issueOrder(match, side, piece.id, mid.x, mid.y);
+    } catch (err) {
+      last = err && err.message ? err.message : err;
+      continue;
+    }
+    if (result && result.ok && Array.isArray(result.path) && result.path.length > 0) {
+      events.push({ type: "bot_order", side, pieceId: piece.id, to: mid, path: result.path, staged: true });
+      return;
+    }
+    last = (result && result.error) || "no path";
+  }
   events.push(note(side, piece.id, last));
 }
 

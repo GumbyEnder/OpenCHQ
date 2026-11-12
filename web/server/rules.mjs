@@ -45,9 +45,100 @@ export function roundSeconds() {
   return Number(rules().roundSeconds);
 }
 
+// --- speeds 0-6 (T-004) --------------------------------------------------------------------
+//
+// The original's game speed runs 0 through 6 (Manual p.34-35). Speed 0 accepts orders and air
+// strikes but does not let time pass. The seven round lengths live in config.speeds as an array
+// indexed by the speed; they are stand-ins, so only their ordering is binding.
+//
+// A missing or malformed slot falls back to the old single round length rather than inventing a
+// clock: a room whose speed went bad plays at the same pace it always did.
+export const SPEED_MIN = 0;
+export const SPEED_MAX = 6;
+
+export function speedTable() {
+  const list = rules().speeds;
+  if (!Array.isArray(list) || list.length < SPEED_MAX + 1) {
+    const single = roundSeconds();
+    return [0, single, single, single, single, single, single];
+  }
+  return list.slice(0, SPEED_MAX + 1).map((entry, index) => {
+    const value = Number(entry);
+    if (!Number.isFinite(value) || value < 0) return index === 0 ? 0 : roundSeconds();
+    return value;
+  });
+}
+
+export function clampSpeed(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  const whole = Math.round(number);
+  if (whole < SPEED_MIN || whole > SPEED_MAX) return null;
+  return whole;
+}
+
+// Seconds per round at this speed. Speed 0 is 0: the room holds, nothing ticks.
+export function speedSeconds(speed) {
+  const table = speedTable();
+  const index = clampSpeed(speed);
+  return table[index === null ? 1 : index];
+}
+
+// Whether a room at this speed has a round to run after `elapsedMs`. Pure, so the clock rule is one
+// function the server and the test both read: speed 0 never becomes due, whatever the elapsed time.
+export function speedDue(speed, elapsedMs) {
+  const seconds = speedSeconds(speed);
+  if (!(seconds > 0)) return false;
+  const ms = Math.max(1, Math.round(seconds * 1000));
+  const elapsed = Number(elapsedMs);
+  return Number.isFinite(elapsed) && elapsed >= ms;
+}
+
+// --- per-kind movement (T-004) --------------------------------------------------------------
+//
+// How many cells a kind may enter in one round. The numbers are stand-ins (config/game.json); the
+// manual states only the orderings. `transport` is a land piece that is at sea: p.21 makes it a
+// little slower than a warship, and it is still faster than the same piece on foot.
+export function moveBlock() {
+  return rules().move || {};
+}
+
+export function moveValue(key, fallback = null) {
+  const entry = moveBlock()[key];
+  const value = entry && typeof entry === "object" && Object.hasOwn(entry, "value") ? entry.value : entry;
+  return value === undefined || value === null ? fallback : value;
+}
+
+export function moveSource(key) {
+  const entry = moveBlock()[key];
+  const source = entry && typeof entry === "object" ? entry.source : undefined;
+  return typeof source === "string" ? source : "";
+}
+
+// The rate for a piece. A land unit at sea is a transport; a hull is a warship (the manual's "all
+// sea units move at the same rate", p.21), and a submarine is named on its own row so a per-kind
+// edit cannot silently give it a transport's pace. The row is called `warship`, not `ship`, because
+// `ship` is the retired generic unit kind the repo refuses to let back in (test/nodes/prices.mjs).
+export function cellsPerRound(piece) {
+  const table = moveValue("cellsPerRound", {}) || {};
+  const kind = String((piece && piece.kind) || "");
+  let key;
+  if (piece && piece.transport === true) key = "transport";
+  else if (kind === "submarine") key = "submarine";
+  else if (piece && piece.domain === "sea") key = "warship";
+  else if (Object.hasOwn(table, kind)) key = kind;
+  else key = "infantry";
+  const raw = Number(table[key]);
+  return Number.isFinite(raw) && raw > 0 ? Math.max(1, Math.floor(raw)) : 1;
+}
+
 // Terrain ids that take longer than open ground. From the manual's slowed column, which the
-// successor follows: shallows (2), forest (9), mountain (10), jungle (12), polar (13).
-const SLOW = new Set([2, 9, 10, 12, 13]);
+// successor follows: forest (9), mountain (10), jungle (12), polar (13).
+//
+// T-004 removed shallows (2): it is water, and a land unit never walks on it - the walker boards a
+// transport and follows the lanes instead. Keeping it in this set charged a land pace for a cell
+// no land piece can stand on (DISPOSITIONS.md, "Terrain id 2").
+const SLOW = new Set([9, 10, 12, 13]);
 // Wasteland is a blast result and is refused by walkers.
 const REFUSED = 14;
 // Ocean and lake are transport, and use the same two-beat stand-in as slow ground.

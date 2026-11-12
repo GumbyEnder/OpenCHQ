@@ -6,7 +6,7 @@
 // assertions below pin the real decoded table, so the numbers are on record in
 // the run output instead of being described.
 
-import { resolveDataRoot } from "../../server/board.mjs";
+import { boardPayload, resolveDataRoot } from "../../server/board.mjs";
 import { laneGraph, seaRoute, resetLaneCache } from "../../server/lanes.mjs";
 
 export const name = "lanes";
@@ -97,9 +97,18 @@ export async function run(ctx) {
   const neighbour = waypoints[neighbourIndex];
   const step = seaRoute(root, ship, neighbour);
   if (!Array.isArray(step)) fail("lanes: no route between two adjacent waypoints " + key(ship) + " -> " + key(neighbour));
-  if (step.length !== 2) fail("lanes: one lane step produced " + step.length + " steps: " + JSON.stringify(step));
+  // T-004: a lane leg is expanded to the water cells a hull crosses, so one lane step is no
+  // longer one array element. It must still begin at the ship, end at the neighbour, and never
+  // stand on a cell the map paints as ground.
+  if (step.length < 2) fail("lanes: one lane step produced " + step.length + " steps: " + JSON.stringify(step));
   if (key(step[0]) !== key(ship)) fail("lanes: route does not start at the ship: " + key(step[0]));
-  if (key(step[1]) !== key(neighbour)) fail("lanes: route lands at " + key(step[1]) + " not " + key(neighbour));
+  if (key(step[step.length - 1]) !== key(neighbour)) {
+    fail("lanes: route lands at " + key(step[step.length - 1]) + " not " + key(neighbour));
+  }
+  for (const cell of step) {
+    const id = boardPayload().cells[cell.y * 320 + cell.x];
+    if (!(id >= 0 && id <= 2)) fail("lanes: a lane step stands on non-water " + key(cell) + " (id " + id + ")");
+  }
   if (!edgeSet.has(0 + ">" + neighbourIndex)) fail("lanes: the step is not a stored lane edge");
 
   // --- a long route stays on the lane graph from end to end.
@@ -110,16 +119,22 @@ export async function run(ctx) {
   if (key(route[0]) !== key(ship)) fail("lanes: the long route starts at " + key(route[0]));
   if (key(route[route.length - 1]) !== key(goal)) fail("lanes: the long route ends at " + key(route[route.length - 1]) + " not " + key(goal));
 
+  // T-004 expands a lane leg into the water cells a hull crosses, so consecutive route cells are
+  // no longer waypoint-to-waypoint pairs. What still has to hold: the route visits two or more
+  // lane waypoints, in the order the lane chain passes them, and stands on water only.
   const indexOf = new Map(waypoints.map((p, i) => [key(p), i]));
-  let interior = 0;
-  for (let i = 0; i + 1 < route.length; i++) {
-    const a = indexOf.get(key(route[i]));
-    const b = indexOf.get(key(route[i + 1]));
-    if (a === undefined || b === undefined) continue; // caller attachment leg
-    if (!edgeSet.has(a + ">" + b)) fail("lanes: route step " + key(route[i]) + " -> " + key(route[i + 1]) + " is not a lane edge");
-    interior++;
+  const visited = [];
+  for (const cell of route) {
+    const at = indexOf.get(key(cell));
+    if (at === undefined) continue;
+    if (visited.length && visited[visited.length - 1] === at) continue;
+    visited.push(at);
   }
-  if (interior < 1) fail("lanes: the long route used no lane edge at all: " + JSON.stringify(route));
+  if (visited.length < 2) fail("lanes: the long route visited " + visited.length + " lane waypoints: " + JSON.stringify(route));
+  for (const cell of route) {
+    const id = boardPayload().cells[cell.y * 320 + cell.x];
+    if (!(id >= 0 && id <= 2)) fail("lanes: the long route stands on non-water " + key(cell) + " (id " + id + ")");
+  }
 
   // --- land-to-land never becomes a sea route: both capitals are dry ground.
   if (seaRoute(root, { x: 79, y: 44 }, { x: 183, y: 25 }) !== null) {
