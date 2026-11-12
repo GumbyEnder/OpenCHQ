@@ -10,6 +10,7 @@ import { openMatch } from "../../server/match.mjs";
 import { advance, issueOrder, planOrder } from "../../server/move.mjs";
 import { laneGraph, seaRoute, seaWaypoints } from "../../server/lanes.mjs";
 import { resolve } from "../../server/combat.mjs";
+import { isTransport, isWarship } from "../../server/escort.mjs";
 
 export const name = "transports";
 
@@ -94,6 +95,41 @@ export async function run(ctx) {
   if (seaMatch.pieces.length !== 1 || seaMatch.pieces[0].id !== "red:ship") {
     fail("the wrong piece survived the catch: " + JSON.stringify(seaMatch.pieces));
   }
+
+  // --- AC5 in combat, on a served piece: a cruiser at sea is not cargo ------------------
+  // The same syncTransport bug fed combat.mjs:309, which skips any attacker with
+  // transport===true (a hull could not shoot back) and one-shots any target carrying it. The
+  // synthetic pair above proves the cargo rule; this block proves the rule is not applied to a
+  // hull whose state came out of move.mjs.
+  const hullMatch = openMatch("1986", []);
+  hullMatch.clock = "running";
+  hullMatch.round = 1;
+  const hull = {
+    id: "blue:hull", side: "blue", domain: "sea", kind: "cruiser",
+    x: 8, y: 0, path: [], pace: 1, facing: null, fighting: null, shots: 0,
+  };
+  hullMatch.pieces = [hull];
+  const hullOrder = issueOrder(hullMatch, "blue", hull.id, 38, 0);
+  if (hullOrder.error) fail("a cruiser order along open water was refused: " + hullOrder.error);
+  advance(hullMatch);
+  if (hull.transport === true) fail("a cruiser that moved on water is flagged transport=true - combat would treat it as cargo");
+  // Escort reads the same flag (escort.mjs isTransport), so the served piece must say warship
+  // there too: a hull can never be the escorted party.
+  if (!isWarship(hull) || isTransport(hull)) {
+    fail("escort reads a cruiser that moved on water as cargo: " + JSON.stringify({ transport: hull.transport }));
+  }
+  const raider = piece("red:raider", "red", hull.x, hull.y + 1);
+  raider.kind = "infantry";
+  hullMatch.pieces.push(raider);
+  const hullFight = resolve(hullMatch);
+  const hullShots = hullFight.filter((event) => event.type === "shot");
+  if (!hullShots.some((event) => event.side === "blue")) {
+    fail("a cruiser at sea did not return fire - combat read it as cargo: " + JSON.stringify(hullFight));
+  }
+  if (hullFight.some((event) => event.type === "destroyed" && event.pieceId === "blue:hull")) {
+    fail("a cruiser at sea was sunk in one exchange - the cargo rule was applied to a hull");
+  }
+  if (!hullMatch.pieces.some((unit) => unit.id === "blue:hull")) fail("the cruiser left the board");
 
   // --- a transport is cargo only at sea: the same pair on land fights normally --------
   const ashore = piece("blue:land", "blue", 40, 40);

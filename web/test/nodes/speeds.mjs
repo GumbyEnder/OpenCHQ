@@ -103,6 +103,32 @@ export async function run(ctx) {
     if (round >= 2 && moved !== B) fail("a cruiser moved " + moved + " cells in settled round " + round + ", not " + B);
   }
 
+  // A submarine is the second hull kind the same bug hit, and the PM's gate item names both.
+  // Same water, same order, same expectation: a sub is a warship (rate 3), never cargo.
+  const subMatch = openMatch("1986", []);
+  subMatch.clock = "running";
+  const diesel = {
+    id: "blue:sub", side: "blue", domain: "sea", kind: "submarine",
+    x: 8, y: 0, path: [], pace: 1, facing: null, fighting: null, shots: 0,
+  };
+  subMatch.pieces = [diesel];
+  const subOrder = issueOrder(subMatch, "blue", diesel.id, 38, 0);
+  if (subOrder.error) fail("a submarine order along open water was refused: " + subOrder.error);
+  if (!Array.isArray(diesel.path) || diesel.path.length === 0) fail("a submarine order stored no path");
+  for (let round = 1; round <= 3; round++) {
+    const x0 = diesel.x;
+    advance(subMatch);
+    const moved = wrapGap(x0, diesel.x);
+    if (diesel.transport === true) {
+      fail("a submarine on water is flagged transport=true after round " + round + " - it is cargo, not a warship");
+    }
+    if (cellsPerRound(diesel) !== B) {
+      fail("a submarine on water moves at " + cellsPerRound(diesel) + " cells/round, not the warship rate " + B +
+        " (round " + round + ")");
+    }
+    if (round >= 2 && moved !== B) fail("a submarine moved " + moved + " cells in settled round " + round + ", not " + B);
+  }
+
   // The other half of AC5, on a served piece: a land unit on the same water is cargo, sails at
   // the transport rate, and therefore trails the hull. Frodo's hold on 6c1c396: this was only
   // ever a synthetic object before.
