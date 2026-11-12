@@ -80,3 +80,27 @@ moving at its measured rate.
 - **The `????` era rolls its setup per run** — never a speed or movement source.
 - Round boundaries are input-gated, so a naive timer measures one round and then hangs; the
   probe must re-arm the clock between rounds.
+
+## Code findings, 2026-11-12 (after the first probe)
+
+Reading `decompiled.c` against the live DGROUP narrows S1 a lot:
+
+- `DS:0x157e` is written in only three ways: `0x1dde` (7646 units = **119.5 s**, the `2:00.0`
+  panel), `0x4aab` (19115 units = **298.7 s**, ~5:00), and `0xffff` (time stopped).
+  `0xEEF`/`0x27D`/`0x40` are the minute/second/tenth digit divisors in `FUN_3711_0074`,
+  which is what pins 64 units per second.
+- The two round lengths are selected by an unverified selector `DS:0x19e` (currently 2 in the
+  1986 war room): `== 2` -> 0x1dde, `== 3` -> 0x4aab. There is no seven-entry round-length
+  table in the code. The manual's speeds 0-6 are **Speed Up / Speed Down** commands
+  (p.34-35), so the working hypothesis is that speed scales the tick rate that decrements
+  `0x157e`, not its starting value. S1 tests that by changing speed in the war room and
+  measuring the decrement rate, and only then by touching `0x1a0`, which reads 1 and is the
+  other speed-shaped candidate.
+- `0xc6fe != 1` forces `0x157e = 0xffff`, i.e. a run flag, not a timer. A probe that reads
+  the clock while that flag is 0 measures a paused game.
+- At the boundary `0x157e == -1` the war-room loop (`10229`) calls `FUN_2ffd_138e` and then
+  spins on `FUN_2757_0329` waiting for a key: the original **stops and asks** at the round
+  boundary. That prompt is the phase boundary Q32 must be answered against, and it also means
+  a measurement script has to answer it to get a second round.
+- DOSBox `cycles=auto` settled on **3000 cycles** for this game (title bar), which is the
+  number to record with the AC2 table.
