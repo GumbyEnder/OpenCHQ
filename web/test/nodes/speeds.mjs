@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openMatch } from "../../server/match.mjs";
-import { issueOrder } from "../../server/move.mjs";
+import { advance, issueOrder } from "../../server/move.mjs";
 import { tickMatch } from "../../server/tick.mjs";
 import {
   cellsPerRound, moveSource, moveValue, rules, speedDue, speedSeconds, speedTable, SPEED_MAX,
@@ -72,6 +72,36 @@ export async function run(ctx) {
   }
   if (!moveSource("cellsPerRound")) fail("moveSource(cellsPerRound) is empty");
   if (moveValue("cellsPerRound") === null) fail("moveValue(cellsPerRound) is null");
+
+  // The accessor is only half of AC5: the table can be right and the served piece still wrong.
+  // Frodo's gate on 2d7326e found `syncTransport` stamping transport=true on every hull, because
+  // a cruiser is on water by definition - so a real cruiser sailed at the transport rate and
+  // combat read it as cargo. Drive a real piece over real water and read the rate each round.
+  const hullMatch = openMatch("1986", []);
+  hullMatch.clock = "running";
+  const cruiser = {
+    id: "blue:hull", side: "blue", domain: "sea", kind: "cruiser",
+    x: 8, y: 0, path: [], pace: 1, facing: null, fighting: null, shots: 0,
+  };
+  hullMatch.pieces = [cruiser];
+  const hullOrder = issueOrder(hullMatch, "blue", cruiser.id, 38, 0);
+  if (hullOrder.error) fail("a cruiser order along open water was refused: " + hullOrder.error);
+  if (!Array.isArray(cruiser.path) || cruiser.path.length === 0) fail("a cruiser order stored no path");
+  const wrapGap = (a, b) => Math.min(Math.abs(b - a), 320 - Math.abs(b - a));
+  for (let round = 1; round <= 3; round++) {
+    const x0 = cruiser.x;
+    advance(hullMatch);
+    const moved = wrapGap(x0, cruiser.x);
+    if (cruiser.transport === true) {
+      fail("a cruiser on water is flagged transport=true after round " + round + " - it is cargo, not a warship");
+    }
+    if (cellsPerRound(cruiser) !== B) {
+      fail("a cruiser on water moves at " + cellsPerRound(cruiser) + " cells/round, not the warship rate " + B +
+        " (round " + round + ")");
+    }
+    // Settled rounds are the measurement: round 1 spends the order's opening credit.
+    if (round >= 2 && moved !== B) fail("a cruiser moved " + moved + " cells in settled round " + round + ", not " + B);
+  }
 
   // ---- AC6: speeds 0-6, and speed 0 lets no time pass --------------------------------------
   const table = speedTable();

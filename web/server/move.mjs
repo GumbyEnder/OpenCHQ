@@ -61,13 +61,20 @@ function isWater(x, y) {
   return id !== null && Number(id) <= WATER_MAX_ID;
 }
 
-// A land piece in the water is a transport, and a transport is cargo: it cannot fight back.
+// A LAND piece in the water is a transport, and a transport is cargo: it cannot fight back.
 // The state follows the cell, so there is nothing to keep in sync by hand.
+//
+// The domain guard is not cosmetic. A cruiser or submarine is on water by definition, so an
+// unguarded `transport = inWater` stamped cargo onto every hull: rules.cellsPerRound reads
+// transport before domain and sailed a cruiser at the transport rate (2 instead of 3), and
+// combat/air/escort read the same flag, so a cruiser was a target that could not shoot back
+// (frodo's gate on 2d7326e). Only a sea piece can be cargo-free on water.
 function syncTransport(piece, x, y) {
   const inWater = isWater(x, y);
+  const cargo = inWater && piece.domain !== "sea";
   const had = piece.transport === true;
-  piece.transport = inWater;
-  return had !== inWater;
+  piece.transport = cargo;
+  return had !== cargo;
 }
 
 // Terrain cost of entering a cell. With no extract the ground is treated as open, so a test
