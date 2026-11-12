@@ -16,6 +16,14 @@ const warned = new Set();
 // a published tree has no pointer, resolves from env alone, and skips when env is unset. Never call
 // that file "committed" - that wording has already been mistaken for a shipped fallback.
 export function extractRoot() {
+  // OPENCHQ_NO_EXTRACT=1 is the deterministic no-extract leg (board.mjs already refuses every
+  // data-root candidate under it). Without this gate the two nodes that read this module directly
+  // - disasm and fonts - still resolved the untracked local/data_root.txt pointer and ran, so the
+  // leg that is supposed to prove the published tree works on a host with no original bytes
+  // reported 58 passed / 6 skipped instead of skipping every fixture. The env names are ignored in
+  // this mode too: a set-but-wrong root is already treated as unset, a deliberately-off one must
+  // not be silently overridden.
+  if (process.env.OPENCHQ_NO_EXTRACT === "1") return "";
   for (const key of ["OPENCHQ_DATA", "OPENCHQ_EXTRACT"]) {
     const value = process.env[key];
     if (!value) continue;
@@ -42,6 +50,7 @@ export function extractRoot() {
 
 // The reference tree root (the directory that holds tools/, docs/ and extracted/).
 export function referenceRoot() {
+  if (process.env.OPENCHQ_NO_EXTRACT === "1") return "";
   if (process.env.OPENCHQ_REFERENCE) return path.resolve(process.env.OPENCHQ_REFERENCE);
   const extract = extractRoot();
   return extract ? path.resolve(extract, "..") : "";

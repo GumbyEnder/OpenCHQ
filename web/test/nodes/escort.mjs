@@ -46,6 +46,12 @@ export async function run() {
   if (isWarship(land("l1", "blue", 10, 10))) fail("a land piece is not a warship");
   if (!isTransport(land("l1", "blue", 10, 10, { transport: true }))) fail("cargo at sea is a transport");
   if (isTransport(land("l1", "blue", 10, 10))) fail("infantry ashore is not a transport");
+  // T-004 AC5: a hull is on water by definition, so the old `transport = inWater` flag made every
+  // cruiser cargo here too. A cruiser at sea is a warship and can never be the escorted party.
+  if (isTransport(ship("c1", "blue", 10, 10, { kind: "cruiser" }))) {
+    fail("a cruiser at sea is not cargo");
+  }
+  if (!isWarship(ship("c1", "blue", 10, 10, { kind: "cruiser" }))) fail("a cruiser at sea is a warship");
 
   // --- the order forms, and a second warship replaces the first -----------------------------
   {
@@ -78,6 +84,10 @@ export async function run() {
     if (!notShip.error) fail("a transport was allowed to escort");
     const notTransport = orderEscort(m, "blue", "a", "foot");
     if (!notTransport.error) fail("a land piece ashore was allowed to be escorted");
+    // A hull handed in as the cargo is refused for the same reason: isTransport reads the flag the
+    // move code sets, and a sea piece never carries it.
+    const hullAsCargo = orderEscort(m, "blue", "a", "enemy");
+    if (!hullAsCargo.error) fail("a warship was accepted as cargo for an escort");
     const notMine = orderEscort(m, "blue", "enemy", "t");
     if (!notMine.error) fail("an enemy ship was allowed to escort");
     const notMyCargo = orderEscort(m, "blue", "a", "enemyT");
