@@ -173,7 +173,7 @@ try {
   if (boughtAt[0] !== berth[0] || boughtAt[1] !== berth[1]) {
     throw new Error("buy landed on a different cell: " + JSON.stringify(boughtAt) + " != " + JSON.stringify(berth));
   }
-  if (!/Bought an/.test(boughtFlash)) throw new Error("buy did not land: " + boughtFlash);
+  if (!/Bought (?:a|an) cruiser/.test(boughtFlash)) throw new Error("buy did not land: " + boughtFlash);
 
   // The hull is the piece the server put on the berth, not the first sea-looking thing in the
   // frame (the first version could latch onto an unrelated piece and chase it for 20 minutes).
@@ -208,10 +208,18 @@ try {
 
   // --- run to the mid-Atlantic band -----------------------------------------------------------
   await page.click("#clockBtn");
+  // The Play button is one toggle and the room's own state is the truth: a click that lands
+  // while the client is mid-frame can be swallowed, so press until the server says running.
+  for (let tries = 0; tries < 4; tries++) {
+    await sleep(2000);
+    if (state.clock === "running") break;
+    log("clock still", state.clock, "- pressing Play again");
+    await page.click("#clockBtn");
+  }
   let mid = null;
   // Mid-Atlantic means the ordered waypoint, not the first cell past the US coast: the widened
   // 96..118 band caught the hull at 97,39, which is still offshore of Washington.
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 900; i++) {
     const s = currentHull(hullId);
     if (s && s.round > frame1.round && Math.abs(s.x - 106) <= 1 && Math.abs(s.y - 32) <= 1) { mid = s; break; }
     await sleep(500);
