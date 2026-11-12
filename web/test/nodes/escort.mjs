@@ -11,6 +11,8 @@ import { resolve } from "../../server/combat.mjs";
 import { logLines } from "../../server/log.mjs";
 import { combatRules } from "../../server/rules.mjs";
 import { forSeat } from "../../server/view.mjs";
+import { openMatch } from "../../server/match.mjs";
+import { advance, issueOrder } from "../../server/move.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -37,6 +39,24 @@ function match(pieces) {
   return { round: 1, foughtRound: -1, pieces, capitals: {}, sites: [], sides: {} };
 }
 
+// A cruiser whose transport flag was written by move.mjs, not by this file's fixture factory.
+// ship() hard-codes transport:false, so a check on a ship() object can only prove the literal it
+// was handed - frodo's re-gate on 30b821d named exactly that, and this is the fix: the flag has to
+// come out of the served path or the assertion cannot fail when the AC5 guard is reverted.
+function servedCruiser(id = "blue:served") {
+  const m = openMatch("1986", []);
+  m.clock = "running";
+  const hull = {
+    id, side: "blue", domain: "sea", kind: "cruiser",
+    x: 8, y: 0, path: [], pace: 1, facing: null, fighting: null, shots: 0,
+  };
+  m.pieces = [hull];
+  const order = issueOrder(m, "blue", hull.id, 38, 0);
+  if (order.error) fail("a cruiser order along open water was refused: " + order.error);
+  advance(m);
+  return hull;
+}
+
 export const name = "transport_escort";
 
 export async function run() {
@@ -47,11 +67,11 @@ export async function run() {
   if (!isTransport(land("l1", "blue", 10, 10, { transport: true }))) fail("cargo at sea is a transport");
   if (isTransport(land("l1", "blue", 10, 10))) fail("infantry ashore is not a transport");
   // T-004 AC5: a hull is on water by definition, so the old `transport = inWater` flag made every
-  // cruiser cargo here too. A cruiser at sea is a warship and can never be the escorted party.
-  if (isTransport(ship("c1", "blue", 10, 10, { kind: "cruiser" }))) {
-    fail("a cruiser at sea is not cargo");
-  }
-  if (!isWarship(ship("c1", "blue", 10, 10, { kind: "cruiser" }))) fail("a cruiser at sea is a warship");
+  // cruiser cargo here too. The piece below moved through move.mjs, so this is a statement about
+  // the escorts' view of a served cruiser, not about a literal in this file.
+  const served = servedCruiser();
+  if (isTransport(served)) fail("escort reads a cruiser that moved on water as cargo (transport=" + served.transport + ")");
+  if (!isWarship(served)) fail("a cruiser that moved on water is not read as a warship");
 
   // --- the order forms, and a second warship replaces the first -----------------------------
   {
@@ -84,10 +104,14 @@ export async function run() {
     if (!notShip.error) fail("a transport was allowed to escort");
     const notTransport = orderEscort(m, "blue", "a", "foot");
     if (!notTransport.error) fail("a land piece ashore was allowed to be escorted");
-    // A hull handed in as the cargo is refused for the same reason: isTransport reads the flag the
-    // move code sets, and a sea piece never carries it.
-    const hullAsCargo = orderEscort(m, "blue", "a", "enemy");
-    if (!hullAsCargo.error) fail("a warship was accepted as cargo for an escort");
+    // A same-side hull handed in as the cargo must be refused by the transport rule itself. Using
+    // an enemy hull here passes on the side check alone, which is what frodo caught on 30b821d.
+    m.pieces.push(served);
+    const hullAsCargo = orderEscort(m, "blue", "a", served.id);
+    if (!hullAsCargo.error) fail("a same-side warship was accepted as cargo for an escort");
+    if (!/not a transport/i.test(hullAsCargo.error)) {
+      fail("a same-side warship was refused for the wrong reason: " + hullAsCargo.error);
+    }
     const notMine = orderEscort(m, "blue", "enemy", "t");
     if (!notMine.error) fail("an enemy ship was allowed to escort");
     const notMyCargo = orderEscort(m, "blue", "a", "enemyT");
