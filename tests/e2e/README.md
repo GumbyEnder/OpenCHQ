@@ -44,3 +44,23 @@ agent-relay install, so a reviewer with Playwright already on the box can run th
 
 Exit code is 0 when every check passed, 1 otherwise. The summary is printed at the end and is what
 a task report pastes.
+
+## speed-handcheck.mjs — the user-visible half of T-004
+
+    node tests/e2e/speed-handcheck.mjs --url=https://openchq-web-production.up.railway.app
+
+A separate, shorter run because it measures time rather than asserting state. It signs in, opens a
+live bot room, presses the clock's Play button, then:
+
+- sets speed 0 and takes two screenshots `--freeze` seconds apart (default 8) while the clock says
+  `running`: the round counter and every piece position must be identical. Two byte-identical
+  screenshots are the visual form of that claim.
+- sets speed 1 and speed 6 and measures the round delta over the same `--window` (default 60 s),
+  reporting rounds per minute next to the server's own table (`config/game.json` `speeds`;
+  speed 1 = 5 s, speed 6 = 0.6 s, so 12/min and 100/min).
+
+A room opens with the clock HELD. Without pressing Play, speed 1 legitimately runs nothing — the
+first cut of this script reported 0 rounds/min for that reason, not a server fault.
+
+Output: `t004-speed-handcheck-<iso>/` with `summary.json` plus one screenshot per measurement. That
+directory is gitignored; the JSON is what a report quotes.

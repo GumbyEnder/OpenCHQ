@@ -26,3 +26,5 @@ __pycache__/
 # Soak runs write screenshots and a json per run. The T-007 AC6 run is committed as evidence;
 # later runs stay on the machine.
 tests/e2e/soak-*/
+# Speed hand-check runs: screenshots + summary.json per run, same rule.
+tests/e2e/t004-speed-handcheck-*/
