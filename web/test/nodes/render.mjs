@@ -7,6 +7,7 @@ import {
   BOARD_H,
   PIECE_INK,
   PIECE_MARKER,
+  CAPITAL_NEUTRAL,
   capitalMarkers,
   cellToPixel,
   fitViewport,
@@ -189,6 +190,22 @@ export async function run(ctx) {
   eq(fail, "capital colors", fallbackCaps.map((c) => c.color), [SCHEMATIC.blue, SCHEMATIC.red]);
   const renamed = capitalMarkers({ capitals: { blue: { name: "Washington", x: 79, y: 44 }, red: { name: "Moscow", x: 183, y: 25 } } });
   eq(fail, "capital names survive the payload", renamed.map((c) => c.name), ["Washington", "Moscow"]);
+  // PB-022: a room labels the era's own capital rows, not the board's fixed seats. 1918 carries
+  // three type-1/2 rows and no Washington or Moscow, so neither name may reach the frame.
+  const eraRoom = {
+    sites: [
+      { id: 10, name: "London", x: 148, y: 30, type: 1, owner: "blue" },
+      { id: 11, name: "Berlin", x: 161, y: 30, type: 2, owner: "red" },
+      { id: 17, name: "Paris", x: 150, y: 34, type: 2, owner: "blue" },
+      { id: 62, name: "Washington", x: 79, y: 44, type: 4, owner: "blue" },
+      { id: 63, name: "Moscow", x: 183, y: 25, type: 4, owner: "red" },
+    ],
+  };
+  const eraCaps = capitalMarkers({ capitals: { blue: { name: "Washington", x: 79, y: 44 }, red: { name: "Moscow", x: 183, y: 25 } } }, eraRoom);
+  eq(fail, "a room's own capitals replace the fixed seats", eraCaps.map((c) => c.name), ["London", "Berlin", "Paris"]);
+  eq(fail, "an era capital keeps the owner's colour", eraCaps.map((c) => c.color), [SCHEMATIC.blue, SCHEMATIC.red, SCHEMATIC.blue]);
+  const neutralRoom = { sites: [{ id: 10, name: "London", x: 148, y: 30, type: 1, owner: null }] };
+  eq(fail, "a neutral capital is not painted in a side's colour", capitalMarkers(null, neutralRoom).map((c) => c.color), [CAPITAL_NEUTRAL]);
 
   // --- a piece carries its side, its shape and its owner's outline -----------
   // Shapes are the zoomed-in view. At map scale the marker is the original's block (see the

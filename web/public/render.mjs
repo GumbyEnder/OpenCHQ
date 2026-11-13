@@ -337,8 +337,26 @@ export function pieceShape(piece) {
   return "square";
 }
 
-// The capitals the page must label, from the payload when it has them.
-export function capitalMarkers(board) {
+// A capital nobody holds draws in ink, not in a side's colour: the original lets a neutral capital
+// block both sides, and painting it blue or red would claim a holder that does not exist.
+export const CAPITAL_NEUTRAL = "#cfcfcf";
+
+// The capitals the page must label. The room is the authority: the match's site records carry the
+// era's own capital rows (type 1/2, with the owner the win check reads), so 1918 labels London,
+// Berlin and Paris - never the two fixed seats. The board payload's capitals are fixed seats with
+// no era in them, so they are the fallback for a page with no room yet (PB-022).
+export function capitalMarkers(board, room) {
+  const sites = Array.isArray(room && room.sites) ? room.sites : [];
+  const era = sites.filter((site) => site && (Number(site.type) === 1 || Number(site.type) === 2));
+  if (era.length) {
+    return era.map((site) => ({
+      side: site.owner === "red" ? "red" : site.owner === "blue" ? "blue" : null,
+      name: String(site.name),
+      x: Number(site.x),
+      y: Number(site.y),
+      color: site.owner === "red" || site.owner === "blue" ? sideColor(site.owner) : CAPITAL_NEUTRAL,
+    }));
+  }
   const source = (board && board.capitals) || {};
   const out = [];
   for (const side of ["blue", "red"]) {
@@ -832,7 +850,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
     const preview = paintPreview(ctx, opts.preview, flat, opts);
     const pieces = paintPieces(ctx, room && room.pieces, flat, opts);
     paintStrengthBars(ctx, room && room.pieces, flat, opts);
-    const capitals = paintCapitals(ctx, capitalMarkers(board), flat);
+    const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat);
     return { mode, painted: 0, pieces, capitals, preview, message: EXTRACT_MISSING, view: flat };
   }
 
@@ -842,7 +860,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   const preview = paintPreview(ctx, opts.preview, view, opts);
   const pieces = paintPieces(ctx, room && room.pieces, view, opts);
   const bars = paintStrengthBars(ctx, room && room.pieces, view, opts);
-  const capitals = paintCapitals(ctx, capitalMarkers(board), view);
+  const capitals = paintCapitals(ctx, capitalMarkers(board, room), view);
   // Political view: the same board with each city coloured by whoever holds it. The terrain under it
   // is untouched, so switching back is switching back and nothing else.
   let political = 0;

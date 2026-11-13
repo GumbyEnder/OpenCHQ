@@ -1904,6 +1904,9 @@ window.__chq = {
   outbox: () => outbox.length,
   wire: () => wireLog.slice(),
   board: () => boardPayload,
+  // The names the painter puts beside capitals, from the room's own era rows (PB-022). The canvas is
+  // pixels, so a screenshot cannot be read back: this is the same call the frame makes.
+  capitalLabels: () => capitalMarkers(boardPayload, room).map((c) => ({ name: c.name, x: c.x, y: c.y, side: c.side, color: c.color })),
   log: () => roundLog.slice(),
   state: () => ({
     buying,
