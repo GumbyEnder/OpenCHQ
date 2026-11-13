@@ -309,6 +309,10 @@ try {
     if (!now) break;
     if (now.over) break;
     traceStep(now);
+    // --trace also names where the seat's own pieces stand each poll: a capture is attributed to
+    // the pieces the poll finds on the cell, and at speed 6 the poll can be a round late, so the
+    // positions are what tell a walk from a jump.
+    if (TRACE) console.log("PIECES " + JSON.stringify((now.pieces || []).filter((p) => p.side === you).map((p) => [p.id, p.x, p.y, p.kind])));
     contact = (now.pieces || []).some((p) => p.side === you && p.fighting);
     if (!contact) {
       // keep one attacker per capital available while we wait - at most once every 4 s, and only
@@ -369,6 +373,7 @@ try {
     const now = await room();
     if (!now) break;
     traceStep(now);
+    if (TRACE) console.log("PIECES " + now.round + " " + JSON.stringify((now.pieces || []).filter((p) => p.side === you).map((p) => [p.id, p.x, p.y, p.kind])));
     for (const site of now.sites || []) {
       if (!(Number(site.type) === 1 || Number(site.type) === 2)) continue;
       const was = owners.get(site.name);
