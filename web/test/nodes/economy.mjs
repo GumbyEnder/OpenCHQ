@@ -100,9 +100,9 @@ export async function run(ctx) {
   // A purchase used to be free until the clock first ran, which made a 2023 start a free
   // army: fill the board, then press Run. The start pool is what the setup phase spends.
   //
-  // Where a purchase may stand is placement.mjs, not a city or a dock: land and air go on ground
-  // inside the seat's own zone, hulls go into coastal water. The fixture board is ocean with plain
-  // ground around the blue sites.
+  // Where a purchase may stand is placement.mjs: land and air on a friendly city or base cell,
+  // hulls on a friendly dock (D-019). The fixture board is ocean with plain ground around the
+  // blue sites, and the site the purchase stands on is a city.
   const board = boardFixture();
 
   const firstBuy = buy(match, "blue", "infantry", 80, 40, board);

@@ -1351,9 +1351,11 @@ const DIALOG_PAINTERS = {
           placement = null;
           // Ask the server where this unit may stand, and paint its answer.
           send({ op: "placement", kind: row.kind });
+          // The sentence names the rule the server just enforced: a site cell this side owns,
+          // not a radius and not coastal water (D-019).
           say("Buy " + row.kind + ": " + (row.domain === "sea"
-            ? "click highlighted coastal water to place it."
-            : "click a highlighted cell in your own zone to place it."));
+            ? "click one of the highlighted docks you hold to place it."
+            : "click one of the highlighted cities or bases you hold to place it."));
           closeDialog();
         });
       }
