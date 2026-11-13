@@ -123,9 +123,11 @@ export function pay(match) -> events[]        // on rounds where round % payEver
 export function upkeep(match) -> events[]     // per-side fuel burn and capture
 export function capture(match, side, x, y) -> events[]
 ```
-Land and aircraft buy at a friendly city, ships at a friendly dock. Before the clock has ever
-run a purchase does not spend; afterwards it spends `rules.priceOf(kind)` and the city goes
-unready. A nuke is always refused. Income is 1 per city and 1 per owned well on every
+Land and aircraft buy on a friendly city or base cell; ships buy on a friendly dock (D-019,
+Manual p.27; docs/re/PLACEMENT.md). Before the clock has ever run a purchase does not spend;
+afterwards it spends `rules.priceOf(kind)` and production tires the city and the friendly cities
+within `rules.readinessRules().radius` until a round the refusal names ("ready at round N").
+A nuke is always refused. Income is 1 per city and 1 per owned well on every
 `payEvery`-th round; capitals are not cities; a finished match pays nothing. Each side starts
 with `rules.rules().fuel.reserve` and burns `burn` per round it has no unit on a well; a dry
 side stops, the other side does not.

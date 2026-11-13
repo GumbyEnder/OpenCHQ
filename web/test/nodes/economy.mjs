@@ -25,6 +25,7 @@ const SITES = [
   { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", country_id: 1 },
   { id: 13, name: "Riyadh", x: 200, y: 60, kind: "city", country_id: 20 },
   { id: 20, name: "Norfolk", x: 2, y: 16, kind: "dock", country_id: 0 },
+  { id: 22, name: "Norfolk Roads", x: 4, y: 16, kind: "dock", country_id: 0 },
   { id: 21, name: "Sevastopol", x: 299, y: 69, kind: "dock", country_id: 1 },
   { id: 30, name: "Volga", x: 190, y: 30, kind: "oilfield", country_id: 1 },
   { id: 31, name: "Permian", x: 70, y: 50, kind: "oilfield", country_id: 0 },
@@ -38,8 +39,8 @@ function freshMatch() {
 }
 
 // A board to place on: ocean everywhere, with plain ground around the blue sites and off the blue
-// dock, so the placement rule (own zone for land and air, coastal water for ships) can be exercised
-// without the real extract.
+// dock, so the placement rule (a friendly city or base for land and air, a friendly dock for
+// ships) can be exercised without the real extract.
 function boardFixture() {
   const width = 320;
   const height = 136;
@@ -112,7 +113,17 @@ export async function run(ctx) {
   eq(firstBuy.piece.x + "," + firstBuy.piece.y, "80,40", "a purchase stands on the cell it was placed on");
   const infantryPrice = priceOf("infantry");
   eq(match.sides.blue.cash, 100000 - infantryPrice, "a setup purchase must spend its price");
-  must(siteOf(match, 10).unready, "a purchase must mark the nearest held city unready");
+  // Readiness (T-011): the city produced a 10 billion infantry, so it and the friendly cities
+  // within the config radius are unready until the round the server names. New York's neighbours
+  // inside radius 5 are itself and Chicago, so the weight is 1 + 2 x cityWeight (1.5) and
+  // 10 x 1.5 rounds up to 15.
+  must(Number(siteOf(match, 10).readyRound) > 0, "a purchase must put its city on a ready round");
+  eq(siteOf(match, 10).readyRound, 15, "the buying city's ready round (10b infantry, two cities)");
+  eq(siteOf(match, 11).readyRound, 15, "a nearby friendly city must go unready too");
+  // A neighbouring city is refused while it is unready, in the words AC4 names.
+  const tired = buy(match, "blue", "infantry", 75, 42, board);
+  must(tired && tired.error, "an unready city accepted a purchase");
+  must(/ready at round 15/.test(tired.error), "the unready refusal must name the round: " + tired.error);
 
   // two pieces cannot share a cell
   const shared = buy(match, "blue", "infantry", 80, 40, board);
@@ -137,32 +148,33 @@ export async function run(ctx) {
   must(tank && tank.ok === true, "a tank after the clock ran was refused: " + JSON.stringify(tank));
   eq(match.sides.blue.cash, cashBeforeTank - tankPrice, "a tank costs twice an infantry");
   eq(tank.piece.kind, "tank", "tank kind");
-  eq(siteOf(match, 14).unready, true, "the nearest buying city must go unready");
+  eq(siteOf(match, 14).readyRound, 33, "the producing city's ready round (20b tank, two cities)");
 
-  // ---- buy: the placement rule ---------------------------------------------------------
-  // Open water is not ground: a walker is refused, and the sentence names the zone.
+  // ---- buy: the placement rule (D-019) --------------------------------------------------
+  // A cell that is not a friendly city or base is refused, and the sentence names the rule.
   const infantryAtSea = buy(match, "blue", "infantry", 200, 100, board);
   must(infantryAtSea && infantryAtSea.error, "land was bought in open water");
-  must(/zone|land/i.test(infantryAtSea.error), "the land refusal must name the zone: " + infantryAtSea.error);
-  // A hull inland is refused, and the sentence names coastal water.
+  must(/city or base/i.test(infantryAtSea.error), "the land refusal must name the rule: " + infantryAtSea.error);
+  // A hull inland is refused, and the sentence names the dock.
   const shipInland = buy(match, "blue", "cruiser", 85, 45, board);
   must(shipInland && shipInland.error, "a cruiser was bought inland");
-  must(/coastal|water/i.test(shipInland.error), "the hull refusal must name coastal water: " + shipInland.error);
-  // ... and a cell just off the coast is accepted.
-  const ship = buy(match, "blue", "cruiser", 76, 31, board);
-  must(ship && ship.ok === true, "a cruiser in coastal water was refused: " + JSON.stringify(ship));
+  must(/dock/i.test(shipInland.error), "the hull refusal must name the dock: " + shipInland.error);
+  // ... and a friendly dock is accepted.
+  const ship = buy(match, "blue", "cruiser", 2, 16, board);
+  must(ship && ship.ok === true, "a cruiser on a friendly dock was refused: " + JSON.stringify(ship));
   eq(ship.piece.domain, "sea", "cruiser domain");
   // A carrier is a hull too.
-  const carrier = buy(match, "blue", "carrier", 78, 31, board);
-  must(carrier && carrier.ok === true, "a carrier in coastal water was refused: " + JSON.stringify(carrier));
-  // A cell a long way from any water is refused for a hull too.
-  const shipFar = buy(match, "blue", "cruiser", 300, 100, board);
-  must(shipFar && shipFar.error, "a cruiser was bought far out at sea");
+  const carrier = buy(match, "blue", "carrier", 4, 16, board);
+  must(carrier && carrier.ok === true, "a carrier on a friendly dock was refused: " + JSON.stringify(carrier));
+  // No dock, no hull: Red's own dock is not Blue's to build on.
+  const redDock = buy(match, "blue", "cruiser", 299, 69, board);
+  must(redDock && redDock.error, "blue built a hull on Red's dock");
+  must(/dock/i.test(redDock.error), "the enemy-dock refusal must name the dock: " + redDock.error);
 
-  // and a side may not place in the other side's country: the zone is measured from its own sites
+  // and a side may not place in the other side's country: only its own sites are legal
   const inRedCity = buy(match, "blue", "infantry", 180, 22, board);
   must(inRedCity && inRedCity.error, "blue placed a unit in Red's country");
-  must(/zone/i.test(inRedCity.error), "the out-of-zone refusal must say so: " + inRedCity.error);
+  must(/city or base/i.test(inRedCity.error), "the enemy-city refusal must name the rule: " + inRedCity.error);
 
   // ---- income: every round, cities only (Manual p.27) -----------------------------------
   // Blue holds three cities (10, 11, 14) and wells. A well gives oil, not cash, so only the

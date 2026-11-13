@@ -90,12 +90,19 @@ function packMatch(match) {
   const { sites, ...rest } = match;
   const siteOwners = { blue: [], red: [] };
   const sitesUnready = [];
+  const siteReadyRounds = {};
   for (const site of sites || []) {
     if (!site) continue;
     if (SIDES.includes(site.owner)) siteOwners[site.owner].push(site.id);
-    if (site.unready) sitesUnready.push(site.id);
+    // T-011 replaced the boolean with the round a site comes back. The boolean is still written
+    // for a row read by an older build, and the round is what a current build reads back.
+    const readyRound = Number(site.readyRound);
+    if (Number.isFinite(readyRound) && readyRound > 0) {
+      siteReadyRounds[String(site.id)] = Math.floor(readyRound);
+      sitesUnready.push(site.id);
+    }
   }
-  return { ...rest, siteOwners, sitesUnready, moneyUnit: "millions" };
+  return { ...rest, siteOwners, sitesUnready, siteReadyRounds, moneyUnit: "millions" };
 }
 
 // Rows written before T-001 stored cash in whole billions and could carry the generic "ship"
@@ -113,13 +120,18 @@ export function unpackMatch(packed) {
     for (const id of (siteOwners && siteOwners[side]) || []) owners.set(String(id), side);
   }
   const unready = new Set(((sitesUnready || [])).map((id) => String(id)));
+  const readyRounds = packed.siteReadyRounds && typeof packed.siteReadyRounds === "object" ? packed.siteReadyRounds : {};
   const rebuilt = [];
   for (const [key, base] of siteStatics()) {
     const owner = owners.get(key) ?? null;
+    // A row from before T-011 carries the boolean only, with no duration: the city comes back on
+    // the next round rather than staying unready forever, so a loaded room can produce again.
+    const legacy = unready.has(key) && !Number.isFinite(Number(readyRounds[key]));
+    const readyRound = legacy ? (Number(rest.round) || 0) + 1 : Number(readyRounds[key]);
     rebuilt.push({
       ...base,
       owner,
-      ...(unready.has(key) ? { unready: true } : {}),
+      ...(Number.isFinite(readyRound) && readyRound > 0 ? { readyRound } : {}),
     });
   }
   const match = migrateMatch({ ...rest, sites: rebuilt });

@@ -204,7 +204,7 @@ probe.id = "roundtrip";
 probe.clock = "held";
 probe.match.clock = "held";
 probe.match.sites[0].owner = "blue";
-probe.match.sites[1].unready = true;
+probe.match.sites[1].readyRound = 7;
 saveRoom(probe);
 const restored = loadRooms().find((room) => room.id === "roundtrip");
 const restoredMatch = restored && restored.match;
@@ -219,7 +219,7 @@ const roundTrip =
   probe.match.pieces.every((piece, i) => samePath(piece.path, restoredMatch.pieces[i].path)) &&
   restoredMatch.sites.length === probe.match.sites.length &&
   restoredMatch.sites[0].owner === "blue" &&
-  restoredMatch.sites[1].unready === true;
+  restoredMatch.sites[1].readyRound === probe.match.sites[1].readyRound;
 const roundTripSteps = restoredMatch
   ? restoredMatch.pieces.reduce((sum, piece) => sum + piece.path.length, 0)
   : 0;

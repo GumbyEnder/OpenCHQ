@@ -332,7 +332,8 @@
     "air": "The 8 and 4 are the booklet counts (docs/POLISH_LOOP.md: air mission inactive 8 rounds, scramble 4). The reach of 10 is a STAND-IN: the archive's aircraft range was not recovered.",
     "nukes": "A nuke is refused by default and the archive's own stand-in deals no damage and paints no wasteland. exclusion 2 is a STAND-IN guard around a capital; the archive kept a home-ground guard but never printed its size. The launch limit (three fired or three absorbed) is the booklet count and stays in code.",
     "overrun": "Overrun is the tank's (Manual p.9): an ordered tank that meets enemy infantry in the next cell fights through it, taking losses, and enters the cell and continues if the infantry is destroyed. There is no count-based instant removal. The losses are `combat.baseDamage` for both sides.",
-    "placement": "STAND-IN. The archive printed where a purchase goes - land and air in any friendly city or base, ships only on docks - and the owner widened it: land and air anywhere in your own zone, ships into coastal water. Neither reach was ever printed, so 8 cells from a site you hold and 4 cells from a land cell are invented to make the rule exist. Change them here; the server refuses and the page highlights from this same block."
+    "placement": "D-019, the original's rule (Manual p.27 'General Placement Rules'). Land units and aircraft may be placed on a friendly city or base cell; ships only on a friendly dock, so a side with no port cannot buy a hull. There is no reach any more: config carries no zone or coast number because the rule is a site kind, not a distance. The archive's validator could not be located in the Ghidra export (the strings 'Must be placed in city', 'Must be placed on dock', 'Must be on mainland', 'Friendly waters only', 'Ships must stay at sea.' exist in the extract's string dump, but the export has no string cross-references); FUN_107e_4140 was mislabelled in the old ECONOMY.md summary and is in fact the arrival/berth search (five-ring scan for a free cell of an acceptable terrain class), not the validator. A dock is DERIVED from the extract, not a recovered rule: board.matchSites builds one dock site on every terrain cell with id 1, and the world's own counts report 150 docks for 150 paint cells. 'A friendly dock is the dock next to a friendly site' is likewise derived from world.json (150 of 150 dock cells take the country of an adjacent site), not a measured original rule. See docs/re/PLACEMENT.md.",
+    "readiness": "UNMEASURED stand-ins. Manual p.27 'Readiness': each production makes that city and several surrounding friendly cities unready; the time is proportional to the unit's cost and to the number of friendly cities, especially capitals, nearby; placing in an unready city shows the round it will be ready. The archive's radius and duration were not recovered (no capture times a city coming back, and FUN_107e_4140 is the arrival search), so the four numbers below are invented to make the rule exist and are labelled UNMEASURED. The shape is the manual's: rounds = ceil(roundsPerBillion * priceInBillions * (1 + cityWeight*cities + capitalWeight*capitals)) over the friendly cities inside radiusCells, minimum minRounds. Peacetime is N/A: this build has no peace state, so every production tires its city. Change the numbers here; the server refuses and the page paints from the same block."
   },
   "air": {
     "strikeRounds": 8,
@@ -344,7 +345,13 @@
     "exclusion": 2
   },
   "placement": {
-    "homeZoneCells": 8,
-    "coastCells": 4
+    "rule": "friendly-site"
+  },
+  "readiness": {
+    "radiusCells": 5,
+    "roundsPerBillion": 1,
+    "cityWeight": 0.25,
+    "capitalWeight": 0.5,
+    "minRounds": 1
   }
 }

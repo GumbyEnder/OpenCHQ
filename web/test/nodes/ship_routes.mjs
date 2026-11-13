@@ -82,8 +82,8 @@ export async function run(ctx) {
   const washington = { x: 79, y: 44 };
   const start = nearest(mask.mask, board, washington);
   if (!start) fail("ship_routes: no coastal cell near Washington for a hull");
-  if (Math.max(Math.abs(start.x - washington.x), Math.abs(start.y - washington.y)) > 8) {
-    fail("ship_routes: the nearest hull berth to Washington is " + start.x + "," + start.y);
+  if (Math.max(Math.abs(start.x - washington.x), Math.abs(start.y - washington.y)) > 12) {
+    fail("ship_routes: the nearest friendly dock to Washington is " + start.x + "," + start.y);
   }
 
   const mid = seaRoute(root, start, MID_ATLANTIC);
@@ -114,7 +114,10 @@ export async function run(ctx) {
     const route = seaRoute(root, { x, y }, MID_ATLANTIC);
     if (!route) failures.push(x + "," + y);
   }
-  if (tried < 100) fail("ship_routes: only " + tried + " hull cells were tested");
+  // Under D-019 the hull cells are exactly the friendly docks, so the sweep is small by design:
+  // every one of them must still reach the same mid-Atlantic cell.
+  if (tried !== mask.count) fail("ship_routes: swept " + tried + " cells of " + mask.count + " dock cells");
+  if (tried < 1) fail("ship_routes: no hull cell was tested");
   if (failures.length) {
     fail("ship_routes: " + failures.length + " of " + tried + " hull cells cannot reach mid-Atlantic: " +
       failures.slice(0, 8).join(" "));

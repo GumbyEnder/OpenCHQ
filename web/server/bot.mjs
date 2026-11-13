@@ -277,12 +277,13 @@ function botBuy(match, side, events) {
   if (mask.error || !mask.mask) return;
 
   // Prefer a cell near a site this side holds, so the new unit joins the war rather than
-  // appearing in a corner.
+  // appearing in a corner. Mask byte 1 is a ready city or base; 2 is a friendly site that is
+  // still unready, and a bot obeys the same readiness rule as the player (T-011 AC6).
   const sites = (match.sites || []).filter((site) => site && site.owner === side);
   let target = null;
   let best = Infinity;
   for (let id = 0; id < mask.mask.length; id++) {
-    if (!mask.mask[id]) continue;
+    if (mask.mask[id] !== 1) continue;
     const x = id % CELL_W;
     const y = (id - x) / CELL_W;
     let gap = 0;
