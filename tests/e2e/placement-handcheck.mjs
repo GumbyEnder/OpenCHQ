@@ -178,12 +178,17 @@ try {
   mark("the refused click placed nothing", after === before, { before, after, shot: offShot });
 
   // --- AC4: buy on a ready city, then the tired neighbour ---------------------------------------
-  const home = cells.find((c) => c.ready && siteAt(c) && siteAt(c).kind === "capital") || readyCells[0];
+  // Buy where a friendly city sits inside the readiness radius, so the production has a neighbour
+  // to tire. A capital's own cell is usually occupied by the opening piece and is therefore not in
+  // the mask; the mask byte is the authority on what can be clicked.
+  const withinRadius = (a, b) => Math.max(wrapDx(a.x - b.x), Math.abs(a.y - b.y)) <= Number(readiness.radiusCells || 5);
+  const home = readyCells.find((c) => readyCells.some((other) => other !== c && withinRadius(c, other))) || readyCells[0];
   await clickCell(home);
   await page.waitForFunction((n) => window.__chq.room() && window.__chq.room().pieces.length > n, before, { timeout: 20000 }).catch(() => {});
   await settle();
   const bought = (await room()).pieces || [];
-  mark("a ready city accepts the purchase", bought.length === before + 1, { cell: home, toast: await toast(), pieces: bought.length });
+  mark("a ready city accepts the purchase", bought.some((p) => p.side === "blue" && Number(p.x) === Number(home.x) && Number(p.y) === Number(home.y)),
+    { cell: home, toast: await toast(), pieces: bought.length, at: bought.filter((p) => Number(p.x) === Number(home.x) && Number(p.y) === Number(home.y)).map((p) => p.kind) });
 
   cells = await arm("infantry");
   const tired = cells.filter((c) => c.unready);
