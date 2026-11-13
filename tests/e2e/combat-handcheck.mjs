@@ -177,9 +177,11 @@ try {
   const capital = r.capitals[r.you];
   mark("match open", Boolean(r.id), { id: r.id, era: r.era, round: r.round, capital, speed: r.speed });
 
-  // Speed 1: 5 s a round, slow enough for a 120 ms sampler to see every exchange. A tank still
-  // crosses the map in a handful of rounds, and speed 6 can resolve a whole fight inside one
-  // sample interval.
+  // Speed is a CLI knob (--speed=N), default 1: 5 s a round, slow enough for the 300 ms room
+  // sampler to see the first exchange alone. At speed 6 a round is 0.6 s, so two exchanges can
+  // land inside one poll and the reading looks like a double cell; the evidence records which
+  // speed produced the number so a report never has to guess.
+  const wantSpeed = Number(argOf("speed", "1")) || 1;
   const setSpeed = async (want) => {
     for (let i = 0; i < 8; i++) {
       const read = await page.evaluate(() => (document.querySelector("#speedReadout") || {}).textContent || "");
@@ -190,7 +192,7 @@ try {
     }
     return page.evaluate(() => (document.querySelector("#speedReadout") || {}).textContent || "");
   };
-  mark("speed set", true, await setSpeed(1));
+  mark("speed set", true, { want: wantSpeed, readout: await setSpeed(wantSpeed) });
 
   const tank = await buy("tank", capital);
   mark("tank bought", Boolean(tank), tank ? { id: tank.id, x: tank.x, y: tank.y, kind: tank.kind, strength: tank.strength } : null);
