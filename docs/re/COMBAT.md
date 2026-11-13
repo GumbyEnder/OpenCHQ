@@ -97,9 +97,14 @@ kind with no row.
 Three things about the table's shape matter when wiring it:
 
 - **Column 0 is data, not padding.** When the TARGET is kind 9 (carrier) the original's index is
-  `a*9 + 9`, which is the *next row's* column 0. Those bytes are `kindNineColumn` in config:
-  infantry/tank/entrenched → 35, kind 5/6 → 5, sub/cruiser → 34, carrier → 25. A cruiser therefore
-  hits a carrier for 34, not the 25 of a cruiser-vs-cruiser cell.
+  `a*9 + 9` — an **out-of-row read**: the byte leaves the attacker's 9-byte row and lands in the
+  *next row's* column 0. This is faithful to the original, not a table we get to tidy: the disassembly
+  computes the offset as `attacker*9 + target` with no pinning at the row edge, so kind 9 as a target
+  reads the neighbour's byte. Those bytes are `kindNineColumn` in config (kept as its own key so the
+  out-of-row read is visible rather than smeared into `rows`): infantry/tank/entrenched → 35,
+  kind 5/6 → 5, sub/cruiser → 34, carrier → 25. A cruiser therefore hits a carrier for 34, not the
+  25 of a cruiser-vs-cruiser cell. Pinned in `measured_combat` (`kindNine` bytes), accepted by the
+  PM as faithful to the original (gate 3557 item 4).
 - **Kind 3 is a defender column.** Entrenchment is a kind change, so the discount is
   `matrix[a][3]` (20→15, 26→20), not a multiplier. `entrenchDamageFactor` is 1 so it is not
   counted twice.
@@ -115,7 +120,10 @@ Three things about the table's shape matter when wiring it:
    link is a *third* piece (not `0xff`, not the attacker). Compare the **attacker's facing** with
    the defender's: same facing → **×2** (rear); otherwise, if the attacker's facing is not the
    defender's opposite, **×1.5** (flank); facing each other → ×1. Ships are never flanked and subs
-   never flank. Live: one rear hit measured 40 against a 20 baseline (×2 confirmed).
+   never flank. Live, and the condition is what the live legs test: a 3-piece setup (blue defender
+   already fighting a third piece, red attacker with the defender's facing) measured **40** against a
+   20 baseline (×2 confirmed, gate 3543); the same rear geometry as a clean 1v1 measured **20**, i.e.
+   no bonus, which is the third-piece condition holding rather than contradicting the ×2 leg.
    Wired in `damageFor()` with `rearMultiplier`; a piece with no facing byte is read as facing the
    defender, and the bonus requires `defender.fighting` to name someone else.
 3. **Ship firing at land from beyond 2 cells** (7082-7093): `cap = targetStrength − 30`; halved when
