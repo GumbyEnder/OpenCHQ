@@ -81,12 +81,28 @@ page says so instead of borrowing one.
 In-place tests still pin the existing rule: `capital.mjs`, `capital_open.mjs`, `capitals_table.mjs`,
 `tick.mjs`, `log.mjs`, `sight.mjs` (the seat view's shape now includes `capitalList` and `result`).
 
-## Live evidence (see the report)
+## Live evidence
 
-- `tests/e2e/t012-ac1-2026-11-13/ac1-capital-trace.txt` - the AC1 trace from the T-010 sweep.
-- `tests/e2e/t012-full-match-1942-s6-*`, `...-s1-*`, `...-s6-*` (no-orders) - the T-012 re-runs on
-  the deployed build, with `00-capitals-round0.png`, `04-end-screen.png`, `05-end-capitals.png` and
-  `summary.json` (result, chosen capital, end note).
+Live build `504dfea` (deployed 2026-11-13 14:39 ET, `/api/version` reads it).
+
+- **End reason (scope 1).** `tests/e2e/t010-full-match-1942-s6-2026-11-13T14-44-33-214Z/` — 1942 policy
+  run at speed 6: first contact r19, Paris captured r21, **Berlin r22 -> blue wins**. `summary.json`
+  carries `result.lastCapital = {siteId 11, name Berlin, from red, round 22}`,
+  `result.capitals` (six entries, the server's own list) and
+  `endNote = "Blue wins: Berlin fell at round 22, and blue holds every capital (6 of 6)."` The end
+  panel prints `Capitals — Berlin fell last, round 22` above the list; `04-end-screen.png` and
+  `05-end-capitals.png` capture it. Wall time 55 s, 17 rows, 0 failed.
+- **Reconnect (scope 2).** `tests/e2e/t010-drop-buy-2026-11-13T14-43-32-387Z/` — real 10 s iptables
+  DROP on 153.52.255.122:443 with the page's socket killed mid-cut (`--drop-socket`):
+  `reconnectedAfterMs: 2984`, one new `bought` frame, `piecesBefore 0 -> piecesAfter 1`, no refusal,
+  the piece on the masked cell (175,49). `01-queued-while-cut.png`, `02-after-restore.png`.
+  Before the change, live `5a602f9`: `tests/e2e/t010-drop-buy-2026-11-13T12-44-35-898Z/` (in the
+  `t010` worktree) with `reconnectedAfterMs: 63004` and `waitTimedOut: true` — a floor, and the same
+  leg where the queued order landed once.
+- **Gates on `504dfea`.** Both legs: 61 passed / 0 failed / 8 skipped (no extract) and 69 / 0 / 0
+  (with `OPENCHQ_EXTRACT`); logs in `/mnt/nas/host-ops/openchq-gate/t012-endreason/`. `load_test` tick
+  10.2x / round 13.7x (floor 10x). Fresh live Playwright `run.mjs`: 46 passed, 0 failed.
+- **AC1 trace.** `tests/e2e/t012-ac1-2026-11-13/ac1-capital-trace.txt` — the T-010 sweep trace.
 
 ## PB-025: the 63 s reconnect (AC2 of the re-scoped task)
 
@@ -101,10 +117,11 @@ Measured by `tests/e2e/drop-buy.mjs` against live `5a602f9`: `reconnectedAfterMs
    not backing off, it was blocked.
 
 The harness compounded it: the wait was on the flash text `/Bought an|reconnect|refused/`, and the
-cruiser leg says "Bought a cruiser", so the wait always burned its full 60 s timeout and the number
-recorded was the timeout, not the reconnect. `reconnectedAfterMs` is now read from the page's own
-socket timeline (`__wsLog`, installed by `addInitScript`) — the first socket that `open`s after the
-DROP is lifted.
+cruiser leg says "Bought a cruiser", so the wait always burned its full 60 s timeout
+(`waitTimedOut: true` in the `5a602f9` summary) and the number recorded was the timeout, not the
+reconnect. So 63004 is a floor, not a measurement. `reconnectedAfterMs` is now read from the page's
+own socket timeline (`__wsLog`, installed by `addInitScript`) — the first socket that `open`s after
+the DROP is lifted.
 
 **After** (`web/public/reconnect.mjs`, one policy for both a close and a never-opened socket):
 
@@ -112,7 +129,7 @@ DROP is lifted.
 |---|---|---|
 | wait schedule | 0.5, 1, 2, 4, 8, then 15 s capped | 0.5, 1, 2, then 4 s capped |
 | attempt deadline | none (a hung connect blocks for ever) | `CONNECT_TIMEOUT_MS` = 6 s |
-| worst case after the network returns | unbounded (observed 63 s) | 6 + 4 = **10 s** |
+| worst case after the network returns | unbounded — one attempt with no deadline | 6 + 4 = **10 s** |
 | tries before "reload the page" | 8 | 30 (≈2.9 min of dead wifi) |
 | accepts a reply for a resent order | `ack` only, no payload | the first reply, flagged `duplicate` |
 
