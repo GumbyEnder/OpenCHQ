@@ -263,4 +263,8 @@ export async function run(ctx) {
   if (!app.includes("paintPlacement")) fail("the page never paints the placement cells");
   const dialogs = await (await fetch(ctx.base + "/dialogs.mjs")).text();
   if (!dialogs.includes('id: "air"')) fail("the navigation has no air command");
+  // AC2: a refused buy row says why in the panel itself, not only in its tooltip - the reason has to
+  // survive a screenshot and a touch screen. The page draws it from the server's own row.refused.
+  if (!app.includes("buyrefusals")) fail("the buy menu never prints a refused row's reason in the panel");
+  if (!app.includes("row.refused")) fail("the buy menu never reads the server's refusal sentence");
 }
