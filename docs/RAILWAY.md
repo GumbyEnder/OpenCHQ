@@ -196,6 +196,16 @@ green fire, and GitHub push-to-deploy also fired on docs-only commits — 7 depl
   loop-counter commit prints `NO_RUNTIME_CHANGE` and does not reboot the game.
 - Manual deploy after a server change: `railway up -y -d --service openchq-web`.
 - `railway up` uploads the tree, so it never picks up a pushed-but-untested commit by accident.
+- **Badge deploy checklist (T-014, frodo note 6 / PM room 4039).** `web/test/run.mjs` asserts no badge
+  behaviour, so a green `run.mjs` says nothing about how a unit looks. Before any deploy that touches
+  `web/public/badges.mjs`, `render.mjs`, `app.js` or `app.css`, run:
+
+  ```
+  node tests/e2e/badge-board.mjs --url=<deployed base> --out=/mnt/nas/projects/OpenCHQ/local/t014-shots
+  ```
+
+  after the deploy, against the production URL. It prints `distinctBlue` / `distinctRed` (12/12 is the
+  pass), plus `BADGE_MIN_PX` at each zoom, and writes `badge-sheet-*.png` a human can look at.
 
 ## What the public host deliberately does not have
 
