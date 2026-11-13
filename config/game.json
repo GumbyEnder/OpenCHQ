@@ -175,17 +175,22 @@
     "shotEveryRounds": { "value": 2, "source": "DELIBERATE DEVIATION, pacing (D-017): the original fires every pass while in contact (docs/re/COMBAT.md s7), and a pass is speed-dependent; 2 is the manual's p.22 sentence kept as the browser pacing choice, awaiting Shane's ruling." },
     "baseDamage": {
       "value": { "infantry": 17, "tank": 20, "cruiser": 25, "carrier": 25, "submarine": 34 },
-      "source": "MEASURED (T-009). Damage matrix at DS:0x18f0, index targetKind + attackerKind*9, read from the running 1942 board and from CHQ_unpacked.EXE; infantry 17 (the measured entrenched-infantry-to-tank cell), tank 20, cruiser 25, carrier 25, and submarine 34 against hulls. The matrix is per pairing, not per attacker: see measured.combat.damageMatrix.",
+      "source": "MEASURED FALLBACK ONLY (T-009, gate 3557 item 2): the runtime reads the 9x9 pairing matrix at measured.combat.damageMatrix.rows, indexed attackerKind*9 + targetKind, so tank->infantry is 26 from cell 2->1 and not this row's 20. These per-kind values remain only for a kind the matrix has no row for (nothing the eras field: infantry/tank/submarine/cruiser/carrier, of which only kinds 1/2/7/8/9 have rows). The old per-attacker collapse is gone; no pairing reads this object.",
       "evidenceRef": "docs/re/COMBAT.md s2; notes/t009/tables.py (2026-11-13); live duels 3 repeats each"
     },
     "flankMultiplier": {
       "value": 1.5,
-      "source": "MEASURED (T-009): rear 2.0 when the attacker faces the same way as the target, flank 1.5 when perpendicular, 1.0 when they face each other (decompiled.c 7064-7071). This key is the flank value; the rear value is in measured.combat.modifiers.",
+      "source": "MEASURED (T-009): flank 1.5 when the attacker's facing is neither the defender's facing nor its opposite (decompiled.c 7064-7071). Applies only when the defender is already fighting a third piece: the original requires the defender's target link to be set and to not be the attacker.",
       "evidenceRef": "docs/re/COMBAT.md s2.2; live rear hit 40 against a 20 baseline (2026-11-13)"
     },
+    "rearMultiplier": {
+      "value": 2.0,
+      "source": "MEASURED (T-009): rear 2.0 when the attacker and the defender face the same way (the attacker is behind the defender), decompiled.c 7066-7069, only for land-vs-land and only while the defender is fighting another piece. Live: 40 against a 20 baseline.",
+      "evidenceRef": "docs/re/COMBAT.md s2.2; live rear hit 40 v 20 (2026-11-13)"
+    },
     "entrenchDamageFactor": {
-      "value": 0.75,
-      "source": "MEASURED (T-009): entrenchment is a kind change (infantry kind 1 to kind 3), and the kind-3 column of the damage matrix is what it costs. 20 to 15 against infantry is 0.75; against tanks 26 to 20 is 0.77, so one multiplier cannot be exact. Terrain cover is a separate modifier.",
+      "value": 1,
+      "source": "MEASURED (T-009): must stay 1. The entrenchment discount is the kind-3 column of the damage matrix (20 -> 15 against infantry, 26 -> 20 against tanks), which the runtime now reads by giving an entrenched infantry defender code 3. A separate 0.75 would count the entrenchment twice, and it cannot express both 0.75 and 0.77 anyway. Terrain cover is a separate, unwired modifier (T-009b).",
       "evidenceRef": "docs/re/COMBAT.md s4; damage matrix cells 1->3 and 2->3"
     },
     "entrenchRounds": {
@@ -223,8 +228,8 @@
     },
     "airStrikeSeaAmount": {
       "value": 0.34,
-      "source": "MEASURED (T-009) for hulls kind 5-7: 34 per strike, three strikes on a full bar. Kinds 8 and 9 (cruiser, carrier) lose 25, i.e. FOUR strikes, which contradicts Manual p.25's 'three strikes sink a ship' - recorded in measured.combat.airStrike, not silently ported.",
-      "evidenceRef": "docs/re/COMBAT.md s6"
+      "source": "MEASURED (T-009) for hulls kind 5-7: 34 per strike, three strikes on a full bar. MANUAL-CONTRADICTED, Manual p.25: kinds 8 and 9 (cruiser, carrier) lose 25 per strike = FOUR strikes, not the page's 'three strikes sink a ship'. FUN_1ac5_0dbe @ 1ac5:0dbe, 8795-8814 picks the constant by kind (34 for kind<8, 25 for 8/9). The code governs the port (room 3544 ruling 1); recorded in measured.combat.airStrike.manualContradiction.",
+      "evidenceRef": "docs/re/COMBAT.md s6 and s9.3; air-strike handler 1ac5:0dbe 8795-8814"
     },
     "paradropLoss": { "value": 0.25, "source": "Manual p.50 (UNMEASURED in the original)" },
     "bombardFloor": {
@@ -240,18 +245,21 @@
     "measured": {
       "value": {
         "damageMatrix": {
-          "_comment": "DS:0x18f0, index targetKind + attackerKind*9. Row 0 overlaps the string tail 'ly = %d.' and kind 0 is an empty slot, so rows/columns 0 are never read. Dumped live 2026-11-13 and identical in CHQ_unpacked.EXE.",
+          "_comment": "DS:0x18f0, index targetKind + attackerKind*9. Row 0 overlaps the string tail 'ly = %d.' and kind 0 is an empty slot, so row 0 is never read. Dumped live 2026-11-13 and identical in CHQ_unpacked.EXE (file offset 0x341a0; the row stride 9 is confirmed against every row). This table IS the runtime: combatRules() builds it from these rows and baseDamageFor() indexes attacker*9+target; an entrenched infantry defender is looked up as kind 3 (the entrench column), not as a multiplier. Column 0 is a real byte, not padding: it is what the original reads when the TARGET is kind 9 (carrier), because a*9+9 is the next row's column 0. kindNineColumn is that row, byte for byte.",
+          "runtimeWiring": "attacker*9+target, kinds by name from this block's kinds map; defender kind 3 when kind === infantry && entrenched === true; target kind 9 reads kindNineColumn[attacker] (the next row's column 0); flank/rear read the attacker's facing against the defender's (same facing = rear x2, not-opposite = flank x1.5) and only while the defender is fighting a third piece.",
           "rows": {
             "1": [0, 20, 17, 15, 0, 25, 25, 35, 35],
             "2": [35, 26, 20, 20, 0, 25, 25, 35, 35],
             "3": [35, 20, 17, 15, 0, 25, 25, 35, 35],
-            "4": [0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "4": [35, 0, 0, 0, 0, 0, 0, 0, 0],
             "5": [0, 18, 16, 14, 0, 10, 10, 5, 5],
             "6": [5, 9, 8, 7, 0, 10, 10, 5, 5],
             "7": [5, 0, 0, 0, 0, 100, 100, 25, 34],
             "8": [34, 12, 10, 6, 0, 50, 50, 34, 25],
-            "9": [25, 10, 8, 5, 0, 50, 50, 25, 20]
+            "9": [34, 10, 8, 5, 0, 50, 50, 25, 20]
           },
+          "kindNineColumn": { "1": 35, "2": 35, "3": 35, "4": 0, "5": 5, "6": 5, "7": 34, "8": 34, "9": 25 },
+          "kindNineColumnSource": "table byte a*9+9 in CHQ_unpacked.EXE at 0x341a0: attacker 1/2/3 -> next row col0 = 35, 4 -> 0, 5/6 -> 5, 7/8 -> 34, 9 -> 0x341fa = 25. A carrier as the target is therefore hit for 35 by infantry/tanks, 34 by subs/cruisers and 25 by another carrier; the table simply has no in-row column for kind 9.",
           "kinds": { "1": "infantry", "2": "tank", "3": "entrenched infantry", "7": "submarine", "8": "cruiser", "9": "carrier" }
         },
         "rangeMatrix": {
@@ -267,10 +275,10 @@
           "terrainCoverCity": { "1": 0.6667, "2": 0.8 },
           "shipVsLandBeyondTwoCells": "cap = targetStrength - 30, halved when the cap is under 25"
         },
-        "attritionPerPass": { "desert": 3, "jungle": 3, "polar": 5, "lake": 3, "wasteland": 34, "city": 20, "base": 20, "capital": 20, "dock": 20, "plain": 0, "forest": 0, "mountain": 0, "oilfield": 0, "ocean": 0 },
+        "attritionPerPass": { "_comment": "Manual p.21 AGREES with this list (desert, jungle, polar, lake, city, base, capital, dock); the amounts are what is new, and wasteland 34 is the one terrain the page does not list. Corrected per PM 3557: the interim 3543 'wasteland-only' reading was the branch that destroys, not the whole table.", "desert": 3, "jungle": 3, "polar": 5, "lake": 3, "wasteland": 34, "city": 20, "base": 20, "capital": 20, "dock": 20, "plain": 0, "forest": 0, "mountain": 0, "oilfield": 0, "ocean": 0 },
         "attritionTable": { "_comment": "DS:0x1996 per terrain, bit 0x80 = through the combat path, 0x20 = dig-in terrain, low 5 bits = amount. Terrains 0-14: ocean, docks, ocean, lake, capital, base, city, oilfield, plain, forest, mountain, desert, jungle, polar, wasteland.", "bytes": [0, 244, 0, 3, 244, 244, 244, 224, 96, 96, 32, 35, 35, 5, 31] },
-        "repairPerPass": { "amount": 10, "everyOtherPass": true, "terrainFlagBase": "0x1986", "terrainFlag": [0, 2, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0] },
-        "airStrike": { "landDamage": "(strength >> 1) + 1", "shipDamage": { "5": 34, "6": 34, "7": 34, "8": 25, "9": 25 } },
+        "repairPerPass": { "amount": 10, "everyOtherCall": true, "everyOtherPass": true, "perPassAverage": 5, "passesPerRoundSpeed1": 11.75, "perRoundSpeed1": 59, "units": "+10 per eligible call of FUN_1c0d_0656; the 0xcae bit-3 toggle skips every other call, so 5 per pass averaged over two calls and about 59 per round at speed 1 (11.75 passes/round, T-008). Per round moves with speed, so only the per-call figure is a measurement and the per-round figure is arithmetic; the runtime's repairPerRound stays STAND-IN until D-017.", "terrainFlagBase": "0x1986", "terrainFlag": [0, 2, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0] },
+        "airStrike": { "landDamage": "(strength >> 1) + 1", "shipDamage": { "5": 34, "6": 34, "7": 34, "8": 25, "9": 25 }, "manualContradiction": "MANUAL-CONTRADICTED, Manual p.25: 'three strikes sink a ship' holds for kinds 5-7 (34 each) but not for kinds 8/9 (cruiser, carrier, 25 each = four strikes). FUN_1ac5_0dbe @ 1ac5:0dbe, 8795-8814. Code governs the port (room 3544 ruling 1)." },
         "militia": { "enemySite": 2, "neutralSite": 20 },
         "entrench": { "trigger": "stationary pass, no target, terrain bit 0x20", "reverts": "a move order", "timer": null },
         "pinning": { "duration": null, "note": "contact is re-evaluated every pass" }

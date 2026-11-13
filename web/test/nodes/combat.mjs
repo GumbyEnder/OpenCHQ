@@ -79,8 +79,12 @@ export async function run(ctx) {
     if (event.note !== SHOT_NOTE) say("shot event lost its note", event);
     if (!(event.amount > 0)) say("a shot carried no damage", event);
   }
-  if (pair[0].strength !== cfg.maxStrength - cfg.baseDamage.infantry) say("blue's bar did not drop by base damage", pair[0].strength);
-  if (pair[1].strength !== cfg.maxStrength - cfg.baseDamage.infantry) say("red's bar did not drop by base damage", pair[1].strength);
+  // Infantry vs infantry is matrix cell 1->1 = 20 (the old per-kind collapse said 17, which was the
+  // entrenched-infantry-to-tank cell).
+  const infantryCell = cfg.damageMatrix[cfg.damageKind.infantry][cfg.damageKind.infantry];
+  if (!(infantryCell > 0)) say("the damage matrix has no infantry->infantry cell", infantryCell);
+  if (pair[0].strength !== cfg.maxStrength - infantryCell) say("blue's bar did not drop by the matrix cell", pair[0].strength);
+  if (pair[1].strength !== cfg.maxStrength - infantryCell) say("red's bar did not drop by the matrix cell", pair[1].strength);
 
   // --- one continuous fight: a shot every other round, never twice in a row --------------
   const fight = [piece("blue:land", "blue", 40, 40), piece("red:land", "red", 41, 40)];
@@ -133,8 +137,11 @@ export async function run(ctx) {
   if (duelMatch.pieces.length !== 1) fail("removal left " + duelMatch.pieces.length + " pieces");
   const survivor = duelMatch.pieces[0];
   if (survivor.fighting !== null) fail("the survivor kept the dead piece's fight bookkeeping");
-  // Full strength, the tank's damage a hit, one hit every other round: the last hit ends it.
-  const expectedHits = Math.ceil(cfg.maxStrength / cfg.baseDamage.tank);
+  // Full strength, the tank->infantry matrix cell a hit, one hit every other round: the last hit
+  // ends it. Cell 2->1 is 26; the old per-kind collapse read 20 here and expected 9 rounds.
+  const tankHit = cfg.damageMatrix[cfg.damageKind.tank][cfg.damageKind.infantry];
+  if (tankHit !== 26) fail("the tank->infantry cell is " + tankHit + ", not the measured 26");
+  const expectedHits = Math.ceil(cfg.maxStrength / tankHit);
   if (rounds !== expectedHits * cfg.shotEveryRounds - 1) {
     fail("the fight took " + rounds + " rounds, expected " + (expectedHits * cfg.shotEveryRounds - 1));
   }

@@ -13,7 +13,7 @@ import { landPace, isRefused, combatRules, cellsPerRound } from "./rules.mjs";
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked } from "./resources.mjs";
-import { applyDamage, ensureStrength } from "./combat.mjs";
+import { applyDamage, baseDamageFor, ensureStrength } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -627,8 +627,10 @@ export function advance(match) {
           break;
         }
         const combat = combatRules();
-        const foot = applyDamage(occupant, Number(combat.baseDamage.tank ?? 0));
-        const hull = applyDamage(piece, Number(combat.baseDamage.infantry ?? 0));
+        // The overrun exchange reads the same 0x18f0 pairing cells as a normal fight: tank->infantry
+        // is 26 (2->1), infantry->tank 17 (1->2). The old per-kind collapse had 20 here.
+        const foot = applyDamage(occupant, baseDamageFor("tank", occupant, combat));
+        const hull = applyDamage(piece, baseDamageFor("infantry", piece, combat));
         events.push({
           type: "overrun",
           side: piece.side,

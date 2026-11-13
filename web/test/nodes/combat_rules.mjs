@@ -144,7 +144,8 @@ export async function run(ctx) {
     if (!near(fromSide.amount, fromFront.amount * cfg.flankMultiplier)) {
       fail("flank damage is not flankMultiplier x base: " + fromSide.amount + " vs " + fromFront.amount);
     }
-    if (!near(damageFor(side, d).amount, cfg.baseDamage.infantry * cfg.flankMultiplier)) {
+    const cell = cfg.damageMatrix[cfg.damageKind.infantry][cfg.damageKind.infantry];
+    if (!near(damageFor(side, d).amount, cell * cfg.flankMultiplier)) {
       fail("damageFor disagrees with the shot event");
     }
   }
@@ -183,15 +184,17 @@ export async function run(ctx) {
     }
     if (foot.entrenched !== true) fail("an idle infantry never entrenched");
 
-    // Incoming damage is multiplied by the factor; being attacked does not clear the state.
+    // Incoming damage is the matrix's kind-3 column; being attacked does not clear the state.
+    // Cell 1->3 = 15, which is the 0.75 of 20 the old factor approximated.
     const attacker = unit("red:a", "red", "infantry", 81, 40);
     match.pieces.push(attacker);
     match.round = match.round + 2;
     const events = shotsOf(resolve(match));
     const hit = events.find((event) => event.pieceId === "red:a");
     if (!hit) fail("the entrenched infantry was not attacked");
-    if (!near(hit.amount, cfg.baseDamage.infantry * cfg.entrenchDamageFactor)) {
-      fail("entrenched damage is not entrenchDamageFactor x base: " + hit.amount);
+    const dugCell = cfg.damageMatrix[cfg.damageKind.infantry][cfg.damageKind["entrenched infantry"]];
+    if (!near(hit.amount, dugCell)) {
+      fail("entrenched damage is not the matrix kind-3 cell " + dugCell + ": " + hit.amount);
     }
     if (foot.entrenched !== true) fail("being attacked cleared the entrenchment");
 

@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { combatKeys, combatRules, combatSource, combatValue } from "../../server/rules.mjs";
+import { baseDamageFor, damageFor } from "../../server/combat.mjs";
 
 export const name = "measured_combat";
 
@@ -100,8 +101,9 @@ export async function run(ctx) {
   if (mods.rear !== 2) fail("modifiers.rear is not the measured x2");
   if (mods.flank !== 1.5) fail("modifiers.flank is not the measured x1.5");
   if (cfg.flankMultiplier !== 1.5) fail("combat.flankMultiplier is " + cfg.flankMultiplier + ", not 1.5");
-  if (cfg.entrenchDamageFactor !== 0.75) {
-    fail("entrenchDamageFactor is " + cfg.entrenchDamageFactor + ", not the measured 0.75 (20 -> 15 against infantry)");
+  if (cfg.rearMultiplier !== 2) fail("combat.rearMultiplier is " + cfg.rearMultiplier + ", not the measured rear x2");
+  if (cfg.entrenchDamageFactor !== 1) {
+    fail("entrenchDamageFactor is " + cfg.entrenchDamageFactor + "; the entrench discount is the kind-3 column and a second factor would count it twice");
   }
   if (!(mods.terrainCoverCity["1"] < mods.terrainCoverMountain["1"])) {
     fail("city cover must be stronger than mountain cover for infantry (measured 0.667 vs 0.75)");
@@ -130,6 +132,46 @@ export async function run(ctx) {
   const repair = measured.repairPerPass || {};
   if (repair.amount !== 10) fail("repairPerPass.amount is not the measured 10");
   if (repair.everyOtherPass !== true) fail("repairPerPass.everyOtherPass is not true (0xcae bit 3)");
+  if (repair.everyOtherCall !== true) fail("repairPerPass must say the gate is per CALL of FUN_1c0d_0656, not per round");
+  if (repair.perPassAverage !== 5) fail("repairPerPass.perPassAverage is not 5 (10 on every other call)");
+  if (repair.perRoundSpeed1 !== 59) fail("repairPerPass.perRoundSpeed1 is not the 59 arithmetic (5 x 11.75 passes)");
+
+  // --- the runtime reads the matrix, pairing by pairing ------------------------------------
+  // These are the cells the old per-attacker collapse got wrong, so they are the assertions that
+  // fail if baseDamage is ever read again for a pairing the table covers.
+  const tankToInfantry = baseDamageFor("tank", { kind: "infantry", domain: "land" }, cfg);
+  if (tankToInfantry !== 26) fail("tank->infantry is " + tankToInfantry + ", not matrix cell 2->1 = 26");
+  const tankToDug = baseDamageFor("tank", { kind: "infantry", domain: "land", entrenched: true }, cfg);
+  if (tankToDug !== 20) fail("tank->entrenched infantry is " + tankToDug + ", not matrix cell 2->3 = 20 (the entrench column)");
+  const infToTank = baseDamageFor("infantry", { kind: "tank", domain: "land" }, cfg);
+  if (infToTank !== 17) fail("infantry->tank is " + infToTank + ", not matrix cell 1->2 = 17");
+  const subToLand = baseDamageFor("submarine", { kind: "infantry", domain: "land" }, cfg);
+  if (subToLand !== 0) fail("submarine->land is " + subToLand + ", not matrix cell 7->1 = 0");
+  const cruiserToCarrier = baseDamageFor("cruiser", { kind: "carrier", domain: "sea" }, cfg);
+  if (cruiserToCarrier !== 34) {
+    fail("cruiser->carrier is " + cruiserToCarrier + ", not the kind-nine alias 8 -> 34 (table byte 8*9+9)");
+  }
+  const carrierToCarrier = baseDamageFor("carrier", { kind: "carrier", domain: "sea" }, cfg);
+  if (carrierToCarrier !== 25) fail("carrier->carrier is " + carrierToCarrier + ", not the kind-nine alias 9 -> 25");
+  const nine = matrix.kindNineColumn || {};
+  for (const [code, value] of Object.entries({ 1: 35, 2: 35, 3: 35, 4: 0, 5: 5, 6: 5, 7: 34, 8: 34, 9: 25 })) {
+    if (Number(nine[code]) !== value) fail("kindNineColumn[" + code + "] is " + nine[code] + ", not the measured " + value);
+  }
+  // Flank/rear follow the original's facing comparison and only bite while the defender is
+  // already fighting a third piece. A dedicated 1v1 must get neither bonus.
+  const third = { id: "blue:c", kind: "tank", domain: "land", facing: "w", fighting: null };
+  const plainDuel = damageFor({ id: "blue:a", kind: "tank", domain: "land" }, { id: "red:d", kind: "infantry", domain: "land", facing: "w", fighting: "blue:a" }, cfg);
+  if (plainDuel.flank || plainDuel.rear) fail("a 1v1 got a flank/rear bonus: " + JSON.stringify(plainDuel));
+  const rearHit = damageFor({ id: "blue:b", kind: "tank", domain: "land", facing: "w" },
+    { id: "red:d", kind: "infantry", domain: "land", facing: "w", fighting: "blue:c" }, cfg);
+  if (!rearHit.rear || rearHit.amount !== rearHit.base * 2) fail("same-facing attack is not rear x2: " + JSON.stringify(rearHit));
+  const flankHit = damageFor({ id: "blue:b", kind: "tank", domain: "land", facing: "n" },
+    { id: "red:d", kind: "infantry", domain: "land", facing: "w", fighting: "blue:c" }, cfg);
+  if (!flankHit.flank || flankHit.amount !== flankHit.base * 1.5) fail("side attack is not flank x1.5: " + JSON.stringify(flankHit));
+  const frontHit = damageFor({ id: "blue:b", kind: "tank", domain: "land", facing: "e" },
+    { id: "red:d", kind: "infantry", domain: "land", facing: "w", fighting: "blue:c" }, cfg);
+  if (frontHit.flank || frontHit.rear || frontHit.amount !== frontHit.base) fail("facing attack got a bonus: " + JSON.stringify(frontHit));
+  void third;
 
   // --- air strikes -------------------------------------------------------------------------
   const air = measured.airStrike || {};
