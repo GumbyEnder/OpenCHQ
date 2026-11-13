@@ -1,0 +1,7 @@
+side-to-move *0xe978=1 -> aircraft owner 0x80; write ptr=10 read ptr=10
+aircraft record 7: status 0x89 pos (84,125) target 0x04 cd=0
+target piece 7 kind 7 at (15,129) expect 34
+-- repeat 1: queued event(7, aer=7|xhi=0, tgt=7, 15,129)
+   target now 100  wp=15 rp=15
+-- repeat 2: queued event(7, aer=7|xhi=0, tgt=7, 15,129)
+   target now 100  wp=20 rp=20

@@ -1,0 +1,4 @@
+0 strength changes in 60.0s on the crowded 1942 board
+unattributed (no piece links to the victim): 0
+unattributed delta histogram: {}
+unattributed by terrain: {}

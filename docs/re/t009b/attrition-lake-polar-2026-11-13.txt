@@ -1,0 +1,15 @@
+==== desert ====
+ATTRITION desert: P=0 blue k3 at (116,88) tmap=11 0x836=11 start=100 no site, no target
+    9.44   piece   4 blue k2  66-> 49 dmg  17  tb=8 plain (84,125)  hit-by: 30(k3,f5,d2=1)  tgt=30
+   14.82   piece   6 blue k3  80-> 60 dmg  20  tb=8 plain (191,101)  hit-by: 29(k2,f5,d2=1)  tgt=29
+==== polar ====
+ATTRITION polar: P=0 blue k3 at (36,10) tmap=13 0x836=13 start=100 no site, no target
+    0.36   piece  29 red  k2  83-> 66 dmg  17  tb=8 plain (192,101)  hit-by: 6(k3,f4,d2=1)  tgt=6
+   10.71 * piece   0 blue k3 100-> 95 dmg   5  tb=13 polar (36,10)  hit-by: -  tgt=255
+   17.01   piece  30 red  k3  40-> 20 dmg  20  tb=8 plain (85,125)  hit-by: 4(k2,f4,d2=1)  tgt=4
+==== lake ====
+ATTRITION lake: P=0 blue k3 at (198,45) tmap=3 0x836=3 start=100 no site, no target
+    5.62 * piece   0 blue k3 100-> 97 dmg   3  tb=3 lake (198,45)  hit-by: -  tgt=255
+    7.74   piece   4 blue k2  49-> 32 dmg  17  tb=8 plain (84,125)  hit-by: 30(k3,f5,d2=1)  tgt=30
+   13.12   piece   6 blue k3  60-> 40 dmg  20  tb=8 plain (191,101)  hit-by: 29(k2,f5,d2=1)  tgt=29
+   18.99   piece  29 red  k2  66-> 49 dmg  17  tb=8 plain (192,101)  hit-by: 6(k3,f4,d2=1)  tgt=6

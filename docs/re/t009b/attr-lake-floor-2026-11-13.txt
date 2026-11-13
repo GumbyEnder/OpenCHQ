@@ -1,0 +1,3 @@
+P=0 at (198,45) tmap=3 start=22 secs=30.0
+    4.96 * piece   0 blue k3  22-> 20 dmg   2  tb=3 lake (198,45)  hit-by: -  tgt=255
+  0 blue k3 inf(dug)  str= 20 (198, 45) lake     face=0 tgt=255 fl=0x20 cd= 0 pts=0

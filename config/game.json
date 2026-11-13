@@ -180,8 +180,8 @@
     },
     "flankMultiplier": {
       "value": 1.5,
-      "source": "MEASURED (T-009): flank 1.5 when the attacker's facing is neither the defender's facing nor its opposite (decompiled.c 7064-7071). Applies only when the defender is already fighting a third piece: the original requires the defender's target link to be set and to not be the attacker.",
-      "evidenceRef": "docs/re/COMBAT.md s2.2; live rear hit 40 against a 20 baseline (2026-11-13)"
+      "source": "MEASURED (T-009b, live leg): flank 1.5 is no longer disassembly-only. Three-piece layout so the defender is fighting a third piece (its target link is not the attacker), attacker facing perpendicular to the defender: tank vs entrenched infantry read 30 against the 20 matrix cell on repeats 2 and 3; repeat 1 read 20 with the facing byte re-pinned that pass, and that reading is kept in the log. The same geometry with matched facings reads 40 (rear x2). decompiled.c 7064-7071.",
+      "evidenceRef": "docs/re/t009b/flank-2026-11-13.txt (repeats 2 and 3: dmg 30; repeat 1: 20, logged); docs/re/COMBAT.md s11"
     },
     "rearMultiplier": {
       "value": 2.0,
@@ -206,7 +206,7 @@
     "seaRangeCells": {
       "value": { "submarine": 2, "cruiser": 3, "carrier": 4 },
       "source": "MEASURED (T-009): the same matrix, classes 2/3/4 for kinds 7/8/9, thresholds 5/10/17 squared = 2/3/4 cells. Also matches Manual p.24 (sub 2) and p.42 (sub < cruiser < carrier). A submarine cannot engage land at all (0).",
-      "evidenceRef": "docs/re/COMBAT.md s3"
+      "evidenceRef": "docs/re/COMBAT.md s3 and s11; live ladder docs/re/t009b/range-sub-cruiser-carrier-2026-11-13.txt (sub d2=4 fire, d2=9 no; cruiser d2=9 fire, d2=16 no; carrier d2=16 fire, d2=25 no)"
     },
     "attritionPerRound": {
       "value": { "desert": 0.5, "jungle": 0.5, "polar": 0.5, "lake": 0.5, "wasteland": 1, "city": 0.5, "base": 0.5, "dock": 0.5, "oilfield": 0.5 },
@@ -215,7 +215,7 @@
     "attritionFloor": {
       "value": 0.2,
       "source": "MEASURED (T-009): the code's floor is literally min(amount, strength - 20) (decompiled.c 9089-9093), and 20 of the 100 bar is p.21's 20 %.",
-      "evidenceRef": "docs/re/COMBAT.md s5"
+      "evidenceRef": "docs/re/COMBAT.md s5 and s11; live floor docs/re/t009b/attr-lake-floor-2026-11-13.txt (lake 22 -> 20, then flat for the rest of a 30 s window)"
     },
     "repairPerRound": {
       "value": 5,
@@ -223,13 +223,13 @@
     },
     "airStrikeLandFactor": {
       "value": 0.5,
-      "source": "MEASURED (T-009): the strike deals (strength >> 1) + 1, so 100 leaves 49 - one point under half (decompiled.c 8795-8814). The runtime carries the manual's 0.5 because the module rounds a half-bar to 50; the exact 49 is recorded in measured.combat.airStrike.",
-      "evidenceRef": "docs/re/COMBAT.md s6; air-strike handler 1ac5:0dbe"
+      "source": "DISASSEMBLY (T-009); live leg UNMEASURED (T-009b). The strike deals (strength >> 1) + 1, so 100 leaves 49 - one point under half (decompiled.c 8795-8814). The runtime carries the manual's 0.5 because the module rounds a half-bar to 50; the exact 49 is recorded in measured.combat.airStrike.",
+      "evidenceRef": "docs/re/COMBAT.md s6 and s11 (air strike stays code-only); air-strike handler 1ac5:0dbe; live attempt docs/re/t009b/air-2026-11-13.txt, docs/re/t009b/air-burst-2026-11-13.txt"
     },
     "airStrikeSeaAmount": {
       "value": 0.34,
-      "source": "MEASURED (T-009) for hulls kind 5-7: 34 per strike, three strikes on a full bar. MANUAL-CONTRADICTED, Manual p.25: kinds 8 and 9 (cruiser, carrier) lose 25 per strike = FOUR strikes, not the page's 'three strikes sink a ship'. FUN_1ac5_0dbe @ 1ac5:0dbe, 8795-8814 picks the constant by kind (34 for kind<8, 25 for 8/9). The code governs the port (room 3544 ruling 1); recorded in measured.combat.airStrike.manualContradiction.",
-      "evidenceRef": "docs/re/COMBAT.md s6 and s9.3; air-strike handler 1ac5:0dbe 8795-8814"
+      "source": "DISASSEMBLY (T-009) for hulls kind 5-7, still code-only after the T-009b live attempt: 34 per strike, three strikes on a full bar. MANUAL-CONTRADICTED, Manual p.25: kinds 8 and 9 (cruiser, carrier) lose 25 per strike = FOUR strikes, not the page's 'three strikes sink a ship'. FUN_1ac5_0dbe @ 1ac5:0dbe, 8795-8814 picks the constant by kind (34 for kind<8, 25 for 8/9). The code governs the port (room 3544 ruling 1); recorded in measured.combat.airStrike.manualContradiction.",
+      "evidenceRef": "docs/re/COMBAT.md s6, s9.3 and s11; air-strike handler 1ac5:0dbe 8795-8814; live attempt docs/re/t009b/air-ship-2026-11-13.txt (no strike landed; see measured.combat.value.airStrike.liveLeg)"
     },
     "paradropLoss": { "value": 0.25, "source": "Manual p.50 (UNMEASURED in the original)" },
     "bombardFloor": {
@@ -238,8 +238,8 @@
     },
     "militiaDamage": {
       "value": 2,
-      "source": "MEASURED (T-009): standing on an enemy-owned site costs 2 strength per pass and pins the piece (move points to -10); an unowned site costs 20 per pass until the capture lands (decompiled.c 9056-9077). One number cannot carry both, so this is the enemy-city value and the neutral value is in measured.combat.militia.",
-      "evidenceRef": "docs/re/COMBAT.md s5"
+      "source": "MEASURED (T-009b, live leg): standing on an enemy-owned site costs 2 strength per pass and pins the piece (move points to -10); an unowned site costs 20 per pass, floored at strength 20, until the capture lands (decompiled.c 9056-9077). One number cannot carry both, so this is the enemy-city value and the neutral value is in measured.combat.militia.",
+      "evidenceRef": "docs/re/t009b/militia-2026-11-13.txt (enemy 100->98 = 2; unowned 100->80 = 20; own site 0 damage); docs/re/COMBAT.md s11"
     },
     "pinRounds": { "value": 4, "source": "STAND-IN, UNMEASURED, and with no original counterpart: contact is re-evaluated every pass, so the original pins only while an enemy is in range and has no duration to measure (docs/re/COMBAT.md s7)." },
     "measured": {
@@ -265,7 +265,9 @@
         "rangeMatrix": {
           "_comment": "DS:0x1956, row = attacker range class, column = target class, values are SQUARED distance thresholds; column 5 is reused as the piece's own contact range. DS:0x194c maps kind to class: 0-4->0, 5-6->1, 7->2, 8->3, 9->4, 10-11->5.",
           "classes": [[5, 5, 2, 2, 2, 26], [5, 5, 2, 2, 2, 10], [0, 5, 5, 5, 5, 17], [10, 10, 10, 10, 10, 26], [17, 17, 17, 17, 17, 37], [0, 0, 20, 20, 20, 20]],
-          "cells": { "land": 2, "submarine": 2, "cruiser": 3, "carrier": 4 }
+          "cells": { "land": 2, "submarine": 2, "cruiser": 3, "carrier": 4 },
+          "status": "MEASURED (T-009b, live): start-of-fire read off the target strength with the shooter pinned. Sub fires at d2=4 and not d2=9; cruiser at d2=9 and not d2=16; carrier at d2=16 and not d2=25.",
+          "evidenceRef": "docs/re/t009b/range-sub-cruiser-carrier-2026-11-13.txt"
         },
         "modifiers": {
           "rear": 2.0,
@@ -273,18 +275,37 @@
           "facingOpposed": 1.0,
           "terrainCoverMountain": { "1": 0.75, "2": 0.8333 },
           "terrainCoverCity": { "1": 0.6667, "2": 0.8 },
+          "terrainCoverCityFormula": "dmg - (dmg+1)/3 for defender kinds 1/3; dmg - dmg/5 for kind 2 (decompiled.c 7056-7062)",
+          "terrainCoverStatus": "MEASURED (T-009b, live): a tank hitting an entrenched infantry on a city terrain byte read 13 where the same pairing on open plain read 20, twice each. Cover is a SEPARATE modifier applied before flank/rear, not a second entrenchment: 20 - (20+1)/3 = 13.",
+          "terrainCoverEvidence": "docs/re/t009b/cover-2026-11-13.txt (city 13 x2), docs/re/t009b/cover-open-2026-11-13.txt (plain 20 x2)",
           "shipVsLandBeyondTwoCells": "cap = targetStrength - 30, halved when the cap is under 25"
         },
-        "attritionPerPass": { "_comment": "Manual p.21 AGREES with this list (desert, jungle, polar, lake, city, base, capital, dock); the amounts are what is new, and wasteland 34 is the one terrain the page does not list. Corrected per PM 3557: the interim 3543 'wasteland-only' reading was the branch that destroys, not the whole table.", "desert": 3, "jungle": 3, "polar": 5, "lake": 3, "wasteland": 34, "city": 20, "base": 20, "capital": 20, "dock": 20, "plain": 0, "forest": 0, "mountain": 0, "oilfield": 0, "ocean": 0 },
+        "attritionPerPass": { "_comment": "Manual p.21 AGREES with this list (desert, jungle, polar, lake, city, base, capital, dock); the amounts are what is new, and wasteland 34 is the one terrain the page does not list. Corrected per PM 3557: the interim 3543 'wasteland-only' reading was the branch that destroys, not the whole table.", "desert": 3, "jungle": 3, "polar": 5, "lake": 3, "wasteland": 34, "city": 20, "base": 20, "capital": 20, "dock": 20, "plain": 0, "forest": 0, "mountain": 0, "oilfield": 0, "ocean": 0,
+          "status": "PART MEASURED (T-009b, live): lake 3 and polar 5 per pass, no shooter, and the 20 floor holds (lake 22 -> 20, then flat). Desert DID NOT FIRE in three live runs (stationary at 100, stationary at 22, move points held at 16 on an isolated desert cell): the 0x1996 byte 35 = 0x23 carries the dig-in bit 0x20, and the per-pass handler did not damage it. That is a live contradiction of the table-as-per-pass reading and is reported, not changed. Jungle shares desert's byte and was not run.",
+          "evidenceRef": "docs/re/t009b/attrition-lake-polar-2026-11-13.txt, docs/re/t009b/attr-lake-floor-2026-11-13.txt, docs/re/t009b/attrition-desert-2026-11-13.txt" },
         "attritionTable": { "_comment": "DS:0x1996 per terrain, bit 0x80 = through the combat path, 0x20 = dig-in terrain, low 5 bits = amount. Terrains 0-14: ocean, docks, ocean, lake, capital, base, city, oilfield, plain, forest, mountain, desert, jungle, polar, wasteland.", "bytes": [0, 244, 0, 3, 244, 244, 244, 224, 96, 96, 32, 35, 35, 5, 31] },
         "repairPerPass": { "amount": 10, "everyOtherCall": true, "everyOtherPass": true, "perPassAverage": 5, "passesPerRoundSpeed1": 11.75, "perRoundSpeed1": 59, "units": "+10 per eligible call of FUN_1c0d_0656; the 0xcae bit-3 toggle skips every other call, so 5 per pass averaged over two calls and about 59 per round at speed 1 (11.75 passes/round, T-008). Per round moves with speed, so only the per-call figure is a measurement and the per-round figure is arithmetic; the runtime's repairPerRound stays STAND-IN until D-017.", "terrainFlagBase": "0x1986", "terrainFlag": [0, 2, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0] },
-        "airStrike": { "landDamage": "(strength >> 1) + 1", "shipDamage": { "5": 34, "6": 34, "7": 34, "8": 25, "9": 25 }, "manualContradiction": "MANUAL-CONTRADICTED, Manual p.25: 'three strikes sink a ship' holds for kinds 5-7 (34 each) but not for kinds 8/9 (cruiser, carrier, 25 each = four strikes). FUN_1ac5_0dbe @ 1ac5:0dbe, 8795-8814. Code governs the port (room 3544 ruling 1)." },
-        "militia": { "enemySite": 2, "neutralSite": 20 },
-        "entrench": { "trigger": "stationary pass, no target, terrain bit 0x20", "reverts": "a move order", "timer": null },
-        "pinning": { "duration": null, "note": "contact is re-evaluated every pass" }
+        "airStrike": { "landDamage": "(strength >> 1) + 1", "shipDamage": { "5": 34, "6": 34, "7": 34, "8": 25, "9": 25 }, "manualContradiction": "MANUAL-CONTRADICTED, Manual p.25: 'three strikes sink a ship' holds for kinds 5-7 (34 each) but not for kinds 8/9 (cruiser, carrier, 25 each = four strikes). FUN_1ac5_0dbe @ 1ac5:0dbe, 8795-8814. Code governs the port (room 3544 ruling 1).",
+          "status": "DISASSEMBLY; live leg UNMEASURED (T-009b)",
+          "liveLeg": "Event dispatch identified: event code 7 in the far-pointer table at DS:0x1a68 is FUN_1ac5_0dbe (offset 0x0dbe in the relocated segment 0x0c66). Requests are 5 bytes in a 40-byte ring at DS:0xefbc, write pointer DS:0xe940, read pointer DS:0xe42a. Live attempt: two queued code-7 events against a land target were consumed (wp/rp 0->5->10) with the target unchanged at 100; two against a sub were consumed (wp/rp 10->15->20) with the sub unchanged at 100; a 30 s burst of 200 injected events landed nothing. The handler gates on FUN_1ac5_1206 (nearest ENEMY aircraft within 3 cells) then FUN_1ac5_1156, whose result depends on the random at 0x148a, so the damage call is not reached from an injected event. Next step: drive the real air-strike UI command (the map-click handler FUN_1ac5_0390 pushes this same code-7 event), or stage an enemy aircraft record that survives the pass loop, then read the 34 / 25 / (s>>1)+1 deltas.",
+          "evidenceRef": "docs/re/t009b/air-2026-11-13.txt, docs/re/t009b/air-ship-2026-11-13.txt, docs/re/t009b/air-burst-2026-11-13.txt" },
+        "militia": { "enemySite": 2, "neutralSite": 20, "floor": "none on the enemy-site branch (2 can kill); 20 floor on the neutral branch, min(amount, strength-20)", "status": "MEASURED (T-009b, live)", "evidenceRef": "docs/re/t009b/militia-2026-11-13.txt" },
+        "entrench": { "trigger": "stationary pass, no target, terrain bit 0x20", "reverts": "a move order", "timer": null, "status": "MEASURED (T-009b, live): one tank hit a red infantry as kind 1 for 26 (cell 2->1) and, after the defender entrenched to kind 3 on plain, hit the same piece for 20 (cell 2->3); the flip came on an eligible pass after the target was cleared", "evidenceRef": "docs/re/t009b/entrench-2026-11-13.txt" },
+        "pinning": { "duration": null, "note": "contact is re-evaluated every pass" },
+        "liveLegs": {
+          "_comment": "T-009b, 2026-11-13, DOSBox 0.74-3 on the live 1942 board (speed 2). Every leg re-pinned position, terrain byte and target link each 60 ms and logged every strength delta with the pieces linking to the victim. Harness: docs/re/t009b/harness/ (self-contained; run as root for /proc/<pid>/mem).",
+          "flank": "MEASURED: 30 (x1.5 of 20), 2 clean repeats; a matched-facing repeat of the same layout read 40 (x2).",
+          "entrenchPair": "MEASURED: 26 as kind 1, 20 as kind 3, same attacker, same cell.",
+          "cover": "MEASURED: city terrain byte 13 vs open plain 20, 2 repeats each; cover is separate from entrenchment.",
+          "attrition": "PART MEASURED: lake 3 and polar 5 per pass with no shooter; the 20 floor holds (lake 22 -> 20, then flat). Desert lost nothing in three runs - a live contradiction, reported not changed; see attritionPerPass.status.",
+          "militia": "MEASURED: enemy site 2, unowned site 20, own site 0.",
+          "seaRange": "MEASURED: sub 2 cells, cruiser 3, carrier 4.",
+          "airStrike": "UNMEASURED: event path located and exercised, no damage landed; see airStrike.liveLeg.",
+          "q38": "OPEN: a 60 s full-board strength scan at 30 ms on the crowded 1942 board logged 0 deltas and 0 unattributed deltas (0x89e, attributed by the 0xbde target links), so the 2-5 point loss did not reproduce in that state. Method and next step are the ones Q38 already names: the crowded trio with the pass counter and per-pass deltas on every record, sampled at a turn resolution rather than after it."
+        }
       },
-      "source": "MEASURED/DISASSEMBLY (T-009, 2026-11-13): reference rows for the numbers the runtime cannot carry yet. docs/re/COMBAT.md holds the addresses, call sites and contradictions with the manual.",
-      "evidenceRef": "docs/re/COMBAT.md; notes/t009/{tables.py,t009_probe.py}; DOSBox 0.74-3 cycles=auto, film_mode 0x1478 and 0xc8cc zeroed"
+      "source": "MEASURED/DISASSEMBLY (T-009 2026-11-13, extended by T-009b 2026-11-13): reference rows for the numbers the runtime cannot carry yet. docs/re/COMBAT.md holds the addresses, call sites and contradictions with the manual.",
+      "evidenceRef": "docs/re/COMBAT.md; docs/re/t009b/README.md (T-009b legs and harness); DOSBox 0.74-3 cycles=auto, film_mode 0x1478 and 0xc8cc zeroed"
     }
   },
   "notes": {

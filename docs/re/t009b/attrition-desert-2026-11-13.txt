@@ -1,0 +1,15 @@
+T-009b AC4: desert attrition attempts, live DOSBox, 1942 board.
+Expected per the 0x1996 table: desert byte 35 = 0x23 -> amount 3.
+Result: NO strength change in any run. This contradicts the table-as-per-pass reading; reported, not silently changed.
+
+=== A: isolated desert cell (116,88), strength 100, stationary, 15 s ===
+P=0 at (116,88) tmap=11 start=100 secs=15.0
+  0 blue k3 inf(dug)  str=100 (116, 88) desert   face=0 tgt=255 fl=0x20 cd= 0 pts=0
+
+=== B: isolated desert cell (115,90), strength 22, stationary, 15 s ===
+P=0 at (115,90) tmap=11 start=22 secs=15.0
+  0 blue k3 inf(dug)  str= 22 (115, 90) desert   face=0 tgt=255 fl=0x20 cd= 0 pts=0
+
+=== C: same cell (116,88), strength 100, move points held at 16, 20 s ===
+P=0 at (116,88) tmap=11 start=100 pts=16 secs=20.0
+  0 blue k3 inf(dug)  str=100 (116, 88) desert   face=0 tgt=255 fl=0x20 cd= 0 pts=16

@@ -1,0 +1,2 @@
+red air=7 blue air=0 target=4 k2 at (84,125)
+events=200 hits=[]
