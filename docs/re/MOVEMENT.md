@@ -230,44 +230,63 @@ measurement, and the addresses above are what it needs.
 - `4580-4589` — a piece whose `points < 0x14` (20) is skipped before any of the movement
   logic in `FUN_15f4_0002`, and the same branch skips `kind < 5` outright.
 
-So the pass is the movement clock, `byte[0x19a6+kind]` is the per-pass budget, and half of it
-is granted per pass while the piece is under orders:
+So the pass is the movement clock, `byte[0x19a6+kind]` is the per-pass budget and a step costs
+20, which predicts `byte[0x19a6+kind] / 20` steps per pass. Measured (see below) that prediction
+holds for every kind we could drive — kind 6 predicted 1.8, measured 1.64 and 2.00; kind 2
+predicted 1.2, measured 0.90 and 0.80 (a piece is only visited once per pass, so a land piece
+cannot spend a two-step surplus).
 
-| kind | byte[0x19a6] | +points/pass under orders | steps per pass at cost 20 |
+| kind | byte[0x19a6] | steps/pass predicted | steps/pass measured |
 |---|---|---|---|
-| 1 | 12 | 6 | 0.3 |
-| 2 | 24 | 12 | 0.6 |
-| 3 | 0 | 0 | 0 (transport carries cargo) |
-| 4 | 0 | 0 | 0 |
-| 5, 6 | 36 | 18 | 0.9 |
-| 7, 8, 9 | 40 | 20 | 1.0 |
+| 1 | 12 | 0.6 | — (no kind 1 on this board) |
+| 2 | 24 | 1.2 (capped at 1/visit) | 0.90 @ speed 6, 0.80 @ speed 3 |
+| 3 | 0 | 0 (transport carries cargo) | 0 |
+| 4 | 0 | 0 | — (no kind 4) |
+| 5 | 36 | 1.8 | — (no run yet) |
+| 6 | 36 | 1.8 | 1.64 @ speed 6, 2.00 @ speed 3 |
+| 7, 8, 9 | 40 | 2.0 | — (no run yet) |
 
-### Measured, sea/air
+**The grant is the full byte, not half of it.** An earlier draft of this section read `4788` and
+concluded `+byte>>1`; the measured points sequences on a kind 2 piece (`24 -> 28 -> 32 -> 16 ->
+40 -> 24 ...`) only fit `+24` per pass against `-20` per step, i.e. two add sites (`4794` and
+`4813`) fire on the same wrap. The `>>1` is one of them, not the whole grant. `4813`'s exact
+condition is still UNVERIFIED.
 
-`notes/t008/s2_points.py` (unit 35, kind 6, carrier, open water, ordered 61 cells south,
-22 s at speed 6, `DS:0x1478` forced to 0):
+### Measured, open water — kind 6 carrier (unit 35)
 
-    cells 18   pass wraps 11   -> 1.64 cells/pass
-    points 18 -> 36 -> 52 -> 32 -> 28 -> 8 -> 44 -> 4 -> 20 -> 0 -> 36 -> ...
-    pass rate 11 / 22 s = 0.50 wraps/s
+`notes/t008/s2_points.py`, ordered along the longest clear water run, `DS:0x1478` forced to 0:
 
-The `18 -> 36` step is the `+18` refill; `36 -> 52` (`+16`) is not explained by that branch —
-`4813` adds points on a second path that has not been read yet, so the increments are measured
-but the second path is UNVERIFIED.
+| speed | window | cells | pass wraps | cells/pass | wraps/s |
+|---|---|---|---|---|---|
+| 6 | 22 s | 18 | 11 | 1.64 | 0.50 |
+| 3 | 45 s | 10 | 5 | 2.00 | 0.12 |
 
-At the measured 129.2 s round that is **~64 passes/round and ~105 cells/round for a kind 6**,
-i.e. cells per round is not a constant across speeds — the round clock is fixed (see above)
-while the pass rate scales with speed. Any config value has to be per speed.
+### Measured, open land — kind 2 tank (unit 39)
+
+Every land piece in the 1986 walk sits in the base cluster with 0 clear cells of its own
+terrain class in any direction, so `notes/t008/s2_land.py` teleports one tank to the 33-cell
+class-8 corridor at `(62,36)` and orders 20 cells east. The piece, its kind, its flags and its
+points are the game's; only the start cell is a harness write.
+
+| speed | window | cells | pass wraps | cells/pass | wraps/s |
+|---|---|---|---|---|---|
+| 6 | 40 s | 18 | 20 | 0.90 | 0.50 |
+| 3 | 45 s | 4 | 5 | 0.80 | 0.13 |
+
+Cells per pass is the same at both speeds and the pass rate is not — so **cells per round is a
+function of speed, not a constant**. The round column below uses the S1 pass rates (7.37 / 12.23
+/ 49.11 pieces per second, i.e. 0.0737 / 0.1223 / 0.4911 passes per second) rather than these
+short-window wrap counts, since S1 sampled every piece for 8 s per speed:
+
+| kind | speed 1 | speed 3 | speed 6 |
+|---|---|---|---|
+| 2 tank | ~8.6 | 12.6 | 57 |
+| 6 carrier | ~15.6 | 31.6 | 104 |
+
+The speed-1 column is arithmetic (cells/pass x 9.52 passes), not a run — it needs one direct
+leg before AC1 is claimed. Kinds 1, 5 and the submarine class are still UNMEASURED: the board
+carries no kind 1 or 4 at all, so they need the purchase flow, not another teleport.
 
 `DS:0x6fe` write width is a confirmed trap: unit 37 read `2359296` (`0x240000`) after an
 earlier probe wrote 36 as a `u16` at `i*2` — the low half was zeroed and the high half kept
 the old value. Points must be read and written 4 bytes wide at `i*2`.
-
-### Land is still UNMEASURED
-
-Kinds < 5 are refilled to 0 and skipped by `4580`, so a land piece only banks `12`/`6`/`0`
-per pass while under orders and never moves without several passes of banked points. Live
-1986 land pieces (kinds 2 and 3, indices 37/39/41) sit in the base cluster where their own
-terrain class has **0 clear cells in every direction**, and kind 3's allowance is 0, so no
-land leg could be driven in this walk. Infantry and tank cells/round stay UNMEASURED until a
-fresh game lets us buy and order a land piece in the open — that is AC1's remaining half.
