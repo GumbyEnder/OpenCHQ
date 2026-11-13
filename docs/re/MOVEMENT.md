@@ -238,7 +238,7 @@ pass, so a land piece cannot spend a two-step surplus).
 
 | kind | byte[0x19a6] | steps/pass predicted | steps/pass measured |
 |---|---|---|---|
-| 1 | 12 | 0.6 | — (no kind 1 on this board) |
+| 1 | 12 | 0.6 | 0.45 / 0.62 / 0.59 @ speeds 1 / 3 / 6, full rounds, kind nibble harness-written (no kind 1 on this board) |
 | 2 | 24 | 1.2 (capped at 1/visit) | 1.00 / 1.00 / 1.00 @ speeds 1 / 3 / 6, full rounds |
 | 3 | 0 | 0 (transport carries cargo) | 0 |
 | 4 | 0 | 0 | — (no kind 4) |
@@ -319,3 +319,35 @@ setup unless the buy table differs per era, which is unchecked.
 `DS:0x6fe` write width is a confirmed trap: unit 37 read `2359296` (`0x240000`) after an
 earlier probe wrote 36 as a `u16` at `i*2` — the low half was zeroed and the high half kept
 the old value. Points must be read and written 4 bytes wide at `i*2`.
+
+### Measured, open land — kind 1 (infantry), harness-labelled
+
+The 1986 board carries no kind 1, so `KIND_OVERRIDE=1` rewrites the kind nibble of one existing
+land piece (owner bits kept, `0x906+idx` high nibble untouched) and the run is labelled
+accordingly. **This is not a purchased unit**; it measures the movement rule for kind 1, not the
+engine's own creation of one. Full rounds, 150 s windows that all ended at the round boundary:
+
+| speed | cells | pass wraps | cells/pass | predicted (`12/20`) |
+|---|---|---|---|---|
+| 1 | 5 | 11 | 0.45 | 0.6 |
+| 3 | 10 | 16 | 0.62 | 0.6 |
+| 6 | 37 | 63 | 0.59 | 0.6 |
+
+The prediction holds at speeds 3 and 6; speed 1 has only 11 passes in a round, so one pass of
+quantisation is 0.09 cells/pass and 0.45 is inside that.
+
+**A blocked cell is a cell.** The first kind-1 attempts stopped at `x=81` with `flags 0x40` and a
+full budget, twice, and the cause was unit 39 — the tank from the previous legs — parked at
+`(82,36)`, the target cell. Occupancy blocks the step, so any corridor run has to clear the
+corridor first (the tank now sits at `(151,32)`). A stopped piece under orders is not always a
+harness fault.
+
+**`0x906+idx` is not a stable unit identity.** After these rounds, the same record indexes read
+different kinds than they did during the measurement: idx 35 was 6 (carrier) and now reads 2,
+idx 37 was 2 and now reads 3, while 38/57/59 are unchanged (6/9/8). Nothing in the harness wrote
+those bytes except the deliberate kind-1 override. So either records are re-derived between
+rounds or a second writer touches the field — **UNVERIFIED**, and it matters because every
+per-kind label in this document reads its kind from that byte. What is not in doubt is the
+behaviour: each run's cells/pass matched the allowance byte of the kind it read at the time
+(1.00 for a 24, 1.64-1.81 for a 36, 0.59-0.62 for a 12), so the table is labelled by measured
+behaviour and by the byte observed during the run, not by identity.
