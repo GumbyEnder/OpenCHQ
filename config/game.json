@@ -172,31 +172,112 @@
   "enemyRouteSteps": 3,
   "combat": {
     "maxStrength": { "value": 100, "source": "UNMEASURED (scale only; the manual shows a bar, p.20)" },
-    "shotEveryRounds": { "value": 2, "source": "Manual p.22" },
+    "shotEveryRounds": { "value": 2, "source": "DELIBERATE DEVIATION, pacing (D-017): the original fires every pass while in contact (docs/re/COMBAT.md s7), and a pass is speed-dependent; 2 is the manual's p.22 sentence kept as the browser pacing choice, awaiting Shane's ruling." },
     "baseDamage": {
-      "value": { "infantry": 20, "tank": 30, "cruiser": 40, "carrier": 25, "submarine": 35 },
-      "source": "STAND-IN, UNMEASURED (the manual prints damage as a bar, p.20, never a figure; tank > infantry is p.22)"
+      "value": { "infantry": 17, "tank": 20, "cruiser": 25, "carrier": 25, "submarine": 34 },
+      "source": "MEASURED (T-009). Damage matrix at DS:0x18f0, index targetKind + attackerKind*9, read from the running 1942 board and from CHQ_unpacked.EXE; infantry 17 (the measured entrenched-infantry-to-tank cell), tank 20, cruiser 25, carrier 25, and submarine 34 against hulls. The matrix is per pairing, not per attacker: see measured.combat.damageMatrix.",
+      "evidenceRef": "docs/re/COMBAT.md s2; notes/t009/tables.py (2026-11-13); live duels 3 repeats each"
     },
-    "flankMultiplier": { "value": 1.5, "source": "STAND-IN, UNMEASURED (Manual p.22: more than 1)" },
-    "entrenchDamageFactor": { "value": 0.5, "source": "STAND-IN, UNMEASURED (Manual p.22: less than 1)" },
-    "entrenchRounds": { "value": 3, "source": "UNMEASURED (Manual p.22: infantry that has not moved or fought)" },
-    "landEngageCells": { "value": 2, "source": "UNVERIFIED inference: 3x3 icons overlap (p.7, p.22)" },
+    "flankMultiplier": {
+      "value": 1.5,
+      "source": "MEASURED (T-009): rear 2.0 when the attacker faces the same way as the target, flank 1.5 when perpendicular, 1.0 when they face each other (decompiled.c 7064-7071). This key is the flank value; the rear value is in measured.combat.modifiers.",
+      "evidenceRef": "docs/re/COMBAT.md s2.2; live rear hit 40 against a 20 baseline (2026-11-13)"
+    },
+    "entrenchDamageFactor": {
+      "value": 0.75,
+      "source": "MEASURED (T-009): entrenchment is a kind change (infantry kind 1 to kind 3), and the kind-3 column of the damage matrix is what it costs. 20 to 15 against infantry is 0.75; against tanks 26 to 20 is 0.77, so one multiplier cannot be exact. Terrain cover is a separate modifier.",
+      "evidenceRef": "docs/re/COMBAT.md s4; damage matrix cells 1->3 and 2->3"
+    },
+    "entrenchRounds": {
+      "value": 1,
+      "source": "DISASSEMBLY (T-009): the original has no entrench timer. The kind flips on the first eligible pass (stationary, no target, dig-in terrain) and reverts when a move is ordered (decompiled.c 9287-9290, 4523-4525). One round is the smallest value this key can carry.",
+      "evidenceRef": "docs/re/COMBAT.md s4"
+    },
+    "landEngageCells": {
+      "value": 2,
+      "source": "MEASURED (T-009): land engagement is dist^2 <= 5 in the 0x1956 matrix (FUN_188b_0216 squares the distance), which reaches (2,1) and not (2,2) - two cells.",
+      "evidenceRef": "docs/re/COMBAT.md s3; live matrix dump 0x1956"
+    },
     "seaRangeCells": {
       "value": { "submarine": 2, "cruiser": 3, "carrier": 4 },
-      "source": "sub 2: Manual p.24; cruiser 3, carrier 4: STAND-IN, UNMEASURED (Manual p.42 states sub < cruiser < carrier)"
+      "source": "MEASURED (T-009): the same matrix, classes 2/3/4 for kinds 7/8/9, thresholds 5/10/17 squared = 2/3/4 cells. Also matches Manual p.24 (sub 2) and p.42 (sub < cruiser < carrier). A submarine cannot engage land at all (0).",
+      "evidenceRef": "docs/re/COMBAT.md s3"
     },
     "attritionPerRound": {
       "value": { "desert": 0.5, "jungle": 0.5, "polar": 0.5, "lake": 0.5, "wasteland": 1, "city": 0.5, "base": 0.5, "dock": 0.5, "oilfield": 0.5 },
-      "source": "STAND-IN, UNMEASURED (which terrains: Manual p.21)"
+      "source": "STAND-IN, UNMEASURED as a per-round rate. The original applies attrition PER PASS from the 0x1996 table (desert/jungle 3, polar 5, lake 3, wasteland 34 with destruction, city-base-capital-dock 20 through the site branch, floor at strength 20). Passes per round depend on speed, so no single per-round number exists until D-017 is ruled. Reference rows: measured.combat.attritionPerPass."
     },
-    "attritionFloor": { "value": 0.2, "source": "Manual p.21" },
-    "repairPerRound": { "value": 5, "source": "STAND-IN, UNMEASURED (Manual p.23: repair is a rate; no figure)" },
-    "airStrikeLandFactor": { "value": 0.5, "source": "Manual p.25" },
-    "airStrikeSeaAmount": { "value": 0.34, "source": "Manual p.25 (3 strikes sink a ship); exact amount UNMEASURED" },
-    "paradropLoss": { "value": 0.25, "source": "Manual p.50" },
-    "bombardFloor": { "value": 0.2, "source": "Manual p.42" },
-    "militiaDamage": { "value": 10, "source": "STAND-IN, UNMEASURED (exists: Manual p.10, p.23)" },
-    "pinRounds": { "value": 4, "source": "STAND-IN, UNMEASURED (Manual p.22 names pinning; no figure)" }
+    "attritionFloor": {
+      "value": 0.2,
+      "source": "MEASURED (T-009): the code's floor is literally min(amount, strength - 20) (decompiled.c 9089-9093), and 20 of the 100 bar is p.21's 20 %.",
+      "evidenceRef": "docs/re/COMBAT.md s5"
+    },
+    "repairPerRound": {
+      "value": 5,
+      "source": "STAND-IN as a per-round rate. Measured: +10 per eligible pass, every other pass, on an own site whose terrain is docks/capital/base/city/oilfield, clamped at 100 (live leg 40 -> 50). Per-round depends on the speed, so it stays a reference row: measured.combat.repairPerPass."
+    },
+    "airStrikeLandFactor": {
+      "value": 0.5,
+      "source": "MEASURED (T-009): the strike deals (strength >> 1) + 1, so 100 leaves 49 - one point under half (decompiled.c 8795-8814). The runtime carries the manual's 0.5 because the module rounds a half-bar to 50; the exact 49 is recorded in measured.combat.airStrike.",
+      "evidenceRef": "docs/re/COMBAT.md s6; air-strike handler 1ac5:0dbe"
+    },
+    "airStrikeSeaAmount": {
+      "value": 0.34,
+      "source": "MEASURED (T-009) for hulls kind 5-7: 34 per strike, three strikes on a full bar. Kinds 8 and 9 (cruiser, carrier) lose 25, i.e. FOUR strikes, which contradicts Manual p.25's 'three strikes sink a ship' - recorded in measured.combat.airStrike, not silently ported.",
+      "evidenceRef": "docs/re/COMBAT.md s6"
+    },
+    "paradropLoss": { "value": 0.25, "source": "Manual p.50 (UNMEASURED in the original)" },
+    "bombardFloor": {
+      "value": 0.2,
+      "source": "Manual p.42, UNMEASURED. The original's real shore-fire rule is different and measured: a ship beyond 2 cells caps damage at (target strength - 30), halved when that cap is under 25 (decompiled.c 7082-7093). Recorded in measured.combat.modifiers."
+    },
+    "militiaDamage": {
+      "value": 2,
+      "source": "MEASURED (T-009): standing on an enemy-owned site costs 2 strength per pass and pins the piece (move points to -10); an unowned site costs 20 per pass until the capture lands (decompiled.c 9056-9077). One number cannot carry both, so this is the enemy-city value and the neutral value is in measured.combat.militia.",
+      "evidenceRef": "docs/re/COMBAT.md s5"
+    },
+    "pinRounds": { "value": 4, "source": "STAND-IN, UNMEASURED, and with no original counterpart: contact is re-evaluated every pass, so the original pins only while an enemy is in range and has no duration to measure (docs/re/COMBAT.md s7)." },
+    "measured": {
+      "value": {
+        "damageMatrix": {
+          "_comment": "DS:0x18f0, index targetKind + attackerKind*9. Row 0 overlaps the string tail 'ly = %d.' and kind 0 is an empty slot, so rows/columns 0 are never read. Dumped live 2026-11-13 and identical in CHQ_unpacked.EXE.",
+          "rows": {
+            "1": [0, 20, 17, 15, 0, 25, 25, 35, 35],
+            "2": [35, 26, 20, 20, 0, 25, 25, 35, 35],
+            "3": [35, 20, 17, 15, 0, 25, 25, 35, 35],
+            "4": [0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "5": [0, 18, 16, 14, 0, 10, 10, 5, 5],
+            "6": [5, 9, 8, 7, 0, 10, 10, 5, 5],
+            "7": [5, 0, 0, 0, 0, 100, 100, 25, 34],
+            "8": [34, 12, 10, 6, 0, 50, 50, 34, 25],
+            "9": [25, 10, 8, 5, 0, 50, 50, 25, 20]
+          },
+          "kinds": { "1": "infantry", "2": "tank", "3": "entrenched infantry", "7": "submarine", "8": "cruiser", "9": "carrier" }
+        },
+        "rangeMatrix": {
+          "_comment": "DS:0x1956, row = attacker range class, column = target class, values are SQUARED distance thresholds; column 5 is reused as the piece's own contact range. DS:0x194c maps kind to class: 0-4->0, 5-6->1, 7->2, 8->3, 9->4, 10-11->5.",
+          "classes": [[5, 5, 2, 2, 2, 26], [5, 5, 2, 2, 2, 10], [0, 5, 5, 5, 5, 17], [10, 10, 10, 10, 10, 26], [17, 17, 17, 17, 17, 37], [0, 0, 20, 20, 20, 20]],
+          "cells": { "land": 2, "submarine": 2, "cruiser": 3, "carrier": 4 }
+        },
+        "modifiers": {
+          "rear": 2.0,
+          "flank": 1.5,
+          "facingOpposed": 1.0,
+          "terrainCoverMountain": { "1": 0.75, "2": 0.8333 },
+          "terrainCoverCity": { "1": 0.6667, "2": 0.8 },
+          "shipVsLandBeyondTwoCells": "cap = targetStrength - 30, halved when the cap is under 25"
+        },
+        "attritionPerPass": { "desert": 3, "jungle": 3, "polar": 5, "lake": 3, "wasteland": 34, "city": 20, "base": 20, "capital": 20, "dock": 20, "plain": 0, "forest": 0, "mountain": 0, "oilfield": 0, "ocean": 0 },
+        "attritionTable": { "_comment": "DS:0x1996 per terrain, bit 0x80 = through the combat path, 0x20 = dig-in terrain, low 5 bits = amount. Terrains 0-14: ocean, docks, ocean, lake, capital, base, city, oilfield, plain, forest, mountain, desert, jungle, polar, wasteland.", "bytes": [0, 244, 0, 3, 244, 244, 244, 224, 96, 96, 32, 35, 35, 5, 31] },
+        "repairPerPass": { "amount": 10, "everyOtherPass": true, "terrainFlagBase": "0x1986", "terrainFlag": [0, 2, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0] },
+        "airStrike": { "landDamage": "(strength >> 1) + 1", "shipDamage": { "5": 34, "6": 34, "7": 34, "8": 25, "9": 25 } },
+        "militia": { "enemySite": 2, "neutralSite": 20 },
+        "entrench": { "trigger": "stationary pass, no target, terrain bit 0x20", "reverts": "a move order", "timer": null },
+        "pinning": { "duration": null, "note": "contact is re-evaluated every pass" }
+      },
+      "source": "MEASURED/DISASSEMBLY (T-009, 2026-11-13): reference rows for the numbers the runtime cannot carry yet. docs/re/COMBAT.md holds the addresses, call sites and contradictions with the manual.",
+      "evidenceRef": "docs/re/COMBAT.md; notes/t009/{tables.py,t009_probe.py}; DOSBox 0.74-3 cycles=auto, film_mode 0x1478 and 0xc8cc zeroed"
+    }
   },
   "notes": {
     "roundSeconds": "5 s chosen 2026-11-06 by the owner, and a DELIBERATE DEVIATION: the original's round is 119.5 s of game time and does not shorten with speed (measured 2026-11-12, T-008; see `measured` above and docs/re/MOVEMENT.md). At 1 cell per round the Washington-Moscow march is ~104 cells, about 8.7 minutes. The original felt like a campaign, not a 24-second war, and 0.14 s made income land every 3.5 s.",
