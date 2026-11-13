@@ -17,6 +17,7 @@ Status at this commit:
 | Per-kind allowance table at DS:0x19a6 | DISASSEMBLY + live dump |
 | Cells per round per kind, per speed | MEASURED for kinds 1, 2, 6 at speeds 1/3/6 (AC1, AC3); kind 1 harness-labelled and accepted as measuring the rule (PM 3481); kinds 4/5 **NOT OBTAINABLE** in 1918/1942/1986 — a closed FINDING, not a gap; 5/7/8/9 predictions from `0x19a6`, no run; era 4 start board UNCHECKED (Q36) |
 | Terrain effect on speed | UNMEASURED |
+| Q32 win timing | DISASSEMBLY: win/loss state is written inside the capture handler, synchronously with the owner byte; no round/phase gate reads the clock. Live arrival leg open |
 
 ## Method
 
@@ -455,3 +456,52 @@ agrees with the 209 one-wet-step routes the remake planned at `6c1c396`. Still l
 UNVERIFIED: the `param_5` values each call site uses are read from three callers, not exhaustively,
 and "costed not refused" is a claim about the planner, not about what a unit does when it reaches
 the water cell at step time.
+
+## Q32: when does the win fire (disassembly, 2026-11-13)
+
+The win check is `FUN_1c0d_000c` (`1c0d:000c`, file `0xF6DC`, 71 bytes). It walks the 84 site
+bytes `DS:0x1102+i`, skips absent sites (`0`) and every `subtype >= 3`, and returns 1 only when
+**every** capital's owner bits equal the side passed in. It has exactly **two call sites**, both
+inside the site-capture handler `FUN_1c0d_02ce`: `0xFC34` and `0xFC92`, each immediately after the
+handler writes the new owner byte and each guarded by `cmpw $3,-0x2(%bp)` — i.e. only when the
+captured site's subtype is `< 3` (a capital; a city never triggers it).
+
+What the handler does with the answer (`decompiled.c:9223-9266`):
+
+```
+if (uVar6 == *(uint *)0xc350) {                  // capturing side == side to move
+  if ((2 < uVar11) || (iVar5 = FUN_1c0d_000c(uVar6), iVar5 == 0)) {
+    ... capture message/sound, owner byte already written ...
+  }
+  FUN_259b_055e(0xf0,0,0,10,0,1);
+  *(undefined2 *)0x1550 = 2;                     // WIN — written here, synchronously
+} else {
+  ... FUN_1c0d_000c(...) != 0 -> *(undefined2 *)0x1550 = 3;   // LOSS
+}
+FUN_259b_02fa();
+if (*(int *)0x1550 != 0) { FUN_35a3_1446(); *(undefined2 *)0xe296 = 1; FUN_1eb5_0cc4(); }
+```
+
+So the game-over word `DS:0x1550` (0 playing, 2 win, 3 loss) and the `0xe296` flag are written
+**inside the capture handler**, and nothing in that path reads the round clock `DS:0x157e`. The
+handler is called from three places, all arrival-driven: the per-piece pass at `decompiled.c:4548`
+(the piece the pass has just walked), `7724` and `8654` (both after a site lookup for a piece that
+has arrived). No caller is the round-end, turn-change or phase code.
+
+**Answer: the original ends the match on the capture, not at a round or phase boundary.** The
+`0xFFFF` clock stop measured in S1 is a round-boundary stop for the player's pacing; it is not the
+win trigger and the win does not wait for it.
+
+### The live leg, and what stays open
+
+A live capture across the boundary was attempted on a fresh 1986 blue boot: a blue tank's coords
+word and y byte were both written onto Moscow's cell `(183,25)` and the pass was left running for
+60 s with the countdown seeded to `0x1DDE`. Result: **the site byte stayed `0x9A` (red) and
+`0x1550` stayed 0 — occupancy is not capture.** The handler's own gate explains it: after the
+terrain lookup it reads the game's "this piece is standing on site N" word `DS:0xc478`, which was
+`0xff` for the teleported piece; writing 63 into it by hand did not fire the handler either, because
+`FUN_188b_0472(63,3,1)` must return `0xff` first. So the live half of AC5 needs a walker-driven
+arrival, and the harness on this branch could not produce one: after the boot every unit record
+read `x=0` in `0x1b6` while `0x286` held a different y, and a written `0x40` order flag was cleared
+by the pass. That is a harness state problem, not a game finding — the same offsets read sane
+coords in the session that measured AC1 — so AC5's live leg is queued, not closed.
