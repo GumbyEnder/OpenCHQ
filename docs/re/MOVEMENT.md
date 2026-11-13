@@ -191,19 +191,31 @@ unit slots 0-4, `8183`) with `DS:0x2e16` as the matching price/40 row.
 
 ## Pass rate by speed
 
-`0x147c` cursor increments per second, 8 s per speed, countdown kept alive:
+Two independent measurements, and they do not agree at speed 1. The 8 s sampler
+(`pass_rate.py`, cursor increments at `0x147c`, countdown kept alive) gives:
 
-| Speed | Increments/s | Seconds per 100-piece pass |
+| Speed | Increments/s | Seconds per 100-piece pass (8 s window) |
 |---|---|---|
 | 0 | 0 (no piece steps in 8 s) | — (stopped) |
 | 1 | 7.37 | 13.57 |
 | 3 | 12.23 | 8.17 |
 | 6 | 49.11 | 2.04 |
 
-A unit can advance at most one cell per time its record is visited, so this is the ceiling a
-per-kind allowance is spent against — not a cells/round figure. The per-kind split is still
-UNMEASURED because no unit could be put under orders in the driven walk; that is the S2
-measurement, and the addresses above are what it needs.
+The full-round runs count **pass wraps over one complete 129.2 s round**, and every harness that
+did so (carrier, tank, kind 1) read the same three numbers:
+
+| Speed | Pass wraps per round | Seconds per pass | Against the 8 s window |
+|---|---|---|---|
+| 0 | 0 | — (stopped) | same |
+| 1 | 11 | 11.75 | 8 s sampler is low by 14 % |
+| 3 | 16 | 8.07 | agrees (8.17) |
+| 6 | 63-64 | 2.03 | agrees (2.04) |
+
+At speed 1 one pass is ~11.7 s, so an 8 s window is shorter than the pass it is trying to time
+and cannot measure it; speeds 3 and 6 are inside the window and land where the round runs do.
+**Passes per round is the round-run figure** (11 / 16 / 63-64), and the 8 s column is kept only
+as the sampler it is. This supersedes the earlier sentence that called the per-kind split
+unmeasured: the per-kind tables below are full rounds with two runs per speed.
 
 ## What is deliberately not done here
 
@@ -306,15 +318,41 @@ per round is a function of speed, not a constant**:
 
 Both rows are now complete rounds with two runs each — no extrapolation left in the table.
 
-Kinds 1, 4, 5 and the submarine class are still UNMEASURED, but for two different reasons now,
-and the second one is a finding rather than a gap. `DS:0x2e22` = `1 2 7 8 9` is the kind the game
-writes for purchase slots 0-4 (`8183`), so **this era's shop sells kinds 1, 2, 7, 8 and 9**:
-kind 1 (infantry) is reachable by buying slot 0, and kinds 4 and 5 are not purchasable here at
-all — kind 4 has a 0 allowance byte, and kind 5 (36) has only an AI-side path
-(`DS:0x19a2`, `4811`). The board carries no kind 1 because none was bought in this walk, not
-because the era cannot build one. So the remaining AC1 work is one leg per speed for kind 1,
-driven through the buy menu; kinds 4 and 5 should be reported as not obtainable in the 1986
-setup unless the buy table differs per era, which is unchecked.
+### AC3 — the table, by speed and by kind
+
+Passes per round are the round-run counts above; cells/pass per kind are the two-run full-round
+figures; cells/round is their product and is printed beside the measured count so a mismatch is
+visible rather than smoothed.
+
+| Speed | Passes / 129.2 s round | kind 1 inf (12) | kind 2 tank (24) | kind 6 carrier (36) |
+|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0 |
+| 1 | 11 | 0.45 -> 5 cells | 1.00 -> 11 cells | 1.64-1.73 -> 18-19 cells |
+| 3 | 16 | 0.62 -> 10 cells | 1.00 -> 16 cells | 1.81 -> 29 cells |
+| 6 | 63-64 | 0.59 -> 37 cells | 1.00 -> 63-64 cells | 1.77-1.81 -> 113-114 cells |
+
+Allowance byte in parentheses. Product and measured cell count agree to one cell at every row,
+which is the round-boundary quantisation. Two shapes to keep: **kind 2 is capped at 1.00** (one
+visit per pass cannot spend a 1.2-step surplus), and the 36-allowance kind is **not** 1.8 flat —
+it reads 1.64-1.81 across speeds because the budget is a 4-byte int refilled at the wrap, so a
+step's remainder carries.
+
+Kinds 5, 7, 8 and 9 have no run: 5 is a 36 like the carrier and would be expected to read near
+1.8 if it is water-borne, 7/8/9 are 40 and predict 2.0 (1.00 if the piece is land-capped). Those
+are predictions from `DS:0x19a6`, not measurements, and are labelled UNMEASURED in the status
+table above.
+
+**`config/game.json` is not touched by this table.** The measured pace stays documentation until
+AC1 closes (PM ruling, room 3427): the runtime's 5 s round and speed ramp remain the owner's
+DELIBERATE DEVIATION, and the config only moves once the whole AC1 row set has a measured value.
+
+Kind 1's row above is harness-labelled (`KIND_OVERRIDE`, §Measured open land — kind 1) and kind 4
+is not obtainable in any era checked: `DS:0x2e22` = `1 2 7 8 9` is the kind the game writes for
+purchase slots 0-4 (`8183`), so **this era's shop sells kinds 1, 2, 7, 8 and 9** — kind 1
+(infantry) is reachable by buying slot 0, and kinds 4 and 5 are not purchasable here at all
+(kind 4 has a 0 allowance byte; kind 5 (36) has only an AI-side path, `DS:0x19a2`, `4811`).
+The same literal and the same absence hold in 1918 and 1942 (§Which kinds an era can field), so
+the buy-table-differs-per-era escape is checked and closed, not pending.
 
 `DS:0x6fe` write width is a confirmed trap: unit 37 read `2359296` (`0x240000`) after an
 earlier probe wrote 36 as a `u16` at `i*2` — the low half was zeroed and the high half kept
