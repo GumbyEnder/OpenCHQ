@@ -239,7 +239,7 @@ pass, so a land piece cannot spend a two-step surplus).
 | kind | byte[0x19a6] | steps/pass predicted | steps/pass measured |
 |---|---|---|---|
 | 1 | 12 | 0.6 | — (no kind 1 on this board) |
-| 2 | 24 | 1.2 (capped at 1/visit) | 1.00 / 0.80 / 0.90 @ speeds 1 / 3 / 6 |
+| 2 | 24 | 1.2 (capped at 1/visit) | 1.00 / 1.00 / 1.00 @ speeds 1 / 3 / 6, full rounds |
 | 3 | 0 | 0 (transport carries cargo) | 0 |
 | 4 | 0 | 0 | — (no kind 4) |
 | 5 | 36 | 1.8 | — (no run yet) |
@@ -267,33 +267,51 @@ the same length S1 measured at every speed):
 ### Measured, open land — kind 2 tank (unit 39)
 
 Every land piece in the 1986 walk sits in the base cluster with 0 clear cells of its own
-terrain class in any direction, so `notes/t008/s2_land.py` teleports one tank to the 33-cell
-class-8 corridor at `(62,36)` and orders 20 cells east. The piece, its kind, its flags and its
-points are the game's; only the start cell is a harness write.
+terrain class in any direction, so the harness teleports one tank to the 33-cell class-8
+corridor at `(62,36)`. The piece, its kind, its flags and its points are the game's; only the
+start cell is a harness write.
 
-| speed | window | cells | pass wraps | cells/pass |
+A single 20-cell order finishes inside a round at speeds 3 and 6, so a **full** land round needs
+an order-refresh loop: on arrival at the far cell the harness writes the opposite end as the new
+target (`0x96e` / `0xa3e`), moves the walker's own start pair (`0x2ee` / `0x3be`) to the current
+cell, and clears `flags & 0x40` so `4520` re-arms the order itself. `notes/t008/s2_land_round.py`
+does this and stops when the countdown reaches 0. Two runs per speed, complete rounds:
+
+| speed | cells (run 1 / run 2) | pass wraps | cells/pass | turnarounds |
 |---|---|---|---|---|
-| 1 | full round (129.2 s) | 11 | 11 | 1.00 |
-| 3 | 45 s | 4 | 5 | 0.80 |
-| 6 | 40 s | 18 | 20 | 0.90 |
+| 1 | 11 / 10 | 11 / 11 | 1.00 / 0.91 | 0 (order completes after the round) |
+| 3 | 16 / 16 | 16 / 16 | 1.00 / 1.00 | 0 |
+| 6 | 63 / 64 | 63 / 63 | 1.00 / 1.02 | 3 / 3 |
+
+**The refresh loop only holds with all three writes.** Writing the target alone leaves the piece
+stopped at the corridor end with `flags 0x40` and 100 points and no step taken; the tell is a
+piece under orders with a full budget that never moves, which is the same signature the base
+cluster produced before the terrain was understood. Without the walker-start write, the *first*
+turnaround succeeds and the second one stalls — so a loop that turns once is not a loop.
+
+A land piece is visited once per 100-piece pass, so it cannot spend a two-step surplus: kind 2's
+predicted 1.2 steps/pass is capped at 1.00 measured at every speed. That is why the tank's
+cells/round (10-11 / 16 / 63-64) is the pass count almost exactly.
 
 Cells per pass is constant across speeds for both kinds and the pass rate is not — so **cells
 per round is a function of speed, not a constant**:
 
 | kind | speed 1 | speed 3 | speed 6 |
 |---|---|---|---|
-| 2 tank | 11 (round) | ~12.8 (0.80 x 16) | ~57 (0.90 x 64) |
+| 2 tank | 10-11 (round) | 16 (round) | 63-64 (round) |
 | 6 carrier | 18 (round) | 29 (round) | 113 (round) |
 
-The tank's speed-3 and speed-6 figures are `cells/pass x passes-per-round` from the measured
-wrap counts, not full rounds: its 20-cell order finishes inside a round at those speeds and the
-33-cell class-8 corridor is the cap, so a full-round land leg needs an order-refresh loop
-rather than a longer single order. The carrier's full rounds are the reason to trust the
-method: its cells/pass at 1/3/6 (1.64 / 1.81 / 1.77) is flat while its cells/round moves 6.3x,
-which is exactly the code's 36/20 = 1.8 steps per pass against a speed-scaled pass rate.
+Both rows are now complete rounds with two runs each — no extrapolation left in the table.
 
-Kinds 1 and 5 and the submarine class are still UNMEASURED: the board carries no kind 1 or 4
-at all, so they need the purchase flow, not another teleport.
+Kinds 1, 4, 5 and the submarine class are still UNMEASURED, but for two different reasons now,
+and the second one is a finding rather than a gap. `DS:0x2e22` = `1 2 7 8 9` is the kind the game
+writes for purchase slots 0-4 (`8183`), so **this era's shop sells kinds 1, 2, 7, 8 and 9**:
+kind 1 (infantry) is reachable by buying slot 0, and kinds 4 and 5 are not purchasable here at
+all — kind 4 has a 0 allowance byte, and kind 5 (36) has only an AI-side path
+(`DS:0x19a2`, `4811`). The board carries no kind 1 because none was bought in this walk, not
+because the era cannot build one. So the remaining AC1 work is one leg per speed for kind 1,
+driven through the buy menu; kinds 4 and 5 should be reported as not obtainable in the 1986
+setup unless the buy table differs per era, which is unchecked.
 
 `DS:0x6fe` write width is a confirmed trap: unit 37 read `2359296` (`0x240000`) after an
 earlier probe wrote 36 as a `u16` at `i*2` — the low half was zeroed and the high half kept
