@@ -138,16 +138,52 @@ export function chooseTarget(piece, pieces, combat = null) {
   return best;
 }
 
+// The facing opposite a compass letter; the original flips a facing with XOR 1 (2<->3, 4<->5).
+const OPPOSITE = { n: "s", s: "n", e: "w", w: "e" };
+
+// The original's damage byte for a pairing: matrix cell attacker*9 + target (`0x18f0`). An
+// entrenched infantry DEFENDER is kind 3 - that is where the entrench discount lives, so there is
+// no separate multiplier. Returns 0 for a pairing the table zeroes (a submarine against land, a
+// transport). `baseDamage` is read only for a kind the table has no row for.
+export function baseDamageFor(attackerKind, defender, combat = null) {
+  const block = combat || combatRules();
+  const attacker = Number(block.damageKind[String(attackerKind)] ?? 0);
+  let targetKind = defender && defender.kind;
+  if (defender && defender.entrenched === true && String(defender.kind) === "infantry") targetKind = "entrenched infantry";
+  const target = Number(block.damageKind[String(targetKind)] ?? 0);
+  if (attacker > 0 && target === 9) return Number(block.kindNine[attacker] ?? 0);
+  if (attacker > 0 && target > 0 && Array.isArray(block.damageMatrix[attacker])) {
+    return Number(block.damageMatrix[attacker][target]) || 0;
+  }
+  return Number(block.baseDamage[String(attackerKind)] ?? 0);
+}
+
 // Damage one piece deals to another. The modifiers the manual names, in one place: flank/rear
-// (land only, p.22) and entrenchment (land only, p.22). Ships are never flanked (p.24).
+// (land only, p.22) and entrenchment (land only, p.22, through the defender's kind-3 column).
+// Ships are never flanked (p.24).
+//
+// Flank/rear is read exactly as `FUN_194c_000e` does it (decompiled.c 7064-7071): compare the
+// ATTACKER's facing with the defender's. Same facing = the attacker is behind the defender, x2.
+// Otherwise, if the attacker's facing is not the defender's opposite (they are not facing each
+// other), x1.5. Facing each other = x1. The bonus only applies while the defender is already
+// fighting a third piece: the original requires the defender's target link to be set and to not
+// be the attacker.
 export function damageFor(attacker, defender, combat = null) {
   const block = combat || combatRules();
-  const base = Number(block.baseDamage[String(attacker.kind)] ?? 0);
+  const base = baseDamageFor(attacker.kind, defender, block);
   let amount = base;
   let flank = false;
-  if (attacker.domain !== "sea" && defender.domain !== "sea" && defender.facing) {
-    const from = bearing(defender, attacker);
-    if (from && from !== defender.facing) {
+  let rear = false;
+  // The original compares two facing bytes. A piece the remake has not faced yet carries none, so
+  // it is read as facing the defender (the geometry the walker would have stamped).
+  const attackFacing = attacker.facing || bearing(attacker, defender);
+  const defendFacing = defender.facing || null;
+  const busy = defender.fighting !== null && defender.fighting !== undefined && defender.fighting !== attacker.id;
+  if (attacker.domain !== "sea" && defender.domain !== "sea" && attackFacing && defendFacing && busy) {
+    if (String(attackFacing) === String(defendFacing)) {
+      amount *= block.rearMultiplier;
+      rear = true;
+    } else if (OPPOSITE[String(attackFacing)] !== String(defendFacing)) {
       amount *= block.flankMultiplier;
       flank = true;
     }
@@ -157,7 +193,7 @@ export function damageFor(attacker, defender, combat = null) {
     amount *= block.entrenchDamageFactor;
     entrenched = true;
   }
-  return { base, amount, flank, entrenched };
+  return { base, amount, flank, rear, entrenched };
 }
 
 // Target selection for the whole match in one pass over numeric arrays. `chooseTarget` below is
@@ -307,8 +343,11 @@ export function resolve(match) {
       if (!target) continue;
       // A transport is cargo: it does not fire, and it does not survive the exchange.
       if (attacker.transport === true) continue;
-      if (Number(combat.baseDamage[String(attacker.kind)] ?? 0) <= 0) continue;
-      hits.push({ attacker, target, ...damageFor(attacker, target, combat) });
+      // The pairing decides whether a shot exists at all: the matrix zeroes a submarine against
+      // land and a sub's kind-7 column of 0 is not a damage number, it is "no engagement".
+      const hit = { attacker, target, ...damageFor(attacker, target, combat) };
+      if (!(Number(hit.base) > 0)) continue;
+      hits.push(hit);
     }
 
     const doomed = new Set();
@@ -327,6 +366,7 @@ export function resolve(match) {
         amount: Number(Number(amount).toFixed(2)),
         strength: result.after,
         flank: hit.flank,
+        rear: hit.rear === true,
         entrenched: hit.entrenched,
         at: { x: target.x, y: target.y },
         round,

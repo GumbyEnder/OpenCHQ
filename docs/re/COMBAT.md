@@ -89,23 +89,41 @@ Pairings the eras actually field (matrix cell → live leg):
 | sub (7) → cruiser (8) / carrier (9) | 34 | matrix |
 | cruiser (8) → sub (7) | 25 | matrix |
 
-The matrix is **per pairing**, not per attacker: a flat `baseDamage` per kind cannot represent it
-(it is why the sub one-shots a kind-5 hull and does 0 to land). The runtime keeps one number per
-kind; the pairing matrix is recorded in `config.measured.combat.damageMatrix`.
+The matrix is **per pairing**, not per attacker, and the runtime now reads it directly:
+`combatRules()` builds a 9×9 from `measured.combat.damageMatrix.rows` and `baseDamageFor()` indexes
+`attackerKind*9 + targetKind` (gate 3557 item 2). `baseDamage` survives only as the fallback for a
+kind with no row.
+
+Three things about the table's shape matter when wiring it:
+
+- **Column 0 is data, not padding.** When the TARGET is kind 9 (carrier) the original's index is
+  `a*9 + 9`, which is the *next row's* column 0. Those bytes are `kindNineColumn` in config:
+  infantry/tank/entrenched → 35, kind 5/6 → 5, sub/cruiser → 34, carrier → 25. A cruiser therefore
+  hits a carrier for 34, not the 25 of a cruiser-vs-cruiser cell.
+- **Kind 3 is a defender column.** Entrenchment is a kind change, so the discount is
+  `matrix[a][3]` (20→15, 26→20), not a multiplier. `entrenchDamageFactor` is 1 so it is not
+  counted twice.
+- **Kind 4 is unused** (all zeros except the stale column-0 byte); kinds 5/6 are AI-side hulls.
 
 ### Modifiers applied to that byte, in code order
 
 1. **Defender's terrain cover** (7043-7062, `bVar2 = byte[target + 0x836]`):
    mountain (10): defender kind 1/3 takes −25 %, kind 2 takes −1/6.
    capital/base/city (4/5/6): defender kind 1/3 takes −(dmg+1)/3, kind 2 takes −dmg/5.
+   **Not wired**: the remake has no per-cell terrain class on a piece, so this is T-009b.
 2. **Flank / rear** (7064-7071): only when attacker kind < 7, target kind < 5, and the target's own
-   link is a *third* piece. Same facing as the attacker → **×2** (rear). Facing not opposite →
-   **×1.5** (flank). Facing each other → ×1. Live: one rear hit measured 40 against a 20 baseline
-   (×2 confirmed). Ships are never flanked (attacker kind<7 requirement) and subs never flank.
+   link is a *third* piece (not `0xff`, not the attacker). Compare the **attacker's facing** with
+   the defender's: same facing → **×2** (rear); otherwise, if the attacker's facing is not the
+   defender's opposite, **×1.5** (flank); facing each other → ×1. Ships are never flanked and subs
+   never flank. Live: one rear hit measured 40 against a 20 baseline (×2 confirmed).
+   Wired in `damageFor()` with `rearMultiplier`; a piece with no facing byte is read as facing the
+   defender, and the bonus requires `defender.fighting` to name someone else.
 3. **Ship firing at land from beyond 2 cells** (7082-7093): `cap = targetStrength − 30`; halved when
    the cap is under 25. Only for attacker kind > 6 against target kind < 5 and dist² > 2.
+   **Not wired** (T-009b).
 4. **Subs cannot engage land at all**: the range matrix column for land is 0 for kind 7, so a sub
-   never acquires a land target.
+   never acquires a land target — and the damage cell 7→land is 0, so a pairing that slips through
+   deals nothing.
 
 ## 3. Ranges (Q7, Q26)
 
@@ -147,11 +165,12 @@ Ordering a move reverts it (`status -= 2` at 4523-4525). There is no round count
 it flips on the first eligible pass, and every unit placed at setup on such ground opens as kind 3
 — measured, and the reason all five AC2 live legs used kind 3 for "infantry".
 
-Effect: the entrench factor shows up as the kind-3 column of the damage matrix, so it is not one
-multiplier — 20→15 against infantry (0.75), 26→20 against tanks (0.77). `entrenchDamageFactor`
-0.75 is the shipped mapping; the second row is the honest caveat.
+Effect: the entrench factor shows up as the kind-3 column of the damage matrix — 20→15 against
+infantry, 26→20 against tanks. The runtime gives an entrenched infantry defender code 3 and reads
+that column; `entrenchDamageFactor` is 1.0 exactly so the discount is not applied twice.
 
-Terrain cover (§2.1) is a *separate* multiplier on top, applied to the defender's terrain class.
+Terrain cover (§2.1) is a *separate* multiplier on top, applied to the defender's terrain class; it
+is not wired yet (T-009b).
 
 ## 5. Attrition and repair (Q6)
 
@@ -180,10 +199,20 @@ the 100 bar, so the manual and the code agree on the floor and disagree on the t
 **Repair** — `FUN_1c0d_0656` at 9291-9297: `strength += 10` when all of: no destination, no fight
 this or the previous pass (`0xc46 & 0x58` clear both), `strength < 100`, the piece stands on its own
 site, and `0x1986[terrain] != 0` (docks 2, capital/base/city/oilfield 1, everything else 0). Clamp
-100 at 9303. Gated to every other pass by the `0xcae` bit-3 toggle.
+100 at 9303. Gated by the `0xcae` bit-3 toggle, which **flips on every call** of the routine
+(`0xcae ^= 8` at 9283) and repairs only when the bit comes up clear — so it is +10 on every *other*
+call, not once per round.
 
-Live leg (`notes/t009`, 2026-11-13, 1942 blue): strength 40 → 50 in two pass wraps, one +10 step,
-on a blue city. Rate: +10 per 2 passes ≈ +59 strength per round at speed 1 (11.75 passes/round).
+Units, stated explicitly (gate 3557 item 3):
+
+| Unit | Value | How it was measured |
+|---|---|---|
+| per eligible call | **+10** | live leg: strength 40 → 50 across two pass wraps on a blue city, one +10 step |
+| per pass, averaged | **+5** | the bit-3 skip halves the call rate; arithmetic, not a second measurement |
+| per round, speed 1 | **≈ +59** | 5 × 11.75 passes/round (T-008 pass rate). Moves with speed, so reference only |
+
+The runtime's `repairPerRound` stays the STAND-IN 5 until D-017 picks a per-round interpretation; the
+measured figures live in `measured.combat.repairPerPass` as reference rows.
 
 **Militia** (`FUN_1c0d_00b4` 9056-9077): standing on an **enemy-owned** site costs 2 strength per
 pass and zeroes the piece's move points (−10) — pinned against the town. Standing on an **unowned**
@@ -201,8 +230,8 @@ site costs 20 per pass until the capture lands. City militia damage is therefore
 | kind 8, 9 (cruiser, carrier) | 25 | 100 → 75, 50, 25, 0 (**four** strikes) |
 
 So "halves remaining strength" is confirmed to within one point, and "three strikes sink a ship" is
-true only for kinds 5-7: a cruiser or carrier needs four. Flagged as a manual contradiction, not
-ported silently.
+true only for kinds 5-7: a cruiser or carrier needs four. **MANUAL-CONTRADICTED, Manual p.25** —
+code governs the port, `FUN_1ac5_0dbe @ 1ac5:0dbe`, not ported silently.
 
 ## 7. Pinning and the exchange rate
 
@@ -218,16 +247,46 @@ ported silently.
 
 `config/game.json` `combat` block: every key carries a `source` label plus, for measured values, an
 `evidenceRef` (capture path and date). `web/test/nodes/measured_combat.mjs` pins the block: a missing
-key fails, a MEASURED row without an evidenceRef fails, and the per-exchange numbers must equal the
-matrix values above. Per-round rates (attrition, repair) ship as `reference` rows beside the runtime
-stand-in until Shane rules on D-017.
+key fails, a MEASURED row without an evidenceRef fails, the per-exchange numbers must equal the
+matrix values above, and the pairing calls (`baseDamageFor`, `damageFor`) are asserted cell by cell
+including the kind-9 alias and the ×2 rear / ×1.5 flank / ×1 front orientation. Per-round rates
+(attrition, repair) ship as `reference` rows beside the runtime stand-in until Shane rules on D-017.
 
 ## 9. Contradictions with the manual
 
-1. p.22 "every other round": the original fires every pass.
-2. p.21 attrition list: only desert/jungle (3), polar (5), lake (3) and wasteland (34) are per-terrain
-   losses; city/base/capital/docks only bite through the site branch (2 or 20). The 20 % floor holds.
-3. p.25 "three strikes sink a ship": four for cruisers and carriers (25 per strike).
-4. p.25 "halves": `(str>>1)+1`, so 100 → 49, one point under half.
-5. p.22 entrenchment: real, but implemented as kind 1 → 3 and expressed in the damage matrix, so it
+Ruling (room 3544 item 1): where the code and the manual disagree, **the code governs the port**.
+Each case is labelled MANUAL-CONTRADICTED here and in the config `source` string, with the page and
+the function.
+
+1. **MANUAL-CONTRADICTED, Manual p.25: "three strikes sink a ship".** True only for kinds 5-7
+   (34 per strike: 100 → 66 → 32 → 0). Cruisers and carriers (kinds 8/9) lose 25 per strike and
+   need **four**: 100 → 75 → 50 → 25 → 0. `FUN_1ac5_0dbe @ 1ac5:0dbe`, 8795-8814. Config:
+   `combat.airStrikeSeaAmount` and `measured.combat.airStrike.manualContradiction`.
+2. p.22 "every other round": the original fires every pass while in contact. `shotEveryRounds: 2`
+   is the remake's pacing choice (D-017), labelled DELIBERATE DEVIATION, not a measurement.
+3. p.25 "halves": `(str>>1)+1`, so 100 → 49, one point under half.
+4. p.22 entrenchment: real, but implemented as kind 1 → 3 and expressed in the damage matrix, so it
    is not a single multiplier; terrain cover is a second, separate modifier.
+5. **No p.21 contradiction.** The interim 3543 note ("only wasteland") was the destroy branch, not
+   the table. `0x1996` carries desert/jungle 3, polar 5, lake 3, city/base/capital/dock 20 and the
+   20 % floor, exactly the terrains p.21 lists; only the amounts (and wasteland's 34) are new.
+   Corrected by PM 3557, and the Original Rules entry is being fixed there.
+
+## 10. Open, and what T-009b owns
+
+**Q38 — the unexplained 2-5 point crowded-board effect.** On boards with three or more shooters a
+secondary loss of 2-5 strength sometimes appeared on a piece that no sampled exchange had fired at.
+Sampling: `watch.py` polled all 100 records' `0x89e` strength every 30 ms during the 1942 duels and
+printed every delta; the effect never appeared in the isolated duels (nearest other piece ≥ 60 cells)
+and only on crowded boards, so it is not the exchange itself. It is **not in config**; Q38 in the
+vault Open RE Questions carries the observation and the sampling method.
+
+**T-009b (follow-up, not a blocker).** The legs the harness could not reach before the 2-hour box
+ran out, all carrying DISASSEMBLY values already in `measured.combat`:
+
+1. Flank ×1.5 live leg (one run produced 25 and 20 mixed shots from two shooters; not quoted).
+2. The ordered-infantry entrench pair (kind 1 vs kind 3, driven by an order, not by setup).
+3. City cover live leg — `tmap.bin` has no terrain-6 cells; cities exist only as a site under a
+   piece, so the defender must be placed on one (`notes/t009/trio.py keep` is written, unrun).
+4. The air-strike / wasteland-attrition / sea-range ladder live legs (code-only so far).
+5. Runtime wiring still absent: terrain cover (§2.1) and the ship-vs-land cap at >2 cells (§2.3).

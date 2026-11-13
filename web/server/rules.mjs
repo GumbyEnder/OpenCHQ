@@ -279,12 +279,46 @@ export function combatRules() {
   const damage = combatValue("baseDamage", {}) || {};
   const sea = combatValue("seaRangeCells", {}) || {};
   const attrition = combatValue("attritionPerRound", {}) || {};
+  // The damage table the original actually indexes: 9x9, attacker*9 + target, read straight out of
+  // measured.combat.damageMatrix.rows so there is only ever one copy of these 81 bytes. `damageKind`
+  // maps the remake's kind names to the original kind byte; kind 3 is "entrenched infantry" and is
+  // used as the DEFENDER's column when a land piece is dug in (the entrench discount lives in that
+  // column, not in a multiplier).
+  const measured = combatValue("measured", {}) || {};
+  const matrixSpec = measured.damageMatrix || {};
+  const damageMatrix = Array.from({ length: 10 }, () => new Array(10).fill(0));
+  for (const [code, row] of Object.entries(matrixSpec.rows || {})) {
+    const attacker = Number(code);
+    if (!Number.isInteger(attacker) || attacker < 1) continue;
+    if (!Array.isArray(row)) continue;
+    for (let target = 1; target < 10 && target < row.length; target++) {
+      damageMatrix[attacker][target] = Math.max(0, finiteNumber(row[target], 0));
+    }
+  }
+  const damageKind = {};
+  for (const [code, name] of Object.entries(matrixSpec.kinds || {})) {
+    const id = Number(code);
+    if (!Number.isInteger(id) || id < 1) continue;
+    damageKind[String(name)] = id;
+  }
+  // Kind 9 (carrier) as a target has no column inside its row: the original reads a*9+9, which is
+  // the next row's column 0. The dumped bytes are recorded in kindNineColumn; nothing is computed
+  // from a row that does not contain them.
+  const kindNine = {};
+  for (const [code, value] of Object.entries(matrixSpec.kindNineColumn || {})) {
+    const id = Number(code);
+    if (Number.isInteger(id) && id > 0) kindNine[id] = Math.max(0, finiteNumber(value, 0));
+  }
   const maxStrength = Math.max(1, finiteNumber(combatValue("maxStrength"), 100));
   const built = {
     maxStrength,
     shotEveryRounds: Math.max(1, Math.floor(finiteNumber(combatValue("shotEveryRounds"), 2))),
     baseDamage: Object.fromEntries(Object.entries(damage).map(([kind, value]) => [kind, Math.max(0, finiteNumber(value, 0))])),
+    damageMatrix,
+    damageKind,
+    kindNine,
     flankMultiplier: Math.max(1, finiteNumber(combatValue("flankMultiplier"), 1)),
+    rearMultiplier: Math.max(1, finiteNumber(combatValue("rearMultiplier"), 1)),
     entrenchDamageFactor: finiteNumber(combatValue("entrenchDamageFactor"), 1),
     entrenchRounds: Math.max(0, Math.floor(finiteNumber(combatValue("entrenchRounds"), 0))),
     landEngageCells: Math.max(1, Math.floor(finiteNumber(combatValue("landEngageCells"), 1))),
