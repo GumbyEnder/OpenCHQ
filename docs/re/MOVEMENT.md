@@ -15,7 +15,7 @@ Status at this commit:
 | The speed control is the war room `+` / `-` keys, DS:0xc700 | MEASURED |
 | The per-piece pass indexes DS:0x0de2, not a 16-byte record array | DISASSEMBLY |
 | Per-kind allowance table at DS:0x19a6 | DISASSEMBLY + live dump |
-| Cells per round per kind, per speed | MEASURED for kinds 1, 2, 6 at speeds 1/3/6 (AC1, AC3); 3 is cargo; 4 not obtainable; 5/7/8/9 not run |
+| Cells per round per kind, per speed | MEASURED for kinds 1, 2, 6 at speeds 1/3/6 (AC1, AC3); kind 1 harness-labelled and accepted as measuring the rule (PM 3481); kinds 4/5 **NOT OBTAINABLE** in 1918/1942/1986 — a closed FINDING, not a gap; 5/7/8/9 predictions from `0x19a6`, no run; era 4 start board UNCHECKED (Q36) |
 | Terrain effect on speed | UNMEASURED |
 
 ## Method
@@ -219,6 +219,10 @@ unmeasured: the per-kind tables below are full rounds with two runs per speed.
 
 ## What is deliberately not done here
 
+- **No buy-menu driver.** Kind 4/5 are not obtainable in 1918/1942/1986 (the slot list is the fixed
+  literal `1 2 7 8 9` written by `8183`), and kind 1's movement rule is measured with
+  `KIND_OVERRIDE`, so a purchase-flow driver adds no AC1 row (PM 3481 items 1-2).
+
 - `roundSeconds: 5` and the seven-slot `speeds[]` ramp are untouched. They are the owner's
   playability deviation and are labelled DELIBERATE DEVIATION in `config/game.json`
   (`sources.speeds`, `notes.speeds`) with these measured numbers beside them.
@@ -342,17 +346,25 @@ Kinds 5, 7, 8 and 9 have no run: 5 is a 36 like the carrier and would be expecte
 are predictions from `DS:0x19a6`, not measurements, and are labelled UNMEASURED in the status
 table above.
 
-**`config/game.json` is not touched by this table.** The measured pace stays documentation until
-AC1 closes (PM ruling, room 3427): the runtime's 5 s round and speed ramp remain the owner's
-DELIBERATE DEVIATION, and the config only moves once the whole AC1 row set has a measured value.
+**`config/game.json` is not touched by this table yet**, and when it moves it is keyed on the
+static per-kind allowance byte `byte[0x19a6 + kind]` — **not** on a piece identity read from
+`0x906` (PM 3481 item 3, because Q35 is still open). The cross-check is measured cells/pass per
+allowance: **24 → 1.00, 12 → ~0.6, 36 → ~1.7**; a config row for a kind is accepted only if its
+allowance lands on the measured band for that allowance. The runtime's 5 s round and speed ramp
+remain the owner's DELIBERATE DEVIATION until the AC3 config step (PM 3481: AC4, AC5, AC6, then
+AC3 config).
 
-Kind 1's row above is harness-labelled (`KIND_OVERRIDE`, §Measured open land — kind 1) and kind 4
-is not obtainable in any era checked: `DS:0x2e22` = `1 2 7 8 9` is the kind the game writes for
-purchase slots 0-4 (`8183`), so **this era's shop sells kinds 1, 2, 7, 8 and 9** — kind 1
-(infantry) is reachable by buying slot 0, and kinds 4 and 5 are not purchasable here at all
-(kind 4 has a 0 allowance byte; kind 5 (36) has only an AI-side path, `DS:0x19a2`, `4811`).
-The same literal and the same absence hold in 1918 and 1942 (§Which kinds an era can field), so
-the buy-table-differs-per-era escape is checked and closed, not pending.
+Kind 1's row above is harness-labelled (`KIND_OVERRIDE`, §Measured open land — kind 1) and the PM
+has accepted it as measuring the movement rule: a purchased kind-1 run is **not required** for
+T-008 (room 3481 item 2). The provenance caveat stays as provenance, not as an open row.
+
+Kinds 4 and 5 are a closed **FINDING**, not a gap: `DS:0x2e22` = `1 2 7 8 9` is the kind the game
+writes for purchase slots 0-4 (`8183`), the same literal in 1918, 1942 and 1986, and no start
+board in those three eras fields kind 4 or 5. So **no shop sells them and no checked board starts
+with them** — they are not obtainable in the eras checked, and no buy-menu driver is being built
+(PM 3481 item 1). Kind 4 has a 0 allowance byte; kind 5 (36) has only an AI-side path
+(`DS:0x19a2`, `4811`). The remaining unchecked thing is era 4, tracked as its own open RE question
+(Q36), not as an AC1 row.
 
 `DS:0x6fe` write width is a confirmed trap: unit 37 read `2359296` (`0x240000`) after an
 earlier probe wrote 36 as a `u16` at `i*2` — the low half was zeroed and the high half kept
@@ -363,7 +375,9 @@ the old value. Points must be read and written 4 bytes wide at `i*2`.
 The 1986 board carries no kind 1, so `KIND_OVERRIDE=1` rewrites the kind nibble of one existing
 land piece (owner bits kept, `0x906+idx` high nibble untouched) and the run is labelled
 accordingly. **This is not a purchased unit**; it measures the movement rule for kind 1, not the
-engine's own creation of one. Full rounds, 150 s windows that all ended at the round boundary:
+engine's own creation of one. **PM 3481 item 2 accepts these rows on exactly that basis** — a
+purchased kind-1 run is not required for T-008. Full rounds, 150 s windows that all ended at the
+round boundary:
 
 | speed | cells | pass wraps | cells/pass | predicted (`12/20`) |
 |---|---|---|---|---|
@@ -402,14 +416,16 @@ slot table and the piece kinds before the first round:
 | 1986 | `1 2 7 8 9` | 2, 3, 6, 8, 9 |
 
 The slot table is a fixed literal written by `8183`, so **no era's shop sells kind 4 or kind 5** —
-a buy-menu driver cannot produce them. No start board checked so far places kind 1, 4 or 5 either,
-so kind 4/5 are reported as not obtainable in the eras checked rather than as unmeasured. Kind 1
-stays harness-labelled until a board that fields one is found or the buy menu is driven (slot 0
-sells kind 1, so the driver would produce it even though the start boards do not).
+a buy-menu driver cannot produce them. No start board checked so far places kind 1, 4 or 5 either.
+That is recorded as a **finding, closed for AC1** (PM 3481 item 1): kinds 4 and 5 are not
+obtainable in 1918, 1942 or 1986, and the driver is not being built. Kind 1's harness-labelled
+rows are accepted for the movement rule (PM 3481 item 2), so AC1 has no open row in the three
+checked eras.
 
 Era 4 did not reach a war room in this pass (zero piece records), so that row is UNCHECKED, not
-empty. Read against Q35: the kind field's stability is itself open, so treat the board-kinds column
-as the byte as it read at setup, not as a verified order of battle.
+empty, and it is now its own open item (Q36 in Open RE Questions) rather than an AC1 gap. Read
+against Q35: the kind field's stability is itself open, so treat the board-kinds column as the
+byte as it read at setup, not as a verified order of battle.
 
 ## Q33: does the walker let a land unit cross one water cell (disassembly, 2026-11-13)
 
