@@ -14,7 +14,7 @@ import {
   framePolygon, insetPolygon, selectedRing, showsEntrench, strengthBand,
 } from "../../public/badges.mjs";
 import {
-  BOARD_W, badgeAt, badgeFootprint, cellToPixel, makeView, paintBadge, paintPieces,
+  BOARD_W, PALETTE, badgeAt, badgeFootprint, cellToPixel, makeView, paintBadge, paintPieces,
   paintSiteTicks, renderBadgeSprite, statusLine,
 } from "../../public/render.mjs";
 
@@ -284,6 +284,25 @@ export async function run() {
   ];
   eq("a garrisoned city is re-stamped", paintSiteTicks(recorder().ctx, sites, groups, view), 1);
   eq("a badge-free map stamps nothing", paintSiteTicks(recorder().ctx, sites, [], view), 0);
+  // The tick is a corner notch, not a filled cell: a full-cell black square sat on the badge's own
+  // dark silhouette and the city read as part of the icon (measured on the live board).
+  const tick = recorder();
+  paintSiteTicks(tick.ctx, sites, groups, view);
+  // The covered site in this fixture is a capital (type 1), so the ink is the capital's.
+  const inkRect = tick.fillsRect.find((r) => r.color === PALETTE.capital || r.color === PALETTE.city);
+  const rimRect = tick.fillsRect.find((r) => r.color === BADGE_INTERIOR.land);
+  ok("the tick keeps the site ink", Boolean(inkRect));
+  ok("the tick has a light rim so it reads on any badge interior", Boolean(rimRect));
+  const box = badgeFootprint(groups[0], view);
+  const boxTopLeft = cellToPixel(box.x0, box.y0, view);
+  const boxBottomRight = cellToPixel(box.x1, box.y1, view);
+  ok("the tick is a notch, not the whole badge face",
+    inkRect.w * inkRect.h < (boxBottomRight.x - boxTopLeft.x) * (boxBottomRight.y - boxTopLeft.y) * 0.35);
+  ok("the tick sits in the badge's lower-left corner", inkRect.x < (boxTopLeft.x + boxBottomRight.x) / 2
+    && inkRect.y > (boxTopLeft.y + boxBottomRight.y) / 2);
+  ok("the tick leaves the badge centre free for the silhouette",
+    !(inkRect.x <= (boxTopLeft.x + boxBottomRight.x) / 2 && inkRect.x + inkRect.w >= (boxTopLeft.x + boxBottomRight.x) / 2
+      && inkRect.y <= (boxTopLeft.y + boxBottomRight.y) / 2 && inkRect.y + inkRect.h >= (boxTopLeft.y + boxBottomRight.y) / 2));
   eq("the footprint covers the cells the badge body reaches",
     JSON.stringify(badgeFootprint(stack[0], view)),
     JSON.stringify({ x0: stack[0].x - 1.75, x1: stack[0].x + 1.75, y0: stack[0].y - 1.75, y1: stack[0].y + 1.75 }));

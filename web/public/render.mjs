@@ -717,26 +717,40 @@ export function badgeFootprint(group, view, opts = {}) {
 
 // The site a player can still see under a badge. A badge is at least 14 px, so a garrison standing
 // on a city paints over the city's cell; the city has to stay visible on the board anyway (PB-029,
-// T-014 AC7). Only the sites a badge actually covers are re-stamped, and only with the one cell the
+// T-014 AC7). Only the sites a badge actually covers are re-stamped, and only at the one cell the
 // terrain gave them, so nothing is added to a city nobody is standing on.
+//
+// A filled cell in the city's own ink does not do that job: the ink is #000000 and the badge face is
+// a dark silhouette on a light interior, so a full-cell black square reads as part of the icon and the
+// city disappears into the badge it was supposed to stay visible under (measured: 59 black pixels in
+// a 14x14 box on a garrisoned city against 28 on open ground, centre pixel black vs the strength
+// bar's green). The site is therefore a corner notch with a light rim: the city keeps its ink at the
+// badge's lower-left, where the stack disc (lower-right) and the strength bar (below the silhouette)
+// never sit, and the silhouette keeps the centre.
 export function paintSiteTicks(ctx, sites, groups, view) {
   const list = Array.isArray(sites) ? sites : [];
   const covered = Array.isArray(groups) ? groups.map((group) => badgeFootprint(group, view)) : [];
   if (!covered.length) return 0;
-  const scale = Math.max(1, Number(view.scale) || 1);
-  const size = Math.max(1, Math.round(scale * 0.9));
   let drawn = 0;
   for (const site of list) {
     const x = Number(site && site.x);
     const y = Number(site && site.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    const under = covered.some((box) => x >= box.x0 - 0.5 && x <= box.x1 + 0.5 && y >= box.y0 - 0.5 && y <= box.y1 + 0.5);
-    if (!under) continue;
+    const box = covered.find((b) => x >= b.x0 - 0.5 && x <= b.x1 + 0.5 && y >= b.y0 - 0.5 && y <= b.y1 + 0.5);
+    if (!box) continue;
     // A capital keeps the capital ink, a city the city ink: the same two colours the terrain uses.
-    ctx.fillStyle = (Number(site.type) === 1 || Number(site.type) === 2) ? PALETTE.capital : PALETTE.city;
-    if (!ctx.fillStyle) continue;
-    const at = cellToPixel(wrapX(x, view.boardW || BOARD_W), y, view);
-    ctx.fillRect(Math.round(at.x - size / 2), Math.round(at.y - size / 2), size, size);
+    const ink = (Number(site.type) === 1 || Number(site.type) === 2) ? PALETTE.capital : PALETTE.city;
+    if (!ink) continue;
+    const topLeft = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
+    const bottomRight = cellToPixel(wrapX(box.x1, view.boardW || BOARD_W), box.y1, view);
+    const span = Math.max(3, Math.round(bottomRight.x - topLeft.x));
+    const side = Math.max(2, Math.round(span * 0.34));
+    const nx = Math.round(topLeft.x) + 1;
+    const ny = Math.round(bottomRight.y) - side - 1;
+    ctx.fillStyle = BADGE_INTERIOR.land;
+    ctx.fillRect(nx - 1, ny - 1, side + 2, side + 2);
+    ctx.fillStyle = ink;
+    ctx.fillRect(nx, ny, side, side);
     drawn++;
   }
   return drawn;
