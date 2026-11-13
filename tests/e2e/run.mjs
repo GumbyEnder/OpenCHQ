@@ -231,9 +231,19 @@ async function buyInfantry(page) {
   const near = (cell) => Math.abs(cell.x - capital.x) + Math.abs(cell.y - capital.y);
   const target = [...cells].sort((a, b) => near(a) - near(b))[0];
   await clickCell(page, target);
-  const room = await waitRoom(page, () => window.__chq.room().pieces.some((p) => p.kind === "infantry"
-    && p.side === window.__chq.room().you && !p.id.endsWith(":land")), "the bought infantry", 20000);
-  const bought = room && room.pieces.filter((p) => p.kind === "infantry" && p.side === room.you && !p.id.endsWith(":land"));
+  // T-013b: 1942 opens with the original's own infantry (`<side>:open:infantry:<n>`), so the piece
+  // this buy added is the one in the purchase namespace (`<side>:infantry:<n>`), not "anything but
+  // the old `:land` opening id" - against a 13-piece opening the old filter counted the army.
+  // The predicate runs in the page, so it cannot close over a helper: ids are compared inline.
+  const room = await waitRoom(page, () => {
+    const r = window.__chq.room();
+    return (r.pieces || []).some((piece) => piece.kind === "infantry" && piece.side === r.you &&
+      String(piece.id).startsWith(r.you + ":infantry:"));
+  }, "the bought infantry", 20000);
+  const bought = room && (room.pieces || []).filter(
+    (piece) => piece.kind === "infantry" && piece.side === room.you &&
+      String(piece.id).startsWith(room.you + ":infantry:")
+  );
   check(Boolean(bought && bought.length === 1), "buying an infantry places one infantry", JSON.stringify(bought || []));
   const said = await toast(page);
   check(/Bought an infantry/.test(said), "the purchase line reads grammatically", said);
