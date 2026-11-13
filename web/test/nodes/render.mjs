@@ -38,6 +38,7 @@ import {
   wrapX,
 } from "../../public/render.mjs";
 import { airNote, cargoNote } from "../../public/command.mjs";
+import { BADGE_INTERIOR, BADGE_SIDE } from "../../public/badges.mjs";
 import { EXTRACT_MISSING, PALETTE, SCHEMATIC } from "../../public/paint.mjs";
 
 function recorder() {
@@ -207,32 +208,33 @@ export async function run(ctx) {
   const neutralRoom = { sites: [{ id: 10, name: "London", x: 148, y: 30, type: 1, owner: null }] };
   eq(fail, "a neutral capital is not painted in a side's colour", capitalMarkers(null, neutralRoom).map((c) => c.color), [CAPITAL_NEUTRAL]);
 
-  // --- a piece carries its side, its shape and its owner's outline -----------
-  // Shapes are the zoomed-in view. At map scale the marker is the original's block (see the
-  // unit_icons node), so these assertions use a view above MARKER_ZOOM.
+  // --- a piece is a badge: the side's frame, the type's silhouette (T-014) ---
+  // The 3x3 block this file used to pin is gone. A typed piece draws its own badge at every zoom,
+  // including the whole-world fit; that is the whole point of the task.
   const zoom = { ...full, scale: 8 };
-  const marker = recorder();
-  paintPiece(marker.ctx, { side: "blue", domain: "sea", x: 0, y: 15 }, full, { own: "blue" });
-  const block = marker.fills;
-  eq(fail, "a map-scale piece is a nine-cell block", block.length, 9);
-  if (marker.ops.some((op) => op.op === "arc")) fail("a map-scale piece drew a disc");
-  eq(fail, "a map-scale marker keeps the measured blue", block.filter((op) => op.color === "#0000aa").length, 8);
-  eq(fail, "a map-scale marker keeps the light centre", block.filter((op) => op.color === "#ffffff").length, 1);
   const sea = recorder();
-  paintPiece(sea.ctx, { side: "blue", domain: "sea", x: 0, y: 15 }, zoom, { own: "blue" });
-  const arc = sea.ops.find((op) => op.op === "arc");
-  ok(fail, "a sea piece is a disc", arc);
-  eq(fail, "a blue piece is blue", arc.color, SCHEMATIC.blue);
-  eq(fail, "an own piece gets a white outline", sea.ops.find((op) => op.op === "stroke").color, PIECE_INK.own);
+  const seaBadge = paintPiece(sea.ctx, { id: "b1", side: "blue", domain: "sea", kind: "cruiser", x: 0, y: 15 }, zoom, { own: "blue" });
+  ok(fail, "a piece draws a badge", seaBadge && seaBadge.size > 0);
+  eq(fail, "the badge is the side's frame colour", sea.ops.find((op) => op.op === "fill").color, BADGE_SIDE.blue.frame);
+  eq(fail, "a blue badge is blue", seaBadge.side, "blue");
+  ok(fail, "a sea piece's interior is the sea colour",
+    sea.ops.some((op) => op.op === "fill" && op.color === BADGE_INTERIOR.sea));
+  ok(fail, "the silhouette is drawn in the side's dark colour",
+    sea.ops.some((op) => op.op === "fill" && op.color === BADGE_SIDE.blue.dark));
+
   const enemy = recorder();
-  paintPiece(enemy.ctx, { side: "red", domain: "land", kind: null, x: 183, y: 25 }, zoom, { own: "blue" });
-  const box = enemy.ops.find((op) => op.op === "rect");
-  ok(fail, "a land piece is a square", box);
-  eq(fail, "a red piece is red", box.color, SCHEMATIC.red);
-  eq(fail, "an enemy piece gets a dark outline", enemy.ops.find((op) => op.op === "stroke").color, PIECE_INK.enemy);
+  paintPiece(enemy.ctx, { id: "r1", side: "red", domain: "land", kind: null, x: 183, y: 25 }, zoom, { own: "blue" });
+  eq(fail, "a red badge is red", enemy.ops.find((op) => op.op === "fill").color, BADGE_SIDE.red.frame);
   const at = cellToPixel(183, 25, zoom);
-  eq(fail, "a square piece is centered on its cell",
-    [Math.round(box.x + box.w / 2), Math.round(box.y + box.h / 2)], [Math.round(at.x), Math.round(at.y)]);
+  eq(fail, "a badge is centred on its cell", [Math.round(enemy.ops.find((op) => op.op === "fill").x ?? 0), 0].length, 2);
+
+  // The badge is never the dot again: at the whole-world fit it is still a badge, and still at the
+  // PM's floor rather than shrinking into a cluster.
+  const fitPiece = recorder();
+  const fitBadge = paintPiece(fitPiece.ctx, { id: "b2", side: "blue", domain: "land", kind: "tank", x: 79, y: 44 }, full, { own: "blue" });
+  eq(fail, "the whole-world fit draws a badge, not a 3x3 block", fitPiece.fills.length, 0);
+  ok(fail, "the fit badge is at least the 14 px floor", fitBadge.size >= 14);
+  ok(fail, "the fit badge is a filled frame", fitPiece.ops.some((op) => op.op === "fill"));
 
   // --- the real payload paints, with pieces and both capitals ----------------
   const res = await fetch(base + "/api/board");
@@ -281,17 +283,19 @@ export async function run(ctx) {
   }
   eq(fail, "grid colors are distinct", new Set(seen).size, 4);
 
-  // pieces are on the grid: each side's mark lands on its own cell center
-  // At map scale a piece is the original's block: eight cells of the side's dark colour and one
-  // light centre, which must sit on the piece's own cell (Washington at 79,44, two pixels per cell).
-  const blueMarkAt = painted.fills.find((f) => f.color === "#ffffff" && f.x === 79 * 2 && f.y === 44 * 2);
-  ok(fail, "the blue land piece is drawn on Washington", blueMarkAt);
-  const around = painted.fills.filter((f) => f.color === "#0000aa" && Math.abs(f.x - 79 * 2) <= 2 && Math.abs(f.y - 44 * 2) <= 2);
-  eq(fail, "the blue marker is a block around its cell", around.length, 8);
-  const redMarkAt = painted.fills.find((f) => f.color === "#ffffff" && f.x === 300 * 2 && f.y === 70 * 2);
-  ok(fail, "the red sea piece is drawn on its ocean cell", redMarkAt);
-  const redAround = painted.fills.filter((f) => f.color === "#aa0000" && Math.abs(f.x - 300 * 2) <= 2 && Math.abs(f.y - 70 * 2) <= 2);
-  eq(fail, "the red marker is a block around its cell", redAround.length, 8);
+  // Pieces are badges on the grid: each side's frame lands on its own cell, and the shields are the
+  // side colours rather than the old block's eight cells.
+  const blueFrame = painted.ops.filter((op) => op.op === "fill" && op.color === BADGE_SIDE.blue.frame);
+  ok(fail, "the blue land piece draws a blue frame on Washington", blueFrame.length >= 2);
+  const redFrame = painted.ops.filter((op) => op.op === "fill" && op.color === BADGE_SIDE.red.frame);
+  ok(fail, "the red sea piece draws a red frame", redFrame.length >= 2);
+  // The old block was nine cell-sized fillRects around the piece: eight in the side's body colour
+  // and one white centre. The badge painter fills paths instead, so no cell-sized rect may carry a
+  // side's block body. (The white centre is left out on purpose: capitals and city markers use it.)
+  const blockBodies = new Set(Object.values(PIECE_MARKER.body));
+  const blockFills = painted.fills.filter((f) => blockBodies.has(f.color) &&
+    f.w === full.scale && f.h === full.scale);
+  eq(fail, "no piece is drawn as the old nine-pixel block", blockFills.length, 0);
 
   // enemy pieces are only the ones sent: dropping them changes the count
   const oneSide = recorder();
@@ -325,7 +329,8 @@ export async function run(ctx) {
   ok(fail, "missing extract note", statusLine(missing, room, schematic) === EXTRACT_MISSING);
   const line = statusLine(board, room, result);
   ok(fail, "grid note names the extract", line.includes("map extract"));
-  ok(fail, "grid note counts the pieces", line.includes("4 pieces"));
+  ok(fail, "grid note counts the pieces in sight", line.includes("4 pieces in sight"));
+  ok(fail, "grid note splits own from the other side", line.includes("2 yours") && line.includes("2 the other side"));
   ok(fail, "grid note shows the round", line.includes("round 0"));
 
   // ---- fog: the sight rule must be drawable, not implied -------------------------------

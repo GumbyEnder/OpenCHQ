@@ -31,3 +31,8 @@ tests/e2e/t004-speed-handcheck-*/
 
 # T-010 live-sweep runs: screenshots and a summary per run, evidence stays on the machine.
 tests/e2e/t010-*/
+# T-014 frame-time runs: a summary.json per run.
+tests/e2e/t014-frame-time*/
+# The e2e suite's own Playwright install (package.json is committed; the install is not).
+tests/e2e/node_modules/
+tests/e2e/package-lock.json
