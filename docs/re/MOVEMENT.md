@@ -11,11 +11,11 @@ Status at this commit:
 |---|---|
 | Round length is one countdown of 7646 units (1/64 s), i.e. 119.5 s nominal | MEASURED |
 | The countdown rate is the same at every speed 0-6 | MEASURED |
-| Speed 0 stops the per-piece pass dead, and does not stop the round clock | MEASURED |
+| Speed 0 stops the per-piece pass while the round clock and order entry keep running | MEASURED (AC2, amended room 3427 to Manual p.35) |
 | The speed control is the war room `+` / `-` keys, DS:0xc700 | MEASURED |
 | The per-piece pass indexes DS:0x0de2, not a 16-byte record array | DISASSEMBLY |
 | Per-kind allowance table at DS:0x19a6 | DISASSEMBLY + live dump |
-| Cells per round per kind | UNMEASURED — needs a unit under orders |
+| Cells per round per kind, per speed | MEASURED for kinds 1, 2, 6 at speeds 1/3/6 (AC1, AC3); 3 is cargo; 4 not obtainable; 5/7/8/9 not run |
 | Terrain effect on speed | UNMEASURED |
 
 ## Method
@@ -372,3 +372,32 @@ sells kind 1, so the driver would produce it even though the start boards do not
 Era 4 did not reach a war room in this pass (zero piece records), so that row is UNCHECKED, not
 empty. Read against Q35: the kind field's stability is itself open, so treat the board-kinds column
 as the byte as it read at setup, not as a verified order of battle.
+
+## Q33: does the walker let a land unit cross one water cell (disassembly, 2026-11-13)
+
+Read `FUN_16ee_0728` (`decompiled.c:5425-5570`), its caller `FUN_107e_543a` (`4218-4239`) and the
+nearest-cell search `FUN_16ee_15d4` (`6087-6230`). Terrain classes are indexed by
+`get_terrain_type(x,y)`; the class semantics needed here are pinned by two measurements already in
+this file: class 0 is open water (the carrier sailed at `(92,135)`, terrain 0) and class 8 is land
+(the tank corridor at `(62,36)`), so **classes 0-2 are water, 3+ land, 14 impassable** (14 is the
+one class `15d4` returns `0xfe` for outright).
+
+What 0728 does with a cell, for mode `param_5`:
+
+- `param_5 < 3`: `if (local_18 < uVar2) return 0` with `local_18 = 2 - param_5` — a **class
+  ceiling**, so this mode accepts water classes only. That is naval plotting.
+- `param_5 >= 3`: no class ceiling. It accumulates `byte[class + 0x11c]` into `0xe2ae` (capped at
+  100) and counts the cell in `0xe7fa` (class <= 2) or `0xe7fb` (class > 2). The only hard rejection
+  is class `0xe` when `param_5 < 5`.
+
+So in the mode the movement-order path uses (`FUN_107e_543a` calls it with the player's order and
+`FUN_16ee_0728(...,5)` appears in the plot path at `5775`), a water cell inside a land leg is
+**costed, not refused**. The truncation people see comes from the caller, not the walker:
+`543a` only falls back to the nearest reachable cell (`FUN_107e_2cbe(x,y,10,1)`) when the plan
+returns `0xff` *and* water cells were counted *and* the piece's kind is `< 7`.
+
+**Read as: the original permits a one-cell water crossing inside a land leg, at extra cost.** That
+agrees with the 209 one-wet-step routes the remake planned at `6c1c396`. Still labelled partly
+UNVERIFIED: the `param_5` values each call site uses are read from three callers, not exhaustively,
+and "costed not refused" is a claim about the planner, not about what a unit does when it reaches
+the water cell at step time.
