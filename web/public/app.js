@@ -30,6 +30,13 @@ import { glyphDataUrl } from "./glyphs.mjs";
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
 import { formatBillions, formatWholeBillions, purchaseText } from "./command.mjs";
 import { createOrderWatch, queuedText } from "./orderwatch.mjs";
+// How long the page waits to reconnect, and how long one attempt may hang before it is a failure.
+// Both numbers are bounded so a 10 s outage cannot cost a minute (PB-025).
+import {
+  CONNECT_TIMEOUT_MS,
+  RECONNECT_TRIES,
+  backoffMs,
+} from "./reconnect.mjs";
 
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
@@ -52,7 +59,6 @@ let wasReconnecting = false;
 // The server said it is restarting (op "bye", sent by the drain on SIGTERM). The next close is
 // expected and is retried immediately rather than treated as a dead network.
 let serverRestarting = false;
-const RECONNECT_TRIES = 8;
 // The server's "another tab took this session" close code. This page does not reconnect after
 // it: two tabs trading one socket is a toast loop, not a connection.
 const TAKEOVER_CODE = 4001;
@@ -64,8 +70,12 @@ function standDown(reason) {
   renderDebug();
   say(reason || "This session was opened in another tab. This tab is no longer connected.");
 }
-// An order sent while the socket is down is kept, with its id, and resent when the socket comes
-// back. The server applies one id at most once, so a resend is safe. Never a silent loss.
+// An order stays pending until the server answers it, and its id makes a resend safe: the server
+// applies one id at most once and answers a second copy with an ack. Before this the page removed an
+// order from the queue the moment it was written, so an order written into a socket that was already
+// dying was never resent and its confirmation was never seen (PB-025's drop leg: the piece landed and
+// the page still said nothing). Each entry remembers the room it belongs to, so a reconnect into a
+// new match cannot replay a stale purchase.
 let orderSeq = 0;
 let orderQueue = [];
 // An order that gets no ack is not "sent": after ~2 s the page says so. The order is still
@@ -73,10 +83,12 @@ let orderQueue = [];
 const orderWatch = createOrderWatch({ onLate: (order) => say(queuedText(order.kind || "order")) });
 function sendOrder(payload) {
   const message = { ...payload, id: "o" + Date.now().toString(36) + "-" + (++orderSeq) };
+  orderQueue.push({ roomId: room && room.id ? String(room.id) : "", message });
+  // Long enough for a person's clicks, short enough that a stuck order cannot grow for ever.
+  while (orderQueue.length > 40) orderQueue.shift();
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(message));
   } else {
-    orderQueue.push(message);
     say("Connection is down. Your order is queued and will be sent when it returns.");
   }
   // Watch every order, connected or not: a socket can be open and still not deliver.
@@ -86,13 +98,13 @@ function sendOrder(payload) {
 function settleOrder(id) {
   if (id === undefined || id === null) return;
   orderWatch.settle(id);
-  orderQueue = orderQueue.filter((message) => message.id !== id);
+  orderQueue = orderQueue.filter((entry) => entry.message.id !== id);
 }
 function flushOrders() {
   if (!orderQueue.length || !socket || socket.readyState !== WebSocket.OPEN) return;
-  const queued = orderQueue;
-  orderQueue = [];
-  for (const message of queued) socket.send(JSON.stringify(message));
+  const current = room && room.id ? String(room.id) : "";
+  if (current) orderQueue = orderQueue.filter((entry) => !entry.roomId || entry.roomId === current);
+  for (const entry of orderQueue) socket.send(JSON.stringify(entry.message));
 }
 let me = "";
 let users = [];
@@ -1600,6 +1612,28 @@ function buildNav() {
 document.getElementById("dialogClose")?.addEventListener("click", closeDialog);
 buildNav();
 
+// One reconnect policy for both ways a socket can fail: it closed, or it never opened. Kept in one
+// function because the second way used to be invisible — see the connect watchdog in connect().
+function scheduleReconnect() {
+  if (!me || replaced) return;
+  if (reconnectTimer) return;
+  if (reconnectTries >= RECONNECT_TRIES) {
+    say("Lobby connection closed. Reload the page to rejoin.");
+    return;
+  }
+  reconnectTries += 1;
+  wasReconnecting = true;
+  // Backoff 0.5, 1, 2, then 4 s and no higher (reconnect.mjs). It used to climb to 15 s, which is
+  // money a dropped wifi cannot spend: the player is watching a frozen board. One toast only: a
+  // cycle of toasts is noise, and the board already says the connection is down by not moving.
+  const wait = backoffMs(reconnectTries);
+  if (reconnectTries === 1) say("Connection lost. Reconnecting\u2026");
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, wait);
+}
+
 function connect() {
   // A deliberate connect (sign-in, or a reconnect this page decided on) clears the take-down
   // state: the only way back into a replaced tab is a reload or a new sign-in.
@@ -1618,6 +1652,23 @@ function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(proto + "://" + location.host + "/ws");
   const selfSocket = socket;
+  // A connect whose SYN goes into a black hole never settles. The page used to sit inside one such
+  // attempt long after the network was back (PB-025: 63 s to recover from a 10 s drop), because a
+  // socket that has not opened yet raises no event and the retry schedule never advanced. Cap the
+  // attempt: not open after CONNECT_TIMEOUT_MS is a failed try, not a pending one.
+  let connectTimer = setTimeout(() => {
+    connectTimer = null;
+    if (socket !== selfSocket) return;
+    if (selfSocket.readyState === WebSocket.OPEN) return;
+    socketState = "closed";
+    renderDebug();
+    try {
+      selfSocket.close();
+    } catch {
+      // Already closed.
+    }
+    scheduleReconnect();
+  }, CONNECT_TIMEOUT_MS);
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     noteWire(wireLabel(message));
@@ -1744,6 +1795,7 @@ function connect() {
   });
   socket.addEventListener("close", (event) => {
     if (socket !== selfSocket) return;
+    clearTimeout(connectTimer);
     socketState = "closed";
     renderDebug();
     // A takeover is not a dropped connection: the other tab has the socket on purpose. Say
@@ -1754,13 +1806,8 @@ function connect() {
       return;
     }
     // A deploy, a sleeping laptop or a dropped wifi all look the same from here. Reconnect by
-    // itself, backing off, and let the welcome message restore the room and its log.
-    if (!me) return;
-    if (reconnectTimer) return;
-    if (reconnectTries >= RECONNECT_TRIES) {
-      say("Lobby connection closed. Reload the page to rejoin.");
-      return;
-    }
+    // itself, backing off, and let the welcome message restore the room and its log. The tries
+    // cap, the in-flight guard and the "reload the page" sentence all live in scheduleReconnect.
     // A deploy told us it was leaving (op "bye"): retry at once, without the network backoff and
     // without the "Connection lost" sentence, because nothing was lost. Before this the drain's
     // own message was overwritten 400 ms later by "Connection lost. Reconnecting…" and the page
@@ -1776,18 +1823,10 @@ function connect() {
       }
       return;
     }
-    reconnectTries += 1;
-    wasReconnecting = true;
-    // Backoff 0.5, 1, 2, 4, 8, then 15 s and no higher. One toast: a cycle of toasts is noise,
-    // and the board already says the connection is down by not moving.
-    const wait = Math.min(15000, 500 * 2 ** (reconnectTries - 1));
-    if (reconnectTries === 1) say("Connection lost. Reconnecting\u2026");
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
-      connect();
-    }, wait);
+    scheduleReconnect();
   });
   socket.addEventListener("open", () => {
+    clearTimeout(connectTimer);
     reconnectTries = 0;
     socketState = "open";
     renderDebug();

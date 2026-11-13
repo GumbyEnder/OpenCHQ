@@ -23,6 +23,7 @@ const arg = (name, fallback = "") => {
 const BASE = (arg("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 if (!BASE) { console.error("usage: node drop-buy.mjs --url=<live base>"); process.exit(2); }
 const ERA = arg("era", "1942");
+const DROP_SOCKET = process.argv.includes("--drop-socket");
 const OUT = path.join(here, "t010-drop-buy-" + new Date().toISOString().replace(/[:.]/g, "-"));
 
 async function loadPlaywright() {
@@ -40,9 +41,14 @@ const mark = (ok, label, detail = "") => {
   console.log((ok ? "PASS " : "FAIL ") + label + (detail ? " — " + (typeof detail === "string" ? detail : JSON.stringify(detail)) : ""));
 };
 const sudo = (...a) => execFileSync("sudo", ["-n", ...a], { encoding: "utf8" });
+const PORT = (() => {
+  const u = new URL(BASE);
+  if (u.port) return Number(u.port);
+  return u.protocol === "https:" ? 443 : 80;
+})();
 const cut = (ips, on) => {
   for (const ip of ips) {
-    sudo("iptables", "-w", on ? "-I" : "-D", "OUTPUT", "-p", "tcp", "-d", ip, "--dport", "443", "-j", "DROP");
+    sudo("iptables", "-w", on ? "-I" : "-D", "OUTPUT", "-p", "tcp", "-d", ip, "--dport", String(PORT), "-j", "DROP");
     console.log((on ? "drop " : "restore ") + ip);
   }
 };
@@ -58,10 +64,31 @@ page.on("websocket", (ws) => {
   });
 });
 const room = () => page.evaluate(() => window.__chq.room());
+// The socket timeline, recorded in the page: Playwright's own websocket event has no open/close
+// timestamps, so a reconnect can only be measured against a toast. PB-025 is a socket claim, so the
+// page logs each socket's open and close from its first line of script.
+await page.addInitScript(() => {
+  const Native = window.WebSocket;
+  window.__wsLog = [];
+  function Tap(url, protocols) {
+    const ws = protocols === undefined ? new Native(url) : new Native(url, protocols);
+    const record = { url: String(url), createdAt: Date.now(), openedAt: null, closedAt: null, code: null };
+    window.__wsLog.push(record);
+    ws.addEventListener("open", () => { record.openedAt = Date.now(); });
+    ws.addEventListener("close", (event) => { record.closedAt = Date.now(); record.code = event && event.code; });
+    return ws;
+  }
+  Tap.prototype = Native.prototype;
+  for (const key of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) Tap[key] = Native[key];
+  window.WebSocket = Tap;
+});
+const wsLog = () => page.evaluate(() => (window.__wsLog || []).map((w) => ({ ...w })));
 const flash = () => page.evaluate(() => (document.querySelector("#flash") || {}).textContent || "");
 const shot = async (n) => { const f = path.join(OUT, n); await page.screenshot({ path: f }); console.log("shot " + f); return f; };
 
-const ips = await dns.resolve4(new URL(BASE).hostname);
+const ips = /^\d+\.\d+\.\d+\.\d+$/.test(new URL(BASE).hostname)
+  ? [new URL(BASE).hostname]
+  : await dns.resolve4(new URL(BASE).hostname);
 summary.ips = ips;
 let cutOn = false;
 try {
@@ -112,6 +139,8 @@ try {
 
   // ---- the 10 s cut ---------------------------------------------------------
   const before = frames.filter((f) => f.op === "bought").length;
+  const piecesAt = async () => ((await room()).pieces || []).filter((p) => Number(p.x) === cell.x && Number(p.y) === cell.y).length;
+  summary.buy.piecesBefore = await piecesAt();
   cut(ips, true);
   cutOn = true;
   const cutAt = Date.now();
@@ -126,18 +155,53 @@ try {
   mark(/queued/i.test(summary.buy.queuedText) || /offline|reconnect/i.test(summary.buy.flashWhenCut),
     "the page tells the player the order is queued while the network is down", { cut: summary.buy.flashWhenCut, queued: summary.buy.queuedText });
   await shot("01-queued-while-cut.png");
+  // --drop-socket: a real 10 s DROP leaves an already-open socket alive on loopback (nothing writes,
+  // so nothing fails) and the queued order flushes on that same socket. That leg proves the queue
+  // and not the reconnect. This flag kills the socket while the network is still black, so the
+  // reconnect policy is exercised for real: the page has to wait out the rest of the cut and come
+  // back by itself once the DROP is gone.
+  if (DROP_SOCKET) {
+    await page.evaluate(() => window.__chq.dropSocket());
+    summary.buy.socketDropped = true;
+    console.log("closed the page's socket mid-cut (--drop-socket)");
+  }
   while (Date.now() - cutAt < 10000) await sleep(200);
   summary.buy.cutSeconds = Math.round((Date.now() - cutAt) / 1000);
   cut(ips, false);
   cutOn = false;
   const backAt = Date.now();
+  // The socket's own open event is the witness, not a toast: wait for the first socket that opened
+  // after the restore, and report its distance from the restore (PB-025's reconnectedAfterMs).
   await page
-    .waitForFunction(() => /Bought an|reconnect|refused/i.test((document.querySelector("#flash") || {}).textContent || ""), null, { timeout: 60000 })
+    .waitForFunction((t) => (window.__wsLog || []).some((w) => w.openedAt && w.openedAt >= t), backAt, { timeout: 60000 })
     .catch(() => { summary.buy.waitTimedOut = true; });
+  const openedAt = await page.evaluate((t) => {
+    const hit = (window.__wsLog || [])
+      .filter((w) => w.openedAt && w.openedAt >= t)
+      .sort((a, b) => a.openedAt - b.openedAt)[0];
+    return hit ? hit.openedAt : null;
+  }, backAt);
+  summary.buy.reconnectedAfterMs = openedAt ? openedAt - backAt : null;
+  summary.buy.wsLog = await wsLog();
+  const reopened = !summary.buy.waitTimedOut && summary.buy.reconnectedAfterMs !== null;
+  // Without --drop-socket the socket usually survives a 10 s DROP of its own path: nothing was being
+  // written, so nothing failed, and the queued order goes out on the same connection. That is a pass
+  // for the queue, and no reconnect is owed. With --drop-socket a reconnect is the whole point.
+  mark(reopened || !DROP_SOCKET,
+    DROP_SOCKET ? "the socket reopened after the restore" : "the socket survived the cut on its own",
+    { reconnectedAfterMs: summary.buy.reconnectedAfterMs, dropped: DROP_SOCKET, closes: summary.buy.wsLog.filter((w) => w.closedAt).length });
+  if (reopened) {
+    mark(Number(summary.buy.reconnectedAfterMs) <= 15000,
+      "the socket was back within 15 s of the network returning", summary.buy.reconnectedAfterMs);
+  }
+  // "Bought a cruiser", "Bought an infantry": the old pattern only matched the second, so a cruiser
+  // leg waited out the full 60 s timeout and reported 63 s as a reconnect (PB-025).
+  await page
+    .waitForFunction(() => /Bought |reconnect|refused/i.test((document.querySelector("#flash") || {}).textContent || ""), null, { timeout: 20000 })
+    .catch(() => { summary.buy.noToast = true; });
   await sleep(3000);
   const bought = frames.filter((f) => f.op === "bought");
   const errs = frames.filter((f) => f.op === "error");
-  summary.buy.reconnectedAfterMs = Date.now() - backAt;
   summary.buy.newBoughtFrames = bought.length - before;
   summary.buy.errorTexts = errs.map((e) => e.error);
   summary.buy.flashAfter = await flash();
@@ -145,6 +209,9 @@ try {
   summary.buy.serverCell = got;
   summary.buy.cellMatch = got[0] === cell.x && got[1] === cell.y;
   mark(summary.buy.newBoughtFrames === 1, "exactly one purchase landed after the restore", summary.buy.newBoughtFrames);
+  summary.buy.piecesAfter = await piecesAt();
+  mark(summary.buy.piecesAfter === summary.buy.piecesBefore + 1,
+    "the server holds exactly one new piece on that cell", { before: summary.buy.piecesBefore, after: summary.buy.piecesAfter });
   mark(summary.buy.errorTexts.length === 0, "no refusal came back", summary.buy.errorTexts);
   mark(summary.buy.cellMatch, "the unit landed on the cell the mask named", { wanted: cell, server: got, flash: summary.buy.flashAfter });
   await shot("02-after-restore.png");

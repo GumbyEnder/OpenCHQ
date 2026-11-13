@@ -70,9 +70,12 @@ export async function run(ctx) {
     (m.op === "bought" && m.id === "test-buy-1") ||
     (m.op === "error" && m.id === "test-buy-1"), "resend answer");
 
-  // Exactly one purchase and one ack, or one visible reject. Never zero and silent.
-  const boughtTwice = ack.op === "bought";
-  if (boughtTwice) fail("a resent buy executed twice instead of being recognised: " + JSON.stringify(ack));
+  // Exactly one purchase, and an answer the page can act on: never zero and silent. A resent buy is
+  // answered from the server's memory of the first reply, flagged duplicate, so a page that lost the
+  // original answer still learns the piece landed (PB-025) — and the piece count below is what
+  // proves it was not applied twice.
+  if (ack.op === "bought" && !ack.duplicate) fail("a resent buy executed twice instead of being recognised: " + JSON.stringify(ack));
+  if (ack.op !== "ack" && ack.op !== "bought" && ack.op !== "error") fail("a resent buy was answered with an unknown op: " + JSON.stringify(ack));
 
   // Ask for the whole room and count the unit. It must be exactly one.
   second.send({ op: "sync" });
@@ -110,8 +113,8 @@ export async function run(ctx) {
   const ordered = await second.wait((m) => m.op === "ordered" && m.id === "test-order-1", "first order");
   if (!ordered) fail("the order was not acknowledged");
   second.send(order);
-  const replay = await second.wait((m) => m.op === "ack" && m.id === "test-order-1", "duplicate ack");
-  if (!replay.duplicate) fail("a duplicate order was not answered as a duplicate: " + JSON.stringify(replay));
+  const replay = await second.wait((m) => (m.op === "ordered" || m.op === "ack") && m.id === "test-order-1" && m.duplicate === true, "duplicate ack");
+  if (!replay) fail("a duplicate order was not answered as a duplicate");
 
   second.close();
   console.log("ws_order_queue: one purchase across a drop, duplicate order acknowledged, no silent loss");

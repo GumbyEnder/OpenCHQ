@@ -87,3 +87,48 @@ In-place tests still pin the existing rule: `capital.mjs`, `capital_open.mjs`, `
 - `tests/e2e/t012-full-match-1942-s6-*`, `...-s1-*`, `...-s6-*` (no-orders) - the T-012 re-runs on
   the deployed build, with `00-capitals-round0.png`, `04-end-screen.png`, `05-end-capitals.png` and
   `summary.json` (result, chosen capital, end note).
+
+## PB-025: the 63 s reconnect (AC2 of the re-scoped task)
+
+Measured by `tests/e2e/drop-buy.mjs` against live `5a602f9`: `reconnectedAfterMs: 63004` after a 10 s
+`iptables` DROP. Two independent faults stacked, and either one alone costs more than the 15 s budget:
+
+1. **The wait climbed to 15 s.** `Math.min(15000, 500 * 2 ** (tries - 1))` — 0.5, 1, 2, 4, 8, 15, 15…
+   so a drop landing just after a retry could wait 8 s before even trying, then another 15 s.
+2. **A hung attempt had no deadline.** A `WebSocket` whose SYN is inside the DROP raises no `error`
+   and no `close`; the page sat inside that one attempt while the network was already back, and the
+   retry counter never advanced. This is the part that produced a minute, not seconds: the page was
+   not backing off, it was blocked.
+
+The harness compounded it: the wait was on the flash text `/Bought an|reconnect|refused/`, and the
+cruiser leg says "Bought a cruiser", so the wait always burned its full 60 s timeout and the number
+recorded was the timeout, not the reconnect. `reconnectedAfterMs` is now read from the page's own
+socket timeline (`__wsLog`, installed by `addInitScript`) — the first socket that `open`s after the
+DROP is lifted.
+
+**After** (`web/public/reconnect.mjs`, one policy for both a close and a never-opened socket):
+
+| | before | after |
+|---|---|---|
+| wait schedule | 0.5, 1, 2, 4, 8, then 15 s capped | 0.5, 1, 2, then 4 s capped |
+| attempt deadline | none (a hung connect blocks for ever) | `CONNECT_TIMEOUT_MS` = 6 s |
+| worst case after the network returns | unbounded (observed 63 s) | 6 + 4 = **10 s** |
+| tries before "reload the page" | 8 | 30 (≈2.9 min of dead wifi) |
+| accepts a reply for a resent order | `ack` only, no payload | the first reply, flagged `duplicate` |
+
+**The queued order.** Two losses were possible and both are closed:
+
+- The page used to drop an order from `orderQueue` the moment it was written, so an order written
+  into a socket that was already dying was never resent. An order now stays in the queue until a
+  reply for its id arrives (`settleOrder`), and the queue is scoped to the room it belongs to so a
+  reconnect into a new match cannot replay a stale purchase.
+- The server answered a resent id with a bare `{op:"ack",duplicate:true}`, so a page that lost the
+  original `bought` frame learned only "duplicate" and showed no confirmation. `lobby.mjs` now
+  remembers the first reply per `(username, id)` (1000-entry bound) and replays it with
+  `duplicate: true`. The purchase is still applied exactly once — `web/test/nodes/ws_order_queue.mjs`
+  asserts one piece on the board after a resend.
+
+Tests: `web/test/nodes/reconnect.mjs` pins the schedule, both bounds, a simulated 10 s drop, and
+checks that `app.js` actually drives `backoffMs`/`CONNECT_TIMEOUT_MS` (a comment cannot regress).
+`tests/e2e/drop-buy.mjs --drop-socket` kills the page's socket mid-cut so the reconnect path — not
+the surviving socket — is what gets exercised.

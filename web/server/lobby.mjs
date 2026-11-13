@@ -781,7 +781,11 @@ export function createLobby() {
     // The seat hears its own order back: the page acknowledges in place instead of guessing
     // that a silent socket meant success.
     const peer = sockets.get(username);
-    if (peer) peer.send({ op: "ordered", id: message.id ?? null, piece: pieceId, to, rounds: result.rounds ?? 0 });
+    if (peer) {
+      const reply = { op: "ordered", id: message.id ?? null, piece: pieceId, to, rounds: result.rounds ?? 0 };
+      peer.send(reply);
+      rememberReply(username, message.id, reply);
+    }
     return { ok: true };
   }
 
@@ -1016,28 +1020,42 @@ export function createLobby() {
     tellRoom(room);
     const peer = sockets.get(username);
     if (peer) {
-      peer.send({
+      const reply = {
         op: "bought",
         id: message.id ?? null,
         kind: result.piece.kind,
         piece: result.piece.id,
         at: { x: result.piece.x, y: result.piece.y },
         cash: room.match.sides && room.match.sides[mine] ? room.match.sides[mine].cash : null,
-      });
+      };
+      peer.send(reply);
+      rememberReply(username, message.id, reply);
     }
     return { ok: true };
   }
 
   // An order carries an id so a resend after a reconnect cannot apply twice. The first copy
-  // runs; a later copy of the same id is answered with an ack, not applied again.
+  // runs; a later copy of the same id is answered with the reply the first copy got, not applied
+  // again. That reply matters: a page that lost the socket after writing an order used to learn
+  // only "duplicate", so the purchase landed with no confirmation on screen (PB-025).
   const seenOrderIds = new Map();
+  const orderReplies = new Map();
+  function rememberReply(username, id, reply) {
+    if (id === undefined || id === null) return;
+    const key = username + "|" + String(id);
+    orderReplies.set(key, reply);
+    if (orderReplies.size > 1000) orderReplies.delete(orderReplies.keys().next().value);
+  }
   function handle(username, message) {
     const op = String(message.op ?? "");
     const dedupe = (op === "buy" || op === "order") && message.id !== undefined && message.id !== null;
     const key = dedupe ? username + "|" + String(message.id) : "";
     if (dedupe && seenOrderIds.has(key)) {
       const peer = sockets.get(username);
-      if (peer) peer.send({ op: "ack", id: message.id, duplicate: true });
+      if (peer) {
+        const reply = orderReplies.get(key);
+        peer.send(reply ? { ...reply, duplicate: true } : { op: "ack", id: message.id, duplicate: true });
+      }
       return { ok: true };
     }
     const result = dispatch(username, message);
