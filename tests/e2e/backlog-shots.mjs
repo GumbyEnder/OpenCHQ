@@ -46,7 +46,7 @@ const mark = (ok, label, detail = "") => {
 const { chromium } = await loadPlaywright();
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
-const page = await context.newPage();
+let page = await context.newPage();
 const room = () => page.evaluate(() => window.__chq.room());
 async function shot(name, clip) {
   const file = path.join(OUT, name);
@@ -160,14 +160,21 @@ try {
     // Steel is gated to 1942 and 1986: the 1918 seat has a fuel meter only, so the readout has to be
     // read in an era that carries it rather than reported missing.
     console.log("no steel meter in " + ERA + " (stocks: " + JSON.stringify(stocks) + "); opening 1942 for it");
-    await page.keyboard.press("Escape").catch(() => {});
-    await sleep(200);
-    await page.click("#quitBtn");
-    await page.waitForFunction(() => !window.__chq.room(), null, { timeout: 15000 }).catch(() => {});
-    // Quitting leaves the lobby behind the table, so the launch form has to be reached the way a
-    // player reaches it: reload, then pick the era.
+    // A second match in another era is a second session: a fresh page and a throwaway account. The
+    // page reloaded in place leaves the lobby in a state where the launch form is not reachable, and
+    // the point here is the readout, not fighting the shell.
+    await page.close();
+    // A fresh context, not just a fresh page: the session cookie would otherwise sign the second
+    // page in and the register form would be hidden.
+    const steelContext = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+    page = await steelContext.newPage();
     await page.goto(BASE, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector('#launch select[name="era"]', { state: "visible", timeout: 30000 });
+    await page.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 30000 });
+    const steelUser = "pb" + Date.now().toString(36).slice(-8);
+    await page.fill("#register input[name=username]", steelUser);
+    await page.fill("#register input[name=password]", "pw-" + Math.random().toString(36).slice(2, 12));
+    await page.click("#register button[type=submit]");
+    await page.waitForSelector("#play:not(.hidden)", { timeout: 30000 });
     await page.selectOption('#launch select[name="era"]', "1942");
     await page.selectOption('#launch select[name="side"]', "blue");
     await page.click('#launch button[type=submit]');
