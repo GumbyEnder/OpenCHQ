@@ -244,6 +244,16 @@ try {
     piece: opening && opening.id, at: opening && { x: opening.x, y: opening.y }, ordered: parked,
     why: "behind the capital and off the bot's line of march, so only the tank is in range when it arrives",
   });
+
+  // --advance=1 sends the tank AT the enemy capital instead of standing on our own: the bot's
+  // column meets it in the open, so the contact is an order rather than a wait (gate 3557 item 2).
+  // The enemy capital is the one enemy-held point the room names without a sighting, so it is the
+  // target a player would use at round 0.
+  const advance = /^(1|yes|true)$/i.test(argOf("advance", ""));
+  if (advance) {
+    const ordered = await orderTo(tankId, foeCap);
+    mark("tank ordered at the enemy capital", Boolean(ordered), { piece: tankId, to: foeCap, from: { x: tank.x, y: tank.y } });
+  }
   await shot("01-match-open.png");
   await clockIs("running");
 
@@ -277,6 +287,14 @@ try {
     strength: sighted.strength, entrenched: sighted.entrenched === true, round: sighted.round,
   });
   enemy = sighted;
+
+  // A sighting at 6 cells is out of land range (2). Close the last few cells with an order rather
+  // than waiting for the bot to choose us: walk onto its cell and the walker stops one short.
+  if (advance) {
+    const closed = await orderTo(tankId, { x: enemy.x, y: enemy.y });
+    mark("tank ordered onto the sighted piece", Boolean(closed), { piece: tankId, to: { x: enemy.x, y: enemy.y }, target: enemy.id });
+    await sleep(250);
+  }
 
   // Sample every round until the enemy's bar moves. Before/after screenshots at the fight.
   let beforeShot = null;
