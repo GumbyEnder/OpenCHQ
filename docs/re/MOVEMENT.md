@@ -351,3 +351,24 @@ per-kind label in this document reads its kind from that byte. What is not in do
 behaviour: each run's cells/pass matched the allowance byte of the kind it read at the time
 (1.00 for a 24, 1.64-1.81 for a 36, 0.59-0.62 for a 12), so the table is labelled by measured
 behaviour and by the byte observed during the run, not by identity.
+
+## Which kinds an era can field (start boards, 2026-11-13)
+
+Booted the 1918, 1942 and 1986 start boards with the `tools/t6` harness and read the purchase
+slot table and the piece kinds before the first round:
+
+| era | `DS:0x2e22` (kinds for slots 0-4) | kinds on the board |
+|---|---|---|
+| 1918 | `1 2 7 8 9` | 3 (28), 7 (3), 8 (13) |
+| 1942 | `1 2 7 8 9` | 2 (11), 3 (25), 7 (9), 8 (11), 9 (4) |
+| 1986 | `1 2 7 8 9` | 2, 3, 6, 8, 9 |
+
+The slot table is a fixed literal written by `8183`, so **no era's shop sells kind 4 or kind 5** —
+a buy-menu driver cannot produce them. No start board checked so far places kind 1, 4 or 5 either,
+so kind 4/5 are reported as not obtainable in the eras checked rather than as unmeasured. Kind 1
+stays harness-labelled until a board that fields one is found or the buy menu is driven (slot 0
+sells kind 1, so the driver would produce it even though the start boards do not).
+
+Era 4 did not reach a war room in this pass (zero piece records), so that row is UNCHECKED, not
+empty. Read against Q35: the kind field's stability is itself open, so treat the board-kinds column
+as the byte as it read at setup, not as a verified order of battle.
