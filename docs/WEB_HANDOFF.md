@@ -54,8 +54,9 @@ Working today:
 - **The economy pays.** A city pays 50 million per round (integer millions internally), wells pay
   oil and never cash, bases pay nothing. Prices, rosters and income come from `config/game.json`
   with a `sources` entry each.
-- Buying places a unit on the server's mask: land and air inside your own zone, ships in coastal
-  water. A refused cell answers in the server's words, including
+- Buying places a unit on the server's mask: land and air on a friendly city or base cell, hulls on
+  a friendly dock (D-019). A cell whose city is still unready is refused with the round it comes
+  back. A refused cell answers in the server's words, including
   "not a valid place for <unit>". A nuke is refused.
 - Reconnect is a return, not a new game: a dropped client pauses the match, the seat and its
   standing orders are kept, and a returning socket resumes the same room held.

@@ -220,6 +220,25 @@ export async function run(ctx) {
     if (!later.ok) fail("the neighbour was still refused at its ready round: " + JSON.stringify(later));
   }
 
+  // --- the bot obeys the same rule (AC6): its purchase lands on a bot city -------------------
+  {
+    const { ordersFor } = await import("../../server/bot.mjs");
+    const match = openMatch("1986", []);
+    match.sites = [{ id: 1, name: "Red Home", x: 80, y: 50, kind: "city", owner: "red" }];
+    match.seats = {
+      blue: { username: "Ada", kind: "human" },
+      red: { username: "Bot", kind: "bot" },
+    };
+    match.sides.red.cash = 100000;
+    const events = ordersFor(match, "red");
+    const bought = events.find((event) => event.type === "bot_buy");
+    if (!bought) fail("the bot never bought: " + JSON.stringify(events.slice(0, 3)));
+    eq("the bot purchase lands on the bot's own city cell", bought.at, { x: 80, y: 50 });
+    const piece = (match.pieces || []).find((unit) => unit.id === bought.pieceId);
+    if (!piece) fail("the bot_buy event names no piece");
+    eq("the piece is the bot's and stands on the city", [piece.side, piece.x, piece.y], ["red", 80, 50]);
+  }
+
   // --- the page asks the server, and paints what it is given -----------------
   const app = await (await fetch(ctx.base + "/app.js")).text();
   if (!app.includes('op: "placement"')) fail("the page never asks the server where a unit may stand");
