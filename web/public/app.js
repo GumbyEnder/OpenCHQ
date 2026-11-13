@@ -27,8 +27,8 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
 import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
-// Per-type silhouettes: one shape for the map at zoom, the same shape beside the name in Buy.
-import { glyphDataUrl } from "./glyphs.mjs";
+// The buy table's icon is the board's own badge, drawn by the same badgeSvg as the legend, so a
+// player picks a unit by the shape they will see on the map. (T-014 gate, room 4035.)
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
 import { formatBillions, formatWholeBillions, purchaseText } from "./command.mjs";
 import { createOrderWatch, queuedText } from "./orderwatch.mjs";
@@ -1413,11 +1413,14 @@ const DIALOG_PAINTERS = {
       line.type = "button";
       line.className = "buyrow" + (buying === row.kind ? " armed" : "");
       const name = cell("");
-      const icon = document.createElement("img");
-      icon.className = "uniticon";
-      icon.alt = "";
-      icon.src = glyphDataUrl(row.kind, "#bfe3ff");
-      // The row names the unit the way the sentence that follows a purchase names it (T-007 AC7).
+      // The board's own badge, in this player's colours: the Buy row and the piece you get on the
+      // map are one drawing (T-014, DESIGN.md "the Buy table and the Kit legend use the same badge").
+      const icon = document.createElement("span");
+      icon.className = "buybadge";
+      icon.innerHTML = badgeSvg({
+        kind: row.kind, side: room.you === "red" ? "red" : "blue", px: 16,
+        title: unitLabel(row.kind),
+      });
       name.append(icon, document.createTextNode(unitLabel(row.kind)));
       line.dataset.kind = row.kind;
       line.append(name, cell(String(row.own)), cell(String(row.known)),

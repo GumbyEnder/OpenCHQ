@@ -611,8 +611,10 @@ body.in-match .nav {
 .navbtn:disabled { opacity: 0.4; cursor: default; }
 .gamebtns { display: none; gap: 4px; align-items: center; }
 body.in-match .gamebtns { display: flex; }
-.uniticon { width: 15px; height: 15px; image-rendering: pixelated; margin-right: 6px;
-  vertical-align: -2px; }
+/* The Buy row's icon: the board's own badge, at a size the silhouette still reads (T-014). */
+.buybadge { display: inline-block; width: 16px; line-height: 0; margin-right: 6px;
+  vertical-align: -4px; }
+.buybadge svg { display: block; }
 .navbtn.armed { border-color: var(--accent); color: #d9fbf7; background: #14343a; }
 /* Game speed 0-6 (T-004). The control lives in the strip with the clock, because the two numbers
    are the same fact: how fast the war is going. Hidden outside a match, like every command. */

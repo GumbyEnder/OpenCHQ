@@ -1,8 +1,9 @@
 // Node unitglyphs: a bought unit looks like itself, and the strip can end a game.
 //
 // The original drew one block for every unit on the map and told them apart in the unit monitor. This
-// page has no monitor, so each kind gets a five-cell silhouette at zoom, and the buy table shows the
-// same silhouette beside the name. These assertions pin the shapes, the seam wrap and the wire form.
+// page has no monitor, so each kind gets a silhouette on the board, and the Buy table draws that same
+// badge beside the name (T-014). These assertions pin the retired five-cell glyph module, the seam
+// wrap, the wire form, and that Buy reaches for the badge and not the glyph.
 import { GLYPH_KINDS, GLYPH_MIN_ZOOM, GLYPH_SIZE, GLYPHS, glyphCells, glyphDataUrl, glyphFor } from "../../public/glyphs.mjs";
 
 function fail(message) {
@@ -66,5 +67,6 @@ export async function run(ctx) {
   if (!app.includes('op: "resign"')) fail("the page never sends a resign");
   if (!app.includes('op: "newgame"')) fail("the page never sends a new game");
   if (!app.includes('op: "quit"')) fail("the page never sends a quit");
-  if (!app.includes("glyphDataUrl")) fail("the buy table does not draw the unit icon");
+  if (!app.includes("badgeSvg")) fail("the buy table does not draw the unit badge");
+  if (app.includes("glyphDataUrl")) fail("the buy table still falls back to the five-cell glyph");
 }

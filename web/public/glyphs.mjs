@@ -8,6 +8,10 @@
 //
 // These shapes are ours, not the archive's art: the shipped sheet (UNITS.PIC) is a 320x200 picture
 // sheet and no part of it may reach a browser. What is borrowed is the idea — one glance, one shape.
+//
+// RETIRED AS AN ICON (T-014): the Buy table now draws the board's badge from badges.mjs, so nothing
+// the page paints comes from here. The module stays because glyphFor()/glyphDataUrl() are still the
+// pinned wire form this file's node test reads; do not reintroduce it beside a unit name.
 
 export const GLYPH_SIZE = 5;
 // Below this many pixels per cell a five-cell silhouette is mush, so the block takes over. Above it a
