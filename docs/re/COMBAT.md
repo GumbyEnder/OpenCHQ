@@ -120,10 +120,13 @@ Three things about the table's shape matter when wiring it:
    link is a *third* piece (not `0xff`, not the attacker). Compare the **attacker's facing** with
    the defender's: same facing → **×2** (rear); otherwise, if the attacker's facing is not the
    defender's opposite, **×1.5** (flank); facing each other → ×1. Ships are never flanked and subs
-   never flank. Live, and the condition is what the live legs test: a 3-piece setup (blue defender
-   already fighting a third piece, red attacker with the defender's facing) measured **40** against a
-   20 baseline (×2 confirmed, gate 3543); the same rear geometry as a clean 1v1 measured **20**, i.e.
-   no bonus, which is the third-piece condition holding rather than contradicting the ×2 leg.
+   never flank. Live, and the condition is what the two legs separate: a **three-piece layout**
+   (the defender's link already names an anchor, the striker carries the defender's facing) measured
+   **40** against a 20 baseline (`t009-rear-thirdpiece-2026-11-13.txt`); the **same matched facings as
+   an isolated 1v1** measured **20** — no bonus (`t009-rear-1v1-2026-11-13.txt`). The 3543 sentence
+   that called the ×2 "one clean exchange" is **withdrawn**: it does not record the defender's target
+   link, and a 1v1 cannot produce the bonus, so it is not evidence for ×2 without a third piece.
+   Live ×2 stands on the three-piece leg only.
    Wired in `damageFor()` with `rearMultiplier`; a piece with no facing byte is read as facing the
    defender, and the bonus requires `defender.fighting` to name someone else.
 3. **Ship firing at land from beyond 2 cells** (7082-7093): `cap = targetStrength − 30`; halved when
