@@ -10,7 +10,7 @@ import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
 import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
-import { maskBase64, placementMask } from "./placement.mjs";
+import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
 import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
 import { shopFor } from "./shop.mjs";
@@ -200,8 +200,14 @@ export function createLobby() {
       // capitals anyway, and the War panel must be able to show the list before a match ends.
       capitalList: seen ? (seen.capitalList || null) : null,
       // The shop: what this era sells and at what price. Prices come from config, never from
-      // the page, so the panel cannot disagree with what economy.buy charges.
-      shop: shopFor(room.era),
+      // the page, so the panel cannot disagree with what economy.buy charges. A side that holds no
+      // dock gets its hull rows refused here, with the manual's reason, instead of arming a unit
+      // that can never be placed (placement.mjs is the same rule, so the two cannot drift).
+      shop: shopFor(room.era, {
+        seaRefusal: room.match && friendlySites(room.match, you, "sea") === 0
+          ? "You hold no dock, so a hull cannot be bought."
+          : "",
+      }),
       // The late kit this era offers, and whether a nuke is even possible. A tool a player
       // cannot see is a rule they cannot use, which is why this rides with the room.
       tools: toolsForEra(room.era).map((tool) => ({

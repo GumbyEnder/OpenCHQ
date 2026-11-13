@@ -24,7 +24,7 @@ const TOOL_OF = Object.freeze({
   intelScan: "intel",
 });
 
-export function shopFor(era) {
+export function shopFor(era, options = {}) {
   const key = String(era ?? "1986");
   const shop = [];
   for (const kind of rosterFor(key)) {
@@ -43,6 +43,15 @@ export function shopFor(era) {
       row.refused = "A satellite killer has no effect recovered: UNVERIFIED.";
     }
     shop.push(row);
+  }
+  // A hull row is off before the click when the side holds no port: the manual says a side whose
+  // ports are all conquered cannot build ships (p.27), so the row states that rather than letting
+  // the player arm a unit that can never be placed. A row that already carries a refusal keeps it.
+  if (options.seaRefusal) {
+    for (const row of shop) {
+      if (row.domain !== "sea" || row.refused) continue;
+      row.refused = options.seaRefusal;
+    }
   }
   return shop;
 }

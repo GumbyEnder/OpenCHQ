@@ -60,6 +60,20 @@ export function placementSite(match, side, kind, x, y) {
   return null;
 }
 
+// How many friendly sites of a domain a side holds. The buy menu turns a hull row off with the
+// manual's own reason when this is zero (p.27: "if all your ports are conquered you can't build
+// ships"), so the rule is visible before the player clicks a cell and gets refused.
+export function friendlySites(match, side, domain) {
+  const kinds = siteKindsFor(domain);
+  let count = 0;
+  for (const site of Array.isArray(match && match.sites) ? match.sites : []) {
+    if (!site || site.owner !== side) continue;
+    if (!kinds.has(String(site.kind))) continue;
+    count++;
+  }
+  return count;
+}
+
 // The legal placement cells for one purchase, as a bit mask over the board: 0 illegal,
 // 1 legal and ready, 2 legal but its city is unready.
 export function placementMask(match, side, kind, board) {

@@ -3,7 +3,8 @@
 // Manual p.27 "General Placement Rules": land units and aircraft go on any friendly city or
 // base; ships only on a friendly dock. There is no reach: this pins the mask to the site kinds,
 // the readiness byte, the refusal sentences, and the wire form the page paints.
-import { canPlace, domainOf, maskBase64, placementMask, placementRefusal, placementSite } from "../../server/placement.mjs";
+import { canPlace, domainOf, friendlySites, maskBase64, placementMask, placementRefusal, placementSite } from "../../server/placement.mjs";
+import { shopFor } from "../../server/shop.mjs";
 import { readinessRules } from "../../server/rules.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { buy } from "../../server/economy.mjs";
@@ -145,6 +146,23 @@ export async function run(ctx) {
     const mask = placementMask(match, "blue", "cruiser", grid);
     if (!mask.error) fail("a hull was offered with no dock");
     if (!/no dock/.test(mask.error)) fail("the no-dock sentence is wrong: " + mask.error);
+    // AC2: the buy menu says it before the click, not after. The row carries the same sentence the
+    // mask gives, and the land rows are untouched.
+    eq("the side holds no dock", friendlySites(match, "blue", "sea"), 0);
+    const shop = shopFor("1942", { seaRefusal: mask.error });
+    const sea = shop.filter((row) => row.domain === "sea");
+    if (!sea.length) fail("the 1942 shop sells no hulls at all");
+    for (const row of sea) eq("the hull row is refused with the mask's sentence: " + row.kind, row.refused, mask.error);
+    for (const row of shop.filter((r) => r.domain !== "sea")) {
+      if (row.refused) fail("a land/tool row was refused by the no-dock rule: " + row.kind);
+    }
+    const withDock = matchWith([
+      { id: 1, name: "Home", x: 80, y: 50, kind: "city", owner: "blue" },
+      { id: 2, name: "Port", x: 70, y: 45, kind: "dock", owner: "blue" },
+    ]);
+    eq("a dock is held", friendlySites(withDock, "blue", "sea"), 1);
+    eq("the same shop with a dock refuses no hull",
+      shopFor("1942", { seaRefusal: "" }).filter((row) => row.domain === "sea" && row.refused).length, 0);
   }
 
   // --- the refusal names the unit, then the rule ----------------------------
