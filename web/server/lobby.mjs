@@ -679,9 +679,10 @@ export function createLobby() {
         width: mask.width,
         height: mask.height,
         count: mask.count,
+        ready: mask.ready,
+        unready: mask.unready,
         domain: mask.domain,
-        zone: mask.zone,
-        coast: mask.coast,
+        rule: mask.rule,
         mask: maskBase64(mask.mask),
       });
     }

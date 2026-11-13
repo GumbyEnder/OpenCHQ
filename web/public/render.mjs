@@ -386,7 +386,7 @@ export function legendEntries() {
 
 // The cells a purchase may stand on, painted over the board. `placement` is exactly what the server
 // sent: {width, height, mask} with the mask a byte per cell. The page never re-derives the rule.
-export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255, 0.62)") {
+export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255, 0.62)", unreadyColor = "rgba(255, 186, 92, 0.62)") {
   if (!placement || !placement.mask || !view) return 0;
   const bw = Number(placement.width) || 0;
   const bh = Number(placement.height) || 0;
@@ -397,13 +397,16 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
     cols.first = 0;
     cols.last = view.boardW - 1;
   }
-  ctx.fillStyle = color;
   let painted = 0;
   for (let y = rows.first; y <= rows.last; y++) {
     if (y < 0 || y >= bh) continue;
     for (let sx = cols.first; sx <= cols.last; sx++) {
       const x = wrapX(sx, view.boardW);
-      if (!placement.mask[y * bw + x]) continue;
+      const value = placement.mask[y * bw + x];
+      if (!value) continue;
+      // 1 is a ready city or base; 2 is the same site while it is unready. Two colours, because
+      // "where may I place" and "where may I place right now" are different questions (T-011 AC3).
+      ctx.fillStyle = value === 2 ? unreadyColor : color;
       // At the whole-world fit a cell is one pixel. Draw it at least one full pixel and at a
       // strength a player can see; a 30%-alpha single pixel read as "no highlights at all".
       const size = Math.max(1, Math.round(view.scale));

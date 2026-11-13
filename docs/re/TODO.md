@@ -71,3 +71,20 @@ in the browser game under D-017 (the runtime keeps its own 5 s round and speed r
 speed 0? The remake currently does not model the original's two-clock split. Do not "fix"
 `rules.mjs` toward either behaviour until that is decided; the only thing already pinned is
 that pieces stop at speed 0 while the round clock does not.
+
+## 3. Where is the purchase-placement validator that prints the 3f2b strings? — OPEN (Q39)
+
+T-011 AC5 corrected `FUN_107e_4140`: it is the arrival/berth search (five rings, terrain class,
+`DS:0x1996` low five bits, no site row), not a placement validator, and the old ECONOMY.md
+summary's signature and branch list were a paraphrase (see `docs/re/PLACEMENT.md`).
+
+The five restriction strings (\"Must be placed in city\", \"Must be placed on dock\", \"Must be on
+mainland\", \"Friendly waters only\", \"Ships must stay at sea\") are real and live at `3f2b:411b`,
+`3f2b:4132`, `3f2b:4b6d`, `3f2b:4bab` in the extract's string dump, but the Ghidra export carries
+**no cross-references into segment 3f2b** — they are reached through a message table, so the
+routine that prints them is not identified. Next probe: walk references *into* 3f2b (message-table
+entries) or find the readiness write site, then read the branch order off the decompile.
+
+Does not gate T-011: the shipped rule cites Manual p.27, the dock definition is DERIVED from
+`world.json` (150/150), and the readiness constants are UNMEASURED stand-ins. Vault row: Q39 in
+`Open RE Questions.md`.

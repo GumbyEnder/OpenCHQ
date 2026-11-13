@@ -76,8 +76,8 @@ export async function run(ctx) {
       !match.pieces.some((piece) => Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y))
   );
   must(blueDock, "no friendly dock to buy a cruiser at");
-  // A hull goes into coastal water now, not onto the dock itself: ask the placement module for the
-  // cells it accepts and put the cruiser on the first one.
+  // A hull goes onto a friendly dock cell now, not into nearby coastal water: ask the placement
+  // module for the cells it accepts and put the cruiser on the first one.
   const { placementMask } = await import("../../server/placement.mjs");
   const mask = placementMask(match, "blue", "cruiser", board);
   must(mask && !mask.error, "no placement mask for a cruiser: " + JSON.stringify(mask));

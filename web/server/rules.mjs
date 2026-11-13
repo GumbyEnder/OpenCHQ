@@ -215,16 +215,22 @@ export function sourceOf(path) {
   return path.split(".").reduce((node, key) => (node && Object.hasOwn(node, key) ? node[key] : undefined), sources);
 }
 
-// Where a bought unit may be placed. Both reaches are stand-ins (see the note in the tunables
-// file); this accessor is the only place that reads them, so an edit cannot reach one caller and
-// miss another.
-export function placementRules() {
-  const block = rules().placement || {};
-  const zone = Number(block.homeZoneCells);
-  const coast = Number(block.coastCells);
+// The readiness constants. Every one is an UNMEASURED stand-in (see the note in the tunables
+// file): the archive's radius and duration were never recovered, so this accessor keeps them in
+// one place and defaults them only when the block is missing. There is no placement reach any
+// more - D-019 puts land on a friendly city/base cell and ships on a friendly dock, both exact.
+export function readinessRules() {
+  const block = rules().readiness || {};
+  const number = (value, fallback, min) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= min ? n : fallback;
+  };
   return {
-    zone: Number.isFinite(zone) && zone > 0 ? Math.floor(zone) : 8,
-    coast: Number.isFinite(coast) && coast > 0 ? Math.floor(coast) : 4,
+    radius: Math.floor(number(block.radiusCells, 5, 0)),
+    roundsPerBillion: number(block.roundsPerBillion, 1, 0),
+    cityWeight: number(block.cityWeight, 0.25, 0),
+    capitalWeight: number(block.capitalWeight, 0.5, 0),
+    minRounds: Math.max(1, Math.floor(number(block.minRounds, 1, 1))),
   };
 }
 

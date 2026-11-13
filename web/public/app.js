@@ -1752,7 +1752,7 @@ function connect() {
       const binary = atob(message.mask);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      placement = { width: message.width, height: message.height, mask: bytes, count: message.count, domain: message.domain };
+      placement = { width: message.width, height: message.height, mask: bytes, count: message.count, ready: message.ready, unready: message.unready, domain: message.domain };
       drawMatch();
     } else if (message.op === "route") {
       // Late replies for another piece are not this selection's route.
@@ -2011,7 +2011,8 @@ window.__chq = {
     return pixelToCell((Number(x) - rect.left) * ratio, (Number(y) - rect.top) * ratio, view);
   },
   // The cells the server's own placement mask allows, as a list. `placement.mask` is already a
-  // Uint8Array here (the socket's base64 is decoded on arrival), so index it directly.
+  // Uint8Array here (the socket's base64 is decoded on arrival), so index it directly. `ready` is
+  // the mask byte: 1 a ready city or base, 2 a friendly site that is still unready.
   legalCells(limit = 200) {
     if (!placement || !placement.mask) return [];
     const mask = placement.mask;
@@ -2019,7 +2020,7 @@ window.__chq = {
     const out = [];
     for (let i = 0; i < mask.length && out.length < limit; i++) {
       if (!mask[i]) continue;
-      out.push({ x: i % width, y: Math.floor(i / width) });
+      out.push({ x: i % width, y: Math.floor(i / width), ready: mask[i] === 1, unready: mask[i] === 2 });
     }
     return out;
   },

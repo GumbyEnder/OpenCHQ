@@ -13,6 +13,7 @@ import { payEvery, priceOf, cityIncome, capitalPays, combatRules } from "./rules
 import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace } from "./placement.mjs";
+import { markUnready } from "./readiness.mjs";
 import { CELL_W } from "./board.mjs";
 import { siteAtCell, siteCells, cellKeyOf } from "./siteindex.mjs";
 // The opening owner bits, for the years the original wrote them from a file.
@@ -201,9 +202,8 @@ export function buy(match, side, kind, x, y, board = null) {
     return { error: "Two pieces cannot share a cell." };
   }
 
-  // Where it may stand is the placement module's rule, and the page highlights the cells that same
-  // module returns. A purchase no longer needs a city or a dock: land and air go anywhere on land in
-  // the seat's own zone, and a hull goes into coastal water.
+  // Where it may stand is the placement module's rule (D-019): land and air on a friendly city or
+  // base cell, a hull on a friendly dock. The page paints the cells that same module returns.
   const placement = canPlace(match, side, unitKind, cx, cy, board);
   if (placement.error) return { error: placement.error };
 
@@ -212,10 +212,11 @@ export function buy(match, side, kind, x, y, board = null) {
   }
   seat.cash -= price;
 
-  // The build still costs the nearest held city its readiness: production happens somewhere, even
-  // when the owner widened where the unit may stand.
-  const home = nearestOwned(match, side, cx, cy);
-  if (home) home.unready = true;
+  // Production tires the city it happened in and the friendly cities around it (Manual p.27
+  // "Readiness"). readiness.mjs owns the radius and duration; every constant it reads is a
+  // labelled UNMEASURED stand-in in config/game.json.
+  const home = placement.site || null;
+  const readiness = home ? markUnready(match, side, home, unitKind) : null;
 
   seat.bought = Number(seat.bought || 0) + 1;
   let serial = seat.bought;
@@ -244,26 +245,7 @@ export function buy(match, side, kind, x, y, board = null) {
     pinned: false,
   };
   match.pieces.push(piece);
-  return { ok: true, piece };
-}
-
-// The site a purchase is charged to: the nearest one this side holds, measured with the board's own
-// X wrap. Nothing is invented when the seat holds nothing; the purchase simply marks no site.
-function nearestOwned(match, side, x, y) {
-  let best = null;
-  let bestDistance = Infinity;
-  for (const site of match.sites) {
-    if (!site || site.owner !== side) continue;
-    const dx = Math.abs(Number(site.x) - x);
-    const wrapped = Math.min(dx, 320 - dx);
-    const dy = Math.abs(Number(site.y) - y);
-    const distance = Math.max(wrapped, dy);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = site;
-    }
-  }
-  return best;
+  return { ok: true, piece, readiness };
 }
 
 // --- oil capture -------------------------------------------------------------------------

@@ -215,8 +215,8 @@
         "pieces"
       ],
       "title": "Buying",
-      "work": "Land and aircraft buy on a friendly city. Ships buy on a friendly dock. Before the clock has ever run, the purchase does not spend the pool. After the match is running, it spends the stand-in price and marks that city unready with no duration. Infantry is 1 billion. A tank is 2. Ships, submarines, and aircraft are 2. A nuke is refused. Two pieces cannot share a cell.",
-      "prove": "The harness buys a tank after the clock has run and sees the pool fall by 2, then sees a nuke refused. WEB_OK."
+      "work": "Land and aircraft buy on a friendly city or base cell; ships buy on a friendly dock (D-019, Manual p.27). Before the clock has ever run, the purchase does not spend the pool. After the match is running, it spends the configured price and production makes the city and the friendly cities within the readiness radius unready until a round the refusal names (\"ready at round N\"). Infantry is 1 billion. A tank is 2. Ships, submarines, and aircraft are 2. A nuke is refused. Two pieces cannot share a cell.",
+      "prove": "The harness buys a tank after the clock has run and sees the pool fall by 2, sees the buying city and its neighbours carry a readyRound, sees a purchase in that city refused with \"ready at round N\", and sees a nuke refused. WEB_OK."
     },
     {
       "id": "oil",
