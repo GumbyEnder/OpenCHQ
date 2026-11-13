@@ -1,0 +1,24 @@
+FLANK  D=0 blue k3 at (117,88)  T=30 red k3 at (117,87)  A=29 red k2 at (115,88)  attacker faces E, defender faces N => 20 x 1.5 = 30 expected
+
+-- repeat 1
+    4.54 * piece   0 blue k3 100-> 85 dmg  15  tb=8 plain (117,88)  hit-by: 30(k3,f3,d2=1)  tgt=30
+    9.93 * piece   0 blue k3  85-> 65 dmg  20  tb=8 plain (117,88)  hit-by: 29(k2,f4,d2=4) 30(k3,f3,d2=1)  tgt=30
+   state: D   0 blue k3 inf(dug)  str= 65 (117, 88) plain    face=5 tgt= 30 fl=0x32 cd= 0 pts=0 
+         A  29 red  k2 tank      str=100 (115, 88) plain    face=4 tgt=  0 fl=0x0a cd= 0 pts=0 
+         T  30 red  k3 inf(dug)  str=100 (117, 87) plain    face=3 tgt=  0 fl=0x0a cd= 0 pts=0
+
+-- repeat 2
+    0.97 * piece  30 red  k3 100-> 85 dmg  15  tb=8 desert (117,87)  hit-by: 0(k3,f2,d2=1)  tgt=255
+    8.18 * piece   0 blue k3 100-> 85 dmg  15  tb=8 plain (117,88)  hit-by: 30(k3,f3,d2=1)  tgt=30
+   13.56 * piece   0 blue k3  85-> 55 dmg  30  tb=8 plain (117,88)  hit-by: 29(k2,f4,d2=4) 30(k3,f3,d2=1)  tgt=30
+   state: D   0 blue k3 inf(dug)  str= 55 (117, 88) plain    face=2 tgt= 30 fl=0x32 cd= 0 pts=0 
+         A  29 red  k2 tank      str=100 (115, 88) plain    face=4 tgt=  0 fl=0x22 cd= 0 pts=0 
+         T  30 red  k3 inf(dug)  str= 85 (117, 87) plain    face=3 tgt=  0 fl=0x22 cd= 0 pts=0
+
+-- repeat 3
+    4.60 * piece  30 red  k3 100-> 85 dmg  15  tb=8 desert (117,87)  hit-by: 0(k3,f2,d2=1)  tgt=255
+   11.75 * piece   0 blue k3 100-> 85 dmg  15  tb=8 plain (117,88)  hit-by: 30(k3,f3,d2=1)  tgt=30
+   17.19 * piece   0 blue k3  85-> 55 dmg  30  tb=8 plain (117,88)  hit-by: 29(k2,f4,d2=4) 30(k3,f3,d2=1)  tgt=30
+   state: D   0 blue k3 inf(dug)  str= 55 (117, 88) plain    face=2 tgt= 30 fl=0x19 cd= 0 pts=0 
+         A  29 red  k2 tank      str=100 (115, 88) plain    face=4 tgt=  0 fl=0x09 cd= 0 pts=0 
+         T  30 red  k3 inf(dug)  str= 85 (117, 87) plain    face=3 tgt=  0 fl=0x19 cd= 0 pts=0

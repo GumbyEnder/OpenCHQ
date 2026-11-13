@@ -1,0 +1,10 @@
+OPEN CONTROL D=6 blue k3 at (191,101) tb=8  A=29 red k2 at (192,101) tb=8  isolation 72
+-- repeat 1 (expect 20)
+    1.45   piece   4 blue k2  83-> 66 dmg  17  tb=8 plain (84,125)  hit-by: 30(k3,f5,d2=1)  tgt=30
+    6.90 * piece   6 blue k3 100-> 80 dmg  20  tb=8 plain (191,101)  hit-by: 29(k2,f5,d2=1)  tgt=29
+   12.70 * piece  29 red  k2 100-> 83 dmg  17  tb=8 plain (192,101)  hit-by: 6(k3,f4,d2=1)  tgt=6
+-- repeat 2 (expect 20)
+    7.44 * piece   6 blue k3 100-> 80 dmg  20  tb=8 plain (191,101)  hit-by: 29(k2,f5,d2=1)  tgt=29
+   13.26 * piece  29 red  k2 100-> 83 dmg  17  tb=8 plain (192,101)  hit-by: 6(k3,f4,d2=1)  tgt=6
+  6 blue k3 inf(dug)  str= 80 (191,101) plain    face=4 tgt= 29 fl=0x21 cd= 0 pts=0
+ 29 red  k2 tank      str= 83 (192,101) plain    face=5 tgt=  6 fl=0x31 cd= 0 pts=0

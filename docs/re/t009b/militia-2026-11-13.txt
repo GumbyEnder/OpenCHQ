@@ -1,0 +1,14 @@
+==== enemy ====
+MILITIA enemy: P=0 blue k3 on site 3 (175,20) type 0x9c owner 0x80 tmap=plain  start strength 100
+    4.54 * piece   0 blue k3 100-> 98 dmg   2  tb=3 plain (175,20)  hit-by: -  tgt=255
+    4.54   piece  36 red  k3 100-> 90 dmg  10  tb=6 plain (175,20)  hit-by: -  tgt=255
+   16.50 * piece   0 blue k3  98-> 83 dmg  15  tb=3 plain (175,20)  hit-by: 36(k3,f0,d2=0)  tgt=255
+  move points read: 67 c46=0x31 pts16=0
+==== unowned ====
+MILITIA unowned: P=0 blue k3 on site 29 (145,42) type 0x1c owner 0x00 tmap=forest  start strength 100
+    9.91 * piece   0 blue k3 100-> 80 dmg  20  tb=3 forest (145,42)  hit-by: 36(k3,f0,d2=1384)  tgt=255
+  move points read: 67 c46=0x35 pts16=0
+==== own ====
+MILITIA own: P=0 blue k3 on site 0 (182,13) type 0x5b owner 0x40 tmap=forest  start strength 100
+   12.51   piece  36 red  k3  90->100 dmg -10  tb=6 plain (175,20)  hit-by: -  tgt=255
+  move points read: 67 c46=0x26 pts16=0

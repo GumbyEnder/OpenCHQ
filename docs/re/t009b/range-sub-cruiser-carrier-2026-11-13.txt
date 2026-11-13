@@ -1,0 +1,26 @@
+T-009b AC6: sea range ladder, live DOSBox 0.74-3, CHQ.EXE, 1942 board.
+Shooter pinned at an open-water lane, target pinned at dx cells east; every strength delta logged with the pieces linking to the victim.
+
+=== sub (blue k7) vs red k7 sub, dx=2 (d2=4) then dx=3 (d2=9) ===
+A=7 blue k7 B=43 red k7 lane (15,129) isolation 72
+-- dx=2 d2=4
+  * piece 7 k7 100->75 dmg 25 hit-by 43(k7,d2=4)
+-- dx=3 d2=9
+A=7 blue k7 B=43 red k7 lane (15,129) isolation 72
+-- dx=2 d2=4
+  * piece 7 k7 100->75 dmg 25 hit-by 43(k7,d2=4)
+  * piece 43 k7 100->75 dmg 25 hit-by 7(k7,d2=4)
+-- dx=3 d2=9
+
+=== cruiser (blue k8) vs red k7 sub, dx=3 (d2=9) then dx=4 (d2=16) ===
+A=9 blue k8 B=43 red k7 lane (238,129) isolation 74
+-- dx=3 d2=9
+  * piece 43 k7 100->66 dmg 34 hit-by 9(k8,d2=9)
+-- dx=4 d2=16
+
+=== carrier (blue k9) vs red k7 sub, dx=4 (d2=16) then dx=5 (d2=25) ===
+A=3 blue k9 B=43 red k7 lane (150,129) isolation 70
+-- dx=4 d2=16
+  * piece 43 k7 100->75 dmg 25 hit-by 3(k9,d2=16)
+  * piece 43 k7 75->50 dmg 25 hit-by 3(k9,d2=16)
+-- dx=5 d2=25

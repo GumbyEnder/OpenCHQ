@@ -1,0 +1,12 @@
+ENTRENCH  I=30 red infantry  T=4 blue k2 tank  cell (84,125)
+  phase 1: kind 1, I.str=100, front (T faces E, I faces W). expect 26
+    1.45 * piece   4 blue k2 100-> 83 dmg  17  tb=8 plain (84,125)  hit-by: 30(k1,f5,d2=1)  tgt=255
+    9.07 * piece  30 red  k1 100-> 74 dmg  26  tb=8 plain (85,125)  hit-by: 0(k3,f2,d2=2393) 4(k2,f4,d2=1)  tgt=4
+   17.90   piece  29 red  k2 100-> 83 dmg  17  tb=8 desert (115,88)  hit-by: 0(k3,f5,d2=4)  tgt=0
+  state:  30 red  k1 infantry  str= 74 ( 85,125) plain    face=5 tgt=  4 fl=0x31 cd= 0 pts=0
+  phase 2: tank withdrawn, I target cleared -> wait for kind 1->3
+    entrenched at t+20.6s: status 0x83
+  phase 3: same tank, same cell, defender now kind 3. expect 20
+    4.23 * piece  30 red  k3 100-> 80 dmg  20  tb=8 plain (85,125)  hit-by: 4(k2,f4,d2=1)  tgt=4
+   13.06   piece  29 red  k2  83-> 66 dmg  17  tb=8 desert (115,88)  hit-by: 0(k3,f5,d2=4)  tgt=0
+  state:  30 red  k3 inf(dug)  str= 80 ( 85,125) plain    face=5 tgt=  4 fl=0x31 cd= 0 pts=0

@@ -290,14 +290,58 @@ secondary loss of 2-5 strength sometimes appeared on a piece that no sampled exc
 Sampling: `watch.py` polled all 100 records' `0x89e` strength every 30 ms during the 1942 duels and
 printed every delta; the effect never appeared in the isolated duels (nearest other piece ≥ 60 cells)
 and only on crowded boards, so it is not the exchange itself. It is **not in config**; Q38 in the
-vault Open RE Questions carries the observation and the sampling method.
+vault Open RE Questions carries the observation and the sampling method. T-009b ran the scan for
+60 s on the crowded 1942 board (§11) and saw **0 deltas, 0 unattributed**: the board was idle, so the
+loss did not reproduce. Q38 stays open with the experiment it names: the crowded trio plus the pass
+counter and per-pass deltas, sampled at a turn resolution rather than after it.
 
-**T-009b (follow-up, not a blocker).** The legs the harness could not reach before the 2-hour box
-ran out, all carrying DISASSEMBLY values already in `measured.combat`:
+**T-009b (follow-up, not a blocker).** The legs the T-009 harness could not reach are closed in §11
+except the air strike. Items 1-4 below are historical; the outcome is §11.
 
-1. Flank ×1.5 live leg (one run produced 25 and 20 mixed shots from two shooters; not quoted).
-2. The ordered-infantry entrench pair (kind 1 vs kind 3, driven by an order, not by setup).
-3. City cover live leg — `tmap.bin` has no terrain-6 cells; cities exist only as a site under a
-   piece, so the defender must be placed on one (`notes/t009/trio.py keep` is written, unrun).
-4. The air-strike / wasteland-attrition / sea-range ladder live legs (code-only so far).
+1. Flank ×1.5 live leg — closed: 30 on two clean repeats (§11 table).
+2. The ordered-infantry entrench pair (kind 1 vs kind 3) — closed: 26 then 20 (§11 table).
+3. City cover live leg — closed by placing the defender on a city terrain byte it already carried:
+   13 vs 20 on plain (§11 table).
+4. The air-strike / wasteland-attrition / sea-range ladder live legs — sea ladder closed (§11 table);
+   attrition part-closed, desert **did not fire** (§11 table); air strike still UNMEASURED, event path
+   exercised (§11 table).
 5. Runtime wiring still absent: terrain cover (§2.1) and the ship-vs-land cap at >2 cells (§2.3).
+
+## 11. T-009b live legs (2026-11-13)
+
+DOSBox 0.74-3, `CHQ.EXE`, 1942 board. Evidence: `docs/re/t009b/` (README indexes every file, the
+harness is self-contained in `docs/re/t009b/harness/`). No runtime value changed: only the `source`,
+`status` and `evidenceRef` strings moved, so there is no redeploy and no user-visible delta.
+
+| value | live reading | runs | evidence |
+| --- | --- | --- | --- |
+| flank ×1.5 | 30 against the 20 cell (2→3) with a third piece present and the attacker perpendicular; repeat 1 read 20 with the facing byte re-pinned, logged | 3 | `flank-2026-11-13.txt` |
+| entrench pair | 26 as kind 1 (cell 2→1), then 20 as kind 3 (cell 2→3), same tank, same cell | 1+1 | `entrench-2026-11-13.txt` |
+| city cover | 13 on a city terrain byte vs 20 on plain; cover is a separate modifier, `20 - (20+1)/3 = 13` | 2+2 | `cover-2026-11-13.txt`, `cover-open-2026-11-13.txt` |
+| attrition lake / polar | 3 and 5 per pass, no shooter | 1 each | `attrition-lake-polar-2026-11-13.txt` |
+| attrition floor | lake 22 → 20, then flat for 30 s | 1 | `attr-lake-floor-2026-11-13.txt` |
+| attrition desert | **did not fire**: 100 flat, 22 flat, and move points held at 16 — all on isolated desert cells | 3 | `attrition-desert-2026-11-13.txt` |
+| wasteland 34 | **UNMEASURED**: the 1942 board has 0 wasteland cells; a forced `0x836`=14 lost nothing in 25 s, plain control also nothing | 2 | `terrain-scan-1942-2026-11-13.txt`, `wasteland-2026-11-13.txt`, `wasteland-control-2026-11-13.txt` |
+| militia | enemy site 2, unowned site 20, own site 0 | 1 each | `militia-2026-11-13.txt` |
+| sea range ladder | sub fires at d2=4 not d2=9; cruiser at d2=9 (34) not d2=16; carrier at d2=16 (25 twice) not d2=25 | 2/2/2 | `range-sub-cruiser-carrier-2026-11-13.txt` |
+| air strike (land and ship) | **UNMEASURED**: code-7 events consumed (wp/rp advanced), target unchanged at 100; 200-event burst landed nothing | 2+2 and 200 | `air-2026-11-13.txt`, `air-ship-2026-11-13.txt`, `air-burst-2026-11-13.txt` |
+| Q38 | 60 s full-board scan: 0 deltas, 0 unattributed | 1 | `q38-2026-11-13.txt` |
+
+**Desert is a live contradiction, reported not changed.** The `0x1996` byte for desert is 35 = 0x23
+(amount 3, dig-in bit 0x20). Its neighbours without the 0x20 bit (lake 3, polar 5) fire per pass;
+desert did not damage a stationary piece at 100 or at 22, nor a piece carrying move points. The
+pattern: the two entries that fired carry no flag bits, both that did not (desert `0x23`, wasteland
+`0x1F`) carry `0x20`/`0x10`. Config labels desert `DISASSEMBLY` (and names all three runs) with jungle beside it on the same
+`0x23` byte; the table value is untouched.
+
+**Wasteland 34 is UNMEASURED.** The 1942 board has no wasteland cell at all (0 of 43,520 terrain
+nibbles), so there is nothing to stand on. Forcing `0x836`=14 on an isolated cell lost nothing in
+25 s, and the plain control lost nothing either. Next step: a 1986 board, a nuke to paint the cell,
+then the same leg on the painted cell.
+
+**Air strike.** The dispatch is real: `FUN_1ac5_0dbe`, 5-byte records in the ring at `DS:0xEFBC`,
+pointers `0xE940`/`0xE42A`. Injected events drain and the target never loses strength, so an injected
+event cannot reach the damage call; the gate is upstream (`FUN_1ac5_1206`, enemy aircraft within 3
+cells, then the random at `0x148a`). Next step: drive the real UI command (`FUN_1ac5_0390`) or stage
+an enemy aircraft record that survives the pass loop.
+
