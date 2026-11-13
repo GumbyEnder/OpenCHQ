@@ -24,6 +24,26 @@
       "sideAllowanceBase": "0x1976",
       "sideAllowance": [20, 20, 20, 20]
     },
+    "passRatePerRound": {
+      "_comment": "AC3 (T-008): piece-pass wraps counted over a FULL round, not the 8 s sampler (11 wraps per 129.2 s round at speed 1, 16 at speed 3, 63-64 at speed 6; no pass at speed 0). Source: docs/re/MOVEMENT.md, AC3.",
+      "0": 0,
+      "1": 11,
+      "3": 16,
+      "6": 63.5
+    },
+    "cellsPerRoundByKind": {
+      "_comment": "AC3 table (PM 3495 item 1). Every row is keyed on the STATIC per-kind allowance byte[0x19a6 + kind] (measured.pieceTable.kindAllowance above), never on a kind identity read from 0x906 - Q35 is open. status: MEASURED = a full-round run exists and evidenceRef names it; MEASURED-HARNESS = the run exists but the harness wrote the kind nibble (PM 3481 item 2 accepts it as measuring the rule); PREDICTED = the static byte only, NO RUN: the row is (byte/20) steps per pass x the measured passes per round, a prediction and not evidence. cellsPerRound values are [low, high] cells in one 129.2 s round at that speed. Kinds 0, 3 and 4 carry a zero byte and cannot move in a pass at all; the server does not run on these numbers - move.cellsPerRound above is still the runtime table.",
+      "0": { "allowance": 0, "status": "PREDICTED", "cellsPerPass": [0, 0], "cellsPerRound": { "1": [0, 0], "3": [0, 0], "6": [0, 0] }, "note": "unused slot, zero byte; nothing moves without a budget" },
+      "1": { "allowance": 12, "status": "MEASURED-HARNESS", "cellsPerPass": { "1": 0.45, "3": 0.62, "6": 0.59 }, "cellsPerRound": { "1": [5, 5], "3": [10, 10], "6": [37, 37] }, "evidenceRef": "docs/re/MOVEMENT.md 'Measured, open land - kind 1 (infantry), harness-labelled'" },
+      "2": { "allowance": 24, "status": "MEASURED", "cellsPerPass": { "1": 1.0, "3": 1.0, "6": 1.0 }, "cellsPerRound": { "1": [10, 11], "3": [16, 16], "6": [63, 64] }, "evidenceRef": "docs/re/MOVEMENT.md 'Measured, open land - kind 2 tank (unit 39)'" },
+      "3": { "allowance": 0, "status": "PREDICTED", "cellsPerPass": [0, 0], "cellsPerRound": { "1": [0, 0], "3": [0, 0], "6": [0, 0] }, "note": "transport; zero byte, it moves as cargo" },
+      "4": { "allowance": 0, "status": "PREDICTED", "cellsPerPass": [0, 0], "cellsPerRound": { "1": [0, 0], "3": [0, 0], "6": [0, 0] }, "note": "zero byte, no kind 4 on any checked start board" },
+      "5": { "allowance": 36, "status": "PREDICTED", "cellsPerPass": [1.0, 1.8], "cellsPerRound": { "1": [11, 20], "3": [16, 29], "6": [64, 114] }, "note": "no run: predicted from byte 36; the 36-allowance band measured on kind 6 is 1.64-1.81 cells/pass, and 1.00 if the piece is land-capped at one visit per pass" },
+      "6": { "allowance": 36, "status": "MEASURED", "cellsPerPass": { "1": [1.64, 1.73], "3": [1.81, 1.81], "6": [1.77, 1.81] }, "cellsPerRound": { "1": [18, 19], "3": [29, 29], "6": [113, 114] }, "evidenceRef": "docs/re/MOVEMENT.md 'Measured, open water - kind 6 carrier (unit 35)'" },
+      "7": { "allowance": 40, "status": "PREDICTED", "cellsPerPass": [1.0, 2.0], "cellsPerRound": { "1": [11, 22], "3": [16, 32], "6": [64, 127] }, "note": "no run: predicted from byte 40 (2.0 steps/pass), 1.00 if the piece is land-capped" },
+      "8": { "allowance": 40, "status": "PREDICTED", "cellsPerPass": [1.0, 2.0], "cellsPerRound": { "1": [11, 22], "3": [16, 32], "6": [64, 127] }, "note": "no run: predicted from byte 40 (2.0 steps/pass), 1.00 if the piece is land-capped" },
+      "9": { "allowance": 40, "status": "PREDICTED", "cellsPerPass": [1.0, 2.0], "cellsPerRound": { "1": [11, 22], "3": [16, 32], "6": [64, 127] }, "note": "no run: predicted from byte 40 (2.0 steps/pass), 1.00 if the piece is land-capped" }
+    },
     "dosbox": "DOSBox 0.74-3, cycles=auto settling at 3000 cycles",
     "captured": "2026-11-12"
   },

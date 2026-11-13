@@ -82,12 +82,54 @@ export async function run(ctx) {
     fail("measured.pieceTable.sideAllowance is not the live 0x1976 row 20,20,20,20");
   }
 
+  // AC3 (PM 3495 item 1): the table ships for every kind, keyed on the static allowance byte.
+  // A blank cell was the thing being struck, so a missing kind fails rather than skips; and a
+  // PREDICTED row is only honest while it is labelled and carries no measurement reference.
+  const byKind = m.cellsPerRoundByKind || {};
+  const perRound = m.passRatePerRound || {};
+  if (!(Number(perRound["1"]) < Number(perRound["3"]) && Number(perRound["3"]) < Number(perRound["6"]))) {
+    fail("measured.passRatePerRound is not ordered 1 < 3 < 6");
+  }
+  if (Number(perRound["0"]) !== 0) fail("measured.passRatePerRound[\"0\"] is not 0 (no pass at speed 0)");
+  const predicted = [5, 7, 8, 9];
+  for (let kind = 0; kind <= 9; kind += 1) {
+    const row = byKind[String(kind)];
+    if (!row) fail("measured.cellsPerRoundByKind has no row for kind " + kind + " - every kind ships");
+    if (row.allowance !== pt.kindAllowance[kind]) {
+      fail("kind " + kind + " row allowance " + row.allowance + " is not byte[0x19a6+" + kind + "] = " + pt.kindAllowance[kind]);
+    }
+    if (!["MEASURED", "MEASURED-HARNESS", "PREDICTED"].includes(row.status)) {
+      fail("kind " + kind + " row status is not MEASURED / MEASURED-HARNESS / PREDICTED: " + row.status);
+    }
+    if (row.status !== "PREDICTED" && !row.evidenceRef) {
+      fail("kind " + kind + " is labelled " + row.status + " but names no evidenceRef");
+    }
+    if (row.status === "PREDICTED" && row.evidenceRef) {
+      fail("kind " + kind + " is PREDICTED (no run) but carries an evidenceRef: " + row.evidenceRef);
+    }
+    for (const speed of ["1", "3", "6"]) {
+      const cell = row.cellsPerRound && row.cellsPerRound[speed];
+      if (!Array.isArray(cell) || cell.length !== 2 || !(cell[0] <= cell[1])) {
+        fail("kind " + kind + " speed " + speed + " cellsPerRound is not a [low, high] pair");
+      }
+      if (!(cell[1] <= Number(perRound[speed]) * 2.01)) {
+        fail("kind " + kind + " speed " + speed + " predicts " + cell[1] + " cells, more than 2 per pass");
+      }
+    }
+  }
+  for (const kind of predicted) {
+    if (byKind[String(kind)].status !== "PREDICTED") fail("kind " + kind + " must be labelled PREDICTED (no run)");
+  }
+  if (byKind["2"].status === "PREDICTED" || byKind["6"].status === "PREDICTED") {
+    fail("kinds 2 and 6 were run full rounds; they cannot be PREDICTED");
+  }
+
   // The method section and the manual quote are deliverables (AC1), so their absence is a fail,
   // not a matter of taste: MOVEMENT.md is where the numbers above are argued.
   const docFile = path.resolve(here, "..", "..", "..", "docs", "re", "MOVEMENT.md");
   if (!existsSync(docFile)) fail("docs/re/MOVEMENT.md is missing");
   const doc = readFileSync(docFile, "utf8");
-  for (const needle of ["## Method", "DS:0x0de2", "0x19a6", "At speed 0, game-time does not pass at all", "printed page 35"]) {
+  for (const needle of ["## Method", "DS:0x0de2", "0x19a6", "At speed 0, game-time does not pass at all", "printed page 35", "PREDICTED — static byte only, no run", "Q37"]) {
     if (!doc.includes(needle)) fail("docs/re/MOVEMENT.md does not contain: " + needle);
   }
 

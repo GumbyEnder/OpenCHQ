@@ -4,7 +4,7 @@ Date: 2026-11-12. Hand-maintained. Each entry states what is UNVERIFIED, what ev
 this repo, and what measurement would settle it. Nothing here is a T-004 blocker unless the entry
 says so.
 
-## 1. Does the original's walker let a land unit cross a 1-cell water gap without embarking? — UNVERIFIED
+## 1. Does the original's walker let a land unit cross a water gap without embarking? — MEASURED for a 1-cell gap; WIDTH UNVERIFIED (Q37)
 
 **Source.** Frodo's T-004 verdict on `6c1c396` (room 3203) counted 209 of the 60,874 planned
 1986 site-pair land orders with a single wet cell inside a land leg. First example: Archangel ->
@@ -18,20 +18,30 @@ count is the same one and the fix is what removed it. This is not a defect in th
 
 **Why it is still open.** The question is about the original, not about us. The walker there is a
 straight Bresenham line graded by the class table (`FUN_16ee_0728`, RULES.md section 2) — it has no
-notion of a sea leg; the land/sea split is a `move.mjs` construct. Whether a class-2 land unit in
-the original steps across one ocean cell as ordinary land movement, instead of boarding a
-transport, has not been read anywhere.
+notion of a sea leg; the land/sea split is a `move.mjs` construct.
 
-**Impact.** None on T-004. Our routes never take that step, and refusing it can only be stricter
-than the original.
+**Answered 2026-11-13 (T-008 AC4, `docs/re/MOVEMENT.md` §Q33), for one width only.** A blue kind-2
+tank ordered 7 cells south through `(175,17)…(175,24)` on the 1986 board, where a single terrain-0
+cell sits at `(175,19)`, stepped onto the water cell and off again at the land pace (1.00
+cell/pass, identical to the dry control leg), status byte unchanged `0x42`, order completed, at
+speeds 6 and 3. **So the original lets a land unit cross a ONE-cell water gap without embarking,
+and the remake's refusal to do so is a DELIBERATE DEVIATION (PM 3495 item 2), which stands pending
+more evidence.**
 
-**Settle it by.**
-- Disassemble `FUN_16ee_0728` and read what it does with a class-2 piece whose line crosses ids
-  0-2 for a single cell, or
-- a DOSBox experiment: a land unit ordered across a one-cell water gap beside a coast — does it
-  embark, or walk?
+**What is still UNVERIFIED is the width of that allowance.** Only a one-cell gap was measured. A
+two-cell gap and a three-or-more-cell gap may be walked as cheaply, walked more slowly, or refused
+— nothing in this repo says. That is **Q37** in `Open RE Questions`.
 
-**Until then: UNVERIFIED.** Do not "fix" the walker to match a guess.
+**Impact.** None on T-004 and none on served behaviour: our routes never take that step, and
+refusing it can only be stricter than the original. No code changes.
+
+**Settle Q37 by.** A DOSBox experiment: the same kind-2 tank ordered across a **two-cell** water gap
+and across a **three-plus-cell** water gap beside a coast, recording pace (cells/pass) and arrival
+(bool/timing) for each, beside the one-cell leg above as the control. Not run in T-008 — it is not
+cheap and does not gate this task.
+
+**Until then: the 1-cell rule is the deviation, the width is UNVERIFIED.** Do not "fix" the walker
+to match a guess.
 
 
 ## 2. Speed 0: the manual says game-time stops, the round clock does not — MEASURED, not yet a ruling

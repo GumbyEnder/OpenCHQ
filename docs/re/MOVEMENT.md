@@ -15,7 +15,7 @@ Status at this commit:
 | The speed control is the war room `+` / `-` keys, DS:0xc700 | MEASURED |
 | The per-piece pass indexes DS:0x0de2, not a 16-byte record array | DISASSEMBLY |
 | Per-kind allowance table at DS:0x19a6 | DISASSEMBLY + live dump |
-| Cells per round per kind, per speed | MEASURED for kinds 1, 2, 6 at speeds 1/3/6 (AC1, AC3); kind 1 harness-labelled and accepted as measuring the rule (PM 3481); kinds 4/5 **NOT OBTAINABLE** in 1918/1942/1986 — a closed FINDING, not a gap; 5/7/8/9 predictions from `0x19a6`, no run; era 4 start board UNCHECKED (Q36) |
+| Cells per round per kind, per speed | MEASURED for kinds 1, 2, 6 at speeds 1/3/6 (AC1, AC3); kind 1 harness-labelled and accepted as measuring the rule (PM 3481); kinds 4/5 **NOT OBTAINABLE** in 1918/1942/1986 — a closed FINDING, not a gap; 5/7/8/9 **PREDICTED** (static `0x19a6` byte, no run, PM 3495); era 4 start board UNCHECKED (Q36) |
 | Terrain effect on speed | UNMEASURED |
 | Q32 win timing | MEASURED (disassembly + live capture): the win word is written inside the capture handler 0.09 s after the owner byte flips, at clock 0x1CC3 — 3.7 % into a 7646-unit round, nowhere near a boundary |
 | Q33 one-cell water crossing in a land leg | MEASURED (disassembly + live order): a kind-2 tank stepped onto terrain-0 water at (175,19), paid a step for it, and stepped off onto land at (175,20); the 7-cell order completed |
@@ -260,9 +260,9 @@ pass, so a land piece cannot spend a two-step surplus).
 | 2 | 24 | 1.2 (capped at 1/visit) | 1.00 / 1.00 / 1.00 @ speeds 1 / 3 / 6, full rounds |
 | 3 | 0 | 0 (transport carries cargo) | 0 |
 | 4 | 0 | 0 | — (no kind 4) |
-| 5 | 36 | 1.8 | — (no run yet) |
+| 5 | 36 | 1.8 | PREDICTED — static byte only, no run |
 | 6 | 36 | 1.8 | 1.64-1.73 / 1.81 / 1.77-1.81 @ speeds 1 / 3 / 6, two full rounds each |
-| 7, 8, 9 | 40 | 2.0 | — (no run yet) |
+| 7, 8, 9 | 40 | 2.0 | PREDICTED — static byte only, no run |
 
 **The grant is the full byte, not half of it.** An earlier draft of this section read `4788` and
 concluded `+byte>>1`; the measured points sequences on a kind 2 piece (`24 -> 28 -> 32 -> 16 ->
@@ -343,18 +343,37 @@ visit per pass cannot spend a 1.2-step surplus), and the 36-allowance kind is **
 it reads 1.64-1.81 across speeds because the budget is a 4-byte int refilled at the wrap, so a
 step's remainder carries.
 
-Kinds 5, 7, 8 and 9 have no run: 5 is a 36 like the carrier and would be expected to read near
-1.8 if it is water-borne, 7/8/9 are 40 and predict 2.0 (1.00 if the piece is land-capped). Those
-are predictions from `DS:0x19a6`, not measurements, and are labelled UNMEASURED in the status
-table above.
+Kinds 5, 7, 8 and 9 have no run and are **PREDICTED** rows, keyed on the static byte and printed
+as a band rather than a single number. PM 3495 item 1: they ship labelled, not blank and not
+waiting for a purchase. Their cells/round is the measured passes per round times the predicted
+steps per pass, so it inherits the measured pass counts exactly:
 
-**`config/game.json` is not touched by this table yet**, and when it moves it is keyed on the
-static per-kind allowance byte `byte[0x19a6 + kind]` — **not** on a piece identity read from
-`0x906` (PM 3481 item 3, because Q35 is still open). The cross-check is measured cells/pass per
-allowance: **24 → 1.00, 12 → ~0.6, 36 → ~1.7**; a config row for a kind is accepted only if its
-allowance lands on the measured band for that allowance. The runtime's 5 s round and speed ramp
-remain the owner's DELIBERATE DEVIATION until the AC3 config step (PM 3481: AC4, AC5, AC6, then
-AC3 config).
+| kind | `byte[0x19a6+kind]` | steps/pass (predicted / capped) | cells/round s1 (11 passes) | s3 (16) | s6 (63-64) | status |
+|---|---|---|---|---|---|---|
+| 5 | 36 | 1.8 / 1.00 | 11-20 | 16-29 | 64-114 | PREDICTED — static byte only, no run |
+| 7 | 40 | 2.0 / 1.00 | 11-22 | 16-32 | 64-127 | PREDICTED — static byte only, no run |
+| 8 | 40 | 2.0 / 1.00 | 11-22 | 16-32 | 64-127 | PREDICTED — static byte only, no run |
+| 9 | 40 | 2.0 / 1.00 | 11-22 | 16-32 | 64-127 | PREDICTED — static byte only, no run |
+
+The band's upper end assumes a piece can spend two steps in one visit; the lower end is the
+one-step-per-visit cap that pinned kind 2 at exactly 1.00. Kind 6 is the reason the upper end is
+real for a 36 (measured 1.64-1.81), and it is also the reason not to read 2.0 for a 40 as a
+number: a 40 has never been driven. **A PREDICTED row is not evidence** — it exists so the table
+has no blank cells and so the config shape is complete, and the status column says which is
+which.
+
+**`config/game.json` now carries this table** (`measured.passRatePerRound` and
+`measured.cellsPerRoundByKind`, PM 3495 item 1), one row per kind 0-9 keyed on the static
+per-kind allowance byte `byte[0x19a6 + kind]` — **not** on a piece identity read from `0x906`
+(PM 3481 item 3, because Q35 is still open). Every row carries `status` (MEASURED /
+MEASURED-HARNESS / PREDICTED) and, where a run exists, an `evidenceRef` naming the section of this
+file. `web/test/nodes/measured_round.mjs` pins the shape: ten rows, allowance matching
+`pieceTable.kindAllowance` for every kind, 5/7/8/9 PREDICTED, and every non-PREDICTED row carrying
+an evidenceRef. The cross-check is measured cells/pass per allowance: **24 → 1.00, 12 → ~0.6,
+36 → ~1.7**; a config row for a kind is accepted only if its allowance lands on the measured band
+for that allowance. **These are reference rows, not the runtime:** `move.cellsPerRound` above is
+still what the server runs, and with the owner's 5 s round and speed ramp it remains a DELIBERATE
+DEVIATION.
 
 Kind 1's row above is harness-labelled (`KIND_OVERRIDE`, §Measured open land — kind 1) and the PM
 has accepted it as measuring the movement rule: a purchased kind-1 run is **not required** for
@@ -495,7 +514,15 @@ pass, `q33_cross.py` run 3):
 So Q33 is answered in both directions: the planner costs it (disassembly) and the unit walks it
 (measurement). The remake's T-004 rule — a land unit never walks on water, it boards a transport and
 follows the lanes — is therefore a **deliberate deviation from the original**, not a port of it.
-That is a ruling for the PM/owner, not a change this task makes.
+
+**PM 3495 item 2 (2026-11-13) rules that deviation deliberate and pending more evidence.** T-004
+and the code stay exactly as they are; nothing in this task changed the walker. What was measured
+is a **one-cell** gap, and only that: whether the original also lets a land unit cross a **two-cell**
+or **three-or-more-cell** water gap, and at what pace, is UNVERIFIED. That is opened as **Q37** in
+`Open RE Questions` (the DOSBox experiment: the same tank ordered across a two-cell gap and a
+three-plus-cell gap, pace plus arrival time). The port-vs-keep decision waits on Q37, not on this
+section. *(Numbering: the era-4 start-board question already holds Q36 from PM 3481 item 1, so the
+water-width experiment landed as Q37 rather than overwrite a live row.)*
 
 One harness fact worth keeping, because it produced a false "the harness is broken" reading in AC5:
 a DOSBox session left in the **`OPPONENT'S STARTING MONEY` setup modal** has `film_mode`
