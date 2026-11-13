@@ -1,0 +1,26 @@
+T-009b AC4: attribution run 3 (attrition3) - desert per-pass attrition, three states.
+Live DOSBox 0.74-3, CHQ.EXE, 1942 board, 2026-11-13. The 0x1996 table says desert = 35 = 0x23
+(amount 3, dig-in bit 0x20), so each run below should have shown 3 per pass. None did.
+Each block is the verbatim stdout of harness/attrition3.py (explicit cell) or harness/t009b.py
+attrition (isolation search + hold), captured on the workstation as notes/t009b/<name>; the run
+arguments are the ones listed in README.md.
+
+=== A: notes/t009b/attr-desert-a-2026-11-13.txt (captured 2026-11-13) ===
+P=0 at (116,88) tmap=11 start=100 secs=15.0
+  0 blue k3 inf(dug)  str=100 (116, 88) desert   face=0 tgt=255 fl=0x20 cd= 0 pts=0
+
+=== B: notes/t009b/attr-desert-floor-2026-11-13.txt (captured 2026-11-13) ===
+P=0 at (115,90) tmap=11 start=22 secs=15.0
+  0 blue k3 inf(dug)  str= 22 (115, 90) desert   face=0 tgt=255 fl=0x20 cd= 0 pts=0
+
+=== C: notes/t009b/attr-desert-moving-2026-11-13.txt (captured 2026-11-13) ===
+P=0 at (116,88) tmap=11 start=100 pts=16 secs=20.0
+  0 blue k3 inf(dug)  str=100 (116, 88) desert   face=0 tgt=255 fl=0x20 cd= 0 pts=16
+
+=== D: jungle (same 0x23 byte), from notes/t009b/attrition2-2026-11-13.txt ===
+ATTRITION desert: P=0 at (115,90) tmap=11 isolation=66 start=100
+0xc478 before: 255
+0xc478 after: 255   0 blue k3 inf(dug)  str=100 (115, 90) desert   face=5 tgt=255 fl=0x20 cd= 0 pts=0
+ATTRITION jungle: P=0 at (111,87) tmap=12 isolation=59 start=100
+0xc478 before: 255
+0xc478 after: 255   0 blue k3 inf(dug)  str=100 (111, 87) jungle   face=5 tgt=255 fl=0x20 cd= 0 pts=0

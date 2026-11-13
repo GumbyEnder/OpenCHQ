@@ -1,0 +1,13 @@
+T-009b AC4/wasteland: full nibble scan of data/tmap.bin (320x136, nibble-packed, stride 0xA2)
+Counts by terrain id:
+   0 ocean      28849
+   2 ocean2     166
+   3 lake       65
+   8 plain      4663
+   9 forest     1477
+  10 mountain   1003
+  11 desert     2225
+  12 jungle     659
+  13 polar      4413
+wasteland (14) cells: 0
+city (6) cells: 0 - cities exist as a site record, not a terrain cell

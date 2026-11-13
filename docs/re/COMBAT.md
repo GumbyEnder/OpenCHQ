@@ -310,6 +310,7 @@ harness is self-contained in `docs/re/t009b/harness/`). No runtime value changed
 | attrition lake / polar | 3 and 5 per pass, no shooter | 1 each | `attrition-lake-polar-2026-11-13.txt` |
 | attrition floor | lake 22 → 20, then flat for 30 s | 1 | `attr-lake-floor-2026-11-13.txt` |
 | attrition desert | **did not fire**: 100 flat, 22 flat, and move points held at 16 — all on isolated desert cells | 3 | `attrition-desert-2026-11-13.txt` |
+| wasteland 34 | **UNMEASURED**: the 1942 board has 0 wasteland cells; a forced `0x836`=14 lost nothing in 25 s, plain control also nothing | 2 | `terrain-scan-1942-2026-11-13.txt`, `wasteland-2026-11-13.txt`, `wasteland-control-2026-11-13.txt` |
 | militia | enemy site 2, unowned site 20, own site 0 | 1 each | `militia-2026-11-13.txt` |
 | sea range ladder | sub fires at d2=4 not d2=9; cruiser at d2=9 (34) not d2=16; carrier at d2=16 (25 twice) not d2=25 | 2/2/2 | `range-sub-cruiser-carrier-2026-11-13.txt` |
 | air strike (land and ship) | **UNMEASURED**: code-7 events consumed (wp/rp advanced), target unchanged at 100; 200-event burst landed nothing | 2+2 and 200 | `air-2026-11-13.txt`, `air-ship-2026-11-13.txt`, `air-burst-2026-11-13.txt` |
@@ -318,7 +319,14 @@ harness is self-contained in `docs/re/t009b/harness/`). No runtime value changed
 **Desert is a live contradiction, reported not changed.** The `0x1996` byte for desert is 35 = 0x23
 (amount 3, dig-in bit 0x20). Its neighbours without the 0x20 bit (lake 3, polar 5) fire per pass;
 desert did not damage a stationary piece at 100 or at 22, nor a piece carrying move points. The
-config now says PART MEASURED and names the three runs; the table value is untouched.
+pattern: the two entries that fired carry no flag bits, both that did not (desert `0x23`, wasteland
+`0x1F`) carry `0x20`/`0x10`. The config now says PART MEASURED and names the runs; the table value is
+untouched.
+
+**Wasteland 34 is UNMEASURED.** The 1942 board has no wasteland cell at all (0 of 43,520 terrain
+nibbles), so there is nothing to stand on. Forcing `0x836`=14 on an isolated cell lost nothing in
+25 s, and the plain control lost nothing either. Next step: a 1986 board, a nuke to paint the cell,
+then the same leg on the painted cell.
 
 **Air strike.** The dispatch is real: `FUN_1ac5_0dbe`, 5-byte records in the ring at `DS:0xEFBC`,
 pointers `0xE940`/`0xE42A`. Injected events drain and the target never loses strength, so an injected

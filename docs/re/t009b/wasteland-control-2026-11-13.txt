@@ -1,0 +1,2 @@
+P=0 at (116,90) map terrain=8 forced 0x836=8 start=100 secs=15.0
+  0 blue k3 inf(dug)  str=100 (116, 90) plain    face=0 tgt=255 fl=0x20 cd= 0 pts=0
