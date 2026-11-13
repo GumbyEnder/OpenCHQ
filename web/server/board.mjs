@@ -68,8 +68,12 @@ function candidates(text) {
   return out;
 }
 
-// Same order the desktop archive used: OPENCHQ_DATA, then local/data_root.txt,
-// then a bundled data/, then the extract that sits beside this project.
+// Same order the desktop archive used: OPENCHQ_DATA, then OPENCHQ_EXTRACT (the older name the
+// single-node scripts use, which env.mjs has always accepted), then local/data_root.txt, then a
+// bundled data/, then the extract that sits beside this project. Reading only OPENCHQ_DATA here
+// while env.mjs read both turned a correctly pointed with-extract leg into 6 skips (59/0/6 at
+// t008-measure before this fix): the six nodes that ask the board for its root fell back to the
+// bundled data while the nodes that ask env.mjs saw the extract.
 //
 // OPENCHQ_NO_EXTRACT=1 skips every candidate and returns "". That is the public-host case, and it
 // exists so the suite's no-extract leg is reproducible on a machine that does have the extract
@@ -78,6 +82,7 @@ export function resolveDataRoot(env = process.env) {
   if (String(env.OPENCHQ_NO_EXTRACT || "") === "1") return "";
   const tries = [];
   tries.push(env.OPENCHQ_DATA);
+  tries.push(env.OPENCHQ_EXTRACT);
   const localFile = path.join(projectDir, "local", "data_root.txt");
   if (existsSync(localFile)) {
     for (const line of readFileSync(localFile, "utf8").split("\n")) {

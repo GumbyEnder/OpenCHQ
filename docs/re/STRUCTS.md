@@ -74,7 +74,7 @@
 | `0x1452` | 2 | `uint` | `?` | FUN_107e_3b5e — used in multi-player AI scoring |
 | `0x148e` | 2 | `uint` | `?` | FUN_107e_3bd0 — divided by `0x28` (40) for turn pacing |
 | `0x1550` | 2 | `uint` | `?` | FUN_1000_0000 |
-| `0x157e` | 2 | `int` | `money` | FUN_1000_0000 — player money; strings reference "Money", "Balance", "Income" |
+| `0x157e` | 2 | `int` | `time_left` | Countdown in 1/64 s units: `0x1dde` (7646) is the panel's `2:00.0`, `0x4aab` (19115) the long round, `0xffff` = stopped. Measured 2026-11-12 (T-008, `docs/re/MOVEMENT.md`). The old `money` name was wrong — money lives elsewhere in the `0x148e` family. |
 | `0x1986` | 2 | `uint` | `?` | FUN_107e_4616 — used as offset into site array |
 | `0x1996` | 2 | `uint` | `?` | FUN_107e_4140 — used as offset into site array |
 | `0x1156` | 2 | `uint` | `?` | FUN_107e_336a — multiplied by 2, capped at 0x41 |
@@ -144,26 +144,62 @@
 
 ## 6. Units
 
-100 units total. Each unit is a ~16-byte record accessed via index 0..99.
+100 unit records. **There is no 16-byte record:** every field is a *parallel array* indexed by
+the same record number 0..99, with stride 1 or 2. The per-piece pass reads them by index — it
+never dereferences a record pointer (T-008 disassembly, `decompiled.c:4369-4595`; corrected
+2026-11-12, supersedes the "~16-byte record" claim).
 
-| Offset (base + index) | Size | Type | Name | Evidence |
-|-----------------------|------|------|------|----------|
-| `0x1b6` + `i*2` | 2 | `uint` | `unit_coords` | FUN_1000_0000 — stored as `x*256+y` |
-| `0x286` + `i` | 1 | `byte` | `unit_type` | FUN_1000_0000 — unit type code (carrier, cruiser, sub, etc.) |
-| `0x906` + `i` | 1 | `byte` | `unit_status` | FUN_1000_0000 — bit 7 = active, bits 6:5 = owner, bits 4:0 = subtype. **UNVERIFIED (2026-11-11):** no routine has been read for this byte; the bits 6:5 wording is inherited, not measured. Do not correct it from the site byte. |
-| `0x89e` + `i` | 1 | `byte` | `unit_strength` | FUN_1000_0000 — health/strength value; compared to 0x50, 0x3d |
-| `0x836` + `i` | 1 | `byte` | `unit_owner` | FUN_1000_0000 — owner index (0=player, 1=AI, etc.) |
-| `0x426` + `i*2` | 2 | `uint` | `unit_dest_x` | FUN_107e_41f2 — destination X coordinate |
-| `0x4f6` + `i` | 1 | `byte` | `unit_dest_y` | FUN_107e_41f2 — destination Y coordinate |
-| `0x62e` + `i*2` | 2 | `uint` | `unit_target_x` | FUN_107e_4616 — target X coordinate for attack |
-| `0x96e` + `i` | 1 | `byte` | `unit_target_y` | FUN_107e_4616 — target Y coordinate for attack |
-| `0x55e` + `i*2` | 2 | `uint` | `unit_misc1` | FUN_107e_4616 — used in terrain check |
-| `0xa3e` + `i` | 1 | `byte` | `unit_misc2` | FUN_107e_4616 — used in terrain check |
-| `0x4f6` + `i` | 1 | `byte` | `?` | FUN_107e_41f2 — compared against other unit's `4f6` |
-| `0x3588` + `i*2` | 2 | `uint` | `unit_current_site` | FUN_107e_336a — current site index; 0xff = at sea |
-| `0x3650` + `i*2` | 2 | `uint` | `unit_flags` | FUN_107e_2ff4 — bit 10 = moving, bit 9 = at sea, bit 8 = at site |
+The pass walks a **visit-order table**, not the records in order:
 
-**Unit types** (from strings): carrier, cruiser, submarine, aircraft, paratroop, transport, tank, infantry, coastgn (coastal gun), airship, airdrop, airtank, killsat (killer satellite), spysat (spy satellite), blowsat (blow satellite), nuke (nuclear), ksub (killer submarine).
+| Offset | Size | Type | Name | Evidence |
+|--------|------|------|------|----------|
+| `0xde2` + `k` | 1 | `byte[100]` | `unit_visit_order` | `FUN_15f4_0002` 4506: `0x147a = byte[0x147c + 0xde2]`; built by `FUN_15f4_0608` 4637-4663 as a shuffled copy of `0xd7e`; live dump is a permutation of 0..99 |
+| `0xd7e` + `k` | 1 | `byte[100]` | `unit_shuffle_buf` | `FUN_15f4_0598` 4626-4628 swaps two entries; `FUN_15f4_0664` also iterates it |
+| `0x147a` | 2 | `uint` | `unit_pass_index` | 4506, 4509 — current unit record index, driven by the table above |
+| `0x147c` | 2 | `int` | `unit_walk_cursor` | 4499, 4502, 4592-4593 — 0..99, inches forward when `0x3e91 == 0`, wraps at 100 into `FUN_15f4_0664` |
+| `0x3e91` | 1 | `char` | `unit_pass_delay` | 4386 gate, 4390/4397/4428/4457/4468/4481 writes — the speed-paced divider (`7 - speed`, frame masks at speeds 4-6) |
+
+Per-unit fields, all indexed by the record number 0..99:
+
+| Offset (base + i) | Size | Type | Name | Evidence |
+|-------------------|------|------|------|----------|
+| `0x1b6` + `i*2` | 2 | `uint` | `unit_coords` | 4511 `iVar7*2 + 0x1b6`; packed `x*256+y`; compared against `0x96e` at 4520 |
+| `0x286` + `i` | 1 | `byte` | `unit_y` | 4512 read as the current y and compared against `0xa3e` at 4520; 5082 compares it against `0x4f6`. **Was mislabelled `unit_type`; the y reading is what the code does.** |
+| `0x426` + `i*2` | 2 | `uint` | `unit_dest_coords` | 5082 compared with `0x1b6`; packed `x*256+y` |
+| `0x4f6` + `i` | 1 | `byte` | `unit_dest_y` | 5083 compared with `0x286` |
+| `0x6fe` + `i*2` | 2 | `int` | `unit_move_points` | 4526/4588 spend, 4791-4813 refill; capped at 0x50 (`if < 0x50` 4797) |
+| `0x836` + `i` | 1 | `byte` | `unit_side` | 4517 `bVar4` used to index `0x1976`; 5082 area uses status bits instead |
+| `0x89e` + `i` | 1 | `byte` | `unit_strength` | 4513, 4566; compared to 0x50 and 0x3d elsewhere |
+| `0x906` + `i` | 1 | `byte` | `unit_status` | 4509-4524, 4589, 4794. **Measured 2026-11-12:** bits 7:6 = owner (`& 0xc0` == side*0x40 + 0x40, `FUN_15f4_0e7a` 5076-5086; written at creation `FUN_1ac5_008e` 8183), bits 3:0 = kind (`& 0xf`, indexes `0x19a6`). Bit 7 is not an "active" bit. The old "bits 6:5" wording is wrong. |
+| `0x96e` + `i*2` | 2 | `uint` | `unit_target_coords` | 4520 compared against `0x1b6`, stride 2. **Was listed as a 1-byte target_y; that is wrong.** |
+| `0xa3e` + `i` | 1 | `byte` | `unit_target_y` | 4520 compared against `0x286` |
+| `0xbde` + `i` | 1 | `byte` | `unit_link` | 4544 (`!= 0xff` and flag 0x20), 7040-7065 — 0xff sentinel, otherwise a unit index |
+| `0xc46` + `i` | 1 | `byte` | `unit_flags` | 4515, 4519/4522 (0x40 has-destination), 4544 (0x20), 4586 (0x08 and 0x10), low 3 bits = movement state |
+| `0xd16` + `i` | 1 | `byte` | `unit_settle` | 4570-4578 — counts down; 1 clears to 0 once the unit has settled |
+| `0x62e` + `i*2` | 2 | `uint` | `?` | **UNVERIFIED.** The old `unit_target_x` name cannot be right next to `0x96e` being a packed target word; not read in the pass. |
+| `0x55e` + `i*2` | 2 | `uint` | `?` | **UNVERIFIED.** Old `unit_misc1`; not read in the pass. |
+| `0x3588` + `i*2` | 2 | `uint` | `unit_current_site` | Not re-checked this pass (old: FUN_107e_336a, 0xff = at sea) |
+| `0x3650` + `i*2` | 2 | `uint` | `unit_flags` | Not re-checked this pass (old: FUN_107e_2ff4, bit 10 moving, 9 at sea, 8 at site) — do not assume the bit numbering |
+
+Per-kind and per-side tables the pass reads:
+
+| Offset | Size | Name | Live bytes (1986, 2026-11-12) | Evidence |
+|--------|------|------|-------------------------------|----------|
+| `0x19a6` + kind | 10 | `unit_kind_allowance` | `0 12 24 0 0 36 36 40 40 40` for kinds 0-9 | 4589 spends `byte[kind + 0x19a6] >> 1`; 4788/4794 refills from it; 5081 requests it per unit. Extent bounded by the string at `0x19b0`. |
+| `0x19a2` + kind | 8 | `unit_kind_allowance_ai` | `35 5 31 0 0 12 24 0` | 4811, used instead for AI-owned kinds 5-6 |
+| `0x1976` + side | 4 | `unit_side_allowance` | `20 20 20 20` | 4518 `byte[side + 0x1976]` compared against `0x6fe` |
+| `0x2e16` + slot | 11 | `unit_price_div40` | `10 20 10 10 20 20 10 5 10 10 10` | Price reads at 8172/8229/8234 (`byte*0x28` = 40 x price) |
+| `0x2e22` + slot | 5 | `unit_slot_kind` | `1 2 7 8 9` (slots 0-4) | 8183 writes `kind | side*0x40 + 0x40` at purchase; slots >= 5 take the air/satellite paths |
+
+Kind names are **UNVERIFIED**; the byte values are measured. The manual's orderings (tank 2x
+infantry, sea above land, air above sea) fit `1=12, 2=24, 5/6=36, 7-9=40`, which is why that
+reading is written down, but no name is sourced. Live 1986 pieces carry kinds 2, 3, 5, 7, 8, 9.
+
+**Unit types** (from strings): carrier, cruiser, submarine, aircraft, paratroop, transport, tank,
+infantry, coastgn (coastal gun), airship, airdrop, airtank, killsat (killer satellite), spysat
+(spy satellite), blowsat (blow satellite), nuke (nuclear), ksub (killer submarine). These are
+names in the executable's strings, not a verified code->name table; §13's numeric codes are
+inferred from PAN filenames and are not confirmed against `unit_status & 0xf`.
 
 ---
 
@@ -432,7 +468,11 @@ The following offsets are referenced but their purpose is unclear:
 - `0xc3b4`, `0xc3b6`, `0xc3b7`, `0xc3b8`, `0xc3ba` — percentage/progress values
 - `0x1bc7` — mission queue base, but exact entry format unclear
 - `0xc814` — path generation buffer, 30 bytes
-- `0x906` + `i` (`unit_status`) — **bit assignment unverified.** The row's "bits 6:5 = owner" is
-  inherited from the pre-2026-11-11 site-byte reading, and no routine has been read for this byte. The
-  site-byte fix (`0x1102`: bits 7:6, mask `0xC0`, `1c0d:000c`) does not transfer to the unit tables.
-  Closing this needs a read of the writer of `0x906`, not a re-parse of the table.
+- `0x906` + `i` (`unit_status`) — **closed 2026-11-12 (T-008).** The writer is read:
+  `FUN_1ac5_008e` 8183 stores `kind | side*0x40 + 0x40`, and `FUN_15f4_0e7a` 5079 compares
+  `(status & 0xc0) == side*0x40 + 0x40`. Bits 7:6 = owner, bits 3:0 = kind. See §6.
+- `0x19a6` kind -> unit-name mapping — the ten allowance bytes are measured, the names are not.
+  Needs the writer of the kind field indexed by the purchase table at `0x2e22` (slots 0-4 read
+  `1 2 7 8 9`) resolved against the buy menu's accepted order.
+- `0x62e`, `0x55e` per-unit words — still unread; the old `target_x`/`misc1` names are not
+  supported by the per-piece pass.
