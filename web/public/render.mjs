@@ -8,31 +8,33 @@
 
 import { colorForTerrain, paintBoard, PALETTE, SCHEMATIC, EXTRACT_MISSING } from "./paint.mjs";
 import { textBitmap } from "./font.mjs";
-import { GLYPH_MIN_ZOOM, glyphCells, glyphFor } from "./glyphs.mjs";
+import {
+  BADGE_INTERIOR, BADGE_MIN_PX, BADGE_SIDE, BADGE_UNIT, badgeForPiece, badgeGroups,
+  badgePx, badgeState, framePolygon, insetPolygon, selectedRing, showsEntrench, strengthBand,
+} from "./badges.mjs";
 
 export const BOARD_W = 320;
 export const BOARD_H = 136;
 
 // Outlines only: a piece's fill is its side color.
-// What the original draws for a unit on the map, measured from its own screen.
 //
-// docs/chq-reference/chq_0021.png is a 640x400 capture of the 320x200 game, so two screen pixels per
-// cell. Every unit marker in it is a 6x6 block — three cells at map scale — in the side's dark colour
-// (dark blue #0000aa, dark red #aa0000) with one light pixel at the centre. There are no per-type
-// sprites on the board: the original told units apart in its panels, not on the map.
+// What the original drew for a unit on the map, and what this page draws now, are two different
+// answers (T-014):
+//
+// The original (docs/chq-reference/chq_0021.png, a 640x400 capture of the 320x200 screen) drew every
+// unit as the same 6x6 screen-pixel / 3x3 cell block in the side's dark colour with one light centre
+// pixel. Types were told apart in its panels, never on the map. That measurement is kept here as the
+// record of the fidelity target, not as a fallback: the block is exactly the "dotted clusters at
+// full-map zoom" that T-014 exists to remove.
 export const PIECE_MARKER = Object.freeze({
   size: 3,
   body: Object.freeze({ blue: "#0000aa", red: "#aa0000" }),
   centre: "#ffffff",
 });
 
-// Below this zoom the board is the original's board and every unit is the original's marker. Above
-// it the shapes take over, because at eight pixels per cell a player should be able to tell a tank
-// from an infantry section — an affordance the original did not need and did not have.
-export const MARKER_ZOOM = 4;
-
 // The nine cells of a marker, with the centre one carrying the light pixel. X wraps, so a unit in
-// the seam column draws three cells, not two.
+// the seam column draws three cells, not two. Nothing paints this any more; it stays because it is
+// the measured description of the original's board and the seam rule it proves is still the rule.
 export function markerCells(x, y, side, boardW = BOARD_W) {
   const half = (PIECE_MARKER.size - 1) / 2;
   const body = PIECE_MARKER.body[side] || PIECE_MARKER.body.blue;
@@ -444,153 +446,336 @@ export function paintCells(ctx, board, view) {
   return painted;
 }
 
-// `opts.own` (a side name) outlines the seat's own pieces in white; enemy
-// pieces get a dark outline. Nothing is drawn that the view did not send.
-export function paintPiece(ctx, piece, view, opts = {}) {
-  const at = cellToPixel(piece.x, piece.y, view);
-  const r = Math.max(2, view.scale * 1.8);
-  const shape = pieceShape(piece);
+// ---- unit badges (T-014) --------------------------------------------------------------------
+//
+// One badge per footprint, drawn from the primitives in badges.mjs. The painter is written against
+// the six canvas calls the node harness can record (beginPath, moveTo, lineTo, closePath, rect, arc,
+// fill, stroke, fillRect, fillText), so the shape a test sees is the shape the browser draws.
 
-  // At map scale the marker is the original's: a three-cell block in the side's dark colour with a
-  // light pixel in the middle. A transport keeps the block but loses the light centre, which is this
-  // page's one deliberate addition — the original had no cargo concept to draw.
-  // A typed unit draws its own silhouette at every zoom it can be read at. Only an untyped piece (and
-  // a map too small for five cells to mean anything) falls back to the original's block.
-  const glyphKind = piece.transport === true ? null : glyphFor(piece.kind);
-  if (!glyphKind && view.scale < MARKER_ZOOM) {
-    const size = Math.max(1, Math.ceil(view.scale));
-    for (const cell of markerCells(piece.x, piece.y, piece.side, view.boardW || BOARD_W)) {
-      const px = cellToPixel(cell.x, cell.y, view);
-      ctx.fillStyle = cell.centre && piece.transport === true
-        ? PIECE_MARKER.body[piece.side] || PIECE_MARKER.body.blue
-        : cell.colour;
-      ctx.fillRect(Math.floor(px.x - view.scale / 2), Math.floor(px.y - view.scale / 2), size, size);
-    }
-    return at;
-  }
-  // A typed unit gets its own silhouette once the board is zoomed. An untyped opening piece keeps
-  // the original's generic block, because the archive never recorded what it was.
-  const glyph = glyphKind;
-  if (glyph && view.scale >= GLYPH_MIN_ZOOM) {
-    const size = Math.max(1, Math.ceil(view.scale));
-    const ink = Boolean(opts.own) && String(piece.side) === String(opts.own) ? PIECE_INK.own : PIECE_INK.enemy;
-    ctx.fillStyle = pieceColor(piece);
-    for (const cell of glyphCells(piece.x, piece.y, piece.kind, view.boardW || BOARD_W)) {
-      const px = cellToPixel(cell.x, cell.y, view);
-      ctx.fillRect(Math.floor(px.x - view.scale / 2), Math.floor(px.y - view.scale / 2), size, size);
-    }
-    // One hairline around the shape so a dark hull on dark water still reads.
-    ctx.strokeStyle = ink;
-    ctx.lineWidth = 1;
-    for (const cell of glyphCells(piece.x, piece.y, piece.kind, view.boardW || BOARD_W)) {
-      const px = cellToPixel(cell.x, cell.y, view);
-      ctx.strokeRect(Math.floor(px.x - view.scale / 2) + 0.5, Math.floor(px.y - view.scale / 2) + 0.5, size - 1, size - 1);
-    }
-    return at;
-  }
-
-  ctx.fillStyle = pieceColor(piece);
+// A polygon in badge units, mapped onto the canvas.
+function polygonPath(ctx, points, x0, y0, k) {
   ctx.beginPath();
-  if (shape === "ring") {
-    // A transport is cargo: the hull is drawn as a ring, not a filled block, so an unescorted
-    // crossing reads as the risk it is.
-    ctx.lineWidth = Math.max(1.5, view.scale * 0.9);
-    ctx.strokeStyle = pieceColor(piece);
-    ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
-    ctx.stroke();
-    const ownRing = Boolean(opts.own) && String(piece.side) === String(opts.own);
-    ctx.strokeStyle = ownRing ? PIECE_INK.own : PIECE_INK.enemy;
-    ctx.lineWidth = 1;
+  points.forEach(([x, y], index) => {
+    if (index === 0) ctx.moveTo(x0 + x * k, y0 + y * k);
+    else ctx.lineTo(x0 + x * k, y0 + y * k);
+  });
+  ctx.closePath();
+}
+
+// An ellipse as a sixteen-sided polygon: the recording context has no ellipse(), and at 14 px a
+// chorded ellipse and a smooth one are the same six pixels.
+function ellipsePath(ctx, cx, cy, rx, ry, x0, y0, k) {
+  ctx.beginPath();
+  const steps = 16;
+  for (let i = 0; i < steps; i++) {
+    const angle = (i / steps) * Math.PI * 2;
+    const x = x0 + (cx + Math.cos(angle) * rx) * k;
+    const y = y0 + (cy + Math.sin(angle) * ry) * k;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+function shapePath(ctx, shape, x0, y0, k) {
+  if (shape.t === "rect") {
     ctx.beginPath();
-    ctx.arc(at.x, at.y, r + Math.max(1, view.scale * 0.5), 0, Math.PI * 2);
-    ctx.stroke();
-    return at;
+    ctx.rect(x0 + shape.x * k, y0 + shape.y * k, shape.w * k, shape.h * k);
+    return;
   }
-  if (shape === "circle") {
-    ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
-  } else if (shape === "triangle") {
-    ctx.moveTo(at.x, at.y - r);
-    ctx.lineTo(at.x + r, at.y + r);
-    ctx.lineTo(at.x - r, at.y + r);
-    ctx.closePath();
-  } else {
-    ctx.rect(at.x - r, at.y - r, r * 2, r * 2);
+  if (shape.t === "circle") {
+    ctx.beginPath();
+    ctx.arc(x0 + shape.cx * k, y0 + shape.cy * k, shape.r * k, 0, Math.PI * 2);
+    return;
   }
+  if (shape.t === "ellipse") {
+    ellipsePath(ctx, shape.cx, shape.cy, shape.rx, shape.ry, x0, y0, k);
+    return;
+  }
+  if (shape.t === "poly") {
+    polygonPath(ctx, shape.pts, x0, y0, k);
+    return;
+  }
+  // A line: its own path, stroked by the caller's style.
+  ctx.beginPath();
+  ctx.moveTo(x0 + shape.x1 * k, y0 + shape.y1 * k);
+  ctx.lineTo(x0 + shape.x2 * k, y0 + shape.y2 * k);
+}
+
+// The static part of a badge: frame, interior, silhouette. This is the expensive half (a polygon
+// fill, an inset fill and four to six silhouette marks), and it is the same drawing for every piece
+// of a kind at a given pixel size - so the page paints it once per (kind, side, size) into an
+// offscreen canvas and blits it. The chrome below (bars, ring, dashes, burst, disc) changes per
+// piece and stays per-frame. A caller with no offscreen canvas - the node harness - passes no cache
+// and gets this path painter, which is the same geometry the sprite was made from.
+function paintBadgeBody(ctx, x0, y0, k, side, spec, interior) {
+  const palette = BADGE_SIDE[side];
+  const frame = framePolygon(side);
+  polygonPath(ctx, frame, x0, y0, k);
+  ctx.fillStyle = palette.frame;
   ctx.fill();
-  const own = Boolean(opts.own) && String(piece.side) === String(opts.own);
-  ctx.strokeStyle = own ? PIECE_INK.own : PIECE_INK.enemy;
-  ctx.lineWidth = own ? Math.max(1, view.scale * 0.8) : 1;
+  ctx.strokeStyle = palette.ink;
+  ctx.lineWidth = Math.max(1, k * 0.9);
   ctx.stroke();
-  return at;
-}
 
-export function paintPieces(ctx, pieces, view, opts = {}) {
-  if (!Array.isArray(pieces)) return 0;
-  let drawn = 0;
-  for (const piece of pieces) {
-    if (!piece || !Number.isFinite(Number(piece.x)) || !Number.isFinite(Number(piece.y))) continue;
-    paintPiece(ctx, piece, view, opts);
-    drawn++;
-  }
-  return drawn;
-}
+  polygonPath(ctx, insetPolygon(frame, 0.9), x0, y0, k);
+  ctx.fillStyle = interior;
+  ctx.fill();
 
-// The strength bar and the states under it (T-003). A piece carries current and maximum strength;
-// the bar is the fraction between them, so a player can see a hit land before anybody names a
-// number. A dug-in piece gets a second, narrower bar; a pinned piece gets an orange tick and a
-// repairing piece a pale cross. The facing notch points the way the piece last stepped.
-export function paintStrengthBars(ctx, pieces, view, opts = {}) {
-  if (!Array.isArray(pieces)) return 0;
-  let drawn = 0;
-  for (const piece of pieces) {
-    if (!piece || !Number.isFinite(Number(piece.x)) || !Number.isFinite(Number(piece.y))) continue;
-    const max = Number(piece.maxStrength);
-    const strength = Number(piece.strength);
-    if (!Number.isFinite(max) || max <= 0 || !Number.isFinite(strength)) continue;
-    const at = cellToPixel(piece.x, piece.y, view);
-    const width = Math.max(6, view.scale * 3);
-    const height = Math.max(2, view.scale * 0.4);
-    const x = at.x - width / 2;
-    const y = at.y + Math.max(2, view.scale * 1.3);
-    const fraction = Math.max(0, Math.min(1, strength / max));
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-    ctx.fillRect(x, y, width, height);
-    ctx.fillStyle = pieceColor(piece) || sideColor(piece.side);
-    ctx.fillRect(x, y, width * fraction, height);
-
-    // Entrench: a second bar, drawn only when the state is set (p.22).
-    if (piece.entrenched === true) {
-      ctx.fillStyle = "#d9d2a6";
-      ctx.fillRect(x, y + height + 1, width * 0.55, Math.max(1, height * 0.6));
-    }
-    // Pinned (p.22): orange tick over the bar.
-    if (piece.pinned === true) {
-      ctx.fillStyle = "#ff9d4c";
-      ctx.fillRect(x, y - Math.max(2, height + 1), Math.max(2, width * 0.35), Math.max(1, height * 0.8));
-    }
-    // Repairing: a pale cross at the right end of the bar.
-    if (piece.repairing === true) {
-      ctx.strokeStyle = "#e8f0d0";
-      ctx.lineWidth = 1;
+  for (const shape of spec.silhouette) {
+    if (shape.t === "line") {
       ctx.beginPath();
-      ctx.moveTo(x + width + 2, y - 1);
-      ctx.lineTo(x + width + 2, y + height + 1);
-      ctx.moveTo(x + width + 1, y + height / 2);
-      ctx.lineTo(x + width + 3, y + height / 2);
+      ctx.moveTo(x0 + shape.x1 * k, y0 + shape.y1 * k);
+      ctx.lineTo(x0 + shape.x2 * k, y0 + shape.y2 * k);
+      ctx.strokeStyle = palette.dark;
+      ctx.lineWidth = Math.max(1, shape.w * k);
+      ctx.stroke();
+      continue;
+    }
+    shapePath(ctx, shape, x0, y0, k);
+    ctx.fillStyle = shape.invert ? interior : palette.dark;
+    if (shape.strokeOnly) {
+      ctx.strokeStyle = palette.dark;
+      ctx.lineWidth = Math.max(1, k * 1.5);
+      ctx.stroke();
+    } else {
+      ctx.fill();
+    }
+  }
+}
+
+/**
+ * Paint one badge's static half into its own canvas, for the sprite cache. `size` is the badge's
+ * width in the destination's pixels; the sprite is square and the geometry is the badge's own.
+ */
+export function renderBadgeSprite(ctx, { kind = "infantry", side = "blue", transport = false, size = 14 } = {}) {
+  const px = Math.max(1, Number(size) || 14);
+  const k = px / BADGE_UNIT;
+  const spec = badgeForPiece({ kind, side: side === "red" ? "red" : "blue",
+    transport, domain: transport ? "sea" : undefined,
+    atSea: transport === true });
+  paintBadgeBody(ctx, 0, 0, k, side === "red" ? "red" : "blue", spec,
+    BADGE_INTERIOR[spec.domain] || BADGE_INTERIOR.land);
+  return px;
+}
+
+// One badge on the board. `group` is what badgeGroups() returned: a footprint with a face piece and
+// however many friendly pieces sit inside it.
+//
+// The strength bar, the dug-in bar, the selected ring, the movement dashes, the combat burst and the
+// stack disc all live here, because they are the badge's chrome: drawing them anywhere else is how
+// two parts of the page end up disagreeing about where a unit's bar sits.
+export function paintBadge(ctx, group, view, opts = {}) {
+  if (!group || !group.top || !view) return null;
+  const piece = group.top;
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const floor = Number(opts.badgeMinPx) || BADGE_MIN_PX;
+  const size = badgePx(scale, floor);
+  const k = size / BADGE_UNIT;
+  const at = cellToPixel(wrapX(group.x, view.boardW || BOARD_W), group.y, view);
+  const x0 = at.x - size / 2;
+  const y0 = at.y - size / 2;
+
+  const side = group.side === "red" ? "red" : "blue";
+  const spec = badgeForPiece(piece);
+  const interior = BADGE_INTERIOR[spec.domain] || BADGE_INTERIOR.land;
+
+  // The static half: one blit when the page handed us a sprite cache, the same geometry drawn as
+  // paths when it did not (the node harness, and the mockup sheet's own large renders).
+  const sprites = opts.badgeSprites;
+  const sprite = sprites && typeof sprites.get === "function"
+    ? sprites.get(spec.kind, side, size, spec.shapeKind === "transport")
+    : null;
+  if (sprite) {
+    ctx.drawImage(sprite, x0, y0, size, size);
+  } else {
+    paintBadgeBody(ctx, x0, y0, k, side, spec, interior);
+  }
+
+  // Dug in: a green bar above the badge, and only on the kinds the runtime can entrench.
+  if (showsEntrench(piece)) {
+    ctx.fillStyle = "#1f7a3a";
+    ctx.fillRect(x0 + 5 * k, y0 + 0.4 * k, 14 * k, 2 * k);
+  }
+
+  // The strength bar below: green, amber, red as it recedes, exactly the fraction the server sent.
+  const band = strengthBand(piece.strength, piece.maxStrength);
+  if (band) {
+    const barY = y0 + (showsEntrench(piece) ? 24.4 : 22.4) * k;
+    ctx.fillStyle = "#2a2f3a";
+    ctx.fillRect(x0 + 5 * k, barY, 14 * k, 2.2 * k);
+    ctx.fillStyle = band.colour;
+    ctx.fillRect(x0 + 5 * k, barY, 14 * k * band.fraction, 2.2 * k);
+  }
+
+  // The states, drawn around the silhouette and never over it.
+  const state = badgeState(piece, opts);
+  if (state === "moving") {
+    ctx.strokeStyle = "#8fd3ff";
+    ctx.lineWidth = Math.max(1, k * 1.4);
+    const dash = [[20.6, 4.6, 23.2, 2.0], [20.6, 9.2, 23.8, 6.0], [15.8, 1.8, 18.8, 1.8]];
+    for (const [x1, y1, x2, y2] of dash) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + x1 * k, y0 + y1 * k);
+      ctx.lineTo(x0 + x2 * k, y0 + y2 * k);
       ctx.stroke();
     }
-    // Facing: a one-pixel notch on the side the piece faces.
-    if (piece.facing) {
-      const notch = Math.max(1, view.scale * 0.35);
-      const nx = piece.facing === "e" ? at.x + notch * 2 : piece.facing === "w" ? at.x - notch * 2 : at.x;
-      const ny = piece.facing === "s" ? at.y + notch * 2 : piece.facing === "n" ? at.y - notch * 2 : at.y;
-      ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
-      ctx.fillRect(nx, ny, Math.max(1, notch), Math.max(1, notch));
-    }
+  }
+  if (state === "combat") {
+    polygonPath(ctx, [[18.4, 1.0], [20.2, 4.6], [23.8, 6.4], [20.2, 8.2], [18.4, 11.8],
+      [16.6, 8.2], [13.0, 6.4], [16.6, 4.6]], x0, y0, k);
+    ctx.fillStyle = "#ffd43b";
+    ctx.fill();
+    ctx.strokeStyle = "#7a4d00";
+    ctx.lineWidth = Math.max(1, k * 0.6);
+    ctx.stroke();
+  }
+  if (state === "selected") {
+    polygonPath(ctx, selectedRing(side), x0, y0, k);
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = Math.max(1, k * 1.6);
+    ctx.stroke();
+  }
+
+  // Pinned and repairing (T-003's states, kept): an orange tick and a pale cross beside the bar.
+  const barY = y0 + (showsEntrench(piece) ? 24.4 : 22.4) * k;
+  if (piece.pinned === true) {
+    ctx.fillStyle = "#ff9d4c";
+    ctx.fillRect(x0 + 19.4 * k, barY - 1.4 * k, Math.max(2, 3 * k), Math.max(1, 1.6 * k));
+  }
+  if (piece.repairing === true) {
+    ctx.strokeStyle = "#e8f0d0";
+    ctx.lineWidth = Math.max(1, k * 0.8);
+    ctx.beginPath();
+    ctx.moveTo(x0 + 20.4 * k, barY - k);
+    ctx.lineTo(x0 + 20.4 * k, barY + 3.2 * k);
+    ctx.moveTo(x0 + 19.2 * k, barY + 1.1 * k);
+    ctx.lineTo(x0 + 21.6 * k, barY + 1.1 * k);
+    ctx.stroke();
+  }
+  // Facing: a one-unit notch on the side the piece last stepped.
+  if (piece.facing) {
+    const nx = piece.facing === "e" ? 21.6 : piece.facing === "w" ? 2.4 : 12;
+    const ny = piece.facing === "s" ? 21.6 : piece.facing === "n" ? 2.4 : 12;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+    ctx.fillRect(x0 + nx * k, y0 + ny * k, Math.max(1, 1.6 * k), Math.max(1, 1.6 * k));
+  }
+
+  // A stack: one disc, bottom-right, with the count. Above nine it says 9+, because a legible number
+  // matters more than the exact one, and the whole stack is named on hover.
+  if (Number(group.count) > 1) {
+    const cx = x0 + 19.4 * k;
+    const cy = y0 + 19.4 * k;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4.3 * k, 0, Math.PI * 2);
+    ctx.fillStyle = "#101623";
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = Math.max(1, k * 0.8);
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = Math.max(7, Math.round(6.2 * k)) + "px ui-monospace,monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(Number(group.count) > 9 ? "9+" : String(Number(group.count)), cx, cy + 0.3 * k);
+  }
+
+  return { x: x0, y: y0, size, side, kind: spec.kind, count: Number(group.count) || 1 };
+}
+
+// One piece's badge, for callers that have a single piece and no grouping to do.
+export function paintPiece(ctx, piece, view, opts = {}) {
+  if (!piece || !Number.isFinite(Number(piece.x)) || !Number.isFinite(Number(piece.y))) return null;
+  const groups = badgeGroups([piece], Math.max(1, Number(view && view.scale) || 1),
+    Number(opts.badgeMinPx) || BADGE_MIN_PX);
+  return paintBadge(ctx, groups[0], view, opts);
+}
+
+// Every piece the view sent, one badge per footprint. Returns the groups, so the caller can report
+// how many pieces it drew without re-grouping.
+export function paintPieces(ctx, pieces, view, opts = {}) {
+  if (!Array.isArray(pieces) || !view) return [];
+  // One size floor, from the page's device pixel ratio: the PM's 14 px is a screen size, and the
+  // canvas draws in device pixels.
+  const floor = Number(opts.badgeMinPx) || BADGE_MIN_PX;
+  const groups = opts.groups || badgeGroups(pieces, Math.max(1, Number(view.scale) || 1), floor);
+  for (const group of groups) paintBadge(ctx, group, view, opts);
+  return groups;
+}
+
+// The cell a badge covers, as a footprint: the badge's own width in cells, centred.
+export function badgeFootprint(group, view, opts = {}) {
+  if (!group) return null;
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const cells = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / scale;
+  const half = cells / 2;
+  return {
+    x0: Number(group.x) - half, x1: Number(group.x) + half,
+    y0: Number(group.y) - half, y1: Number(group.y) + half,
+  };
+}
+
+// The site a player can still see under a badge. A badge is at least 14 px, so a garrison standing
+// on a city paints over the city's cell; the city has to stay visible on the board anyway (PB-029,
+// T-014 AC7). Only the sites a badge actually covers are re-stamped, and only at the one cell the
+// terrain gave them, so nothing is added to a city nobody is standing on.
+//
+// A filled cell in the city's own ink does not do that job: the ink is #000000 and the badge face is
+// a dark silhouette on a light interior, so a full-cell black square reads as part of the icon and the
+// city disappears into the badge it was supposed to stay visible under (measured: 59 black pixels in
+// a 14x14 box on a garrisoned city against 28 on open ground, centre pixel black vs the strength
+// bar's green). The site is therefore a corner notch with a light rim: the city keeps its ink at the
+// badge's lower-left, where the stack disc (lower-right) and the strength bar (below the silhouette)
+// never sit, and the silhouette keeps the centre.
+export function paintSiteTicks(ctx, sites, groups, view) {
+  const list = Array.isArray(sites) ? sites : [];
+  const covered = Array.isArray(groups) ? groups.map((group) => badgeFootprint(group, view)) : [];
+  if (!covered.length) return 0;
+  let drawn = 0;
+  for (const site of list) {
+    const x = Number(site && site.x);
+    const y = Number(site && site.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const box = covered.find((b) => x >= b.x0 - 0.5 && x <= b.x1 + 0.5 && y >= b.y0 - 0.5 && y <= b.y1 + 0.5);
+    if (!box) continue;
+    // A capital keeps the capital ink, a city the city ink: the same two colours the terrain uses.
+    const ink = (Number(site.type) === 1 || Number(site.type) === 2) ? PALETTE.capital : PALETTE.city;
+    if (!ink) continue;
+    const topLeft = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
+    const bottomRight = cellToPixel(wrapX(box.x1, view.boardW || BOARD_W), box.y1, view);
+    const span = Math.max(3, Math.round(bottomRight.x - topLeft.x));
+    const side = Math.max(2, Math.round(span * 0.34));
+    const nx = Math.round(topLeft.x) + 1;
+    const ny = Math.round(bottomRight.y) - side - 1;
+    ctx.fillStyle = BADGE_INTERIOR.land;
+    ctx.fillRect(nx - 1, ny - 1, side + 2, side + 2);
+    ctx.fillStyle = ink;
+    ctx.fillRect(nx, ny, side, side);
     drawn++;
   }
   return drawn;
+}
+
+// Which badge is under a pointer, for hover: type and strength have to be readable without a click.
+// The groups are the same ones the frame drew, so what the tooltip names is what the player sees.
+export function badgeAt(pieces, view, px, py, opts = {}) {
+  const groups = opts.groups || badgeGroups(pieces, Math.max(1, Number(view.scale) || 1),
+    Number(opts.badgeMinPx) || BADGE_MIN_PX);
+  let hit = null;
+  let best = Infinity;
+  for (const group of groups) {
+    const at = cellToPixel(wrapX(group.x, view.boardW || BOARD_W), group.y, view);
+    const half = badgePx(Math.max(1, Number(view.scale) || 1), Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2;
+    const dx = Math.abs(Number(px) - at.x);
+    const dy = Math.abs(Number(py) - at.y);
+    if (dx > half || dy > half) continue;
+    const distance = dx + dy;
+    if (distance < best) {
+      best = distance;
+      hit = group;
+    }
+  }
+  return hit;
 }
 
 // City names on the board, once the camera is close enough to read them.
@@ -816,14 +1001,29 @@ export function paintPreview(ctx, preview, view, opts = {}) {
 }
 
 // One line under the canvas. Says plainly when the extract is absent.
+//
+// The count is what the seat can see, split into its own and the other side's (PM, room 3946: the
+// footer used to say "43 pieces" on a board holding 60, because the view sends the seat's own units
+// plus the enemy units in sight and nothing else). A "60 on board" figure is not in the payload on
+// purpose - the server does not send a count of pieces a seat cannot see - so the line names the
+// two numbers it honestly has instead of inventing the third.
+export function pieceCounts(room) {
+  const pieces = Array.isArray(room && room.pieces) ? room.pieces : [];
+  const you = room && room.you ? String(room.you) : "";
+  let own = 0;
+  for (const piece of pieces) if (you && String(piece && piece.side) === you) own += 1;
+  return { inSight: pieces.length, own, enemy: pieces.length - own };
+}
+
 export function statusLine(board, room, result = {}) {
   if (result.mode === "schematic" || !result.mode) return EXTRACT_MISSING;
-  const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
+  const counts = pieceCounts(room);
   const round = Number(room && room.round);
   const clock = room && room.clock ? String(room.clock) : "held";
   const era = room && room.era ? String(room.era) : "";
   const tail = Number.isFinite(round) ? `round ${round} · clock ${clock}` : `clock ${clock}`;
-  return `Cell grid from the map extract · ${pieces} piece${pieces === 1 ? "" : "s"} · ${era ? era + " · " : ""}${tail}`;
+  const seen = counts.inSight === 1 ? "1 piece in sight" : `${counts.inSight} pieces in sight`;
+  return `Cell grid from the map extract · ${seen} · ${counts.own} yours · ${counts.enemy} the other side · ${era ? era + " · " : ""}${tail}`;
 }
 
 // Draws the whole match onto a 2d context: grid (or schematic), capitals, then
@@ -851,18 +1051,22 @@ export function paintMatch(ctx, board, room, opts = {}) {
     const flat = { ...view, left: 0, top: 0 };
     paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale });
     const preview = paintPreview(ctx, opts.preview, flat, opts);
-    const pieces = paintPieces(ctx, room && room.pieces, flat, opts);
-    paintStrengthBars(ctx, room && room.pieces, flat, opts);
+    const groups = paintPieces(ctx, room && room.pieces, flat, opts);
+    const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
     const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat);
-    return { mode, painted: 0, pieces, capitals, preview, message: EXTRACT_MISSING, view: flat };
+    return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, message: EXTRACT_MISSING, view: flat };
   }
 
   if (opts.sightAt && Number(opts.sight) > 0) {
     paintSightRing(ctx, opts.sightAt, view, opts.sight, opts.ringColor);
   }
   const preview = paintPreview(ctx, opts.preview, view, opts);
-  const pieces = paintPieces(ctx, room && room.pieces, view, opts);
-  const bars = paintStrengthBars(ctx, room && room.pieces, view, opts);
+  const groups = paintPieces(ctx, room && room.pieces, view, opts);
+  const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
+  // A badge is never smaller than its floor, so one can cover the city square it stands on. The
+  // sites under badges get their own cell tick back after the pieces are painted: the city has to
+  // stay visible on the board even when a garrison is standing on it (PB-029, T-014 AC7).
+  const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view);
   const capitals = paintCapitals(ctx, capitalMarkers(board, room), view);
   // Political view: the same board with each city coloured by whoever holds it. The terrain under it
   // is untouched, so switching back is switching back and nothing else.
@@ -875,7 +1079,8 @@ export function paintMatch(ctx, board, room, opts = {}) {
   }
   const labels = visibleLabels(room && room.sites, view);
   const labelled = paintLabels(ctx, opts.atlas, labels);
-  return { mode, painted, fogged, pieces, bars, capitals, labels: labelled, political, tally, preview, message: "", view };
+  return { mode, painted, fogged, pieces, groups: groups.length, siteTicks, capitals, labels: labelled,
+    political, tally, preview, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.

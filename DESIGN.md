@@ -45,11 +45,14 @@ clicking faster than your opponent.
   paints them, so the highlight is the rule.
 - Air: the Air dialogue lists every aircraft with its base and how many rounds it is away, plus one
   button per mission. Aircraft are otherwise only findable by clicking a marker on a world map.
-- A bought unit looks like itself: five-cell silhouettes for infantry, tank, aircraft, cruiser,
-  carrier and submarine once the board is zoomed past the marker scale, and the same shape beside the
-  name in Buy.
-  Below that zoom the piece is still the original's measured 3x3 block, and an untyped opening piece
-  stays a block because the archive never recorded what it was.
+- A bought unit looks like itself: every piece on the board is one badge — an original vector
+  silhouette inside a frame in the side's colour, with the frame's geometry carrying the side as
+  well (blue square, red chamfered) so the two sides are told apart without hue. The interior is the
+  domain (land, sea, air) and the state is drawn around the silhouette: strength bar below, dug-in
+  bar above the infantry only, selected ring, movement dashes, combat burst, and a stack disc with
+  the whole stack on hover. A badge never renders below 14 px, at any zoom, so the type is readable
+  at the whole-world fit; a site a badge stands on keeps a corner notch of city ink so the city
+  stays on the board. The Buy table and the Kit legend use the same badge.
 - Strip controls: Play/Pause (the clock), Resign (concede: the other side wins, the room stays so the
   result can be read), New (abandon this game, start a fresh one in the same era and side), Quit
   (leave to the lobby). Each destructive one asks once.

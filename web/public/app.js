@@ -1,7 +1,9 @@
 import {
   capitalMarkers, cellToPixel, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch,
-  panBy, pixelToCell, paintPlacement, rememberSeen, sightTable, statusLine, wrapX, zoomAt,
+  panBy, pixelToCell, paintPlacement, rememberSeen, sightTable, statusLine, wrapX, zoomAt, badgeAt,
+  renderBadgeSprite,
 } from "./render.mjs";
+import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
 import { unitLabel } from "./units.mjs";
 import {
   PICK_HINT,
@@ -369,6 +371,58 @@ function fogFor(view) {
   return { lit: fogFor.lit, seen: fogSeen };
 }
 
+// The unit legend: one row per type, the badge the board actually draws, both sides. Built from
+// the same badgeSvg the mockup sheet used, so the legend cannot drift from the map.
+function unitLegend() {
+  const wrap = document.createElement("div");
+  wrap.className = "badgelegend";
+  const head = document.createElement("p");
+  head.className = "dialogfoot";
+  head.textContent = "On the board: one silhouette per type. Blue is a square frame, red has cut " +
+    "corners, so the two sides differ without colour. The bar under a badge is its strength; the " +
+    "disc is how many friendly units share that footprint.";
+  wrap.append(head);
+  for (const row of badgeLegendRows()) {
+    if (row.side !== "blue") continue;
+    const line = document.createElement("div");
+    line.className = "badgerow";
+    const blue = document.createElement("span");
+    blue.innerHTML = badgeSvg({ kind: row.kind, side: "blue", px: 18, transport: row.transport, title: row.label + " blue" });
+    const red = document.createElement("span");
+    red.innerHTML = badgeSvg({ kind: row.kind, side: "red", px: 18, transport: row.transport, title: row.label + " red" });
+    const name = document.createElement("span");
+    name.className = "badgename";
+    name.textContent = row.label;
+    line.append(blue, red, name);
+    wrap.append(line);
+  }
+  return wrap;
+}
+
+// The static half of a badge is one drawing per (kind, side, pixel size), so it is painted once into
+// an offscreen canvas and blitted after that. Without this the zoomed view pays for ~15 path fills a
+// unit every frame and comes out slower than the 3x3 blocks it replaced (measured: 1.24-1.39x the
+// baseline at scale 11). The cache is bounded: twelve kinds, two sides, and the handful of sizes a
+// camera produces.
+const badgeSprites = (() => {
+  const cache = new Map();
+  return {
+    get(kind, side, size, transport) {
+      const px = Math.max(1, Math.ceil(Number(size) || BADGE_MIN_PX));
+      const key = kind + "|" + side + "|" + px + "|" + (transport ? "t" : "k");
+      let sprite = cache.get(key);
+      if (sprite) return sprite;
+      if (cache.size > 120) cache.clear();
+      sprite = document.createElement("canvas");
+      sprite.width = px;
+      sprite.height = px;
+      renderBadgeSprite(sprite.getContext("2d"), { kind, side, size: px, transport });
+      cache.set(key, sprite);
+      return sprite;
+    },
+  };
+})();
+
 function renderLegend() {
   if (!legendBox) return;
   legendBox.textContent = "";
@@ -508,6 +562,11 @@ function drawMatch() {
   const result = paintMatch(ctx, boardPayload, room, {
     view,
     own: room && room.you,
+    // The PM's floor is a screen size; the canvas draws in device pixels, so the floor is scaled by
+    // the same ratio the cells are.
+    badgeMinPx: BADGE_MIN_PX * dpr(),
+    badgeSprites,
+    selectedId: selected ? selected.id : null,
     preview,
     fog: fogFor(view),
     sight: Number(boardPayload.sightCells || 8),
@@ -644,12 +703,46 @@ board.addEventListener("click", (event) => {
   if (message) sendOrder(message);
 });
 
+// Hover names the unit under the pointer: type and strength, or the whole stack when a footprint
+// holds several (T-014 AC6). It is a DOM tip rather than a board note because the note is where a
+// refusal and a route plan speak, and a hover must not overwrite either.
+const badgeTip = document.getElementById("badgeTip");
+
+function hideBadgeTip() {
+  if (!badgeTip) return;
+  badgeTip.classList.add("hidden");
+}
+
+function hoverBadge(event) {
+  if (!badgeTip) return;
+  const pieces = room && Array.isArray(room.pieces) ? room.pieces : null;
+  if (!pieces || !pieces.length) return hideBadgeTip();
+  const view = viewForCanvas();
+  const at = screenPoint(event);
+  const group = badgeAt(pieces, view, at.x, at.y, { badgeMinPx: BADGE_MIN_PX * dpr() });
+  if (!group) return hideBadgeTip();
+  const text = badgeHoverText(group);
+  if (!text) return hideBadgeTip();
+  if (badgeTip.textContent !== text) badgeTip.textContent = text;
+  badgeTip.classList.remove("hidden");
+  const stage = document.getElementById("mapStage");
+  const rect = stage ? stage.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  const width = badgeTip.offsetWidth || 160;
+  const height = badgeTip.offsetHeight || 18;
+  const left = Math.max(4, Math.min(rect.width - width - 6, event.clientX - rect.left + 12));
+  const top = Math.max(4, event.clientY - rect.top - height - 10);
+  badgeTip.style.left = Math.round(left) + "px";
+  badgeTip.style.top = Math.round(top) + "px";
+}
+
 board.addEventListener("mousemove", (event) => {
+  hoverBadge(event);
   if (!room || !room.you || !selected) return;
   askRoute(cellAtEvent(event, board, viewForCanvas()));
 });
 
 board.addEventListener("mouseleave", () => {
+  hideBadgeTip();
   if (!preview) return;
   preview = null;
   hoverKey = "";
@@ -1481,6 +1574,9 @@ const DIALOG_PAINTERS = {
   kit(body) {
     const tools = toolRow(room);
     body.append(tools || note("This scenario has no late-war tools."));
+    // The unit legend (T-014 AC6). It lives here rather than under the map because the map's own
+    // legend is terrain, and a player looking up "what is that shape" is already in a panel.
+    body.append(unitLegend());
   },
 
   map(body) {
@@ -2049,4 +2145,15 @@ window.__chq = {
     if (socket) socket.close();
   },
   send: (message) => send(message),
+  // Time one full paint of the frame that is on screen, in milliseconds (T-014 AC5). The canvas is
+  // pixels: a screenshot cannot be read back, and timing a click would fold in the camera change.
+  // The one-pixel readback is what makes the number include rasterisation rather than only the JS
+  // that builds the frame.
+  paint() {
+    const ctx = board.getContext("2d");
+    const t0 = performance.now();
+    drawMatch();
+    ctx.getImageData(0, 0, 1, 1);
+    return performance.now() - t0;
+  },
 };
