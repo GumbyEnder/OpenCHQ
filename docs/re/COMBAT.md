@@ -320,8 +320,8 @@ harness is self-contained in `docs/re/t009b/harness/`). No runtime value changed
 (amount 3, dig-in bit 0x20). Its neighbours without the 0x20 bit (lake 3, polar 5) fire per pass;
 desert did not damage a stationary piece at 100 or at 22, nor a piece carrying move points. The
 pattern: the two entries that fired carry no flag bits, both that did not (desert `0x23`, wasteland
-`0x1F`) carry `0x20`/`0x10`. The config now says PART MEASURED and names the runs; the table value is
-untouched.
+`0x1F`) carry `0x20`/`0x10`. Config labels desert `DISASSEMBLY` (and names all three runs) with jungle beside it on the same
+`0x23` byte; the table value is untouched.
 
 **Wasteland 34 is UNMEASURED.** The 1942 board has no wasteland cell at all (0 of 43,520 terrain
 nibbles), so there is nothing to stand on. Forcing `0x836`=14 on an isolated cell lost nothing in
