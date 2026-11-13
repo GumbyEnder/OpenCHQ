@@ -212,3 +212,62 @@ measurement, and the addresses above are what it needs.
   (`sources.speeds`, `notes.speeds`) with these measured numbers beside them.
 - No browser change follows from speed 0. The measured fact is recorded; the decision about
   whether the browser's round clock should model it belongs to the owner (D-017).
+
+## Cells per pass: the move-point budget (S2, 2026-11-12)
+
+`DS:0x6fe + i*2` is a **4-byte int** per unit, and it is the only thing that paces a piece in
+`FUN_15f4_0002`. The three writes that matter, all in `decompiled.c`:
+
+- `4520` — when the committed target differs from the current position, the piece gets
+  `flags |= 0x40` (under orders). Nothing moves a piece that is not under orders.
+- `4526-4530` — one step is taken only if
+  `byte[side + 0x1976] <= points[i]` **and** `FUN_16ee_0008(i, 0)` returns odd; the cost is
+  `byte[side + 0x1976]`. The price of a step is therefore the **per-side** allowance
+  (`DS:0x1976` = `20 20 20 20`), not the per-kind byte.
+- `4785-4813` — at the end of a 100-piece pass every piece is topped up: with `flags & 0x40`
+  clear the word is set to `kind < 5 ? 0 : byte[0x19a6 + kind]`; with `flags & 0x40` set it
+  gains `byte[0x19a6 + kind] >> 1` per pass while it is below `0x50`.
+- `4580-4589` — a piece whose `points < 0x14` (20) is skipped before any of the movement
+  logic in `FUN_15f4_0002`, and the same branch skips `kind < 5` outright.
+
+So the pass is the movement clock, `byte[0x19a6+kind]` is the per-pass budget, and half of it
+is granted per pass while the piece is under orders:
+
+| kind | byte[0x19a6] | +points/pass under orders | steps per pass at cost 20 |
+|---|---|---|---|
+| 1 | 12 | 6 | 0.3 |
+| 2 | 24 | 12 | 0.6 |
+| 3 | 0 | 0 | 0 (transport carries cargo) |
+| 4 | 0 | 0 | 0 |
+| 5, 6 | 36 | 18 | 0.9 |
+| 7, 8, 9 | 40 | 20 | 1.0 |
+
+### Measured, sea/air
+
+`notes/t008/s2_points.py` (unit 35, kind 6, carrier, open water, ordered 61 cells south,
+22 s at speed 6, `DS:0x1478` forced to 0):
+
+    cells 18   pass wraps 11   -> 1.64 cells/pass
+    points 18 -> 36 -> 52 -> 32 -> 28 -> 8 -> 44 -> 4 -> 20 -> 0 -> 36 -> ...
+    pass rate 11 / 22 s = 0.50 wraps/s
+
+The `18 -> 36` step is the `+18` refill; `36 -> 52` (`+16`) is not explained by that branch —
+`4813` adds points on a second path that has not been read yet, so the increments are measured
+but the second path is UNVERIFIED.
+
+At the measured 129.2 s round that is **~64 passes/round and ~105 cells/round for a kind 6**,
+i.e. cells per round is not a constant across speeds — the round clock is fixed (see above)
+while the pass rate scales with speed. Any config value has to be per speed.
+
+`DS:0x6fe` write width is a confirmed trap: unit 37 read `2359296` (`0x240000`) after an
+earlier probe wrote 36 as a `u16` at `i*2` — the low half was zeroed and the high half kept
+the old value. Points must be read and written 4 bytes wide at `i*2`.
+
+### Land is still UNMEASURED
+
+Kinds < 5 are refilled to 0 and skipped by `4580`, so a land piece only banks `12`/`6`/`0`
+per pass while under orders and never moves without several passes of banked points. Live
+1986 land pieces (kinds 2 and 3, indices 37/39/41) sit in the base cluster where their own
+terrain class has **0 clear cells in every direction**, and kind 3's allowance is 0, so no
+land leg could be driven in this walk. Infantry and tank cells/round stay UNMEASURED until a
+fresh game lets us buy and order a land piece in the open — that is AC1's remaining half.
