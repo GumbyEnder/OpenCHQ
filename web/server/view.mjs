@@ -20,6 +20,7 @@ import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing } from "./late.mjs";
 import { ensureStrength } from "./combat.mjs";
+import { holderOf as capitalHolder } from "./capitals.mjs";
 // The payday itself, so the economy dialog shows the figure the tick will pay rather than a page-side
 // copy of the rule.
 import { payoutFor } from "./economy.mjs";
@@ -265,11 +266,67 @@ export function forSeat(match, side) {
   // that the match was over, or who won — a harness played on for ten minutes past the end.
   const over = Boolean(match.over);
   const winner = match.winner || null;
+  // Who won, why, and the era's capital list with the holder the site records actually carry. The
+  // page draws this and never rebuilds the list from what it can see: a seat-side copy would be a
+  // second answer to "who holds Berlin", and that is exactly the kind of second answer that ends a
+  // match the board does not agree with.
+  const result = over ? resultOf(match) : null;
+  // The era's capital list, always - with the holder each site record carries. The map already
+  // labels the capitals, so this leaks nothing the board does not: what it removes is the page's
+  // only reason to guess a holder from a label colour.
+  const capitalList = capitalListOf(match);
 
   // The round the server is actually running, so the page can draw the same clock. A page that
   // keeps its own copy of the round length is a second source of truth for a tunable.
   return {
-    pieces, routes, sites, capitals, seat, notes, alarm, over, winner, unscreened,
+    pieces, routes, sites, capitals, capitalList, seat, notes, alarm, over, winner, result, unscreened,
     roundSeconds: roundLength(),
   };
+}
+
+function sideWord(side) {
+  return side === "blue" ? "Blue" : side === "red" ? "Red" : "Nobody";
+}
+
+// The era's capitals with the holder the server's own site records carry. Read through the capital
+// set's ids, not through the map's kind: two of 1986's four capitals sit on sites the asset list
+// calls a city, and a lookup keyed on kind would report them unheld.
+export function capitalListOf(match) {
+  const list = match && match.capitalSet && Array.isArray(match.capitalSet.list) ? match.capitalSet.list : [];
+  return list.map((capital) => ({
+    siteId: Number(capital.siteId),
+    name: String(capital.name || ""),
+    owner: capitalHolder(match, capital),
+  }));
+}
+
+// The result as a seat reads it. `reason` is "capitals" only when the tick recorded the capture that
+// completed the set; a resignation (and any older saved match that ended before this field existed)
+// has a winner but no capital to name, and says so instead of inventing one.
+export function resultOf(match) {
+  if (!match || !match.over) return null;
+  const reason = match.winReason && match.winReason.kind === "capitals" ? match.winReason : null;
+  return {
+    winner: match.winner || null,
+    reason: reason ? "capitals" : (match.winner ? "resignation" : "over"),
+    lastCapital: reason
+      ? { siteId: reason.siteId ?? null, name: String(reason.name || ""), from: reason.from || null, round: reason.round ?? null }
+      : null,
+    capitals: capitalListOf(match),
+    round: Number.isInteger(match.round) ? match.round : null,
+  };
+}
+
+// The one sentence that ended the match, written once on the server so the end screen and the log
+// cannot disagree about why it ended. Resignation keeps its own note, which lobby writes.
+export function resultNote(match) {
+  const result = resultOf(match);
+  if (!result) return "The match is over.";
+  const who = sideWord(result.winner);
+  if (result.reason === "capitals" && result.lastCapital && result.lastCapital.name) {
+    const n = result.capitals.length;
+    return who + " wins: " + result.lastCapital.name + " fell at round " + result.lastCapital.round +
+      ", and " + who.toLowerCase() + " holds every capital (" + n + " of " + n + ").";
+  }
+  return result.winner ? who + " wins." : "The match is over.";
 }

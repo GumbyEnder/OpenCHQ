@@ -1,0 +1,43 @@
+T-012 AC1 capital-owner trace, from the T-010 sweep on live 5a602f9 (2026-11-13)
+source summaries: see the three paths at the bottom
+
+== s6 ==
+build 5a602f9  era 1942  speed 6  gate contact  room a9ff7a6214c5d201  seat blue
+round-0 capital owners: London=blue, Berlin=red, Paris=red, Tokyo=red, Washington=blue, Moscow=blue
+end: round 22  winner blue  over True  wallMs 53195
+  round 1   dock       id dock:146:30 Dock 146,30 None  -> blue  by blue:land:tank
+  round 4   city       id 0    Archangel blue  -> red   by (none standing on the cell at poll time)
+  round 8   dock       id dock:268:47 Dock 268,47 None  -> blue  by blue:land:tank
+  round 20  city       id 37   Nagoya red   -> blue  by blue:land:tank
+  round 21  city       id 17   Paris red   -> blue  by blue:land:tank   <== CAPITAL
+  round 21  city       id 35   Tokyo red   -> blue  by blue:land:tank   <== CAPITAL
+  round 22  city       id 11   Berlin red   -> blue  by blue:land:tank   <== CAPITAL
+
+== s1 ==
+build 5a602f9  era 1942  speed 1  gate contact  room 148103a71d86d9fc  seat blue
+round-0 capital owners: London=blue, Berlin=red, Paris=red, Tokyo=red, Washington=blue, Moscow=blue
+end: round 21  winner blue  over True  wallMs 146278
+  round 1   dock       id dock:146:30 Dock 146,30 None  -> blue  by blue:land:tank
+  round 4   city       id 0    Archangel blue  -> red   by (none standing on the cell at poll time)
+  round 7   dock       id dock:268:47 Dock 268,47 None  -> blue  by blue:land:tank
+  round 19  city       id 37   Nagoya red   -> blue  by blue:land:tank
+  round 20  city       id 17   Paris red   -> blue  by blue:land:tank   <== CAPITAL
+  round 20  city       id 35   Tokyo red   -> blue  by blue:land:tank   <== CAPITAL
+  round 21  city       id 11   Berlin red   -> blue  by blue:land:tank   <== CAPITAL
+
+== control-no-orders-s6 ==
+build 5a602f9  era 1942  speed 6  gate none  room a21c738ddd727c23  seat blue
+round-0 capital owners: London=blue, Berlin=red, Paris=red, Tokyo=red, Washington=blue, Moscow=blue
+end: round None  winner None  over False  wallMs 276226
+  round 1   dock       id dock:146:30 Dock 146,30 None  -> blue  by blue:land:tank
+  round 4   city       id 0    Archangel blue  -> red   by (none standing on the cell at poll time)
+  round 8   dock       id dock:268:47 Dock 268,47 None  -> blue  by blue:land:tank
+
+Write path, from the code (t012-wincheck, based on origin/web dee678f):
+  web/server/economy.mjs:305  occupy(match)      walks every site once per round
+  web/server/economy.mjs:340  site.owner = side  the ONLY write of a site owner from a piece
+  web/server/economy.mjs:339  events.push({type:'capture', site, name, kind, side, from})
+  web/server/tick.mjs:164     checkWin(match)    called only when this round's events took a capital
+  web/server/tick.mjs:174     match.winReason    new in T-012: the decisive capital and its round
+  web/server/economy.mjs:109  seedOwners(match)  opening owners from the 84-row file; runs at round 0 only
+  web/server/capitals.mjs     capitalRows/capitalsFromFile: the set is the file's subtype-1/2 rows

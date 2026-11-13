@@ -216,7 +216,13 @@ export function logLines(match, side, events, round) {
           ? match.capitalSet.list.length
           : 0;
         const set = size ? "every capital (" + size + " of " + size + ")" : "every capital";
-        push(event.side === side ? "you hold " + set : "the enemy holds " + set);
+        // The reason travels with the fact. The tick records the capital whose fall completed the
+        // set; a win line that leaves it out is the sentence that made a real win look like an
+        // accident in the T-010 sweep.
+        const last = event.name
+          ? "; " + event.name + " fell" + (Number.isInteger(Number(event.round)) ? " at round " + Number(event.round) : "") + " last"
+          : "";
+        push((event.side === side ? "you hold " : "the enemy holds ") + set + last);
         break;
       }
       default:

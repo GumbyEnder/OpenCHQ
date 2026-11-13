@@ -52,6 +52,31 @@ export function checkWin(match) {
   return winner;
 }
 
+// Which of this round's capital captures actually completed the set.
+//
+// A round can take two capitals (measured: Paris and Tokyo fell in the same round of the T-010
+// sweep), and the site loop visits them in id order, not in capture order. Naming the last one the
+// loop happened to emit would blame a capital whose fall changed nothing. So walk the round's
+// captures backwards from the finished board: restore the side a capture took the capital from and
+// ask whether the winner still holds every capital. The first restore that leaves the winner short
+// is the capture that decided the match.
+function decisiveCapture(match, captures, winner) {
+  const list = (match.capitalSet && Array.isArray(match.capitalSet.list)) ? match.capitalSet.list : [];
+  const owners = new Map(list.map((capital) => [String(capital.siteId), capitalHolder(match, capital)]));
+  let decisive = captures.length ? captures[captures.length - 1] : null;
+  for (let i = captures.length - 1; i >= 0; i--) {
+    const event = captures[i];
+    const before = event.from === "blue" || event.from === "red" ? event.from : null;
+    owners.set(String(event.site), before);
+    const complete = list.every((capital) => owners.get(String(capital.siteId)) === winner);
+    if (!complete) {
+      decisive = event;
+      break;
+    }
+  }
+  return decisive;
+}
+
 export function tickMatch(match) {
   if (!match) return { match, events: [] };
   // A finished match is frozen: no movement, no income, no fuel. A held clock is paused the
@@ -132,16 +157,36 @@ export function tickMatch(match) {
   // two of 1986's four capitals sit on sites the asset list calls a city (London, Tokyo), so a
   // capture of London emits kind "city" and still has to be able to end the match.
   const set = (match.capitalSet && match.capitalSet.list) || [];
-  const tookCapital = events.some((event) =>
+  const capitalCaptures = events.filter((event) =>
     event && event.type === "capture" &&
     set.some((capital) => Number(capital.siteId) === Number(event.site))
   );
-  const winner = tookCapital ? checkWin(match) : null;
+  const winner = capitalCaptures.length ? checkWin(match) : null;
   if (winner) {
+    // The reason, not only the fact. A player who is told "you won" but not which capital fell
+    // cannot check the claim against the board, and a match that ends without a nameable cause is
+    // the same as a match that ends by accident. `winReason` is written onto the match, so a
+    // reload and a reconnect read the same sentence the tick that ended it did.
+    const last = decisiveCapture(match, capitalCaptures, winner);
     match.winner = winner;
     match.over = true;
     match.clock = "held";
-    events.push({ type: "win", side: winner });
+    match.winReason = {
+      kind: "capitals",
+      side: winner,
+      siteId: last ? Number(last.site) : null,
+      name: last ? String(last.name || "") : "",
+      from: last ? (last.from || null) : null,
+      round: match.round,
+    };
+    events.push({
+      type: "win",
+      side: winner,
+      site: match.winReason.siteId,
+      name: match.winReason.name,
+      from: match.winReason.from,
+      round: match.round,
+    });
   }
 
   return { match, events };

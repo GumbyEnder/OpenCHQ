@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { deleteRoom, flushRooms, flushWindow, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
 import { tickMatch } from "./tick.mjs";
-import { forSeat } from "./view.mjs";
+import { forSeat, resultNote, resultOf } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { boardPayload, matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
@@ -196,6 +196,9 @@ export function createLobby() {
       routes: seen ? seen.routes : {},
       sites: seen ? seen.sites : [],
       capitals: seen ? seen.capitals : null,
+      // The era's capitals and who holds each one right now. Sent from round 0: the map labels the
+      // capitals anyway, and the War panel must be able to show the list before a match ends.
+      capitalList: seen ? (seen.capitalList || null) : null,
       // The shop: what this era sells and at what price. Prices come from config, never from
       // the page, so the panel cannot disagree with what economy.buy charges.
       shop: shopFor(room.era),
@@ -213,6 +216,9 @@ export function createLobby() {
       log: Array.isArray(room.log && room.log[you]) ? room.log[you] : [],
       over: room.match ? Boolean(room.match.over) : false,
       winner: room.match ? room.match.winner : null,
+      // Who won, why, and the capital list the server's own site records carry. The end screen
+      // draws this instead of guessing a cause from the clock having stopped.
+      result: room.match ? resultOf(room.match) : null,
       note: room.note,
       // The bot's last decisions, for the owner's review only. A normal seat never sees this,
       // so fog is untouched for players.
@@ -267,6 +273,7 @@ export function createLobby() {
       note: view.note,
       seat: signature(view.seat),
       capitals: signature(view.capitals),
+      capitalList: signature(view.capitalList || null),
       pieces,
       routes,
       sites,
@@ -311,6 +318,10 @@ export function createLobby() {
       speed: view.speed,
       over: Boolean(view.over),
       winner: view.winner || null,
+      // The delta is the frame most seats see at the moment a match ends, so the result has to
+      // ride it. It rides whole (six rows), not as a change flag: a page that missed one delta
+      // and then syncs would otherwise hold a result from the round before.
+      result: view.result || null,
       clock: view.clock,
       note: view.note,
       pieces,
@@ -320,9 +331,11 @@ export function createLobby() {
       unscreened: view.unscreened || [],
       seatChanged: last.seat !== signature(view.seat),
       capitalsChanged: last.capitals !== signature(view.capitals),
+      capitalListChanged: last.capitalList !== signature(view.capitalList || null),
     };
     if (delta.seatChanged) delta.seat = view.seat;
     if (delta.capitalsChanged) delta.capitals = view.capitals;
+    if (delta.capitalListChanged) delta.capitalList = view.capitalList || null;
     return delta;
   }
 
@@ -933,15 +946,16 @@ export function createLobby() {
       }
       if (room.match.over) {
         room.clock = "held";
-        room.note = "The match is over.";
+        room.note = resultNote(room.match);
         saveRoom(room);
         room.dirty = false;
         tellRoom(room);
         const winner = room.match.winner;
+        const result = resultOf(room.match);
         for (const seat of [room.seats.blue, room.seats.red]) {
           if (seat.kind !== "human") continue;
           const peer = sockets.get(seat.username);
-          if (peer) peer.send({ op: "over", roomId: room.id, winner });
+          if (peer) peer.send({ op: "over", roomId: room.id, winner, result, note: room.note });
         }
       }
     }

@@ -146,7 +146,10 @@ export async function run(ctx) {
   // ---- hidden pieces are absent, never flagged ------------------------------------------
   const topKeys = Object.keys(reachView).sort().join(",");
   // Sorted, so roundSeconds sits before routes ("roundS" < "route").
-  expect(fail, topKeys === "alarm,capitals,notes,over,pieces,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
+  // result (who won, why, the decisive capital) and capitalList (the era's capitals with their
+  // holders) are T-012: the end screen and the War panel draw the server's own answer, so both ride
+  // every seat view. A seat that could not see them would have to rebuild them from its own pieces.
+  expect(fail, topKeys === "alarm,capitalList,capitals,notes,over,pieces,result,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
   for (const piece of reachView.pieces) {
     for (const key of ["hidden", "visible", "concealed", "seen"]) {
       expect(fail, !(key in piece), "a piece carries a '" + key + "' flag: " + JSON.stringify(piece));

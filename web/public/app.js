@@ -119,15 +119,29 @@ function say(text) {
 }
 
 // The end of a match said once, in the player's own terms.
+//
+// The reason and the capital list come off the server's `result`, never off what this page can see:
+// the page holds only the pieces in sight, so a list rebuilt here would be a second answer to "who
+// holds Berlin" and could disagree with the board that ended the match. A resignation has no capital
+// to name, and the server's own sentence is printed for it rather than a guessed cause.
 function sayResult(room) {
   if (!room || !room.over) return;
-  // The server writes the sentence that ended the game - a resignation and a capital win are not the
-  // same loss, and the page must not flatten both into one line of its own. The server's capital
-  // line names the size of the era's set ("every capital (3 of 3)"), so the page never invents it.
-  const mine = room.you || (room.seat && room.seat.side);
+  const mine = room.you || (room.seat && room.seat.side) || "";
+  const result = room.result && typeof room.result === "object" ? room.result : null;
+  const caps = result && Array.isArray(result.capitals) ? result.capitals : [];
+  const list = caps.length
+    ? " Capitals: " + caps.map((row) => row.name + " " + (row.owner || "neutral")).join(", ") + "."
+    : "";
+  if (result && result.reason === "capitals" && result.lastCapital && result.lastCapital.name) {
+    const who = result.winner === mine
+      ? "You win"
+      : result.winner === "blue" ? "Blue wins" : result.winner === "red" ? "Red wins" : "The match is over";
+    say(who + ": " + result.lastCapital.name + " fell at round " + result.lastCapital.round + "." + list);
+    return;
+  }
   const note = typeof room.note === "string" ? room.note.trim() : "";
   if (note) {
-    say(note);
+    say(note + list);
     return;
   }
   say(room.winner && mine ? (room.winner === mine ? "You have won." : "You lost.") : "The match is over.");
@@ -1102,6 +1116,13 @@ function applyDelta(delta) {
     // alarm does: the warning is only worth anything in the round it is true.
     unscreened: Array.isArray(delta.unscreened) ? delta.unscreened : (room.unscreened || []),
     capitals: delta.capitalsChanged ? delta.capitals : room.capitals,
+    capitalList: delta.capitalList === undefined ? room.capitalList : delta.capitalList,
+    // The end of a match is a one-round fact, and the delta is the frame most seats see it in. The
+    // page used to learn "over" only from a whole frame, so a seat on deltas kept playing past the
+    // end - the harness watched one do it for ten minutes.
+    over: delta.over === undefined ? room.over : Boolean(delta.over),
+    winner: delta.winner === undefined ? room.winner : delta.winner,
+    result: delta.result === undefined ? room.result : delta.result,
   };
   if (selected && !byId.has(selected.id)) {
     selected = null;
@@ -1471,6 +1492,28 @@ const DIALOG_PAINTERS = {
     definition(dl, "Clock", room.clock || "—");
     definition(dl, "Round", String(room.round));
     body.append(dl);
+    // The era's capitals, with the holder the server's site records carry, and - once the match is
+    // over - which of them fell last. This is the same list the end screen reads, so a player can
+    // check the sentence against the board without leaving the panel.
+    const capitals = Array.isArray(room.capitalList) && room.capitalList.length
+      ? room.capitalList
+      : (room.result && Array.isArray(room.result.capitals) ? room.result.capitals : null);
+    if (capitals && capitals.length) {
+      const reason = room.result && room.result.lastCapital;
+      const label = document.createElement("p");
+      label.className = "dialoglabels";
+      label.textContent = reason && reason.name
+        ? "Capitals — " + reason.name + " fell last, round " + reason.round
+        : "Capitals";
+      const list = document.createElement("ul");
+      list.className = "reserves";
+      for (const capital of capitals) {
+        const item = document.createElement("li");
+        item.textContent = capital.name + " — " + (capital.owner || "neutral");
+        list.append(item);
+      }
+      body.append(label, list);
+    }
     const group = document.createElement("div");
     group.className = "dialogbuttons";
     const run = document.createElement("button");
