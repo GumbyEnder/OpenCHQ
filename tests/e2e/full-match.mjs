@@ -33,6 +33,9 @@ if (!BASE) { console.error("usage: node full-match.mjs --url=<live base>"); proc
 const ERA = arg("era", "1942");
 const WANT_SPEED = Number(arg("speed", "1")) || 1;
 const GATE = arg("gate", "contact");
+// --no-orders: the pure control leg. Buys happen, the opening infantry is sent at the midpoint,
+// and nothing is ever ordered at a capital - no phase-2 attack, no phase-3 re-order.
+const NO_ORDERS = process.argv.includes("--no-orders");
 const MAX_MS = Number(arg("budget", "900000")) || 900000;
 const OUT = path.join(here, "t010-full-match-" + ERA + "-s" + WANT_SPEED + "-" + new Date().toISOString().replace(/[:.]/g, "-"));
 
@@ -175,6 +178,35 @@ async function buyNear(kind, target, standoff = 4) {
 
 const t0 = Date.now();
 const timeline = { firstContact: null, firstCapture: null, end: null };
+// --trace: every site-owner change the seat is shown, with the round and the pieces standing on
+// that cell when it was first seen. This is what a capture looks like from outside: the room view
+// carries owners, not events, so the poll interval is the resolution of the "how".
+const TRACE = process.argv.includes("--trace");
+const ownerTrace = new Map();
+const traceLog = [];
+function traceStep(now) {
+  if (!now || !Array.isArray(now.sites)) return;
+  for (const site of now.sites) {
+    const key = site.id === null || site.id === undefined ? `s:${site.name}:${site.x},${site.y}` : String(site.id);
+    const before = ownerTrace.has(key) ? ownerTrace.get(key) : undefined;
+    ownerTrace.set(key, site.owner ?? null);
+    if (before === undefined || before === (site.owner ?? null)) continue;
+    const here = (now.pieces || []).filter((p) => p.x === site.x && p.y === site.y)
+      .map((p) => `${p.side}:${p.domain}:${p.kind}`);
+    const entry = {
+      round: now.round,
+      id: key,
+      name: site.name,
+      kind: site.kind,
+      type: site.type,
+      from: before ?? null,
+      to: site.owner ?? null,
+      by: here,
+    };
+    traceLog.push(entry);
+    if (TRACE) console.log("TRACE " + JSON.stringify(entry));
+  }
+}
 let endShot = null, captureShot = null;
 
 try {
@@ -214,6 +246,8 @@ try {
   const capitals = (r.sites || []).filter((s) => Number(s.type) === 1 || Number(s.type) === 2);
   const foeCaps = capitals.filter((c) => c.owner && c.owner !== you);
   summary.capitalSet = capitals.map((c) => ({ name: c.name, x: c.x, y: c.y, owner: c.owner }));
+  // Baseline for --trace: the owners at round 0, before the clock runs.
+  traceStep(r);
   mark(capitals.length > 0 && foeCaps.length > 0, "the room names the era's capitals and which are enemy-held", { size: capitals.length, enemy: foeCaps.map((c) => c.name) });
   if (!foeCaps.length) throw new Error("no enemy-held capital in the room view");
 
@@ -260,6 +294,7 @@ try {
     const now = await room();
     if (!now) break;
     if (now.over) break;
+    traceStep(now);
     contact = (now.pieces || []).some((p) => p.side === you && p.fighting);
     if (!contact) {
       // keep one attacker per capital available while we wait - at most once every 4 s, and only
@@ -281,7 +316,7 @@ try {
   await shot("02-first-contact.png");
 
   // ---- phase 2: take the capitals -----------------------------------------
-  if (GATE === "contact") {
+  if (GATE === "contact" && !NO_ORDERS) {
     await clockIs("held");
     for (const cap of foeCaps) {
       if (!tanks[cap.name]) {
@@ -299,6 +334,19 @@ try {
   }
 
   // ---- phase 3: capture and end -------------------------------------------
+  // The first capture can land during phase 2 (the tanks are already ordered at the capitals), so
+  // the trace - polled from round 0 - is the authority on when and where. The poll loop below only
+  // sees what changes after it starts; reading the trace keeps a cap that fell at r21 from being
+  // reported as "none".
+  if (!timeline.firstCapture) {
+    const capIds = new Set(capitals.map((c) => Number(c.id)));
+    const hit = traceLog.find((e) => capIds.has(Number(e.id)) && e.to === you);
+    if (hit) {
+      timeline.firstCapture = hit.round;
+      timeline.captureSite = hit.name;
+      timeline.captureFromTrace = true;
+    }
+  }
   // The capture is read off the room's own site owners, not off a log line: the capital rows are in
   // the seat view, so a capital that flips to us is the fact the win check just read.
   const owners = new Map((await room()).sites.filter((s) => Number(s.type) === 1 || Number(s.type) === 2).map((s) => [s.name, s.owner]));
@@ -306,6 +354,7 @@ try {
   while (Date.now() < deadline) {
     const now = await room();
     if (!now) break;
+    traceStep(now);
     for (const site of now.sites || []) {
       if (!(Number(site.type) === 1 || Number(site.type) === 2)) continue;
       const was = owners.get(site.name);
@@ -328,7 +377,7 @@ try {
     }
     // retry buys while income arrives, and re-order an idle piece whose capital is still red
     ticks += 1;
-    if (ticks % 12 === 0) {
+    if (!NO_ORDERS && ticks % 12 === 0) {
       const reds = (now.sites || []).filter((s) => (Number(s.type) === 1 || Number(s.type) === 2) && s.owner !== you);
       if (reds.length) {
         const idle = (now.pieces || []).filter((p) => p.side === you && p.domain === "land" && !(p.path || []).length && !p.fighting);
@@ -352,6 +401,7 @@ try {
   summary.captures = final ? (final.sites || []).filter((s) => Number(s.type) === 1 || Number(s.type) === 2).map((s) => `${s.name}:${s.owner}`) : [];
   summary.over = Boolean(final && final.over);
   summary.winner = final && final.winner;
+  summary.trace = traceLog;
   summary.wallMs = Date.now() - t0;
   mark(Boolean(timeline.firstCapture), "a city capture happened", { round: timeline.firstCapture, site: timeline.captureSite });
   mark(Boolean(final && final.over), "the match reached a game end", { round: final && final.round, winner: final && final.winner, capitalOwners: summary.captures });
