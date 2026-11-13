@@ -28,3 +28,6 @@ __pycache__/
 tests/e2e/soak-*/
 # Speed hand-check runs: screenshots + summary.json per run, same rule.
 tests/e2e/t004-speed-handcheck-*/
+
+# T-010 live-sweep runs: screenshots and a summary per run, evidence stays on the machine.
+tests/e2e/t010-*/
