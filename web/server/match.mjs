@@ -9,6 +9,7 @@
 
 import { SEATS } from "./board.mjs";
 import { capitalRows, capitalSet, capitalsFromFile } from "./capitals.mjs";
+import { openingForce } from "./dispositions.mjs";
 import { combatRules, handicapDefault, opponentPool, rosterFor, roundSeconds, startPool } from "./rules.mjs";
 import { DOMAIN_BY_KIND } from "./shop.mjs";
 
@@ -25,12 +26,13 @@ export function eraOf(value) {
   return ERAS.includes(era) ? era : "1986";
 }
 
-function piece(side, domain, x, y, kind = null) {
+function piece(side, domain, x, y, kind = null, extra = {}) {
   // Strength is part of the piece's shape now (T-003): a unit opens at the config's maximum and
   // the page draws the bar from these two fields.
   const max = combatRules().maxStrength;
-  return {
-    id: `${side}:${domain}`,
+  const strength = Number(extra.strength) > 0 ? Math.min(Number(extra.strength), max) : max;
+  const out = {
+    id: extra.id || `${side}:${domain}`,
     side,
     domain,
     kind,
@@ -41,10 +43,15 @@ function piece(side, domain, x, y, kind = null) {
     facing: null,
     fighting: null,
     shots: 0,
-    strength: max,
+    strength,
     maxStrength: max,
     pinned: false,
   };
+  // The original's kind 3 is infantry that stood still long enough to dig in; every setup piece on
+  // eligible ground opens that way (docs/re/COMBAT.md). Carried as the remake's own flag, not as a
+  // second kind name.
+  if (extra.entrenched === true) out.entrenched = true;
+  return out;
 }
 
 // The opening force used to carry `kind: null`, so the Buy panel said "two opening units have no
@@ -58,17 +65,82 @@ function openingKinds(era) {
   return { land: firstOf("land", "infantry"), sea: firstOf("sea", "cruiser") };
 }
 
-// Opening pieces for one era. 2023 places none; every other era places a land piece on
-// each capital and a ship at sea.
-export function openingPieces(era) {
-  if (eraOf(era) === "2023") return [];
-  const kinds = openingKinds(eraOf(era));
+// Opening pieces for one era. 2023 places none. A year the original's round-0 capture covers
+// spawns the captured army exactly - same kinds, same cells, same side, dug-in infantry included
+// (T-013b). Every year without a capture keeps the four-piece opening: a land piece on each seat
+// and a ship at sea, labelled UNMEASURED in web/data/dispositions.json.
+//
+// `seats` is the era's own seats (eraSeats below). Without it the archive's fixed pair is used,
+// which is what a rolled year draws from anyway.
+export function openingPieces(era, seats = SEATS) {
+  const year = eraOf(era);
+  if (year === "2023") return [];
+  const force = openingForce(year);
+  if (force) {
+    const out = [];
+    for (const side of ["blue", "red"]) {
+      let serial = 0;
+      for (const row of force.sides[side]) {
+        // `open` keeps these ids out of the namespace a purchase uses (`<side>:<kind>:<n>`, from
+        // seat.bought), so a bought unit can never collide with a setup piece (T-013b).
+        let id = `${side}:open:${row.kind}:${serial}`;
+        while (out.some((unit) => unit.id === id)) id = `${side}:open:${row.kind}:${++serial}`;
+        out.push(piece(side, row.domain, row.x, row.y, row.kind, {
+          id,
+          strength: row.strength,
+          entrenched: row.entrenched,
+        }));
+        serial += 1;
+      }
+    }
+    return out;
+  }
+  const kinds = openingKinds(year);
+  const blue = seats.blue || SEATS.blue;
+  const red = seats.red || SEATS.red;
   return [
-    piece("blue", "land", SEATS.blue.x, SEATS.blue.y, kinds.land),
+    piece("blue", "land", blue.x, blue.y, kinds.land),
     piece("blue", "sea", SEAS.blue.x, SEAS.blue.y, kinds.sea),
-    piece("red", "land", SEATS.red.x, SEATS.red.y, kinds.land),
+    piece("red", "land", red.x, red.y, kinds.land),
     piece("red", "sea", SEAS.red.x, SEAS.red.y, kinds.sea),
   ];
+}
+
+// The era's two seats: one capital per side, and never a capital the other side owns.
+//
+// The archive's fixed pair is Washington/Moscow. Moscow is a BLUE capital in 1942, so the red seat
+// standing on it handed red a blue capital on the first pass - a free capture in round 1 that the
+// original never gives (T-013 AC5 cause 2).
+//
+// The seat is only moved when it has to be. A seat that is still the side's own capital in this
+// era's file stays exactly where the archive puts it (1986 keeps Washington/Moscow, and 1942 blue
+// keeps Washington); a seat the file does not give that side is replaced by the side's lowest-id
+// capital in the file (1942 red becomes Berlin instead of blue Moscow). A year whose capitals are
+// rolled (2023, the concealed start) has no rows and keeps the archive pair untouched.
+export function eraSeats(era, sites = []) {
+  const out = { blue: { ...SEATS.blue }, red: { ...SEATS.red } };
+  const year = eraOf(era);
+  const { rows } = capitalRows(year);
+  if (!rows.length) return out;
+  const byId = new Map((sites || []).map((site) => [String(site && site.id), site]));
+  for (const side of ["blue", "red"]) {
+    const seat = out[side];
+    const owned = rows.filter((entry) => entry.owner === side && byId.has(String(entry.id)));
+    const onSeat = owned.find((entry) => {
+      const site = byId.get(String(entry.id));
+      return Number(site.x) === seat.x && Number(site.y) === seat.y;
+    });
+    if (onSeat) {
+      // Keep the archive's seat but name the file's own row, so a caller can find the site by id.
+      out[side] = { ...seat, siteId: onSeat.id };
+      continue;
+    }
+    const row = owned[0];
+    const site = row ? byId.get(String(row.id)) : null;
+    if (!site) continue;
+    out[side] = { name: String(site.name), x: Number(site.x), y: Number(site.y), siteId: site.id };
+  }
+  return out;
 }
 
 // One side's opening state. `cash` is passed in by openMatch because the two sides no longer open
@@ -141,17 +213,20 @@ export function openMatch(era, sites = [], options = {}) {
     ...(site.country_id === undefined ? {} : { country_id: site.country_id }),
     ...(site.region === undefined ? {} : { region: site.region }),
   }));
+  // The era's own seats, read from the file rows joined to those sites (T-013b).
+  const seats = eraSeats(year, opening);
   return {
     era: year,
     round: 0,
     roundSeconds: roundSeconds(),
     clock: "held",
-    pieces: openingPieces(year),
+    pieces: openingPieces(year, seats),
     // The two seats are what the page labels and what the player is told to defend. They are not
-    // the win condition any more: `capitalSet` is (B-3b), and it is the era's whole list.
+    // the win condition any more: `capitalSet` is (B-3b), and it is the era's whole list. T-013b:
+    // they are the era's own capitals (eraSeats), so a 1942 red seat is Berlin, never blue Moscow.
     capitals: {
-      blue: { x: SEATS.blue.x, y: SEATS.blue.y },
-      red: { x: SEATS.red.x, y: SEATS.red.y },
+      blue: { x: seats.blue.x, y: seats.blue.y },
+      red: { x: seats.red.x, y: seats.red.y },
     },
     // The original's site array. `capitalSet` is the win condition (B-3b); `capitalSeed` is what a
     // rolled era drew it with, kept on the match so a reload re-rolls the same two capitals.

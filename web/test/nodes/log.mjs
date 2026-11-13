@@ -64,29 +64,33 @@ export async function run() {
 
   // The win line reports the era's whole set, not two seats: 1986 has four capitals and 1918 has
   // three, so a fixed "both capitals" would be false for every era this port plays.
-  const win = logLines(match, "blue", [{ type: "win", side: "blue" }], 400);
+  // T-013b: an era that opens with the original's army also opens with enemies inside sight, so
+  // the frame carries contact lines beside the win line. The win line is the one that mentions
+  // capitals; count that, not the whole frame.
+  const capitalLines = (lines) => lines.filter((line) => /capital/.test(line.text));
+  const win = capitalLines(logLines(match, "blue", [{ type: "win", side: "blue" }], 400));
   must(win.length === 1 && /you hold every capital \(4 of 4\)/.test(win[0].text),
-    "a win must be reported in words, with the size of the set that decided it: " + (win[0] && win[0].text));
+    "a win must be reported in words, with the size of the set that decided it: " + JSON.stringify(win.map((line) => line.text)));
   must(!/both capitals/.test(win[0].text), "the win line must not say two seats: " + win[0].text);
-  const loss = logLines(match, "blue", [{ type: "win", side: "red" }], 401);
+  const loss = capitalLines(logLines(match, "blue", [{ type: "win", side: "red" }], 401));
   must(loss.length === 1 && /the enemy holds every capital \(4 of 4\)/.test(loss[0].text),
-    "a loss must report the same set size: " + (loss[0] && loss[0].text));
+    "a loss must report the same set size: " + JSON.stringify(loss.map((line) => line.text)));
 
   const early = openMatch("1918", sites);
-  const earlyWin = logLines(early, "blue", [{ type: "win", side: "blue" }], 402);
+  const earlyWin = capitalLines(logLines(early, "blue", [{ type: "win", side: "blue" }], 402));
   must(earlyWin.length === 1 && /every capital \(3 of 3\)/.test(earlyWin[0].text),
-    "the win line must read 1918's three capitals, not a fixed pair: " + (earlyWin[0] && earlyWin[0].text));
+    "the win line must read 1918's three capitals, not a fixed pair: " + JSON.stringify(earlyWin.map((line) => line.text)));
 
   // The size is read off the set, so it must move with the era: 1942 carries six and a rolled
   // era carries the two seats. Pin both, or a hard-coded "every capital (4 of 4)" passes here.
   const six = openMatch("1942", sites);
-  const sixWin = logLines(six, "blue", [{ type: "win", side: "blue" }], 403);
+  const sixWin = capitalLines(logLines(six, "blue", [{ type: "win", side: "blue" }], 403));
   must(sixWin.length === 1 && /every capital \(6 of 6\)/.test(sixWin[0].text),
-    "the win line must read 1942's six capitals: " + (sixWin[0] && sixWin[0].text));
+    "the win line must read 1942's six capitals: " + JSON.stringify(sixWin.map((line) => line.text)));
   const rolled = openMatch("2023", sites);
-  const rolledLoss = logLines(rolled, "blue", [{ type: "win", side: "red" }], 404);
+  const rolledLoss = capitalLines(logLines(rolled, "blue", [{ type: "win", side: "red" }], 404));
   must(rolledLoss.length === 1 && /the enemy holds every capital \(2 of 2\)/.test(rolledLoss[0].text),
-    "a rolled era's win line must read its two seats: " + (rolledLoss[0] && rolledLoss[0].text));
+    "a rolled era's win line must read its two seats: " + JSON.stringify(rolledLoss.map((line) => line.text)));
 
   // ---- the seam: sight wraps in X, so a fight across the wrap is visible -------------------
   const edge = match.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");

@@ -1,0 +1,484 @@
+{
+ "_meta": {
+  "what": "Round-0 opening pieces per era and side, as the original places them. Loaded by server/dispositions.mjs and spawned by match.openingPieces. A year with no entry is UNMEASURED and keeps the four-piece opening.",
+  "source": {
+   "1942": {
+    "capture": "orig-1942-round0.txt",
+    "captureScript": "notes/t013/t013_units.py (reads 0x906 status, 0x1b6/0x286 cells)",
+    "date": "2026-11-13",
+    "setup": "DOSBox 0.74-3, START A NEW WAR / SGT. STAN STIL / 1942 / BLUE, dumped at the opponent's starting-money dialog before the first pass",
+    "verified": "re-captured 2026-11-13 13:55 with HQLAYOUT.100/.110 restored: identical 60 records, and 0 records with both files renamed (the game prints CAN'T OPEN LAYOUT!), so HQLAYOUT.<era><side> is the source of this army",
+    "count": {
+     "blue": 29,
+     "red": 31
+    }
+   }
+  },
+  "unmeasured": {
+   "1918": "not captured",
+   "1986": "not captured",
+   "2023": "starts empty by design",
+   "9999": "concealed start"
+  },
+  "kindMap": {
+   "2": "tank",
+   "3": "infantry",
+   "7": "submarine",
+   "8": "cruiser",
+   "9": "carrier"
+  },
+  "kindMapNote": "kind names are UNVERIFIED in docs/re/STRUCTS.md; mapping is by allowance value and (3) the entrench flip. 3 = infantry, dug in.",
+  "strengthNote": "DERIVED: the original carries no per-piece hit points at round 0; strength is the remake's combat.maxStrength opening value."
+ },
+ "1942": {
+  "blue": [
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 267,
+    "y": 39,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 180,
+    "y": 31,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 176,
+    "y": 53,
+    "strength": 100
+   },
+   {
+    "kind": "carrier",
+    "domain": "sea",
+    "x": 284,
+    "y": 96,
+    "strength": 100
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 79,
+    "y": 46,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 10,
+    "y": 62,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 180,
+    "y": 52,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 2,
+    "y": 64,
+    "strength": 100
+   },
+   {
+    "kind": "carrier",
+    "domain": "sea",
+    "x": 7,
+    "y": 63,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 4,
+    "y": 63,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 95,
+    "y": 44,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 281,
+    "y": 92,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 85,
+    "y": 41,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 83,
+    "y": 42,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 151,
+    "y": 28,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 141,
+    "y": 33,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 286,
+    "y": 97,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 317,
+    "y": 63,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 284,
+    "y": 94,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 146,
+    "y": 29,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 148,
+    "y": 30,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 276,
+    "y": 93,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 180,
+    "y": 28,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 182,
+    "y": 13,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 181,
+    "y": 34,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 182,
+    "y": 22,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 184,
+    "y": 20,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 181,
+    "y": 25,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 183,
+    "y": 25,
+    "strength": 100,
+    "entrenched": true
+   }
+  ],
+  "red": [
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 175,
+    "y": 28,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 174,
+    "y": 31,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 177,
+    "y": 22,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 269,
+    "y": 48,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 175,
+    "y": 25,
+    "strength": 100
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 167,
+    "y": 53,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 171,
+    "y": 40,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 175,
+    "y": 20,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 158,
+    "y": 27,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 150,
+    "y": 34,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 272,
+    "y": 45,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 175,
+    "y": 33,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 261,
+    "y": 46,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "tank",
+    "domain": "land",
+    "x": 168,
+    "y": 52,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 130,
+    "y": 34,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 154,
+    "y": 26,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 165,
+    "y": 23,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 166,
+    "y": 44,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 160,
+    "y": 25,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 130,
+    "y": 36,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 267,
+    "y": 45,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 253,
+    "y": 69,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 280,
+    "y": 53,
+    "strength": 100
+   },
+   {
+    "kind": "submarine",
+    "domain": "sea",
+    "x": 281,
+    "y": 55,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 256,
+    "y": 67,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "carrier",
+    "domain": "sea",
+    "x": 277,
+    "y": 53,
+    "strength": 100
+   },
+   {
+    "kind": "cruiser",
+    "domain": "sea",
+    "x": 279,
+    "y": 55,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 178,
+    "y": 37,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 252,
+    "y": 44,
+    "strength": 100,
+    "entrenched": true
+   },
+   {
+    "kind": "carrier",
+    "domain": "sea",
+    "x": 255,
+    "y": 68,
+    "strength": 100
+   },
+   {
+    "kind": "infantry",
+    "domain": "land",
+    "x": 153,
+    "y": 38,
+    "strength": 100,
+    "entrenched": true
+   }
+  ]
+ }
+}

@@ -55,14 +55,23 @@ export async function run(ctx) {
   seedOwners(match);
   match.clock = "running";
 
-  const army = match.pieces.find((piece) => piece.id === "blue:land");
-  if (!army) fail("resources_stall: no blue land piece");
-  // The original's own long march: Washington to a cell beside Moscow. At one cell a round this
-  // is still under way at round 100, so "still moving" is a real observation.
+  // T-013b: 1942 opens with the original's 60 pieces, not one piece per seat, so the long marcher
+  // is whichever blue land piece gives a march of at least 80 rounds - the archive's own
+  // Washington-to-Moscow shape. Selecting by id "blue:land" was an accident of the old four-piece
+  // opening, not a rule.
   const dest = nearCapital(board, { x: 183, y: 25 });
   if (!dest) fail("resources_stall: no land cell beside Moscow for the target");
-  const order = issueOrder(match, "blue", army.id, dest.x, dest.y);
-  if (!order || order.error) fail("resources_stall: the opening order was refused: " + JSON.stringify(order));
+  let army = null;
+  let order = null;
+  for (const piece of match.pieces.filter((unit) => unit.side === "blue" && unit.domain === "land")) {
+    const attempt = issueOrder(match, "blue", piece.id, dest.x, dest.y);
+    if (!attempt || attempt.error) continue;
+    if (Number(attempt.rounds) < 80) continue;
+    army = piece;
+    order = attempt;
+    break;
+  }
+  if (!army) fail("resources_stall: no blue land piece has a march of 80+ rounds toward Moscow");
   if (Number(order.rounds) < 80) fail("resources_stall: the chosen march is only " + order.rounds + " rounds");
 
   const at = [];
@@ -132,7 +141,7 @@ export async function run(ctx) {
   const dryMatch = openMatch("1942", matchSites("1942", board));
   seedOwners(dryMatch);
   dryMatch.clock = "running";
-  const walker = dryMatch.pieces.find((piece) => piece.id === "blue:land");
+  const walker = dryMatch.pieces.find((piece) => piece.side === "blue" && piece.domain === "land");
   const walkDest = nextLand(board, walker);
   if (!walkDest) fail("resources_stall: no nearby land destination for the fuel case");
   const walkOrder = issueOrder(dryMatch, "blue", walker.id, walkDest.x, walkDest.y);

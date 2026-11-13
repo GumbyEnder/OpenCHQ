@@ -81,9 +81,15 @@ export async function run(ctx) {
   second.send({ op: "sync" });
   const whole = await second.wait((m) => m.op === "room" && m.room && m.room.id === roomId, "sync room");
   // T-007 AC9 gives the opening force real kinds, so the board already carries the era's infantry
-  // before the purchase: the count that matters is the one this buy added.
-  const infantry = (whole.room.pieces || []).filter((piece) => piece.kind === "infantry");
-  const openingInfantry = 1; // every pre-2023 era opens with its infantry on the capital
+  // before the purchase: the count that matters is the one this buy added. T-013b: 1942 opens with
+  // the original's own army (13 blue infantry pieces), so the opening count comes from the room the
+  // server already sent, not from a constant.
+  const infantry = (whole.room.pieces || []).filter(
+    (piece) => piece.kind === "infantry" && piece.side === "blue"
+  );
+  const openingInfantry = (opening.room.pieces || []).filter(
+    (piece) => piece.kind === "infantry" && piece.side === "blue"
+  ).length;
   if (infantry.length !== openingInfantry + 1) {
     fail("a buy sent across a drop is on the board " + (infantry.length - openingInfantry) + " time(s), expected 1");
   }
@@ -91,7 +97,7 @@ export async function run(ctx) {
   // An order is idempotent the same way: two copies of one id give one path.
   second.send({ op: "sync" });
   const fresh = await second.wait((m) => m.op === "room" && m.room && m.room.id === roomId, "sync before order");
-  const army = (fresh.room.pieces || []).find((piece) => piece.id === "blue:land");
+  const army = (fresh.room.pieces || []).find((piece) => piece.side === "blue" && piece.domain === "land");
   if (!army) fail("no blue land piece in the room");
   // A destination that is really land: read the board the server serves.
   const board = await (await fetch(ctx.base + "/api/board")).json();

@@ -95,22 +95,34 @@ export async function run(ctx) {
   if (!(alpha >= 0.5)) fail("placement_highlights: the overlay alpha is " + one.fills[0].color);
 
   // First click places: the highlighted cell passes buy(), an unhighlighted one is refused. Pick a
-  // cell whose city has a neighbour inside the readiness radius, so the two-colour check below has
-  // an unready cell to paint.
+  // cell whose city has a FREE neighbour inside the readiness radius, so the two-colour check below
+  // has an unready cell that is also still a legal placement cell.
+  //
+  // T-013b: 1942 now opens with the original's garrison army, so 11 of blue's 40 production cities
+  // already hold a piece. An unready city that a garrison stands on is not a legal cell, so the
+  // plain "some neighbour within 5" search picked a city whose whole readiness ring was occupied
+  // and the overlay had nothing two-coloured left to paint.
   const produce = (match.sites || []).filter((site) => site && site.owner === "blue" &&
     ["city", "capital", "base", "facility"].includes(String(site.kind)));
   const near = (a, b) => {
     const dx = Math.abs(Number(a.x) - Number(b.x));
     return Math.max(Math.min(dx, 320 - dx), Math.abs(Number(a.y) - Number(b.y)));
   };
+  const held = (site) => match.pieces.some(
+    (piece) => Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y)
+  );
   let legal = null;
   for (let id = 0; id < land.mask.length && !legal; id++) {
     if (!land.mask[id]) continue;
     const cell = { x: id % 320, y: Math.floor(id / 320) };
     const here = produce.find((site) => Number(site.x) === cell.x && Number(site.y) === cell.y);
-    if (here && produce.some((other) => other !== here && near(other, here) <= 5)) legal = cell;
+    if (!here) continue;
+    const freeNeighbour = produce.some(
+      (other) => other !== here && near(other, here) <= 5 && !held(other)
+    );
+    if (freeNeighbour) legal = cell;
   }
-  if (!legal) fail("placement_highlights: no city with a friendly neighbour to buy in");
+  if (!legal) fail("placement_highlights: no city with a free friendly neighbour to buy in");
   const bought = buy(match, "blue", "infantry", legal.x, legal.y, board);
   if (!bought.ok) fail("placement_highlights: a highlighted cell was refused: " + JSON.stringify(bought));
   const outside = buy(match, "blue", "infantry", 5, 130, board);

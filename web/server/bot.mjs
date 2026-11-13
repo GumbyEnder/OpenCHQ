@@ -246,13 +246,15 @@ export function marchOne(match, side, piece, capital, events) {
 // it can never press an advantage. It buys when it can afford to, up to this many pieces, and
 // every purchase is reported as a bot_buy event so the server log and the owner's debug view
 // both show it.
+// The cap counts what the bot PRODUCED, not what it owns: an era that opens with the original's
+// army (1942: 29-31 pieces) already sits over any total-piece cap, and counting the army would stop
+// the bot buying forever (T-013b).
 const BOT_UNIT_CAP = 6;
 
 function botBuy(match, side, events) {
   const seat = match.sides && match.sides[side];
   if (!seat) return;
-  const mine = (match.pieces || []).filter((piece) => piece && piece.side === side);
-  if (mine.length >= BOT_UNIT_CAP) return;
+  if (Number(seat.bought || 0) >= BOT_UNIT_CAP) return;
   const price = priceOf("infantry");
   if (!Number.isFinite(price) || !Number.isFinite(seat.cash) || seat.cash < price) return;
 
