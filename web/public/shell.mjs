@@ -42,7 +42,14 @@ export function stripInfo(room) {
   if (side) parts.push(side);
   if (room.round !== undefined && room.round !== null) parts.push("round " + room.round);
   if (room.clock) parts.push(room.clock);
-  if (room.over) parts.push(room.winner ? room.winner + " won" : "over");
+  if (room.over) {
+    // The reason belongs in the strip too: the round bar stops for a resignation and for a capital
+    // win alike, and "blue won" alone is the same sentence for both.
+    const last = room.result && room.result.lastCapital;
+    parts.push(room.winner
+      ? room.winner + " won" + (last && last.name ? " (" + last.name + ", round " + last.round + ")" : "")
+      : "over");
+  }
   return parts.join(" · ");
 }
 

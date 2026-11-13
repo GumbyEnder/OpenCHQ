@@ -251,6 +251,20 @@ try {
   mark(capitals.length > 0 && foeCaps.length > 0, "the room names the era's capitals and which are enemy-held", { size: capitals.length, enemy: foeCaps.map((c) => c.name) });
   if (!foeCaps.length) throw new Error("no enemy-held capital in the room view");
 
+  // T-012 AC7: the round-0 capital list, as the page draws it. The War panel prints the server's
+  // `capitalList` - name and holder per capital - so this screenshot is the page's answer, not the
+  // harness restating what it read from the socket.
+  await page.click('#nav button[data-dialog="war"]').catch(() => {});
+  await sleep(350);
+  const roundZeroText = await page.evaluate(() => ((document.querySelector("#dialogBody") || {}).textContent || "").replace(/\s+/g, " ").trim());
+  summary.roundZeroPanel = roundZeroText;
+  await shot("00-capitals-round0.png");
+  const panelNames = capitals.map((c) => c.name);
+  mark(panelNames.every((n) => roundZeroText.includes(n + " — " + (capitals.find((c) => c.name === n).owner || "neutral"))),
+    "the War panel lists every round-0 capital with the server's holder", roundZeroText);
+  await page.keyboard.press("Escape").catch(() => {});
+  await sleep(150);
+
   const speedRead = await setSpeed(WANT_SPEED);
   mark(Number(speedRead.speed) === WANT_SPEED, "speed set", speedRead);
 
@@ -372,7 +386,15 @@ try {
       timeline.end = now.round;
       timeline.endWallMs = Date.now() - timeline.playAt;
       summary.winner = now.winner;
+      // T-012: the end screen's own reason and capital list, off the live server.
+      summary.result = now.result || null;
+      summary.endNote = now.note || "";
       endShot = await shot("04-end-screen.png");
+      await page.click('#nav button[data-dialog="war"]').catch(() => {});
+      await sleep(350);
+      summary.endPanel = await page.evaluate(() => ((document.querySelector("#dialogBody") || {}).textContent || "").replace(/\s+/g, " ").trim());
+      await shot("05-end-capitals.png");
+      await page.keyboard.press("Escape").catch(() => {});
       break;
     }
     // retry buys while income arrives, and re-order an idle piece whose capital is still red
@@ -406,6 +428,24 @@ try {
   mark(Boolean(timeline.firstCapture), "a city capture happened", { round: timeline.firstCapture, site: timeline.captureSite });
   mark(Boolean(final && final.over), "the match reached a game end", { round: final && final.round, winner: final && final.winner, capitalOwners: summary.captures });
   mark(errors.length === 0, "no page error during the match", errors.slice(0, 3));
+  // T-012: when the match ended by capitals, the live page must name the capital that fell last,
+  // and that name must be the last capital transition the trace recorded.
+  if (summary.over) {
+    const result = summary.result || null;
+    const lastTrace = [...traceLog].reverse().find((e) =>
+      (Number(e.type) === 1 || Number(e.type) === 2) && e.to === summary.winner);
+    const named = Boolean(result && result.reason === "capitals" && result.lastCapital && result.lastCapital.name);
+    mark(named, "the end screen names the capital that decided the match", result && result.lastCapital);
+    if (named && lastTrace) {
+      mark(result.lastCapital.name === lastTrace.name,
+        "the named capital is the last one the trace saw change hands",
+        { named: result.lastCapital.name, traced: lastTrace.name, round: lastTrace.round });
+    }
+    const listed = Boolean(result && Array.isArray(result.capitals) && result.capitals.length === capitals.length);
+    mark(listed, "the result lists the era's whole capital set", result && result.capitals);
+    mark(/fell last|fell at round/.test(summary.endNote || ""),
+      "the server's end note carries the reason", summary.endNote);
+  }
 } catch (err) {
   mark(false, "run threw", String(err && err.message ? err.message : err));
   summary.error = String(err && err.stack ? err.stack : err);
