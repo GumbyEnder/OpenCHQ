@@ -17,7 +17,8 @@ Status at this commit:
 | Per-kind allowance table at DS:0x19a6 | DISASSEMBLY + live dump |
 | Cells per round per kind, per speed | MEASURED for kinds 1, 2, 6 at speeds 1/3/6 (AC1, AC3); kind 1 harness-labelled and accepted as measuring the rule (PM 3481); kinds 4/5 **NOT OBTAINABLE** in 1918/1942/1986 — a closed FINDING, not a gap; 5/7/8/9 predictions from `0x19a6`, no run; era 4 start board UNCHECKED (Q36) |
 | Terrain effect on speed | UNMEASURED |
-| Q32 win timing | DISASSEMBLY: win/loss state is written inside the capture handler, synchronously with the owner byte; no round/phase gate reads the clock. Live arrival leg open |
+| Q32 win timing | MEASURED (disassembly + live capture): the win word is written inside the capture handler 0.09 s after the owner byte flips, at clock 0x1CC3 — 3.7 % into a 7646-unit round, nowhere near a boundary |
+| Q33 one-cell water crossing in a land leg | MEASURED (disassembly + live order): a kind-2 tank stepped onto terrain-0 water at (175,19), paid a step for it, and stepped off onto land at (175,20); the 7-cell order completed |
 
 ## Method
 
@@ -452,10 +453,56 @@ So in the mode the movement-order path uses (`FUN_107e_543a` calls it with the p
 returns `0xff` *and* water cells were counted *and* the piece's kind is `< 7`.
 
 **Read as: the original permits a one-cell water crossing inside a land leg, at extra cost.** That
-agrees with the 209 one-wet-step routes the remake planned at `6c1c396`. Still labelled partly
-UNVERIFIED: the `param_5` values each call site uses are read from three callers, not exhaustively,
-and "costed not refused" is a claim about the planner, not about what a unit does when it reaches
-the water cell at step time.
+agrees with the 209 one-wet-step routes the remake planned at `6c1c396`.
+
+### The live leg (2026-11-13, closed)
+
+The remaining doubt was "a claim about the planner, not about what a unit does when it reaches the
+water cell at step time". Driven in the original, 1986 blue, speed 6 and speed 3, with a real order
+(`~/agents/game/notes/t008/q33_cross.py`):
+
+```
+=== WATER LEG 2: (175,17) -> (175,24) speed 6
+intended leg: (175,17):8 (175,18):8 (175,19):0 (175,20):8 (175,21):8 (175,22):8 (175,23):8 (175,24):8
+water cells on the straight leg: 1 at [(175, 19)]
+idx 0 kind 2 owner 0x40 speed 6
+   t=2.14 pass=1 pos=(175, 18) terr=8 pts=4  clock=7520
+   t=4.19 pass=2 pos=(175, 19) terr=0 pts=8  clock=7399   <- on open water
+   t=6.26 pass=3 pos=(175, 20) terr=8 pts=32 clock=7276   <- back on land
+   ... one cell per pass, order completes at (175,24) t=18.22, 7 cells / 7 passes
+```
+
+The gap is a genuine one-cell water strip: terrain class **0** at `(175,19)` — the same class the
+carrier sailed on — with plains immediately above and below it (`tmap.bin` row 19 reads `175:0`,
+and column 175 reads `17,18,20,21 = 8`). The tank was teleported to the start cell — the only
+harness write — and the target was an ordinary order; kind, points and movement are the game's.
+
+What the two legs settle (speed 3 repeats it: on the water at t=13.88, off at t=13.89, one cell per
+pass, `q33_cross.py` run 3):
+
+- The piece **stands on an ocean cell** between two passes; it is not refused and it does not wait.
+- The step costs the usual 20 points, and the pace is the **land** pace (exactly 1.00 cell/pass,
+  the same as the pure-land control leg at `(62,36)`, which ran 5 cells in 5 passes), not the
+  carrier's 1.64-1.81.
+- The status byte stays `0x42` (kind 2, blue) across the crossing — no kind change. This is *not*
+  a check of an embark flag: no transport/cargo field was located or read, so "it walked on foot"
+  rests on the pace and the unchanged kind, not on an embark bit.
+- A 5-cell order that stopped at `(175,20)` in the first attempt was an artifact of that attempt:
+  its target word had been written while the session was still in the boot setup modal, and the
+  walker rewrote target = current on arrival. The 7-cell orders on both speeds ran through the
+  water and finished. Do not read that stop as a truncation rule.
+
+So Q33 is answered in both directions: the planner costs it (disassembly) and the unit walks it
+(measurement). The remake's T-004 rule — a land unit never walks on water, it boards a transport and
+follows the lanes — is therefore a **deliberate deviation from the original**, not a port of it.
+That is a ruling for the PM/owner, not a change this task makes.
+
+One harness fact worth keeping, because it produced a false "the harness is broken" reading in AC5:
+a DOSBox session left in the **`OPPONENT'S STARTING MONEY` setup modal** has `film_mode`
+(`DS:0x1478`) = 2, and the per-piece pass returns before walking anything. Every unit record then
+reads stale/zero coords and no order moves. The `GAME PAUSED (ALT-P TO RESUME)` state is a second,
+separate stop. Resume with `alt+p`, zero **both** `0x1478` and `0xc8cc`, verify the pass cursor
+`0x147c` is advancing, and only then trust a coordinate read.
 
 ## Q32: when does the win fire (disassembly, 2026-11-13)
 
@@ -492,16 +539,35 @@ has arrived). No caller is the round-end, turn-change or phase code.
 `0xFFFF` clock stop measured in S1 is a round-boundary stop for the player's pacing; it is not the
 win trigger and the win does not wait for it.
 
-### The live leg, and what stays open
+### The live leg (2026-11-13, closed)
 
-A live capture across the boundary was attempted on a fresh 1986 blue boot: a blue tank's coords
-word and y byte were both written onto Moscow's cell `(183,25)` and the pass was left running for
-60 s with the countdown seeded to `0x1DDE`. Result: **the site byte stayed `0x9A` (red) and
-`0x1550` stayed 0 — occupancy is not capture.** The handler's own gate explains it: after the
-terrain lookup it reads the game's "this piece is standing on site N" word `DS:0xc478`, which was
-`0xff` for the teleported piece; writing 63 into it by hand did not fire the handler either, because
-`FUN_188b_0472(63,3,1)` must return `0xff` first. So the live half of AC5 needs a walker-driven
-arrival, and the harness on this branch could not produce one: after the boot every unit record
-read `x=0` in `0x1b6` while `0x286` held a different y, and a written `0x40` order flag was cleared
-by the pass. That is a harness state problem, not a game finding — the same offsets read sane
-coords in the session that measured AC1 — so AC5's live leg is queued, not closed.
+Driven in the original: 1986 blue, speed 6, a blue kind-2 tank teleported to `(182,25)` — the cell
+adjacent to Moscow — and ordered onto the site cell `(183,25)`, so the capture comes from a real
+walker arrival rather than from writing coords onto the site (`~/agents/game/notes/t008/q32_arrival.py`):
+
+```
+site 63 at (183,25) byte 0x9a
+  t=4.68 clock=7369 pos=(183, 25) site=0x9a win=0 e296=0 onsite=63   <- arrival, owner still red
+  t=4.69 clock=7369 pos=(183, 25) site=0x7a win=0 e296=0 onsite=63   <- owner byte flips to blue
+  t=4.78 clock=7363 pos=(183, 25) site=0x7a win=2 e296=0 onsite=63   <- DS:0x1550 = 2 (win)
+```
+
+- The owner byte goes `0x9A` -> `0x7A` (red 0x80 -> blue 0x40, subtype bits unchanged) and the win
+  word follows **0.09 s later in the same handler**, exactly as the disassembly says.
+- The clock reads **0x1CC3** at the win against a round start of 0x1DDE: 283 of 7646 units elapsed,
+  i.e. **3.7 % into a 129.2 s round**. The win is nowhere near a round boundary, and no boundary
+  write preceded it — this is the measurement that the Q32 answer needed.
+- `DS:0xe296` still read 0 at the poll where 0x1550 first read 2; the handler writes 0x1550 first,
+  so the flag is a later write and this leg does not pin its timing.
+
+**Why the earlier attempt looked impossible.** The prior session was not in a live war room: it was
+parked in the `OPPONENT'S STARTING MONEY` setup modal with `film_mode` (`DS:0x1478`) = 2 and the
+main loop's frame counter at 0, so the per-piece pass never ran. Every unit record therefore read
+stale coordinates (`x=0` in `0x1b6`), and no order could be acted on because no pass ran — the
+`0x40` flag had nothing to consume it. Resume the game (`alt+p`, then zero both `0x1478` and
+`0xc8cc`), verify the pass cursor `0x147c` is advancing, and the same offsets read sane coords.
+That is harness state, not a finding about the game, and it is now the first check in the run
+recipe.
+
+So AC5 is closed on both halves: the disassembly names the two call sites, and the live capture
+fires the win mid-round on the arrival.
