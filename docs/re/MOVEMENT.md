@@ -232,18 +232,18 @@ measurement, and the addresses above are what it needs.
 
 So the pass is the movement clock, `byte[0x19a6+kind]` is the per-pass budget and a step costs
 20, which predicts `byte[0x19a6+kind] / 20` steps per pass. Measured (see below) that prediction
-holds for every kind we could drive — kind 6 predicted 1.8, measured 1.64 and 2.00; kind 2
-predicted 1.2, measured 0.90 and 0.80 (a piece is only visited once per pass, so a land piece
-cannot spend a two-step surplus).
+holds for every kind we could drive — kind 6 predicted 1.8, measured 1.64 / 1.81 / 1.77 at
+speeds 1 / 3 / 6; kind 2 predicted 1.2, measured 1.00 / 0.80 / 0.90 (a piece is visited once per
+pass, so a land piece cannot spend a two-step surplus).
 
 | kind | byte[0x19a6] | steps/pass predicted | steps/pass measured |
 |---|---|---|---|
 | 1 | 12 | 0.6 | — (no kind 1 on this board) |
-| 2 | 24 | 1.2 (capped at 1/visit) | 0.90 @ speed 6, 0.80 @ speed 3 |
+| 2 | 24 | 1.2 (capped at 1/visit) | 1.00 / 0.80 / 0.90 @ speeds 1 / 3 / 6 |
 | 3 | 0 | 0 (transport carries cargo) | 0 |
 | 4 | 0 | 0 | — (no kind 4) |
 | 5 | 36 | 1.8 | — (no run yet) |
-| 6 | 36 | 1.8 | 1.64 @ speed 6, 2.00 @ speed 3 |
+| 6 | 36 | 1.8 | 1.64 / 1.81 / 1.77 @ speeds 1 / 3 / 6 |
 | 7, 8, 9 | 40 | 2.0 | — (no run yet) |
 
 **The grant is the full byte, not half of it.** An earlier draft of this section read `4788` and
@@ -254,12 +254,15 @@ condition is still UNVERIFIED.
 
 ### Measured, open water — kind 6 carrier (unit 35)
 
-`notes/t008/s2_points.py`, ordered along the longest clear water run, `DS:0x1478` forced to 0:
+`notes/t008/s2_points.py`, ordered along the longest clear water run, `DS:0x1478` forced to 0.
+Each row is a **complete round** — the run ends when the countdown reaches 0 (129.2 s wall,
+the same length S1 measured at every speed):
 
-| speed | window | cells | pass wraps | cells/pass | wraps/s |
-|---|---|---|---|---|---|
-| 6 | 22 s | 18 | 11 | 1.64 | 0.50 |
-| 3 | 45 s | 10 | 5 | 2.00 | 0.12 |
+| speed | cells | pass wraps | cells/pass | cells/round |
+|---|---|---|---|---|
+| 1 | 18 | 11 | 1.64 | 18 |
+| 3 | 29 | 16 | 1.81 | 29 |
+| 6 | 113 | 64 | 1.77 | 113 |
 
 ### Measured, open land — kind 2 tank (unit 39)
 
@@ -268,24 +271,29 @@ terrain class in any direction, so `notes/t008/s2_land.py` teleports one tank to
 class-8 corridor at `(62,36)` and orders 20 cells east. The piece, its kind, its flags and its
 points are the game's; only the start cell is a harness write.
 
-| speed | window | cells | pass wraps | cells/pass | wraps/s |
-|---|---|---|---|---|---|
-| 6 | 40 s | 18 | 20 | 0.90 | 0.50 |
-| 3 | 45 s | 4 | 5 | 0.80 | 0.13 |
+| speed | window | cells | pass wraps | cells/pass |
+|---|---|---|---|---|
+| 1 | full round (129.2 s) | 11 | 11 | 1.00 |
+| 3 | 45 s | 4 | 5 | 0.80 |
+| 6 | 40 s | 18 | 20 | 0.90 |
 
-Cells per pass is the same at both speeds and the pass rate is not — so **cells per round is a
-function of speed, not a constant**. The round column below uses the S1 pass rates (7.37 / 12.23
-/ 49.11 pieces per second, i.e. 0.0737 / 0.1223 / 0.4911 passes per second) rather than these
-short-window wrap counts, since S1 sampled every piece for 8 s per speed:
+Cells per pass is constant across speeds for both kinds and the pass rate is not — so **cells
+per round is a function of speed, not a constant**:
 
 | kind | speed 1 | speed 3 | speed 6 |
 |---|---|---|---|
-| 2 tank | ~8.6 | 12.6 | 57 |
-| 6 carrier | ~15.6 | 31.6 | 104 |
+| 2 tank | 11 (round) | ~12.8 (0.80 x 16) | ~57 (0.90 x 64) |
+| 6 carrier | 18 (round) | 29 (round) | 113 (round) |
 
-The speed-1 column is arithmetic (cells/pass x 9.52 passes), not a run — it needs one direct
-leg before AC1 is claimed. Kinds 1, 5 and the submarine class are still UNMEASURED: the board
-carries no kind 1 or 4 at all, so they need the purchase flow, not another teleport.
+The tank's speed-3 and speed-6 figures are `cells/pass x passes-per-round` from the measured
+wrap counts, not full rounds: its 20-cell order finishes inside a round at those speeds and the
+33-cell class-8 corridor is the cap, so a full-round land leg needs an order-refresh loop
+rather than a longer single order. The carrier's full rounds are the reason to trust the
+method: its cells/pass at 1/3/6 (1.64 / 1.81 / 1.77) is flat while its cells/round moves 6.3x,
+which is exactly the code's 36/20 = 1.8 steps per pass against a speed-scaled pass rate.
+
+Kinds 1 and 5 and the submarine class are still UNMEASURED: the board carries no kind 1 or 4
+at all, so they need the purchase flow, not another teleport.
 
 `DS:0x6fe` write width is a confirmed trap: unit 37 read `2359296` (`0x240000`) after an
 earlier probe wrote 36 as a `u16` at `i*2` — the low half was zeroed and the high half kept
