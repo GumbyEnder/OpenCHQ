@@ -738,6 +738,9 @@ body.in-match .speedctl { display: flex; }
 .buyrow.head { background: transparent; border-color: transparent; color: var(--muted); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
 .buyrow.armed { border-color: var(--accent); background: #14343a; }
 .buyrow:disabled { opacity: 0.45; cursor: not-allowed; }
+/* A refused row's reason, printed in the panel: the sentence a hover title cannot deliver. */
+.buyrefusals { margin: 8px 0 0; padding: 8px 10px 8px 24px; border: 1px solid #5a4a2a; background: #2a2418; color: #e8d9b0; font-size: 12px; line-height: 1.45; }
+.buyrefusals li { margin: 2px 0; }
 /* The air table's fourth column is a row of small buttons, not a number. */
 .airtable .buyrow { grid-template-columns: 1fr 96px 60px 150px; }
 .airmissions { display: flex; gap: 4px; justify-content: flex-end; }

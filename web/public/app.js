@@ -1361,7 +1361,24 @@ const DIALOG_PAINTERS = {
       }
       table.append(line);
     }
-    body.append(table, note("Seen counts only enemy units this seat can see. Prices are the server's."));
+    // A refused row is off *and* says why in the panel, not only in its tooltip: the manual's
+    // sentence ("You hold no dock, so a hull cannot be bought.", p.27) is a rule the player has to
+    // be able to read, and a hover title on a dimmed button is not readable on a touch screen or in
+    // a screenshot. The sentences come from the server's shop rows, so the page cannot invent one.
+    const refusedRows = rows.filter((row) => row.refused);
+    if (refusedRows.length) {
+      const why = document.createElement("ul");
+      why.className = "buyrefusals";
+      for (const row of refusedRows) {
+        const item = document.createElement("li");
+        item.textContent = unitLabel(row.kind) + ": " + row.refused;
+        why.append(item);
+      }
+      body.append(table, why);
+    } else {
+      body.append(table);
+    }
+    body.append(note("Seen counts only enemy units this seat can see. Prices are the server's."));
     const untyped = untypedCount(room);
     if (untyped > 0) {
       body.append(note(untyped === 1
