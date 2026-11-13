@@ -243,7 +243,7 @@ pass, so a land piece cannot spend a two-step surplus).
 | 3 | 0 | 0 (transport carries cargo) | 0 |
 | 4 | 0 | 0 | — (no kind 4) |
 | 5 | 36 | 1.8 | — (no run yet) |
-| 6 | 36 | 1.8 | 1.64 / 1.81 / 1.77 @ speeds 1 / 3 / 6 |
+| 6 | 36 | 1.8 | 1.64-1.73 / 1.81 / 1.77-1.81 @ speeds 1 / 3 / 6, two full rounds each |
 | 7, 8, 9 | 40 | 2.0 | — (no run yet) |
 
 **The grant is the full byte, not half of it.** An earlier draft of this section read `4788` and
@@ -258,11 +258,14 @@ condition is still UNVERIFIED.
 Each row is a **complete round** — the run ends when the countdown reaches 0 (129.2 s wall,
 the same length S1 measured at every speed):
 
-| speed | cells | pass wraps | cells/pass | cells/round |
+| speed | cells (run 1 / run 2) | pass wraps | cells/pass | cells/round |
 |---|---|---|---|---|
-| 1 | 18 | 11 | 1.64 | 18 |
-| 3 | 29 | 16 | 1.81 | 29 |
-| 6 | 113 | 64 | 1.77 | 113 |
+| 1 | 18 / 19 | 11 / 11 | 1.64 / 1.73 | 18-19 |
+| 3 | 29 / 29 | 16 / 16 | 1.81 / 1.81 | 29 |
+| 6 | 113 / 114 | 64 / 63 | 1.77 / 1.81 | 113-114 |
+
+Two runs per speed, both complete rounds, and the run-to-run spread is one cell at the round
+boundary. That is the reproducibility AC1 asks for.
 
 ### Measured, open land — kind 2 tank (unit 39)
 
