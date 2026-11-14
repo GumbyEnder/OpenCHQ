@@ -171,7 +171,7 @@
       "halveBelow": 25,
       "wired": true,
       "tag": "disassembly",
-      "source": "Fire beyond 2 cells caps damage at (target strength - 30); under 25 strength the shot is halved instead. DISASSEMBLY ONLY, never live-measured. WIRED in T-016 behind this block and labelled disassembly: combat.damageFor applies shoreFireCap when a sea attacker fires farther than `range`. The two clauses overlap for a target at 25-29 strength, where the cap (strength - 30) is negative; the implementation reads the halving clause as the operative one under 25 and the cap as 'a long shot cannot take a target below 30' otherwise, and docs/re/T016_TERRAIN.md s5 records that reading as the open question.",
+      "source": "Fire beyond 2 cells caps damage at (target strength - 30); under 25 strength the shot is halved instead. DISASSEMBLY ONLY, never live-measured. WIRED in T-016 behind this block and labelled disassembly: combat.damageFor applies the cap as a floor on remaining strength, max(0, strength - 30), and halves the shot under 25. The clauses overlap at 25-30 strength: at 30 the cap is max(0, 30 - 30) = 0, so 25-30 is an immunity band. PM ruling 2026-11-14 (room 4572), interim: this reading is kept, the label stays disassembly, and the DOSBox leg is pending rather than measured. docs/re/T016_TERRAIN.md s5 records it.",
       "evidenceRef": "docs/re/COMBAT.md; docs/re/T016_TERRAIN.md s5"
     }
   },

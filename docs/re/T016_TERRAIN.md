@@ -108,10 +108,14 @@ under 25 strength the shot is halved instead. `config.terrain.shoreFire` = `{ran
 halveBelow: 25, wired: true, tag: "disassembly"}`. `combat.damageFor` applies it as the last step and
 reports `shoreFire: true` on the hit.
 
-The two clauses overlap on a target at 25-29 strength, where `strength - 30` is negative. The
-implementation reads the halving clause as operative under 25 and the cap as "a long shot cannot take
-a target below 30" otherwise. That reading is **not** confirmed by any live leg — it is disassembly
-only, and the overlap is logged as Q47 rather than presented as measured.
+The two clauses overlap on a target at 25-30 strength, where `strength - 30` is zero or negative
+(at 30 the cap is `max(0, 0) = 0`). The implementation reads the halving clause as operative under 25
+and the cap as "a long shot cannot take a target below 30" otherwise, so **25-30 is an immunity
+band**. PM ruling 2026-11-14 (room 4572), interim: that reading is kept with no behaviour change and
+the label stays `disassembly`. frodo's cruiser probe at `eca1fa8` measures the arithmetic the
+implementation produces — s=20/24 → 6, s=25-30 → 0, s=31 → 1, s=45+ → 12 — but it runs the remake's
+code, it is not a live leg of the original. Q47 stays "ruled (interim), measure later"; the DOSBox
+leg is pending on an input path, not measured.
 
 ## 6. Dig-in terrain bits — `DS:0x1996` bit `0x20` (disassembly)
 
@@ -135,9 +139,10 @@ one-cell water gap in lane routing) stays a deviation; T-016 does not reopen it.
 - **Q6 (wasteland).** No wasteland cell exists on any era board. The amount is the dumped byte 31 and
   the spec prose says 34; no leg can settle which is right without creating a wasteland cell (1986
   nuclear strike). Both the byte and the conflict are recorded.
-- **Q47 (new).** Shore fire: which clause wins for a 25-29 strength target, and whether the cap is a
-  floor on damage or a floor on remaining strength. Disassembly only, no live leg; wired behind an
-  explicit `disassembly` tag and reported as such.
+- **Q47 (ruled interim 2026-11-14, room 4572).** Shore fire: which clause wins for a 25-30 strength
+  target, and whether the cap is a floor on damage or on remaining strength. Ruled: the cap is a
+  floor on remaining strength, `max(0, s-30)`, and the shot is halved under 25, making 25-30 an
+  immunity band. Behaviour unchanged, label stays `disassembly`; the DOSBox leg is pending.
 - **D-017 / D-024.** Per-pass attrition cannot become a per-round rate while passes per round depend
   on speed. Runtime stays on the labelled per-round stand-in; the deferral is decision **D-024**.
 
