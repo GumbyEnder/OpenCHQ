@@ -5,10 +5,19 @@
 // probe ticks real matches and stores them with rooms.saveRoom; nothing here is a stand-in.
 
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+// This node measures wall-clock headroom, so it measures the machine too: a concurrent Playwright run
+// took the same commit from 12.2x to 8.9x and failed. Every number that can turn red carries the load
+// it was taken under, so a load red is never read as a code regression.
+function loadNow() {
+  const [l1, l5] = os.loadavg();
+  return "load1=" + l1.toFixed(2) + " load5=" + l5.toFixed(2) + " cpus=" + os.cpus().length;
+}
 
 export const name = "load_test";
 
@@ -37,15 +46,16 @@ export function run() {
   const floor = Number(process.env.OPENCHQ_LOAD_HEADROOM) > 0
     ? Number(process.env.OPENCHQ_LOAD_HEADROOM)
     : 10;
+  const loading = loadNow();
   console.log(
-    `load_test: headroom floor ${floor}x, measured tick ${report.tickHeadroom}x / round ${report.roundHeadroom}x`
+    `load_test: headroom floor ${floor}x, measured tick ${report.tickHeadroom}x / round ${report.roundHeadroom}x, ${loading}`
   );
   const budgetS = Number(report.budgetMs) > 0 ? (Number(report.budgetMs) / 1000).toFixed(2) : "the";
   if (!(report.tickHeadroom > floor)) {
-    throw new Error("tick headroom " + report.tickHeadroom + "x, need >" + floor + "x inside the " + budgetS + " s round");
+    throw new Error("tick headroom " + report.tickHeadroom + "x, need >" + floor + "x inside the " + budgetS + " s round (" + loading + ")");
   }
   if (!(report.roundHeadroom > floor)) {
-    throw new Error("round headroom " + report.roundHeadroom + "x, need >" + floor + "x including the store slice");
+    throw new Error("round headroom " + report.roundHeadroom + "x, need >" + floor + "x including the store slice (" + loading + ")");
   }
   if (report.heldWrites !== 0) throw new Error("a held room was written " + report.heldWrites + " times");
   if (report.heldChanged !== 0) throw new Error("a held room's row changed");
