@@ -641,9 +641,15 @@ export function advance(match) {
         // (match.foughtRound), so combat.resolve does not fire the same pair again in this round -
         // that double exchange is what let a lone tank kill a dug-in garrison on Paris
         // (T-015, local/t015/duel-remake.txt).
+        //
+        // The same beat gates the overrun itself: an exchange is due when `shotEveryRounds` rounds
+        // have passed since the last one, not merely because this round has not fired yet. The
+        // earlier `foughtRound !== onRound` test fired on two consecutive rounds (the held tank
+        // re-tries every round), which no reading of the rule allows - T-015 cadence trace.
         const combat = combatRules();
         const max = combat.maxStrength;
-        if (match.foughtRound !== onRound) {
+        const beatDue = onRound - Number(match.foughtRound ?? -1) >= combat.shotEveryRounds;
+        if (beatDue) {
           const foot = damageFor(piece, occupant, combat);
           const hull = damageFor(occupant, piece, combat);
           piece.fighting = occupant.id;

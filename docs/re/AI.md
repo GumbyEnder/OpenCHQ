@@ -127,4 +127,24 @@ Deliberately not ported, so nobody has to reverse-engineer the diff later:
 * the 10/20 money thresholds, because the remake's bot buys through the same shop and the same price
   table as the player rather than a second 40-divisor scale;
 * the second scoring mode `FUN_107e_0fa4(site, 1, 0)` that `FUN_107e_1750` opens with (1692-1694);
-  the port uses the one score the pick loop already ranks on.
+  the port uses the one score the pick loop already ranks on;
+* the distance-score adjustments inside the unit pick (1730-1750, below), because their inputs are
+  not decoded.
+
+## 7. The money and price inputs (0x148e, 0x2e16): decoded, derived, or UNVERIFIED
+
+These are the two inputs that turn the threat score into an action, so each one says here exactly
+how far the bytes go. Nothing below is ported into a number the remake runs on.
+
+| Input | Where it is read | What the bytes show | Status |
+|---|---|---|---|
+| `0x148e + side*2` | 1621, 25078 (same expression), 3264, 4145, 4776, 4963 | the acting side's cash, divided by `0x28` = 40 gives the price unit the shop uses; the writer at 11269 stores one 16-bit word per side (`byte[p+1]*0x100 + byte[p+2]`) | **DECODED** as "cash in 40-unit price steps, one word per side". **UNVERIFIED**: the Ghidra export *reads* a 32-bit `int` at a 2-byte stride, which cannot be right for a 16-bit store — read width unresolved, so no arithmetic here is ported |
+| `0x2e16` unindexed | 1628, the price gate of `FUN_107e_1612` | the price byte of slot 0, compared against cash/40 | **DERIVED**: slot 0 is the slot `FUN_1ac5_0008(0)` hands back on the next line, so this is the cheap infantry's price. The identity "slot 0 = infantry" is a derivation, not a read |
+| `0x2e16 + slot` | 3441 (`FUN_107e_40a8`), 3324, 8234 | `byte[0x2e16 + slot] * -0x28`, i.e. 40x the price byte per slot, charged on a successful create | **DECODED** |
+| `FUN_2dfc_1874(param_1, byte[0x2e16 + slot], ...)` | 3439, 8229 | a second call taking the same price byte | **UNVERIFIED**: what it records (a build counter? a per-kind tally?) is not settled by the call site |
+| `0x1a01 + kind` | 1730-1735 | value `2` halves the candidate's distance² before it is compared | **DECODED** as arithmetic. **UNVERIFIED** what the `2` means (a unit-class table, or a per-kind preference flag) — not ported |
+| `0xe78c`, `0xe2ae`, `0x1102`, `0xea6e`, `0x1478` | 1710-1750 | a second distance adjustment `(d²>>8) - 0xf + (local_4 - local_10)*2` and the "already busy" tests | **UNVERIFIED**: the two byte tables it reads (`0x108 + kind` twice) are not identified, so the whole adjustment is left out |
+
+The remake ports the four things that are fully decoded — the score's sign, the radius, the
+`strength/25` weight and the `8 < d²` / `0x18 < d²` distance gates — and nothing above. The buy
+side uses the remake's own shop price for the same reason the 10/20 thresholds are left out.

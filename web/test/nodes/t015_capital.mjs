@@ -85,11 +85,24 @@ export async function run(ctx) {
     if (!order || !order.ok) fail("the tank could not be ordered onto Paris: " + JSON.stringify(order));
 
     let shots = 0;
+    const volleys = [];
     for (let round = 1; round <= 30 && match.pieces.includes(tank); round++) {
       const result = tickMatch(match);
-      shots += (result.events || []).filter((e) => e.type === "shot").length;
+      const fired = (result.events || []).filter((e) => e.type === "shot").length;
+      shots += fired;
+      if (fired) volleys.push(Number(match.round));
     }
     if (shots === 0) say("the duel resolved with no shot at all", shots);
+    // The beat: shotEveryRounds rounds apart, never twice in consecutive rounds. The overrun path
+    // used to fire on the round after the first exchange because it tested only "not this round"
+    // (T-015 cadence trace); this pin is what keeps that from coming back.
+    const rawBeat = block.combat && block.combat.shotEveryRounds;
+    const beat = Number(rawBeat && typeof rawBeat === "object" ? rawBeat.value : rawBeat) || 2;
+    for (let i = 1; i < volleys.length; i++) {
+      const gap = volleys[i] - volleys[i - 1];
+      if (gap < beat) say("two exchanges fired " + gap + " round(s) apart", volleys);
+    }
+    if (volleys.length < 2) say("fewer than two exchanges fired, so the beat is unproven", volleys);
     if (match.pieces.includes(tank)) {
       say("the tank survived the duel (original: attacker dies); its strength", tank.strength);
     }
@@ -115,8 +128,18 @@ export async function run(ctx) {
     if (before !== "red") say("the undefended leg did not start red-owned", before);
     const order = issueOrder(match, "blue", "blue:probe", paris.x, paris.y);
     if (!order || !order.ok) fail("the tank could not be ordered onto an empty Paris: " + JSON.stringify(order));
-    for (let round = 1; round <= 6 && match.pieces.includes(tank); round++) tickMatch(match);
+    let captured = 0;
+    for (let round = 1; round <= 6 && match.pieces.includes(tank); round++) {
+      const result = tickMatch(match);
+      captured += (result.events || []).filter((e) => e.type === "capture").length;
+    }
     if (!match.pieces.includes(tank)) say("the tank died to an undefended capital", tank.strength);
+    // The tank must actually be on the site cell: a capture that fires from the next cell over would
+    // hide an overrun path that no longer lets a tank enter.
+    if (tank.x !== paris.x || tank.y !== paris.y) {
+      say("the tank never reached the undefended capital's cell", { at: [tank.x, tank.y], site: [paris.x, paris.y] });
+    }
+    if (captured === 0) say("no capture event fired on an undefended capital", captured);
     const after = holderOf(match, parisEntry);
     if (after !== "blue") say("an undefended capital did not fall on arrival", after);
   }
