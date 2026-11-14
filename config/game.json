@@ -71,7 +71,7 @@
       "limit": 100,
       "tag": "disassembly",
       "source": "DS:0x011C walker cost bytes; a class 3/4 route whose costs sum to 100 is refused by the walker (FUN_16ee_0728). Every other terrain id costs 0. The manual's printed Slowed column (p.21) disagrees with this table; the table is the recovered fact and wins. Function: web/server/move.mjs walkLine.",
-      "evidenceRef": "docs/re/RULES.md section 2"
+      "evidenceRef": "/mnt/nas/Projects/Command HQ/modern/docs/re/RULES.md section 2 (reference tree, not in this repo); docs/re/MOVEMENT.md"
     },
     "crawlPace": {
       "value": {
@@ -108,7 +108,7 @@
       },
       "tag": "unverified",
       "source": "Q5 MEASURED (T-016 DOSBox legs, tank kind 2, one straight corridor per terrain, pass cursor DS:0x147c, round clock DS:0x157e). Game-clock units per cell: speed 1 plain 720, forest 720, mountain 1440; speed 6 plain 122, forest 122, mountain 163 (one 2-beat cell in six). So forest is NOT slower than plain (1 beat, the archive's 2-beat stand-in was wrong for forest) and mountain is 2 beats at speed 1 and 1.33 average at speed 6. Jungle and polar keep 2 beats as UNVERIFIED because their path-cost bytes (9 and 13 of the 24-point allowance) were never walked in a leg. Transport stays the walker class rule; wasteland stays refused. Legs: docs/re/evidence/t016/q5-*.txt.",
-      "evidenceRef": "docs/re/T016_TERRAIN.md s2; docs/re/RULES.md section 2; docs/re/MOVEMENT.md; docs/re/evidence/t016/q5-plain-s1.txt, q5-forest-s1.txt, q5-mountain-s1.txt, q5-plain-s6.txt, q5-forest-s6.txt, q5-mountain-s6.txt, t016_q5.py"
+      "evidenceRef": "docs/re/T016_TERRAIN.md s2; /mnt/nas/Projects/Command HQ/modern/docs/re/RULES.md section 2 (reference tree, not in this repo); docs/re/MOVEMENT.md; docs/re/evidence/t016/q5-plain-s1.txt, q5-forest-s1.txt, q5-mountain-s1.txt, q5-plain-s6.txt, q5-forest-s6.txt, q5-mountain-s6.txt, t016_q5.py"
     },
     "cover": {
       "value": {
@@ -136,7 +136,7 @@
       ],
       "tag": "disassembly",
       "source": "DS:0x1996 bit 0x20 marks a dig-in terrain: ids 7 oilfield (0xe0), 8 plain (0x60), 9 forest (0x60), 10 mountain (0x20), 11 desert (0x23), 12 jungle (0x23). decompiled.c 4523-4525 flips kind 1 to 3 on the first eligible pass (stationary, no target, bit 0x20); a move order reverts it. Not in a city or on any site terrain (their bytes carry 0x80, not 0x20).",
-      "evidenceRef": "config combat.measured.attritionTable; docs/re/T009b/T-009b notes entrench-2026-11-13.txt"
+      "evidenceRef": "docs/re/t009b/entrench-2026-11-13.txt; config combat.measured.modifiers.entrench"
     },
     "attritionPerPass": {
       "value": {
