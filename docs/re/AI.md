@@ -148,3 +148,19 @@ how far the bytes go. Nothing below is ported into a number the remake runs on.
 The remake ports the four things that are fully decoded — the score's sign, the radius, the
 `strength/25` weight and the `8 < d²` / `0x18 < d²` distance gates — and nothing above. The buy
 side uses the remake's own shop price for the same reason the 10/20 thresholds are left out.
+
+## 8. A capital's own garrison does not march (remake behaviour, measured)
+
+This is the march, not a ported AI routine, so it is labelled as behaviour rather than fidelity:
+
+* `holdsOwnCapital(match, side, piece)` — true when a dug-in (`entrenched`) land piece stands on a
+  site of its own side that the era's capital set names. `ordersFor` skips those pieces in the
+  marching loop; a dug-in piece anywhere else still marches, and the same piece one cell off the
+  capital is marchable again.
+* **Why the rule exists.** Measured live on `37b7537` (pre-T-015) and on this branch before the
+  rule: a fresh 1942 match has red's dug-in infantry on Paris at round 0 and an empty cell from
+  round 1 — the bot marched its capital's garrison east. A lone blue tank then walked onto an
+  undefended Paris and took it, which is the PB-034 shape in a live match even after the duel is
+  fixed. The original's garrison stays on the city and fights there (`duel-original.txt`).
+* `FUN_107e_1750`'s own distance gate already leaves the on-site garrison out of a defender
+  dispatch (`8 < distance²`, and `0x18 < distance²` for infantry), so the two rules do not fight.

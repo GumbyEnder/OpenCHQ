@@ -294,6 +294,23 @@ export function siteThreat(match, site) {
   return score;
 }
 
+// A dug-in land piece standing on one of its own side's capitals is that capital's garrison. The
+// march below is the remake's own behaviour, not a ported routine, so this is a behaviour rule and
+// not a fidelity claim: measured on 37b7537 and on this branch before this line existed, red's
+// Paris garrison marched east from round 1 and the capital sat empty from r1 on, which makes
+// "garrisoned capitals hold" unobservable in a live match. The original's dug-in infantry stays on
+// the city and fights there (duel-original.txt). Keep it home.
+export function holdsOwnCapital(match, side, piece) {
+  if (!piece || piece.domain !== "land" || piece.entrenched !== true) return false;
+  const list = match && match.capitalSet && Array.isArray(match.capitalSet.list) ? match.capitalSet.list : [];
+  for (const capital of list) {
+    const site = (match.sites || []).find((place) => place && Number(place.id) === Number(capital.siteId));
+    if (!site || site.owner !== side) continue;
+    if (Number(site.x) === Number(piece.x) && Number(site.y) === Number(piece.y)) return true;
+  }
+  return false;
+}
+
 // The sites of ours the AI would act on this pass, most threatened first. Only a negative score
 // counts: the original gates both defence routines on `0xea6e < 0` (decompiled.c 1190).
 export function threatenedSites(match, side) {
@@ -466,6 +483,8 @@ export function ordersFor(match, side) {
     if (piece.domain !== "land") continue;
     if (hasPath(piece)) continue;
     if (claimed.has(piece.id)) continue;
+    // The capital's own dug-in garrison holds its cell; see holdsOwnCapital.
+    if (holdsOwnCapital(match, side, piece)) continue;
     marchOne(match, side, piece, focus, events);
   }
 
