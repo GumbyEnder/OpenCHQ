@@ -18,8 +18,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardPayload, CELL_W } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
-import { bresenham, walkLine, walkClassAllows, issueOrder, WALK_COST_LIMIT } from "../../server/move.mjs";
-import { landPace } from "../../server/rules.mjs";
+import { bresenham, walkLine, walkClassAllows, issueOrder } from "../../server/move.mjs";
+import { landPace, pathCostFor, walkCostLimit } from "../../server/rules.mjs";
 
 export const name = "walker";
 
@@ -90,7 +90,8 @@ export async function run(ctx) {
     fail("two wasteland cells (cost 154) were accepted by class 5");
   }
   // The limit is the archive's 100, not a number this code chose.
-  if (WALK_COST_LIMIT !== 100) fail("the walker's cost limit is " + WALK_COST_LIMIT + ", not 100");
+  if (walkCostLimit() !== 100) fail("the walker's cost limit is " + walkCostLimit() + ", not 100");
+  if (pathCostFor(11) !== 3) fail("the desert path-cost byte is " + pathCostFor(11) + ", not 3");
 
   // ---- AC1: start equals end returns 1 ------------------------------------------------------
   const still = walkLine({ x: 20, y: 20 }, { x: 20, y: 20 }, 3, () => 8);

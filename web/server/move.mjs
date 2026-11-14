@@ -9,7 +9,7 @@
 // Sea lanes are lanes.mjs. A land order never becomes a sea route.
 
 import { CELL_W, CELL_H, TERRAIN, boardPayload, resolveDataRoot } from "./board.mjs";
-import { landPace, isRefused, combatRules, cellsPerRound } from "./rules.mjs";
+import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostLimit, digInIds } from "./rules.mjs";
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked } from "./resources.mjs";
@@ -117,8 +117,7 @@ export function blockedCells(match, side = null) {
 // The path-cost bytes are the archive's own DS:0x011C table (RULES.md section 1). They are recovered
 // facts, not tunables: desert 3, jungle 9, polar 13, wasteland 77, every other id 0. A class-3/4
 // walk fails once the sum reaches 100.
-export const WALK_COST_LIMIT = 100;
-export const PATH_COST = Object.freeze([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 9, 13, 77]);
+// The bytes and the limit are config.terrain.pathCost (T-016); this module holds no copy of them.
 
 // The class table, as the binary applies it:
 //   0    ocean, docks and the second ocean only (ids 0-2)
@@ -191,8 +190,8 @@ export function walkLine(from, to, classByte, lookup = null) {
       return { ok: false, cells: cells.slice(0, i + 1), steps: moves(i), cost, fail: "terrain" };
     }
     if (cls >= 3) {
-      cost += PATH_COST[terrain] || 0;
-      if (cost >= WALK_COST_LIMIT) {
+      cost += pathCostFor(terrain);
+      if (cost >= walkCostLimit()) {
         return { ok: false, cells: cells.slice(0, i + 1), steps: moves(i), cost, fail: "cost" };
       }
     }
@@ -390,6 +389,12 @@ export function entrench(match, side, pieceId) {
   if (piece.transport === true) return { error: "A transport cannot dig in." };
   if (Array.isArray(piece.path) && piece.path.length > 0) return { error: "That piece is still moving." };
   if (inactiveRounds(piece, match.round) > 0) return { error: "That unit is inactive." };
+  // T-016: the original's bit 0x20 terrains only (config terrain.digIn). A unit cannot dig in on a
+  // city, base, capital, lake, polar or wasteland cell; tickEntrench applies the same list.
+  const ground = terrainAt(piece.x, piece.y);
+  if (ground !== null && ground !== undefined && !digInIds().has(Number(ground))) {
+    return { error: "That ground cannot be dug in." };
+  }
   piece.entrenched = true;
   piece.repairing = false;
   piece.dugRound = Number(match.round) || 0;
