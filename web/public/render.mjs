@@ -743,7 +743,11 @@ export function paintSiteTicks(ctx, sites, groups, view) {
     if (!ink) continue;
     const topLeft = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
     const bottomRight = cellToPixel(wrapX(box.x1, view.boardW || BOARD_W), box.y1, view);
-    const span = Math.max(3, Math.round(bottomRight.x - topLeft.x));
+    // The span is measured before wrapping. A badge straddling the x seam has x0 near the right edge
+    // and x1 past it, so wrapping both ends made the subtraction negative and the notch collapsed to
+    // its 3 px floor (PB-035). Only the anchor column wraps.
+    const scale = Math.max(1, Number(view.scale) || 1);
+    const span = Math.max(3, Math.round((box.x1 - box.x0) * scale));
     const side = Math.max(2, Math.round(span * 0.34));
     const nx = Math.round(topLeft.x) + 1;
     const ny = Math.round(bottomRight.y) - side - 1;

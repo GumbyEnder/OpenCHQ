@@ -303,6 +303,17 @@ export async function run() {
   ok("the tick leaves the badge centre free for the silhouette",
     !(inkRect.x <= (boxTopLeft.x + boxBottomRight.x) / 2 && inkRect.x + inkRect.w >= (boxTopLeft.x + boxBottomRight.x) / 2
       && inkRect.y <= (boxTopLeft.y + boxBottomRight.y) / 2 && inkRect.y + inkRect.h >= (boxTopLeft.y + boxBottomRight.y) / 2));
+
+  // PB-035: a garrison straddling the x seam keeps the full notch. Both footprint ends used to be
+  // wrapped before subtracting, so x0 near 319 and x1 past 320 gave a negative span and the 3 px
+  // floor. Same badge, same view, only the anchor column wraps.
+  const seamGroup = badgeGroups([piece({ id: "seam", x: 319.7, y: 10 })], 4);
+  const seamTick = recorder();
+  eq("a city under a badge at the seam is re-stamped",
+    paintSiteTicks(seamTick.ctx, [{ x: 319, y: 10, type: 1 }], seamGroup, view), 1);
+  const seamInk = seamTick.fillsRect.find((r) => r.color === PALETTE.capital || r.color === PALETTE.city);
+  ok("the seam notch is a full corner square, not the 3 px floor", seamInk && seamInk.w > 3 && seamInk.w === seamInk.h);
+  ok("the seam notch is the same size as an off-seam notch", seamInk.w === inkRect.w);
   eq("the footprint covers the cells the badge body reaches",
     JSON.stringify(badgeFootprint(stack[0], view)),
     JSON.stringify({ x0: stack[0].x - 1.75, x1: stack[0].x + 1.75, y0: stack[0].y - 1.75, y1: stack[0].y + 1.75 }));
