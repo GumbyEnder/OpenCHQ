@@ -8,8 +8,15 @@
 // run took the same commit from 12.2x to 8.9x and failed (69/1/0), while an idle box at load ~3.7
 // read 12.2-12.7x three times running. A pin that goes red because another shell is busy is not a
 // regression pin, so a short sample is re-taken -- a spike loses, a real slowdown does not -- and
-// every number that can turn red carries the load it was taken under.
+// every number that can turn red says how busy the host was while it was taken.
+//
+// The instrument is the host's own busy fraction across the probe window, not the 1-minute load
+// average. Calibrated on a 32-cpu box against 0/4/8/16/24/32 spinning cores: load1 read 8.1 while
+// headroom collapsed to 5.7x, because a 0.14 s probe is invisible to a 60 s average; busy% tracked
+// the collapse (8% -> 11.9x, 36% -> 5.7x, 83% -> 6.5x). So load1 is printed for context and busy%
+// decides whether a red is trustworthy.
 
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -20,15 +27,26 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 // A contended host is the likeliest cause of a short sample, so name it rather than guess: the
 // bench medians five passes internally and still lost 3x of headroom to a parallel browser.
 const SAMPLES = 3;
-const CONTENDED = 0.5; // load1 per cpu above which the host, not the code, is suspect
+// Above this share of the host's cores busy during the sample, a red says "re-run alone first".
+const CONTENDED = 0.30; // calibration: ambient 8%, first collapse at 36%
 
-// Taken with the sample, not after it: the load that matters is the one the probe ran under.
-function loadNow() {
-  const [l1, l5] = os.loadavg();
-  return {
-    text: "load1=" + l1.toFixed(2) + " load5=" + l5.toFixed(2) + " cpus=" + os.cpus().length,
-    contended: l1 / os.cpus().length > CONTENDED,
-  };
+// Busy fraction of the whole host over the window it is asked about. /proc/stat is instant, so it
+// sees the probe's own 0.14 s round; loadavg does not. Falls back to load1/cpus where there is no
+// /proc/stat (macOS), which is why `contended` is a hint and not an assertion.
+function cpuTimes() {
+  try {
+    const row = readFileSync("/proc/stat", "utf8").split("\n")[0].trim().split(/\s+/).slice(1).map(Number);
+    const total = row.reduce((a, b) => a + b, 0);
+    return { total, idle: (row[3] || 0) + (row[4] || 0) };
+  } catch {
+    return null;
+  }
+}
+
+function busyOver(before, after) {
+  if (!before || !after) return null;
+  const dt = after.total - before.total;
+  return dt > 0 ? 1 - (after.idle - before.idle) / dt : null;
 }
 
 export const name = "load_test";
@@ -36,11 +54,13 @@ export const name = "load_test";
 // One probe run. Bench-rooms exits 1 on a capacity failure but still prints BENCH_JSON, so keep
 // the numbers: that lets the assertions name the exact budget instead of dying on the exit code.
 function probe() {
+  const before = cpuTimes();
   const bench = spawnSync(process.execPath, ["tools/bench-rooms.mjs", "1000", "8"], {
     cwd: root,
     encoding: "utf8",
     timeout: 180000,
   });
+  const after = cpuTimes();
   const output = String(bench.stdout || "");
   const line = output.split("\n").find((row) => row.startsWith("BENCH_JSON "));
   if (!line) {
@@ -54,7 +74,17 @@ function probe() {
   // Correctness readings are not timing: they must hold on the first sample, and a retry must
   // never paper over a held room being written or a lost round trip.
   assertCorrect(report);
-  return { report, ...loadNow() };
+  // Measured across the probe's own window, so it describes the machine this sample raced.
+  const busy = busyOver(before, after);
+  const [l1] = os.loadavg();
+  return {
+    report,
+    busy,
+    contended: busy === null ? l1 / os.cpus().length > 0.5 : busy > CONTENDED,
+    text:
+      (busy === null ? "busy=unknown" : "host busy " + (busy * 100).toFixed(0) + "% during the sample") +
+      " (load1=" + l1.toFixed(2) + " cpus=" + os.cpus().length + ")",
+  };
 }
 
 function assertCorrect(report) {
@@ -92,26 +122,28 @@ export function run() {
 
   const best = taken.reduce((a, b) => (b.score > a.score ? b : a), taken[0]);
   const report = best.report;
-  const tried = taken.length === 1 ? "1 sample" : taken.length + " samples, best kept";
+  const tried = taken.length === 1 ? "1 sample" : taken.length + " samples";
 
   if (!(report.tickHeadroom > floor)) {
     throw new Error(
       "tick headroom " + report.tickHeadroom + "x, need >" + floor + "x inside the " +
         (Number(report.budgetMs) / 1000).toFixed(2) + " s round -- best of " + tried + " (" + best.text + ")" +
-        (best.contended ? "; this host is CONTENDED, so re-run alone before reading it as a code regression" : "")
+        (best.contended ? "; the host was CONTENDED during that sample, so re-run alone before reading it as a code regression" : "")
     );
   }
   if (!(report.roundHeadroom > floor)) {
     throw new Error(
       "round headroom " + report.roundHeadroom + "x, need >" + floor + "x including the store slice -- best of " +
         tried + " (" + best.text + ")" +
-        (best.contended ? "; this host is CONTENDED, so re-run alone before reading it as a code regression" : "")
+        (best.contended ? "; the host was CONTENDED during that sample, so re-run alone before reading it as a code regression" : "")
     );
   }
 
   console.log(
     `load_test: headroom floor ${floor}x, ${report.rooms} rooms x ${report.pieces} pieces, tick ${report.tickHeadroom}x, ` +
       `round ${report.roundHeadroom}x, held ${report.heldWrites} writes, ` +
-      `durable ${report.durable}/1000, ${report.roundTripSteps} route steps round-tripped (${tried}, ${best.text})`
+      `durable ${report.durable}/1000, ${report.roundTripSteps} route steps round-tripped (${tried}` +
+      (taken.length > 1 ? ", best kept" : "") + ", " + best.text + ")" +
+      (best.contended ? "; GREEN TAKEN ON A CONTENDED HOST -- re-run alone to confirm the margin" : "")
   );
 }
