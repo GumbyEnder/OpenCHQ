@@ -122,8 +122,12 @@ function nearestProducer(match, side, site) {
   return best;
 }
 
-// The sentence a refusal carries. AC4 asks for "ready at round N" verbatim.
-export function unreadyRefusal(site) {
+// The sentence a refusal carries. AC4 asks for "ready at round N" verbatim; PB-044 (T-021 AC8)
+// asks for the site's name in front of it, so "Kharkov isn't ready: it will be ready at round 18"
+// rather than a guess about which city the player clicked.
+export function unreadyRefusal(site, label = "") {
   const readyAt = readyRoundOf(site);
-  return "That city is not ready: it will be ready at round " + readyAt + ".";
+  const name = String(label || (site && site.name) || "").trim();
+  const who = name ? name + " isn't ready" : "That city isn't ready";
+  return who + ": it will be ready at round " + readyAt + ".";
 }

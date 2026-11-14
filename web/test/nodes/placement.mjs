@@ -145,7 +145,7 @@ export async function run(ctx) {
     const match = matchWith([{ id: 1, name: "Home", x: 80, y: 50, kind: "city", owner: "blue" }]);
     const mask = placementMask(match, "blue", "cruiser", grid);
     if (!mask.error) fail("a hull was offered with no dock");
-    if (!/no dock/.test(mask.error)) fail("the no-dock sentence is wrong: " + mask.error);
+    if (!/no coastal city or dock/.test(mask.error)) fail("the no-berth sentence is wrong: " + mask.error);
     // AC2: the buy menu says it before the click, not after. The row carries the same sentence the
     // mask gives, and the land rows are untouched.
     eq("the side holds no dock", friendlySites(match, "blue", "sea"), 0);
@@ -165,15 +165,18 @@ export async function run(ctx) {
       shopFor("1942", { seaRefusal: "" }).filter((row) => row.domain === "sea" && row.refused).length, 0);
   }
 
-  // --- the refusal names the unit, then the rule ----------------------------
+  // --- the refusal names the unit, then the rule (PB-044 rewrote this sentence) -------
   eq("the land sentence names the unit and the rule",
-    placementRefusal("tank", "land", "Land units and aircraft go only on a friendly city or base."),
-    "That is not a valid place for tank. Land units and aircraft go only on a friendly city or base. That cell is not a friendly city or base you hold.");
-  eq("the sea sentence names the unit and the dock",
-    placementRefusal("cruiser", "sea", "Ships go only on a friendly dock."),
-    "That is not a valid place for cruiser. Ships go only on a friendly dock. That cell is not a friendly dock you hold.");
-  if (!placementRefusal("infantry", "land", "x").includes("not a valid place for infantry")) {
-    fail("the refusal does not say 'not a valid place for infantry'");
+    placementRefusal("tank", "land", "Land units go only on a friendly city or base."),
+    "Can't place tank here: that is not a friendly city or base you hold. Land units go only on a friendly city or base.");
+  eq("the sea sentence names the unit and the berths",
+    placementRefusal("cruiser", "sea", "Ships go at a friendly dock or a coastal city or base (D-025)."),
+    "Can't place cruiser here: that is not a friendly coastal city, base or dock you hold. Ships go at a friendly dock or a coastal city or base (D-025).");
+  eq("a named site leads the sentence",
+    placementRefusal("infantry", "land", "rule", "Kharkov is not yours."),
+    "Can't place infantry here: Kharkov is not yours. rule");
+  if (!placementRefusal("infantry", "land", "x").includes("Can't place infantry here")) {
+    fail("the refusal does not say 'Can't place infantry here'");
   }
 
   // --- canPlace is the gate the purchase goes through -----------------------
@@ -186,7 +189,7 @@ export async function run(ctx) {
     const deep = canPlace(match, "blue", "infantry", 81, 51, grid);
     if (!deep.error) fail("canPlace accepted a cell beside the city");
     // This is the click on a cell the page did not highlight: the sentence must name the unit.
-    if (!deep.error.includes("not a valid place for infantry")) {
+    if (!deep.error.includes("Can't place infantry here")) {
       fail("an unhighlighted click says " + JSON.stringify(deep.error));
     }
     const fractional = canPlace(match, "blue", "infantry", 80.5, 50, grid);

@@ -454,7 +454,10 @@
   "air": {
     "strikeRounds": 8,
     "patrolRounds": 4,
-    "reach": 10
+    "reach": 10,
+    "transferRounds": 0,
+    "transferRoundsSource": "UNVERIFIED. Manual printed p.22 names only the sites an air unit may transfer to (cities, bases, carriers); it prints no round cost for a transfer and no read site that charges one was recovered in decompiled.c. 0 is the remake's assumption (a transfer rebases the aircraft, it is not a mission), recorded as Q50's sub-item. Nothing outside this file treats it as recovered.",
+    "reachSource": "STAND-IN, UNMEASURED. The aircraft range was never recovered: manual p.22 prints no number and no read site was found. `reach` gates strikes, the mission base search and the transfer range alike, and every refusal that names it calls it a stand-in."
   },
   "nukes": {
     "enabled": false,

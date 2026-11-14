@@ -644,8 +644,10 @@ export function paintBadge(ctx, group, view, opts = {}) {
   // The states, drawn around the silhouette and never over it.
   const state = badgeState(piece, opts);
   if (state === "moving") {
+    // T-021: the movement dashes are a state tick, not a frame. At 1.4 units of badge geometry
+    // they read as a second outline and, at big tiles, swallowed the silhouette they annotate.
     ctx.strokeStyle = "#8fd3ff";
-    ctx.lineWidth = Math.max(1, k * 1.4);
+    ctx.lineWidth = Math.max(1, k * 0.8);
     const dash = [[20.6, 4.6, 23.2, 2.0], [20.6, 9.2, 23.8, 6.0], [15.8, 1.8, 18.8, 1.8]];
     for (const [x1, y1, x2, y2] of dash) {
       ctx.beginPath();
@@ -983,8 +985,10 @@ export function paintPreview(ctx, preview, view, opts = {}) {
   const ink = preview.error ? PIECE_INK.enemy : ROUTE_INK;
   // Two passes: a dark casing under a bright line. At the whole-world fit a one-pixel hairline in
   // gold over pale terrain read as nothing at all (T-007 AC10), and the route a player is about to
-  // send is the one thing on the map that must be legible.
-  const width = Math.max(2, v.scale * 1.1);
+  // send is the one thing on the map that must be legible. T-021 thinned it: the old 2 px floor
+  // plus a 2 px casing read as a rope at fit and as a slab when zoomed in. The floor is still above
+  // one pixel and the casing still carries it, at every zoom.
+  const width = Math.max(1.25, v.scale * 0.6);
 
   let started = false;
   const trace = () => {
@@ -1011,7 +1015,7 @@ export function paintPreview(ctx, preview, view, opts = {}) {
 
   // The casing first, then the bright line over it.
   ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
-  ctx.lineWidth = width + 2;
+  ctx.lineWidth = width + 1.5;
   trace();
   ctx.strokeStyle = ink;
   ctx.lineWidth = width;
@@ -1019,9 +1023,9 @@ export function paintPreview(ctx, preview, view, opts = {}) {
 
   if (to && Number.isFinite(Number(to.x)) && Number.isFinite(Number(to.y))) {
     // The end marker: a filled diamond on a dark ring, so "this is where the order lands" is not a
-    // hairline square nobody can see.
+    // hairline square nobody can see. T-021 thinned it with the line it ends.
     const at = cellToPixel(wrapX(to.x, v.boardW), Number(to.y), v);
-    const r = Math.max(3, v.scale * 1.6);
+    const r = Math.max(2.5, v.scale * 1.2);
     ctx.beginPath();
     ctx.moveTo(at.x, at.y - r);
     ctx.lineTo(at.x + r, at.y);
@@ -1030,7 +1034,7 @@ export function paintPreview(ctx, preview, view, opts = {}) {
     ctx.closePath();
     ctx.fillStyle = ink;
     ctx.fill();
-    ctx.lineWidth = Math.max(1, width * 0.5);
+    ctx.lineWidth = Math.max(0.75, width * 0.45);
     ctx.strokeStyle = "#0b0f14";
     ctx.stroke();
   }

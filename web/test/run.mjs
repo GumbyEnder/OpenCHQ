@@ -516,7 +516,9 @@ async function main() {
   // A second purchase in the same cell is refused, and a nuke is refused with a reason.
   wsAda.send(JSON.stringify({ op: "buy", kind: "infantry", x: city.x, y: city.y }));
   const occupied = await waitFor(adaBox, beforeBuy, (message) => message.op === "error" || message.op === "refused", "second buy");
-  if (!/share|occupied/i.test(String(occupied.error || occupied.reason || ""))) fail("a second buy in one cell was allowed");
+  // T-021 PB-044: the refusal names the site now, so the shape is "Can't place infantry here:
+  // New York already holds a unit." Ground-on-ground stacking is unchanged - still refused.
+  if (!/share|occupied|already holds/i.test(String(occupied.error || occupied.reason || ""))) fail("a second buy in one cell was allowed");
   wsAda.send(JSON.stringify({ op: "buy", kind: "nuke", x: city.x, y: city.y }));
   const nuked = await waitFor(adaBox, beforeBuy, (message) => (message.op === "error" || message.op === "refused") && /nuke/i.test(String(message.error || message.reason)), "nuke buy");
   if (!nuked) fail("a nuke purchase was not refused with a reason");

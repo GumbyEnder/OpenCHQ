@@ -615,6 +615,9 @@ let buying = null;
 // The cells the server says a purchase may stand on: {width, height, mask}. The page paints this and
 // never works the rule out for itself.
 let placement = null;
+// Which air order the next map click sends for a selected aircraft: "strike" (the default, and
+// what every pre-T-021 click meant) or "transfer", which rebases the plane on the cell clicked.
+let pendingMission = "strike";
 
 // The round log. A running clock is dead time unless it reports itself: every line here came
 // from the server already filtered to what this seat could see.
@@ -703,8 +706,11 @@ board.addEventListener("click", (event) => {
   // plane's own cell stays its base. Without this the only aim the page had was the plane's base
   // cell, where no enemy ever stands (T-003 hand check 4).
   if (selected.kind === "aircraft" || selected.domain === "air") {
-    const mission = missionMessage(selected, "strike", cell);
+    const mode = pendingMission === "transfer" ? "transfer" : "strike";
+    const mission = missionMessage(selected, mode, cell);
     if (mission) sendOrder(mission);
+    // Back to the everyday meaning of a click on an aircraft's map.
+    pendingMission = "strike";
     return;
   }
   const message = orderMessage(selected, cell);
@@ -1142,20 +1148,31 @@ function toolRow(room) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "buy";
-        button.textContent = mission.label + " (" + mission.rounds + "r)";
-        button.disabled = !briefing.ready || !briefing.canFly;
-        button.title = !briefing.canFly
-          ? "No friendly city, dock or ship in reach."
-          : !briefing.ready
-            ? "This aircraft is away for " + briefing.roundsLeft + " more rounds."
+        // A transfer costs no rounds, so it carries no price and does not need a base in reach:
+        // it moves the base. Everything else keeps the mission wording.
+        const needsBase = mission.mode !== "transfer";
+        button.textContent = mission.rounds > 0
+          ? mission.label + " (" + mission.rounds + "r)"
+          : mission.label;
+        button.disabled = !briefing.ready || (needsBase && !briefing.canFly);
+        button.title = !briefing.ready
+          ? "This aircraft is away for " + briefing.roundsLeft + " more rounds."
+          : needsBase && !briefing.canFly
+            ? "No friendly city, dock or ship in reach."
             : mission.mode === "strike"
               ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
-              : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
+              : mission.mode === "transfer"
+                ? "Pick a friendly city, base or carrier cell; the aircraft rebases there."
+                : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
         button.addEventListener("click", () => {
-          // A strike hits the cell the player names, not the base the plane sits on. A scramble is
-          // a patrol around that base, so its own cell is the right target for it.
-          if (mission.mode === "strike") {
-            say("Strike: pick the target cell on the map.");
+          // A strike hits the cell the player names, not the base the plane sits on. A transfer
+          // names the berth the plane moves to. A scramble is a patrol around that base, so its
+          // own cell is the right target for it.
+          if (mission.mode === "strike" || mission.mode === "transfer") {
+            pendingMission = mission.mode;
+            say(mission.mode === "transfer"
+              ? "Transfer: pick a friendly city, base or carrier cell."
+              : "Strike: pick the target cell on the map.");
             closeDialog();
             return;
           }
@@ -1556,15 +1573,20 @@ const DIALOG_PAINTERS = {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = mission.label;
-        button.title = "Away for " + mission.rounds + " rounds.";
+        button.title = mission.rounds > 0
+          ? "Away for " + mission.rounds + " rounds."
+          : "Pick a friendly city, base or carrier cell; the aircraft rebases there.";
         button.disabled = !plane.ready;
         button.addEventListener("click", () => {
-          // A strike is aimed: the air dialog names the plane and hands the player the map, because
-          // the cell the plane sits on is its base and never holds an enemy (T-003).
-          if (mission.mode === "strike") {
+          // A strike or a transfer is aimed: the air dialog names the plane and hands the player
+          // the map, because the cell the plane sits on is its base, not the cell meant (T-003).
+          if (mission.mode === "strike" || mission.mode === "transfer") {
             const planePiece = (room.pieces || []).find((piece) => piece.id === plane.id);
             if (planePiece) selected = planePiece;
-            say("Strike: pick the target cell on the map.");
+            pendingMission = mission.mode;
+            say(mission.mode === "transfer"
+              ? "Transfer: pick a friendly city, base or carrier cell."
+              : "Strike: pick the target cell on the map.");
             closeDialog();
             drawMatch();
             return;
@@ -1895,7 +1917,7 @@ function connect() {
       noteLog(message.lines);
     } else if (message.op === "bought") {
       settleOrder(message.id);
-      say(purchaseText(message.kind, message.at, message.cash));
+      say(purchaseText(message.kind, message.site ? { site: message.site } : message.at, message.cash));
       // One purchase lands, the cursor goes: the next click is a map click again.
       buying = null;
       placement = null;
@@ -1912,7 +1934,10 @@ function connect() {
       // order that was refused says which one.
       settleOrder(message.id);
       const refusal = refusalText(message);
-      say(message.id ? "Order " + message.id + " refused: " + refusal : refusal);
+      // PB-044 (T-021 AC8): the player reads the sentence, never the internal order id. The id
+      // stays in the console, where a developer can still trace a queued order.
+      if (message.id) console.debug("[order " + message.id + "] " + refusal);
+      say(refusal);
       if (preview) {
         preview = { ...preview, path: [], error: refusal };
         drawMatch();

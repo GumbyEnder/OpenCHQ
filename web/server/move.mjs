@@ -85,10 +85,14 @@ function paceAt(x, y) {
   return landPace(id);
 }
 
+// A piece standing on a cell, on the GROUND layer only. An aircraft based in a city does not hold
+// its ground (manual p.22/p.24: the air layer is separate, T-021), so a walker may enter a city a
+// friendly plane is based in and a hull may sail under one.
 function pieceAt(match, x, y, skipId = null) {
   const wx = wrapX(x);
   for (const unit of match.pieces || []) {
     if (skipId !== null && unit.id === skipId) continue;
+    if (isAircraft(unit)) continue;
     if (wrapX(unit.x) === wx && Number(unit.y) === Number(y)) return unit;
   }
   return null;
@@ -102,6 +106,7 @@ export function blockedCells(match, side = null) {
   const out = new Set();
   for (const unit of (match && match.pieces) || []) {
     if (side && unit.side !== side) continue;
+    if (isAircraft(unit)) continue; // a based plane holds air, not the cell under it (T-021)
     out.add(wrapX(unit.x) + "," + Number(unit.y));
   }
   return out;

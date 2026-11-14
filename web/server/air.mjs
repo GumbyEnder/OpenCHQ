@@ -17,9 +17,14 @@ function missionCosts() {
   const air = (rules() && rules().air) || {};
   const strike = Number(air.strikeRounds);
   const patrol = Number(air.patrolRounds);
+  // A transfer's round cost is UNVERIFIED (air.transferRoundsSource): the manual names the sites a
+  // plane may transfer to, never a price in rounds. 0 is read from config like the other two, so
+  // the assumption is tunable in one place instead of being written into this module.
+  const transfer = Number(air.transferRounds);
   return {
     strike: Number.isFinite(strike) && strike > 0 ? Math.floor(strike) : 0,
     patrol: Number.isFinite(patrol) && patrol > 0 ? Math.floor(patrol) : 0,
+    transfer: Number.isFinite(transfer) && transfer >= 0 ? Math.floor(transfer) : 0,
   };
 }
 
@@ -97,13 +102,89 @@ export function airBriefing(match, side) {
       missions: [
         { mode: "patrol", label: "Scramble (CAP)", rounds: costs.patrol },
         { mode: "strike", label: "Strike", rounds: costs.strike },
-      ].filter((mission) => mission.rounds > 0),
+        // A transfer rebases the plane instead of flying a mission (manual p.22: "Air units may
+        // only be transferred to cities, bases, and aircraft carriers"). Its round cost comes from
+        // config and is UNVERIFIED (air.transferRoundsSource): the manual never prints one.
+        { mode: "transfer", label: "Transfer", rounds: costs.transfer },
+      ].filter((mission) => mission.mode === "transfer" || mission.rounds > 0),
     };
   });
 }
 
+// A transfer rebases the aircraft (manual printed p.22: "Air units may only be transferred to
+// cities, bases, and aircraft carriers"). The target is a friendly city, base, capital or
+// facility cell, or the cell a friendly carrier stands on. A ground or sea piece already on that
+// cell does not block the transfer: the air layer is separate from the ground one (T-021).
+//
+// The range is the same stand-in `air.reach` the missions use, because the original's transfer
+// range was not recovered (air.reachSource, UNMEASURED); every refusal says so. The round cost is
+// air.transferRounds, UNVERIFIED (air.transferRoundsSource) - the manual prints none, so 0 is an
+// assumption recorded in Q50, not a recovered rule. How many aircraft may base on one site is
+// Q50's first sub-item and is deliberately NOT capped here.
+export const TRANSFER_NOTE = "Transfer. The aircraft rebases; the original's transfer range was not recovered.";
+
+export function transferPlane(match, side, pieceId, target) {
+  if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to rebase in." };
+  if (match.over) return { error: "The match is over." };
+  const plane = match.pieces.find((piece) => piece && piece.id === String(pieceId));
+  if (!plane) return { error: "No such aircraft: " + pieceId + "." };
+  if (plane.side !== side) return { error: "That aircraft belongs to " + plane.side + "." };
+  if (!isAircraft(plane)) return { error: "Only an aircraft is transferred." };
+  const remaining = inactiveRounds(plane, match.round);
+  if (remaining > 0) return { error: `That aircraft is inactive for ${remaining} more rounds.` };
+
+  const x = Number(target && target.x);
+  const y = Number(target && target.y);
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return { error: "A transfer needs a whole cell." };
+  const wx = ((x % CELL_W) + CELL_W) % CELL_W;
+  if (y < 0 || y > 135) return { error: "That site is off the map." };
+
+  // The site on that cell, if any: a friendly city/base/capital/facility is a berth.
+  const site = (match.sites || []).find(
+    (entry) => entry && Number(entry.x) === wx && Number(entry.y) === y,
+  );
+  const siteOk = Boolean(site) && site.owner === side &&
+    ["city", "capital", "base", "facility"].includes(String(site.kind));
+  const carrier = (match.pieces || []).find(
+    (unit) => unit && unit !== plane && unit.side === side && unit.kind === "carrier" &&
+      Number(unit.x) === wx && Number(unit.y) === y,
+  );
+  const where = site && site.name ? String(site.name) : (site ? String(site.kind) : "");
+  if (!siteOk && !carrier) {
+    if (site && site.owner !== side) return { error: "Can't transfer there: " + where + " is not yours." };
+    return { error: "Can't transfer there: air units go only to a friendly city, base or carrier." };
+  }
+
+  const reach = airReach();
+  if (reach > 0 && chebyshev(plane, { x: wx, y }) > reach) {
+    return { error: "That site is out of the aircraft's transfer range (" + reach + " cells; stand-in reach, UNMEASURED)." };
+  }
+
+  const from = { x: Number(plane.x), y: Number(plane.y) };
+  plane.x = wx;
+  plane.y = y;
+  plane.path = [];
+  plane.pace = 1;
+  plane.readyAnnounced = false;
+  return {
+    ok: true,
+    piece: plane,
+    events: [{
+      type: "transfer",
+      side,
+      pieceId: plane.id,
+      x: wx,
+      y: y,
+      from,
+      round: Number(match.round) || 0,
+      note: TRANSFER_NOTE,
+    }],
+  };
+}
+
 // Send one mission. Returns { ok, piece, events } or { error }.
 export function sendMission(match, side, pieceId, mode, target) {
+  if (String(mode) === "transfer") return transferPlane(match, side, pieceId, target);
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to fly in." };
   if (match.over) return { error: "The match is over." };
   const plane = match.pieces.find((piece) => piece && piece.id === String(pieceId));

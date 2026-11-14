@@ -76,22 +76,31 @@ export async function run(ctx) {
       !match.pieces.some((piece) => Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y))
   );
   must(blueDock, "no friendly dock to buy a cruiser at");
-  // A hull goes onto a friendly dock cell now, not into nearby coastal water: ask the placement
-  // module for the cells it accepts and put the cruiser on the first one.
-  const { placementMask } = await import("../../server/placement.mjs");
+  // A hull goes onto a friendly berth: a dock's own cell, or - under D-025 (T-021) - the water
+  // cell beside a coastal city, base or capital. Ask the placement module for the cells it accepts
+  // and for the cell the hull actually lands on, then put the cruiser there.
+  const { canPlace, placementMask } = await import("../../server/placement.mjs");
   const mask = placementMask(match, "blue", "cruiser", board);
   must(mask && !mask.error, "no placement mask for a cruiser: " + JSON.stringify(mask));
+  // A click goes to the CLICKED cell (lobby sends the cell the player hit); the module resolves
+  // the water cell the hull lands on. Buying at the resolved berth cell instead would re-ask
+  // canPlace about a cell that is not a site you hold (e.g. the neutral dock beside Reykjavik).
   let berth = null;
+  let click = null;
   for (let id = 0; id < mask.mask.length && !berth; id++) {
     if (!mask.mask[id]) continue;
     const x = id % mask.width;
-    berth = { x, y: (id - x) / mask.width };
+    const y = (id - x) / mask.width;
+    const ok = canPlace(match, "blue", "cruiser", x, y, board);
+    must(ok && !ok.error, "a highlighted berth was refused: " + JSON.stringify(ok));
+    berth = ok.place;
+    click = { x, y };
   }
-  must(berth, "the board offers no coastal water for a cruiser");
+  must(berth, "the board offers no berth for a cruiser");
   // Fund the fixture: a cruiser costs 10 billion (manual p.28) and the stand-in startPool is 9,
   // which T-001 deliberately left alone, so an unfunded seat cannot buy a hull.
   match.sides.blue.cash = 100000;
-  const ship = buy(match, "blue", "cruiser", berth.x, berth.y, board);
+  const ship = buy(match, "blue", "cruiser", click.x, click.y, board);
   must(ship && ship.ok === true, "a cruiser in coastal water was refused: " + JSON.stringify(ship));
   must(ship.piece.domain === "sea", "the berth produced a " + ship.piece.domain + " piece");
   must(ship.piece.x === berth.x && ship.piece.y === berth.y, "the cruiser did not land on its berth");

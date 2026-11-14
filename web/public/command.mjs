@@ -45,10 +45,14 @@ export { articleFor } from "./units.mjs";
 // unit. F4 corrects the form: the original shows cash in whole billions, truncated (`3711:16f3`),
 // so this line reads `Pool 10b`, not `Pool 0.3b`. Under one billion it prints `0b`, which matches
 // the divide but is UNVERIFIED against a capture.
+// PB-044 (T-021 AC8): the line names the SITE the unit was bought into, not its coordinates.
+// The server sends the site's own name (or "a base near Kharkov" for an unnamed berth) as
+// `at.site`; the coordinate form survives only as the fallback for a reply that carries no site.
 export function purchaseText(kind, at, cash) {
   const noun = unitPhrase(kind);
-  const cellAt = cell(at);
-  const where = cellAt ? " at " + cellAt.x + "," + cellAt.y : "";
+  const site = at && typeof at === "object" && typeof at.site === "string" ? at.site.trim() : "";
+  const cellAt = site ? null : cell(at);
+  const where = site ? " at " + site : cellAt ? " at " + cellAt.x + "," + cellAt.y : "";
   const value = Number(cash);
   const pool = cash !== null && cash !== undefined && Number.isFinite(value)
     ? " Pool " + formatWholeBillions(value) + "b."

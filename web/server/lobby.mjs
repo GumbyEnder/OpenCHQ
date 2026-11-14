@@ -204,8 +204,10 @@ export function createLobby() {
       // dock gets its hull rows refused here, with the manual's reason, instead of arming a unit
       // that can never be placed (placement.mjs is the same rule, so the two cannot drift).
       shop: shopFor(room.era, {
-        seaRefusal: room.match && friendlySites(room.match, you, "sea") === 0
-          ? "You hold no dock, so a hull cannot be bought."
+        // D-025: a coastal city or base is a berth too, so the row is only refused when the side
+        // holds neither a dock nor a coastal settlement.
+        seaRefusal: room.match && friendlySites(room.match, you, "sea", boardPayload()) === 0
+          ? "You hold no coastal city or dock, so a hull cannot be bought."
           : "",
       }),
       // The late kit this era offers, and whether a nuke is even possible. A tool a player
@@ -1035,6 +1037,8 @@ export function createLobby() {
         kind: result.piece.kind,
         piece: result.piece.id,
         at: { x: result.piece.x, y: result.piece.y },
+        // PB-044: the line names the site ("Bought an infantry at Kharkov"), never the cell.
+        site: result.label || null,
         cash: room.match.sides && room.match.sides[mine] ? room.match.sides[mine].cash : null,
       };
       peer.send(reply);

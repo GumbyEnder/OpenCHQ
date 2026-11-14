@@ -8,7 +8,7 @@
 import { boardPayload, matchSites, resolveDataRoot, CELL_W, CELL_H } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { seedOwners } from "../../server/economy.mjs";
-import { placementMask } from "../../server/placement.mjs";
+import { canPlace, placementMask } from "../../server/placement.mjs";
 import { laneGraph, resetLaneCache, seaRoute } from "../../server/lanes.mjs";
 import { issueOrder } from "../../server/move.mjs";
 import { tickMatch } from "../../server/tick.mjs";
@@ -27,13 +27,35 @@ function isWaterCell(board, cell) {
   return id !== null && id >= 0 && id <= 2;
 }
 
-function nearest(mask, board, target) {
-  let best = null;
-  let bestGap = Infinity;
-  for (let id = 0; id < mask.length; id++) {
-    if (!mask[id]) continue;
+// D-025 hull berths as WATER cells: a dock's own cell is water, a coastal settlement's cell is
+// not, so each highlighted cell goes through canPlace and the resolved landing cell is what a
+// route can start from. A berth that cannot resolve is a defect, not a skip.
+function hullBerths(match, board, mask, fail) {
+  const out = [];
+  const seen = new Set();
+  for (let id = 0; id < mask.mask.length; id++) {
+    if (!mask.mask[id]) continue;
     const x = id % CELL_W;
     const y = (id - x) / CELL_W;
+    const ok = canPlace(match, "blue", HULL, x, y, board);
+    if (ok.error) {
+      fail("ship_routes: highlighted berth " + x + "," + y + " is refused: " + ok.error);
+      continue;
+    }
+    const key = ok.place.x + "," + ok.place.y;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ok.place);
+  }
+  return out;
+}
+
+function nearest(cells, target) {
+  let best = null;
+  let bestGap = Infinity;
+  for (const cell of cells) {
+    const x = cell.x;
+    const y = cell.y;
     const dx = Math.abs(x - target.x);
     const gap = Math.max(Math.min(dx, CELL_W - dx), Math.abs(y - target.y));
     if (gap < bestGap) {
@@ -80,7 +102,9 @@ export async function run(ctx) {
   if (mask.error) fail("ship_routes: a hull cannot be placed at all: " + mask.error);
 
   const washington = { x: 79, y: 44 };
-  const start = nearest(mask.mask, board, washington);
+  const berths = hullBerths(match, board, mask, fail);
+  if (!berths.length) fail("ship_routes: no hull berth resolved to a water cell");
+  const start = nearest(berths, washington);
   if (!start) fail("ship_routes: no coastal cell near Washington for a hull");
   if (Math.max(Math.abs(start.x - washington.x), Math.abs(start.y - washington.y)) > 12) {
     fail("ship_routes: the nearest friendly dock to Washington is " + start.x + "," + start.y);
@@ -106,17 +130,15 @@ export async function run(ctx) {
   // Every cell where placement allows a hull must reach the same mid-Atlantic cell.
   let tried = 0;
   const failures = [];
-  for (let id = 0; id < mask.mask.length; id++) {
-    if (!mask.mask[id]) continue;
+  for (const cell of berths) {
     tried += 1;
-    const x = id % CELL_W;
-    const y = (id - x) / CELL_W;
-    const route = seaRoute(root, { x, y }, MID_ATLANTIC);
-    if (!route) failures.push(x + "," + y);
+    const route = seaRoute(root, cell, MID_ATLANTIC);
+    if (!route) failures.push(cell.x + "," + cell.y);
   }
-  // Under D-019 the hull cells are exactly the friendly docks, so the sweep is small by design:
-  // every one of them must still reach the same mid-Atlantic cell.
-  if (tried !== mask.count) fail("ship_routes: swept " + tried + " cells of " + mask.count + " dock cells");
+  // Under D-019 a dock's cell is the berth; under D-025 a coastal settlement's berth is the water
+  // cell beside it, and two settlements can share one. The swept set is therefore the resolved
+  // berths, never larger than the mask's own count.
+  if (tried > mask.count) fail("ship_routes: swept " + tried + " berths for " + mask.count + " highlighted cells");
   if (tried < 1) fail("ship_routes: no hull cell was tested");
   if (failures.length) {
     fail("ship_routes: " + failures.length + " of " + tried + " hull cells cannot reach mid-Atlantic: " +
@@ -141,7 +163,9 @@ export async function run(ctx) {
   seedOwners(sailing);
   sailing.clock = "running";
   const hullMask = placementMask(sailing, "blue", HULL, board);
-  const berth = nearest(hullMask.mask, board, washington);
+  const sailingBerths = hullBerths(sailing, board, hullMask, fail);
+  const berth = nearest(sailingBerths, washington);
+  if (!berth) fail("ship_routes: the clock leg found no hull berth near Washington");
   sailing.pieces = [{ id: "blue:cruiser:test", side: "blue", domain: "sea", kind: HULL, x: berth.x, y: berth.y, path: [] }];
   const order = issueOrder(sailing, "blue", "blue:cruiser:test", MID_ATLANTIC.x, MID_ATLANTIC.y);
   if (!order || order.error) fail("ship_routes: the order was refused: " + JSON.stringify(order));

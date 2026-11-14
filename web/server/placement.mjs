@@ -1,4 +1,5 @@
-// Where a bought unit may be placed. D-019: the original's rule, not a radius.
+// Where a bought unit may be placed. D-019: the original's rule, not a radius, with D-025's
+// coastal-city ship berths on top (T-021).
 //
 // Manual p.27, "General Placement Rules": "every city and base you own is highlighted. Land
 // units and aircraft may be placed in any friendly city or base. Ships may be placed only on
@@ -10,6 +11,18 @@
 // the docks this side owns. A dock's kind is DERIVED from the extract, not recovered as a rule:
 // board.matchSites builds one `kind: "dock"` site on every terrain cell whose id is 1, which is
 // the 150 docks the world's own counts report for all 150 paint cells (docs/re/PLACEMENT.md).
+//
+// Two layers, one board (T-021). The original keeps air units in a separate air layer based *at*
+// cities, bases and carriers (manual printed p.22: "Air units may only be transferred to cities,
+// bases, and aircraft carriers"; p.24: air units are visible in a base, city or carrier; p.9-10
+// shows an enemy air unit in Bombay while red infantry defends it). So a plane and a ground or
+// sea piece may share a site cell, and neither blocks the other's placement. Ground and sea do NOT
+// stack: that rule is unchanged, and nothing here widens it.
+//
+// D-025 (deliberate deviation from p.28's docks-only wording): a hull may also be bought by
+// clicking a friendly city, capital or base that touches water. The ship lands on an ADJACENT
+// free water cell, docks first, then the nearest free water cell. The coastal site is a click
+// target, using the same snap and box as T-017, and the mask paints it.
 //
 // Readiness is the second half of the rule and it is per site (readiness.mjs). The mask marks a
 // legal cell that is ready with 1 and a legal cell whose city is unready with 2, so the page can
@@ -28,23 +41,117 @@ const DOCK_KINDS = new Set(["dock", "docks"]);
 // table and combat also carry `base`, and a facility is a built site that owns ground, so it
 // produces like a base. A capital is a city for placement: it is highlighted and it produces.
 const LAND_SITE_KINDS = new Set(["city", "capital", "base", "facility"]);
+// Aircraft base in a city, base or carrier and never on a dock (manual p.22).
+const AIR_SITE_KINDS = LAND_SITE_KINDS;
+// D-025: a hull's berth is a dock OR a coastal settlement. Both are click targets; only the
+// coastal ones resolve to a water cell beside them.
+const SEA_SITE_KINDS = new Set([...DOCK_KINDS, ...LAND_SITE_KINDS]);
+// A carrier is a PIECE, not a site, so its berth is the cell the carrier stands on.
+const CARRIER_KIND = "carrier";
+
+// Sea terrain ids, the same three board.TERRAIN names the mover treats as water: 0 ocean,
+// 1 docks, 2 shallows.
+const WATER_MAX_ID = 2;
+const DOCK_TERRAIN_ID = 1;
+// Adjacent cells, clockwise from north. The tie-break between two equally near berths is this
+// order, so the same click always lands on the same water cell.
+const ADJACENT = Object.freeze([
+  [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1],
+]);
 
 export function domainOf(kind) {
   return SEA_KINDS.has(String(kind ?? "")) ? "sea" : "land";
 }
 
-// A cell is occupied when a piece stands on it, whatever its side: two pieces never share a cell.
-function occupiedSet(match) {
+// Which occupancy layer a piece or a kind lives on: "air" or "ground". Ground and sea share one
+// layer, which is why a hull and an infantry still cannot stand on one cell.
+export function layerOf(value) {
+  const kind = value && typeof value === "object" ? String(value.kind ?? "") : String(value ?? "");
+  const domain = value && typeof value === "object" ? String(value.domain ?? "") : "";
+  return kind === "aircraft" || domain === "air" ? "air" : "ground";
+}
+
+// A cell is taken when a piece of the SAME layer stands on it. A plane does not occupy the ground
+// of the city it is based in, and a ground unit does not occupy the plane's air slot.
+function occupiedSet(match, layer) {
   const set = new Set();
   for (const piece of Array.isArray(match && match.pieces) ? match.pieces : []) {
     if (!piece) continue;
+    if (layerOf(piece) !== layer) continue;
     set.add(Number(piece.x) + "," + Number(piece.y));
   }
   return set;
 }
 
 function siteKindsFor(domain) {
-  return domain === "sea" ? DOCK_KINDS : LAND_SITE_KINDS;
+  if (domain === "air") return AIR_SITE_KINDS;
+  return domain === "sea" ? SEA_SITE_KINDS : LAND_SITE_KINDS;
+}
+
+function terrainIdAt(board, x, y) {
+  const w = Number(board && board.width) || 0;
+  const cells = board && Array.isArray(board.cells) ? board.cells : null;
+  if (!cells || w <= 0) return null;
+  const id = cells[Number(y) * w + Number(x)];
+  return Number.isFinite(Number(id)) ? Number(id) : null;
+}
+
+function isWaterCell(board, x, y) {
+  const id = terrainIdAt(board, x, y);
+  return id !== null && id <= WATER_MAX_ID;
+}
+
+// A site touches water when any of its eight neighbours is ocean, docks or shallows. The site's
+// own cell is the settlement's terrain (city/base/capital), never water.
+function touchesWater(board, site) {
+  if (!site) return false;
+  const w = Number(board && board.width) || 0;
+  const h = Number(board && board.height) || 0;
+  const x = Number(site.x);
+  const y = Number(site.y);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || w <= 0) return false;
+  for (const [dx, dy] of ADJACENT) {
+    const nx = ((x + dx) % w + w) % w;
+    const ny = y + dy;
+    if (ny < 0 || ny >= h) continue;
+    if (isWaterCell(board, nx, ny)) return true;
+  }
+  return false;
+}
+
+// The free water cell a hull bought at `site` goes to: an adjacent dock first (terrain id 1),
+// then the nearest free water cell, one cell away in the ADJACENT order. `taken` is the layer
+// that may not be landed on (ground for a site cell click, since a hull is a ground-layer piece
+// for occupancy). Returns null when every adjacent water cell is taken.
+export function shipBerth(site, board, taken) {
+  if (!site) return null;
+  const w = Number(board && board.width) || 0;
+  const h = Number(board && board.height) || 0;
+  const x = Number(site.x);
+  const y = Number(site.y);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || w <= 0) return null;
+  let fallback = null;
+  for (const [dx, dy] of ADJACENT) {
+    const nx = ((x + dx) % w + w) % w;
+    const ny = y + dy;
+    if (ny < 0 || ny >= h) continue;
+    if (!isWaterCell(board, nx, ny)) continue;
+    if (taken.has(nx + "," + ny)) continue;
+    const cell = { x: nx, y: ny };
+    if (terrainIdAt(board, nx, ny) === DOCK_TERRAIN_ID) return { ...cell, dock: true };
+    if (!fallback) fallback = { ...cell, dock: false };
+  }
+  return fallback;
+}
+
+// Any site on a cell, whatever its owner or kind. Used to name the place in a refusal.
+function siteAt(match, x, y) {
+  for (const site of Array.isArray(match && match.sites) ? match.sites : []) {
+    if (!site) continue;
+    if (Number(site.x) !== Number(x) || Number(site.y) !== Number(y)) continue;
+    return site;
+  }
+  return null;
 }
 
 // The site a placement cell belongs to, or null. Sites do not share a cell, and the mask is
@@ -60,16 +167,44 @@ export function placementSite(match, side, kind, x, y) {
   return null;
 }
 
+// What a message calls a site (PB-044). The site's own name when it has one; otherwise its kind
+// and the nearest named city, so "a base near Kharkov" beats "78,37".
+export function siteLabel(match, site) {
+  if (!site) return "";
+  const name = String(site.name ?? "").trim();
+  if (name) return name;
+  const kind = String(site.kind ?? "site");
+  const w = 320;
+  let best = "";
+  let bestGap = Infinity;
+  for (const other of Array.isArray(match && match.sites) ? match.sites : []) {
+    if (!other || other === site) continue;
+    const label = String(other.name ?? "").trim();
+    if (!label) continue;
+    const dx = Math.abs(Number(other.x) - Number(site.x));
+    const gap = Math.max(Math.min(dx, w - dx), Math.abs(Number(other.y) - Number(site.y)));
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = label;
+    }
+  }
+  return best ? kind + " near " + best : kind;
+}
+
 // How many friendly sites of a domain a side holds. The buy menu turns a hull row off with the
 // manual's own reason when this is zero (p.27: "if all your ports are conquered you can't build
-// ships"), so the rule is visible before the player clicks a cell and gets refused.
-export function friendlySites(match, side, domain) {
+// ships"), and under D-025 a coastal city or base counts as a berth too. Callers that pass no
+// board get the docks-only answer, which is the conservative one.
+export function friendlySites(match, side, domain, board = null) {
   const kinds = siteKindsFor(domain);
   let count = 0;
   for (const site of Array.isArray(match && match.sites) ? match.sites : []) {
     if (!site || site.owner !== side) continue;
     if (!kinds.has(String(site.kind))) continue;
-    count++;
+    if (domain === "sea" && !DOCK_KINDS.has(String(site.kind))) {
+      if (!board || !touchesWater(board, site)) continue;
+    }
+    count += 1;
   }
   return count;
 }
@@ -84,16 +219,19 @@ export function placementMask(match, side, kind, board) {
     return { error: "This host has no board, so there is nowhere to place a unit." };
   }
   const domain = domainOf(kind);
+  const layer = layerOf(kind);
   const { radius } = readinessRules();
   // The click forgiveness a page may use, sent with the mask so the page never carries its own
   // copy of the numbers (T-017). They widen the TARGET, never the rule: the mask below is still
   // one byte per friendly site cell, ready or unready.
   const forgiveness = placementRules();
-  const rule = domain === "sea"
-    ? "Ships go only on a friendly dock."
-    : "Land units and aircraft go only on a friendly city or base.";
+  const rule = layer === "air"
+    ? "Aircraft go only on a friendly city, base or carrier."
+    : domain === "sea"
+      ? "Ships go at a friendly dock or a coastal city or base (D-025)."
+      : "Land units go only on a friendly city or base.";
   const kinds = siteKindsFor(domain);
-  const taken = occupiedSet(match);
+  const taken = occupiedSet(match, layer);
   const mask = new Uint8Array(w * h);
   const round = Number(match && match.round) || 0;
   let count = 0;
@@ -107,6 +245,13 @@ export function placementMask(match, side, kind, board) {
     const y = Number(site.y);
     if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
     if (x < 0 || x >= w || y < 0 || y >= h) continue;
+    // A D-025 berth: a dock is its own cell; a coastal city, capital or base needs an adjacent
+    // free water cell for the hull to land on.
+    if (domain === "sea" && !DOCK_KINDS.has(String(site.kind))) {
+      if (!touchesWater(board, site)) continue;
+      if (!shipBerth(site, board, taken)) continue;
+    }
+    // The click cell is the site cell. Only a piece on the SAME layer makes it unavailable.
     if (taken.has(x + "," + y)) continue;
     const id = y * w + x;
     const ok = isSiteReady(site, round);
@@ -116,24 +261,52 @@ export function placementMask(match, side, kind, board) {
     else unready += 1;
   }
 
+  // Aircraft also base on a carrier, and a carrier is a piece: its cell is an air cell with no
+  // readiness of its own (a carrier never goes unready).
+  if (layer === "air") {
+    for (const piece of Array.isArray(match && match.pieces) ? match.pieces : []) {
+      if (!piece || piece.side !== side) continue;
+      if (String(piece.kind ?? "") !== CARRIER_KIND) continue;
+      const x = Number(piece.x);
+      const y = Number(piece.y);
+      if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
+      if (x < 0 || x >= w || y < 0 || y >= h) continue;
+      const id = y * w + x;
+      if (mask[id]) continue; // a carrier visiting a city cell keeps the city's readiness byte
+      mask[id] = 1;
+      count += 1;
+      ready += 1;
+    }
+  }
+
   if (!count) {
     const none = domain === "sea"
-      ? "You hold no dock, so a hull cannot be bought."
-      : "You hold no city or base to place a land unit in.";
-    return { error: none, domain, rule };
+      ? "You hold no coastal city or dock, so a hull cannot be bought."
+      : layer === "air"
+        ? "You hold no city, base or carrier to base an aircraft in."
+        : "You hold no city or base to place a land unit in.";
+    return { error: none, domain, layer, rule };
   }
   return {
-    ok: true, width: w, height: h, mask, count, ready, unready, domain, rule, radius,
+    ok: true, width: w, height: h, mask, count, ready, unready, domain, layer, rule, radius,
     snap: { px: forgiveness.snapPx, cells: forgiveness.snapCells },
     box: { px: forgiveness.boxPx },
   };
 }
 
-// The sentence a refused cell gets. It names the rule; when the cell is a friendly site that is
-// merely tired, canPlace names the round instead (readiness.unreadyRefusal).
-export function placementRefusal(kind, domain, rule) {
-  const what = domain === "sea" ? "a friendly dock" : "a friendly city or base";
-  return "That is not a valid place for " + kind + ". " + rule + " That cell is not " + what + " you hold.";
+// The sentence a refused cell gets (PB-044): it names the unit first, never a coordinate, and
+// names the site when the cell carries one.
+export function placementRefusal(kind, domain, rule = "", detail = "") {
+  const head = "Can't place " + String(kind || "that unit") + " here: ";
+  // The rule sentence rides along: the named site says WHICH place, the rule says WHY it is
+  // refused, and the player needs both.
+  if (detail) return head + detail + (rule ? " " + rule : "");
+  const what = domain === "sea"
+    ? "a friendly coastal city, base or dock you hold"
+    : domain === "air"
+      ? "a friendly city, base or carrier you hold"
+      : "a friendly city or base you hold";
+  return head + "that is not " + what + "." + (rule ? " " + rule : "");
 }
 
 export function canPlace(match, side, kind, x, y, board) {
@@ -143,15 +316,58 @@ export function canPlace(match, side, kind, x, y, board) {
   const cy = Number(y);
   if (!Number.isInteger(cx) || !Number.isInteger(cy)) return { error: "A purchase needs whole cells." };
   if (cx < 0 || cx >= result.width || cy < 0 || cy >= result.height) return { error: "That cell is off the board." };
+  const domain = result.domain;
+  const layer = result.layer;
   const value = result.mask[cy * result.width + cx];
+  const occupied = siteAt(match, cx, cy);
+  const where = occupied ? siteLabel(match, occupied) : "";
   if (!value) {
-    return { error: placementRefusal(kind, result.domain, result.rule), domain: result.domain };
+    if (occupied) {
+      if (occupied.owner !== side) {
+        return { error: placementRefusal(kind, domain, result.rule, where + " is not yours."), domain, site: occupied };
+      }
+      if (!siteKindsFor(domain).has(String(occupied.kind))) {
+        return { error: placementRefusal(kind, domain, result.rule, where + " cannot base " + nounFor(kind) + "."), domain, site: occupied };
+      }
+      if (domain === "sea" && !DOCK_KINDS.has(String(occupied.kind))) {
+        const taken = occupiedSet(match, layer);
+        if (!touchesWater(board, occupied)) {
+          return { error: placementRefusal(kind, domain, result.rule, where + " is inland."), domain, site: occupied };
+        }
+        if (!shipBerth(occupied, board, taken)) {
+          return { error: placementRefusal(kind, domain, result.rule, "the water beside " + where + " is taken."), domain, site: occupied };
+        }
+      }
+      return { error: placementRefusal(kind, domain, result.rule, where + " already holds a unit."), domain, site: occupied };
+    }
+    if (layer === "air") {
+      return { error: placementRefusal(kind, domain, result.rule, "an aircraft bases only in a friendly city, base or carrier."), domain };
+    }
+    return { error: placementRefusal(kind, domain, result.rule), domain };
   }
   const site = placementSite(match, side, kind, cx, cy);
+  const label = site ? siteLabel(match, site) : "";
   if (value === 2) {
-    return { error: unreadyRefusal(site), domain: result.domain, site, readyRound: readyRoundOf(site) };
+    return { error: unreadyRefusal(site, label), domain, site, readyRound: readyRoundOf(site) };
   }
-  return { ...result, site, readyRound: 0 };
+  // The cell the unit actually lands on: the site cell, except for a D-025 hull bought at a
+  // coastal city or base, which lands on the water beside it (docks first).
+  let place = { x: cx, y: cy };
+  let berth = null;
+  if (domain === "sea" && site && !DOCK_KINDS.has(String(site.kind))) {
+    berth = shipBerth(site, board, occupiedSet(match, layer));
+    if (!berth) {
+      return { error: placementRefusal(kind, domain, result.rule, "the water beside " + label + " is taken."), domain, site };
+    }
+    place = { x: berth.x, y: berth.y };
+  }
+  return { ...result, site, place, berth, label, readyRound: 0 };
+}
+
+// "an infantry", "a cruiser" - only used inside a sentence, never as a display name.
+function nounFor(kind) {
+  const text = String(kind ?? "unit");
+  return (/^[aeiou]/i.test(text) ? "an " : "a ") + text;
 }
 
 // The mask as base64 for the wire: 43,520 cells is 5 KB rather than a list of coordinates, and

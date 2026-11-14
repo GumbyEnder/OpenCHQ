@@ -12,7 +12,7 @@
 import { payEvery, priceOf, cityIncome, capitalPays, combatRules } from "./rules.mjs";
 import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
-import { canPlace } from "./placement.mjs";
+import { canPlace, siteLabel } from "./placement.mjs";
 import { markUnready } from "./readiness.mjs";
 import { CELL_W } from "./board.mjs";
 import { siteAtCell, siteCells, cellKeyOf } from "./siteindex.mjs";
@@ -198,14 +198,13 @@ export function buy(match, side, kind, x, y, board = null) {
   const cx = Number(x);
   const cy = Number(y);
   if (!Number.isInteger(cx) || !Number.isInteger(cy)) return { error: "A purchase needs whole cells." };
-  if (match.pieces.some((piece) => Number(piece.x) === cx && Number(piece.y) === cy)) {
-    return { error: "Two pieces cannot share a cell." };
-  }
 
-  // Where it may stand is the placement module's rule (D-019): land and air on a friendly city or
-  // base cell, a hull on a friendly dock. The page paints the cells that same module returns.
+  // Where it may stand is the placement module's rule (D-019, and D-025's coastal berths). That
+  // module also owns the two occupancy layers, so "Two pieces cannot share a cell" is no longer
+  // asked here: a plane and the ground unit in the same city are on different layers (T-021).
+  // The page paints the cells that same module returns.
   const placement = canPlace(match, side, unitKind, cx, cy, board);
-  if (placement.error) return { error: placement.error };
+  if (placement.error) return { error: placement.error, site: placement.site ? placement.site.id : null };
 
   if (!Number.isFinite(seat.cash) || seat.cash < price) {
     return { error: `Not enough in ${side}'s pool for a ${unitKind}.` };
@@ -217,6 +216,11 @@ export function buy(match, side, kind, x, y, board = null) {
   // labelled UNMEASURED stand-in in config/game.json.
   const home = placement.site || null;
   const readiness = home ? markUnready(match, side, home, unitKind) : null;
+  // The cell the piece lands on. For a D-025 hull bought at a coastal city or base that is the
+  // water cell beside it, docks first - the placement module resolved it.
+  const at = placement.place || { x: cx, y: cy };
+  const px = Number(at.x);
+  const py = Number(at.y);
 
   seat.bought = Number(seat.bought || 0) + 1;
   let serial = seat.bought;
@@ -233,8 +237,8 @@ export function buy(match, side, kind, x, y, board = null) {
     side,
     domain,
     kind: unitKind,
-    x: cx,
-    y: cy,
+    x: px,
+    y: py,
     path: [],
     pace: 1,
     facing: null,
@@ -245,7 +249,15 @@ export function buy(match, side, kind, x, y, board = null) {
     pinned: false,
   };
   match.pieces.push(piece);
-  return { ok: true, piece, readiness };
+  return {
+    ok: true,
+    piece,
+    readiness,
+    // PB-044: the message names the place, not the coordinates. `label` is the site's own name,
+    // or its kind and the nearest named city for an unnamed berth.
+    site: home && home.id !== undefined ? home.id : null,
+    label: home ? siteLabel(match, home) : "",
+  };
 }
 
 // --- oil capture -------------------------------------------------------------------------

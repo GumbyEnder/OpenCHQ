@@ -167,6 +167,10 @@ export function logLines(match, side, events, round) {
       case "ready":
         if (mine) push("an aircraft is ready for a mission");
         break;
+      case "transfer":
+        if (mine) push("an aircraft rebased");
+        else if (legible(match, side, event)) push("an enemy aircraft rebased");
+        break;
       case "embarked":
         if (mine) push("a unit boarded a transport");
         break;

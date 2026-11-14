@@ -128,7 +128,8 @@ export async function run(ctx) {
   // two pieces cannot share a cell
   const shared = buy(match, "blue", "infantry", 80, 40, board);
   must(shared && shared.error, "two pieces were allowed to share a cell");
-  must(/share/.test(shared.error), "wrong refusal for a shared cell: " + shared.error);
+  // PB-044 names the site; the rule ("one ground piece per cell") is unchanged.
+  must(/share|already holds/.test(shared.error), "wrong refusal for a shared cell: " + shared.error);
 
   // ---- buy: a nuke is always refused ---------------------------------------------------
   const cashBeforeNuke = match.sides.blue.cash;

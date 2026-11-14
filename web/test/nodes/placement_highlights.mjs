@@ -5,7 +5,7 @@ import { openMatch } from "../../server/match.mjs";
 import { seedOwners } from "../../server/economy.mjs";
 import { buy } from "../../server/economy.mjs";
 import { priceOf } from "../../server/rules.mjs";
-import { maskBase64, placementMask } from "../../server/placement.mjs";
+import { canPlace, maskBase64, placementMask } from "../../server/placement.mjs";
 import { paintPlacement } from "../../public/render.mjs";
 
 export const name = "placement_highlights";
@@ -53,23 +53,32 @@ export async function run(ctx) {
   if (land.error || !land.count) fail("placement_highlights: infantry has no legal cell in 1942: " + JSON.stringify(land));
   const sea = placementMask(match, "blue", "cruiser", board);
   if (sea.error || !sea.count) fail("placement_highlights: a hull has no berth at Washington in 1942: " + JSON.stringify(sea));
-  // D-019: a hull berths on a friendly dock, so every highlighted sea cell must be the cell of a
-  // dock site Blue owns - and one of them must sit near Washington, or the capital cannot build.
-  const docks = new Map();
+  // D-019 with D-025 on top (T-021): a highlighted hull cell is either a friendly dock's own cell
+  // or a friendly coastal settlement the player clicks - the hull itself lands on the water beside
+  // it, which canPlace resolves. One berth must sit near Washington or the capital cannot build.
+  const berths = new Map();
   for (const site of match.sites) {
     if (!site || site.owner !== "blue") continue;
-    if (site.kind !== "dock" && site.kind !== "docks") continue;
-    docks.set(Number(site.x) + "," + Number(site.y), site);
+    const kind = String(site.kind);
+    if (kind === "dock" || kind === "docks" || ["city", "capital", "base", "facility"].includes(kind)) {
+      berths.set(Number(site.x) + "," + Number(site.y), site);
+    }
   }
   let nearWashington = false;
   for (let id = 0; id < sea.mask.length; id++) {
     if (!sea.mask[id]) continue;
     const x = id % 320;
     const y = (id - x) / 320;
-    if (!docks.has(x + "," + y)) fail("placement_highlights: a legal hull cell at " + x + "," + y + " is not a friendly dock");
+    const site = berths.get(x + "," + y);
+    if (!site) fail("placement_highlights: a legal hull cell at " + x + "," + y + " is neither a friendly dock nor a coastal settlement");
+    if (["city", "capital", "base", "facility"].includes(String(site.kind))) {
+      // A coastal settlement is only offered when a hull can actually land beside it.
+      const ok = canPlace(match, "blue", "cruiser", x, y, board);
+      if (ok.error) fail("placement_highlights: berth " + x + "," + y + " is highlighted but refused: " + ok.error);
+    }
     if (Math.max(Math.abs(x - 79), Math.abs(y - 44)) <= 12) nearWashington = true;
   }
-  if (!nearWashington) fail("placement_highlights: no friendly dock within 12 cells of Washington");
+  if (!nearWashington) fail("placement_highlights: no berth within 12 cells of Washington");
 
   // The overlay paints at every zoom the game offers, including the one-pixel fit.
   const wire = {
