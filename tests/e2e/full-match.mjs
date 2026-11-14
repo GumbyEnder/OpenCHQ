@@ -381,6 +381,8 @@ try {
 
   // One tank beside each enemy-held capital, bought now or as income allows later.
   const tanks = {};
+  // pieceId -> the board's refusal, for a piece whose nearest red capital is out of march reach.
+  const unreachable = new Map();
   for (const cap of foeCaps) {
     const unit = await buyNear("tank", cap, 4);
     if (unit) tanks[cap.name] = unit.id;
@@ -511,13 +513,32 @@ try {
     // retry buys while income arrives, and re-order an idle piece whose capital is still red
     if (!NO_ORDERS && (lastRetaskRound === null || Number(now.round) - lastRetaskRound >= 3)) {
       lastRetaskRound = Number(now.round);
+      // A tracked attacker that is no longer on the board is not an attacker. Without this the
+      // entry outlives the unit, the still-red capital is never reinforced, and the leg spends
+      // the whole budget re-ordering pieces that cannot reach it.
+      const onBoard = new Set((now.pieces || []).map((p) => p.id));
+      for (const name of Object.keys(tanks)) {
+        if (!onBoard.has(tanks[name])) {
+          console.log("attacker for " + name + " is gone (" + tanks[name] + "); re-buying beside it");
+          delete tanks[name];
+        }
+      }
       const reds = (now.sites || []).filter((s) => (Number(s.type) === 1 || Number(s.type) === 2) && s.owner !== you);
       if (reds.length) {
         const idle = (now.pieces || []).filter((p) => p.side === you && p.domain === "land" && !(p.path || []).length && !p.fighting);
         for (const piece of idle.slice(0, 2)) {
+          // A refused order is a fact about the ground, not a transient: a land piece in Europe
+          // cannot reach Tokyo at path cost 100 (the manual's march limit), so re-trying it every
+          // three rounds for a thousand rounds only hides that. Name it and move on.
+          if (unreachable.has(piece.id)) continue;
           const nearest = [...reds].sort((a, b) => dist(piece, a) - dist(piece, b))[0];
           const res = await orderTo(piece.id, { x: nearest.x, y: nearest.y });
-          console.log("re-order " + piece.id + " -> " + nearest.name + ": " + (res.ok ? "path " + res.path : res.why));
+          if (!res.ok && !res.path) {
+            unreachable.set(piece.id, res.note || "no route");
+            console.log("re-order " + piece.id + " -> " + nearest.name + ": NO ROUTE (" + (res.note || "no note") + ")");
+          } else {
+            console.log("re-order " + piece.id + " -> " + nearest.name + ": " + (res.ok ? "path " + res.path : res.why));
+          }
         }
         for (const cap of foeCaps) {
           if (reds.some((s) => s.name === cap.name) && !tanks[cap.name]) {
@@ -539,6 +560,7 @@ try {
   summary.cap = CAP || null;
   summary.capped = capped;
   summary.stall = stall || null;
+  summary.unreachable = [...unreachable.entries()].map(([piece, why]) => ({ piece, why }));
   summary.endRound = final ? final.round : null;
   summary.cadence = cadenceRate();
   summary.cadenceSamples = cadence.length;
