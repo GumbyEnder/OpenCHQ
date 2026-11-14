@@ -1,0 +1,882 @@
+{
+  "base": "https://openchq-web-production.up.railway.app",
+  "era": "1942",
+  "startedAt": "2026-11-14T08:37:45.350Z",
+  "checks": [
+    {
+      "ok": true,
+      "label": "live build",
+      "detail": {
+        "commit": "ec538cd50dabfb5e91a0261bfdaf03e70a7c1985",
+        "short": "ec538cd",
+        "source": "build.json"
+      }
+    },
+    {
+      "ok": true,
+      "label": "an enemy piece stands on the capital's own cell",
+      "detail": {
+        "id": "red:open:infantry:9",
+        "kind": "infantry",
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false,
+        "path": 0
+      }
+    },
+    {
+      "ok": true,
+      "label": "that garrison is dug in (entrenched)",
+      "detail": {
+        "entrenched": true,
+        "path": 0
+      }
+    },
+    {
+      "ok": true,
+      "label": "a tank was bought beside the capital",
+      "detail": {
+        "id": "blue:tank:1",
+        "at": {
+          "x": 133,
+          "y": 14,
+          "ready": true,
+          "unready": false
+        },
+        "strength": 100
+      }
+    },
+    {
+      "ok": true,
+      "label": "the tank is ordered onto the capital's own cell",
+      "detail": {
+        "ok": true,
+        "path": 40
+      }
+    },
+    {
+      "ok": true,
+      "label": "the capital is still held by its owner",
+      "detail": {
+        "was": "red",
+        "now": "red"
+      }
+    },
+    {
+      "ok": true,
+      "label": "the lone tank did not survive",
+      "detail": "destroyed"
+    },
+    {
+      "ok": true,
+      "label": "the tank lost strength to the garrison (the exchange happened)",
+      "detail": {
+        "round": 37,
+        "clock": "running",
+        "tank": {
+          "x": 149,
+          "y": 33,
+          "strength": 4,
+          "path": 1,
+          "fighting": "red:open:infantry:9"
+        },
+        "garrison": {
+          "x": 150,
+          "y": 34,
+          "strength": 22,
+          "entrenched": true,
+          "pinned": true
+        },
+        "capitalOwner": "red"
+      }
+    },
+    {
+      "ok": true,
+      "label": "no page error during the hand-check",
+      "detail": []
+    }
+  ],
+  "version": {
+    "commit": "ec538cd50dabfb5e91a0261bfdaf03e70a7c1985",
+    "short": "ec538cd",
+    "source": "build.json"
+  },
+  "user": "ghmwg5kohj",
+  "seat": "blue",
+  "room": "011293229de644c5",
+  "capital": {
+    "name": "Paris",
+    "x": 150,
+    "y": 34,
+    "owner": "red"
+  },
+  "mannedCapitals": [
+    "Paris",
+    "Tokyo"
+  ],
+  "unmannedCapitals": [
+    "Berlin"
+  ],
+  "garrisonAtStart": {
+    "id": "red:open:infantry:9",
+    "kind": "infantry",
+    "strength": 100,
+    "entrenched": true,
+    "pinned": false,
+    "path": 0
+  },
+  "tankPrice": "Tank5520b",
+  "trace": [
+    {
+      "round": 0,
+      "clock": "running",
+      "tank": {
+        "x": 133,
+        "y": 14,
+        "strength": 100,
+        "path": 40,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 1,
+      "clock": "running",
+      "tank": {
+        "x": 135,
+        "y": 15,
+        "strength": 100,
+        "path": 38,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 2,
+      "clock": "running",
+      "tank": {
+        "x": 137,
+        "y": 14,
+        "strength": 100,
+        "path": 36,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 3,
+      "clock": "running",
+      "tank": {
+        "x": 138,
+        "y": 15,
+        "strength": 100,
+        "path": 34,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 4,
+      "clock": "running",
+      "tank": {
+        "x": 137,
+        "y": 17,
+        "strength": 100,
+        "path": 32,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 5,
+      "clock": "running",
+      "tank": {
+        "x": 137,
+        "y": 19,
+        "strength": 100,
+        "path": 30,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 6,
+      "clock": "running",
+      "tank": {
+        "x": 137,
+        "y": 21,
+        "strength": 100,
+        "path": 28,
+        "fighting": "red:open:submarine:15"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 7,
+      "clock": "running",
+      "tank": {
+        "x": 136,
+        "y": 23,
+        "strength": 100,
+        "path": 26,
+        "fighting": "red:open:submarine:15"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 8,
+      "clock": "running",
+      "tank": {
+        "x": 136,
+        "y": 25,
+        "strength": 100,
+        "path": 24,
+        "fighting": "red:open:submarine:15"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 9,
+      "clock": "running",
+      "tank": {
+        "x": 136,
+        "y": 27,
+        "strength": 100,
+        "path": 22,
+        "fighting": "red:open:submarine:15"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 10,
+      "clock": "running",
+      "tank": {
+        "x": 135,
+        "y": 29,
+        "strength": 100,
+        "path": 20,
+        "fighting": "red:open:submarine:15"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 11,
+      "clock": "running",
+      "tank": {
+        "x": 136,
+        "y": 30,
+        "strength": 100,
+        "path": 18,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 12,
+      "clock": "running",
+      "tank": {
+        "x": 138,
+        "y": 31,
+        "strength": 100,
+        "path": 16,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 13,
+      "clock": "running",
+      "tank": {
+        "x": 140,
+        "y": 32,
+        "strength": 100,
+        "path": 14,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 14,
+      "clock": "running",
+      "tank": {
+        "x": 142,
+        "y": 32,
+        "strength": 100,
+        "path": 12,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 15,
+      "clock": "running",
+      "tank": {
+        "x": 144,
+        "y": 32,
+        "strength": 100,
+        "path": 10,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 16,
+      "clock": "running",
+      "tank": {
+        "x": 146,
+        "y": 31,
+        "strength": 100,
+        "path": 8,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 17,
+      "clock": "running",
+      "tank": {
+        "x": 148,
+        "y": 32,
+        "strength": 100,
+        "path": 6,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 18,
+      "clock": "running",
+      "tank": {
+        "x": 150,
+        "y": 31,
+        "strength": 100,
+        "path": 4,
+        "fighting": null
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 19,
+      "clock": "running",
+      "tank": {
+        "x": 148,
+        "y": 32,
+        "strength": 100,
+        "path": 2,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 20,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 100,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 21,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 100,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": false
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 22,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 100,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 23,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 100,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 24,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 84,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 87,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 25,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 84,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 87,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 26,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 68,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 74,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 27,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 68,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 74,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 28,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 52,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 61,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 29,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 52,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 61,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 30,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 52,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 61,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 31,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 52,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 61,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 32,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 36,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 48,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 33,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 36,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 48,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 34,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 20,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 35,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 35,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 20,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 35,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 36,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 4,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 22,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 37,
+      "clock": "running",
+      "tank": {
+        "x": 149,
+        "y": 33,
+        "strength": 4,
+        "path": 1,
+        "fighting": "red:open:infantry:9"
+      },
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 22,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    },
+    {
+      "round": 38,
+      "clock": "running",
+      "tank": null,
+      "garrison": {
+        "x": 150,
+        "y": 34,
+        "strength": 14,
+        "entrenched": true,
+        "pinned": true
+      },
+      "capitalOwner": "red"
+    }
+  ],
+  "final": {
+    "round": 38,
+    "tank": null,
+    "garrison": {
+      "strength": 14,
+      "entrenched": true
+    },
+    "capitalOwner": "red"
+  },
+  "shots": {
+    "start": "/mnt/nas/projects/OpenCHQ/local/t015/shots-ec538cd-live2/t015-garrison-at-start.png",
+    "contact": "/mnt/nas/projects/OpenCHQ/local/t015/shots-ec538cd-live2/t015-tank-engages-garrison.png",
+    "delta": "/mnt/nas/projects/OpenCHQ/local/t015/shots-ec538cd-live2/t015-garrison-strength-delta.png"
+  },
+  "endedAt": "2026-11-14T08:38:43.794Z",
+  "errors": []
+}

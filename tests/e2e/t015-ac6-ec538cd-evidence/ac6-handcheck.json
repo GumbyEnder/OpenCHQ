@@ -1,0 +1,195 @@
+[
+  {
+    "step": "deployed version named",
+    "ok": true,
+    "detail": {
+      "base": "https://openchq-web-production.up.railway.app",
+      "version": {
+        "commit": "ec538cd50dabfb5e91a0261bfdaf03e70a7c1985",
+        "short": "ec538cd",
+        "source": "build.json"
+      }
+    }
+  },
+  {
+    "step": "throwaway blue seat registered",
+    "ok": true,
+    "detail": {
+      "name": "t15ac6mwg4klzn"
+    }
+  },
+  {
+    "step": "1942 match open, blue seat, Paris red and garrisoned",
+    "ok": true,
+    "detail": {
+      "id": "2942617c7070fa8e",
+      "you": "blue",
+      "roundSeconds": 5,
+      "holder": "red",
+      "site": {
+        "id": 17,
+        "name": "Paris",
+        "x": 150,
+        "y": 34,
+        "kind": "city",
+        "type": 1,
+        "owner": "red",
+        "country_id": 7
+      },
+      "garrison": {
+        "id": "red:open:infantry:9",
+        "kind": "infantry",
+        "strength": 100,
+        "entrenched": true
+      }
+    }
+  },
+  {
+    "step": "room set to speed 6",
+    "ok": true,
+    "detail": {
+      "speed": 6,
+      "roundSeconds": 0.6
+    }
+  },
+  {
+    "step": "one tank bought at the ready site nearest Paris",
+    "ok": true,
+    "detail": {
+      "id": "blue:tank:1",
+      "at": {
+        "x": 133,
+        "y": 14
+      },
+      "cellsFromParis": 20
+    }
+  },
+  {
+    "step": "lone tank ordered onto Paris",
+    "ok": true,
+    "detail": {
+      "selected": "blue:tank:1",
+      "tank": {
+        "x": 133,
+        "y": 14,
+        "strength": 100,
+        "steps": 40
+      },
+      "toast": "Order sent. 40 rounds to walk."
+    }
+  },
+  {
+    "step": "tank reached contact with Paris",
+    "ok": true,
+    "detail": {
+      "round": 20,
+      "tank": {
+        "id": "blue:tank:1",
+        "side": "blue",
+        "domain": "land",
+        "kind": "tank",
+        "x": 149,
+        "y": 33,
+        "path": [
+          {
+            "x": 150,
+            "y": 34,
+            "pace": 1
+          }
+        ],
+        "pace": 1,
+        "facing": "e",
+        "fighting": "red:open:infantry:9",
+        "shots": 0,
+        "strength": 100,
+        "maxStrength": 100,
+        "transport": false,
+        "entrenched": false,
+        "pinned": false,
+        "inactive": 0,
+        "state": "moving"
+      },
+      "defenderOnCell": {
+        "id": "red:open:infantry:9",
+        "kind": "infantry",
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "onCell": true
+      },
+      "redsNearParis": [
+        {
+          "id": "red:open:infantry:9",
+          "kind": "infantry",
+          "x": 150,
+          "y": 34,
+          "strength": 100,
+          "onCell": true
+        }
+      ]
+    }
+  },
+  {
+    "step": "the lone tank died on the garrisoned capital",
+    "ok": true,
+    "detail": {
+      "tankId": "blue:tank:1",
+      "rounds": 39,
+      "defenderAtContact": {
+        "id": "red:open:infantry:9",
+        "kind": "infantry",
+        "x": 150,
+        "y": 34,
+        "strength": 100,
+        "onCell": true
+      },
+      "lastTank": {
+        "x": 149,
+        "y": 33,
+        "strength": 4,
+        "shots": 0,
+        "fighting": "red:open:infantry:9"
+      }
+    }
+  },
+  {
+    "step": "Paris stayed red",
+    "ok": true,
+    "detail": {
+      "endHolder": "red",
+      "site": {
+        "id": 17,
+        "name": "Paris",
+        "x": 150,
+        "y": 34,
+        "kind": "city",
+        "type": 1,
+        "owner": "red",
+        "country_id": 7
+      },
+      "nonRedRounds": []
+    }
+  },
+  {
+    "step": "no capture of Paris fired",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "step": "screenshots and JSON written",
+    "ok": true,
+    "detail": {
+      "out": "/mnt/nas/projects/OpenCHQ/local/t015-shots/ac6-ec538cd",
+      "files": [
+        "ac6-paris-before.png",
+        "ac6-paris-before-zoom.png",
+        "ac6-paris-contact.png",
+        "ac6-paris-contact-full.png",
+        "ac6-paris-after.png",
+        "ac6-paris-after-zoom.png"
+      ],
+      "log": [],
+      "pageErrors": []
+    }
+  }
+]
