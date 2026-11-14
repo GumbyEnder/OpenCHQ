@@ -179,7 +179,10 @@ async function buyNear(kind, target, standoff = 4) {
   if (!placed) { await page.keyboard.press("Escape").catch(() => {}); return null; }
   await page.waitForFunction((n) => window.__chq.room().pieces.some((p) => !n.includes(p.id)), [...had], { timeout: 15000 }).catch(() => {});
   const after = await room();
-  return (after.pieces || []).find((p) => !had.has(p.id)) || null;
+  // A new id is not necessarily OUR unit: the bot buys on the same tick, so a red piece that
+  // appeared during the wait must not be mistaken for the tank we just placed. That mistake made
+  // tanks[cap] point at an enemy piece, which quietly disabled the reinforce-on-death branch.
+  return (after.pieces || []).find((p) => !had.has(p.id) && p.side === cur.you) || null;
 }
 
 const t0 = Date.now();
@@ -383,6 +386,10 @@ try {
   const tanks = {};
   // pieceId -> the board's refusal, for a piece whose nearest red capital is out of march reach.
   const unreachable = new Map();
+  // How many of our land pieces must stand beside a still-red capital before it can fall, and a
+  // counter so the reinforcement buy runs every 5th retask instead of every one.
+  const WANT_NEAR = 3;
+  let retaskCount = 0;
   for (const cap of foeCaps) {
     const unit = await buyNear("tank", cap, 4);
     if (unit) tanks[cap.name] = unit.id;
@@ -513,16 +520,7 @@ try {
     // retry buys while income arrives, and re-order an idle piece whose capital is still red
     if (!NO_ORDERS && (lastRetaskRound === null || Number(now.round) - lastRetaskRound >= 3)) {
       lastRetaskRound = Number(now.round);
-      // A tracked attacker that is no longer on the board is not an attacker. Without this the
-      // entry outlives the unit, the still-red capital is never reinforced, and the leg spends
-      // the whole budget re-ordering pieces that cannot reach it.
-      const onBoard = new Set((now.pieces || []).map((p) => p.id));
-      for (const name of Object.keys(tanks)) {
-        if (!onBoard.has(tanks[name])) {
-          console.log("attacker for " + name + " is gone (" + tanks[name] + "); re-buying beside it");
-          delete tanks[name];
-        }
-      }
+      retaskCount += 1;
       const reds = (now.sites || []).filter((s) => (Number(s.type) === 1 || Number(s.type) === 2) && s.owner !== you);
       if (reds.length) {
         const idle = (now.pieces || []).filter((p) => p.side === you && p.domain === "land" && !(p.path || []).length && !p.fighting);
@@ -540,9 +538,19 @@ try {
             console.log("re-order " + piece.id + " -> " + nearest.name + ": " + (res.ok ? "path " + res.path : res.why));
           }
         }
-        for (const cap of foeCaps) {
-          if (reds.some((s) => s.name === cap.name) && !tanks[cap.name]) {
+        // Reinforce before re-tasking. A garrison holding its capital (T-015 AC6) does not fall
+        // to one piece sent alone, and a land piece parked in Europe cannot pay the march to Tokyo
+        // at all (Manual p.21, path cost 100) - so a single tracked "attacker" per capital was
+        // never enough: it bought one tank, the tank died, and the leg ground to the budget with
+        // that capital still red. Keep WANT_NEAR pieces of ours within 6 of every still-red
+        // capital, one buy attempt per 5th retask so the buy dialog is not opened every 3 rounds.
+        if (retaskCount % 5 === 0) {
+          for (const cap of foeCaps) {
+            if (!reds.some((s) => s.name === cap.name)) continue;
+            const near = (now.pieces || []).filter((p) => p.side === you && p.domain === "land" && dist(p, cap) <= 6);
+            if (near.length >= WANT_NEAR) continue;
             const unit = await buyNear("tank", cap, 4);
+            console.log("reinforce " + cap.name + ": " + (unit ? unit.id + "@" + unit.x + "," + unit.y + " (near=" + (near.length + 1) + "/" + WANT_NEAR + ")" : "no buy (pool or ground)"));
             if (unit) tanks[cap.name] = unit.id;
           }
         }
