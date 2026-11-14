@@ -300,15 +300,29 @@ export function siteThreat(match, site) {
 // Paris garrison marched east from round 1 and the capital sat empty from r1 on, which makes
 // "garrisoned capitals hold" unobservable in a live match. The original's dug-in infantry stays on
 // the city and fights there (duel-original.txt). Keep it home.
-export function holdsOwnCapital(match, side, piece) {
-  if (!piece || piece.domain !== "land" || piece.entrenched !== true) return false;
+//
+// The cell set is built once per call because the march asks this per piece per pass and the 1000-room
+// bench pays for anything that walks `match.sites` each time (sites ~600, capitals ~30).
+export function capitalCells(match, side) {
+  const cells = new Set();
   const list = match && match.capitalSet && Array.isArray(match.capitalSet.list) ? match.capitalSet.list : [];
-  for (const capital of list) {
-    const site = (match.sites || []).find((place) => place && Number(place.id) === Number(capital.siteId));
-    if (!site || site.owner !== side) continue;
-    if (Number(site.x) === Number(piece.x) && Number(site.y) === Number(piece.y)) return true;
+  if (!list.length || !Array.isArray(match.sites)) return cells;
+  const byId = new Map();
+  for (const place of match.sites) {
+    if (place) byId.set(Number(place.id), place);
   }
-  return false;
+  for (const capital of list) {
+    const site = byId.get(Number(capital && capital.siteId));
+    if (!site || site.owner !== side) continue;
+    cells.add(Number(site.x) + "," + Number(site.y));
+  }
+  return cells;
+}
+
+export function holdsOwnCapital(match, side, piece, cells = null) {
+  if (!piece || piece.domain !== "land" || piece.entrenched !== true) return false;
+  const held = cells || capitalCells(match, side);
+  return held.has(Number(piece.x) + "," + Number(piece.y));
 }
 
 // The sites of ours the AI would act on this pass, most threatened first. Only a negative score
@@ -476,6 +490,7 @@ export function ordersFor(match, side) {
   // One focus for the whole army: a weak point of the enemy line once there is contact, the
   // capital until then.
   const focus = focusTarget(match, side, foe, capital);
+  const garrisonCells = capitalCells(match, side);
 
   // The army marches on the player's capital. A piece already on a path keeps it; the army is
   // re-ordered only once it has arrived, so an order is not re-issued every round.
@@ -484,7 +499,7 @@ export function ordersFor(match, side) {
     if (hasPath(piece)) continue;
     if (claimed.has(piece.id)) continue;
     // The capital's own dug-in garrison holds its cell; see holdsOwnCapital.
-    if (holdsOwnCapital(match, side, piece)) continue;
+    if (holdsOwnCapital(match, side, piece, garrisonCells)) continue;
     marchOne(match, side, piece, focus, events);
   }
 
