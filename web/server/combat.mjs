@@ -22,7 +22,7 @@
 // Overrun is the tank's (p.9) and lives in move.mjs, because it is a movement result, not a damage
 // rule. A transport is cargo: it neither fires nor survives an exchange.
 
-import { CELL_W } from "./board.mjs";
+import { CELL_W, boardPayload } from "./board.mjs";
 import { combatRules, seaRangeFor } from "./rules.mjs";
 import { siteIndex } from "./siteindex.mjs";
 
@@ -158,9 +158,47 @@ export function baseDamageFor(attackerKind, defender, combat = null) {
   return Number(block.baseDamage[String(attackerKind)] ?? 0);
 }
 
-// Damage one piece deals to another. The modifiers the manual names, in one place: flank/rear
-// (land only, p.22) and entrenchment (land only, p.22, through the defender's kind-3 column).
-// Ships are never flanked (p.24).
+// The terrain byte under a piece, as the board serves it. Cached: `damageFor` runs once per
+// pairing per beat, and boardPayload() re-reads the extract root on every call otherwise.
+let cellsCache;
+function terrainIdAt(x, y) {
+  if (cellsCache === undefined) {
+    try {
+      cellsCache = boardPayload().cells || null;
+    } catch {
+      cellsCache = null;
+    }
+  }
+  if (!cellsCache) return null;
+  const raw = Number(x);
+  const wx = ((raw % CELL_W) + CELL_W) % CELL_W;
+  return cellsCache[Number(y) * CELL_W + wx] ?? null;
+}
+
+// Terrain cover, read exactly as `FUN_194c_000e` @ 194c:000e does it (decompiled.c 7032-7046):
+// the DEFENDER's terrain byte (unit+0x836), applied to the matrix cell BEFORE flank/rear.
+//   mountain (10): infantry kinds 1/3 lose a quarter of the cell, tanks (2) a sixth;
+//   lake/capital/base/city (4..6): infantry kinds 1/3 lose (cell+1)/3, tanks (2) a fifth.
+// Integer arithmetic, so 20 is 15 on a mountain and 13 in a city, and a 17 against a tank is
+// 14 in a city. IDs are board.TERRAIN; the original's 0x836 is the same terrain map.
+export function coverDamage(base, defender) {
+  const amount = Number(base) || 0;
+  if (!defender) return amount;
+  const terrain = terrainIdAt(defender.x, defender.y);
+  if (terrain === null || terrain === undefined) return amount;
+  const kind = String(defender.kind) === "tank" ? 2 : 1;
+  if (terrain === 10) {
+    return kind === 2 ? amount - Math.floor(amount / 6) : amount - (amount >> 2);
+  }
+  if (terrain > 3 && terrain < 7) {
+    return kind === 2 ? amount - Math.floor(amount / 5) : amount - Math.floor((amount + 1) / 3);
+  }
+  return amount;
+}
+
+// Damage one piece deals to another. The modifiers the manual names, in one place: terrain
+// cover (the defender's cell), flank/rear (land only, p.22) and entrenchment (land only, p.22,
+// through the defender's kind-3 column). Ships are never flanked (p.24).
 //
 // Flank/rear is read exactly as `FUN_194c_000e` does it (decompiled.c 7064-7071): compare the
 // ATTACKER's facing with the defender's. Same facing = the attacker is behind the defender, x2.
@@ -171,7 +209,7 @@ export function baseDamageFor(attackerKind, defender, combat = null) {
 export function damageFor(attacker, defender, combat = null) {
   const block = combat || combatRules();
   const base = baseDamageFor(attacker.kind, defender, block);
-  let amount = base;
+  let amount = coverDamage(base, defender);
   let flank = false;
   let rear = false;
   // The original compares two facing bytes. A piece the remake has not faced yet carries none, so
@@ -193,7 +231,7 @@ export function damageFor(attacker, defender, combat = null) {
     amount *= block.entrenchDamageFactor;
     entrenched = true;
   }
-  return { base, amount, flank, rear, entrenched };
+  return { base, covered: coverDamage(base, defender), amount, flank, rear, entrenched };
 }
 
 // Target selection for the whole match in one pass over numeric arrays. `chooseTarget` below is

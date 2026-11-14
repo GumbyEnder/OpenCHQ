@@ -13,7 +13,7 @@ import { landPace, isRefused, combatRules, cellsPerRound } from "./rules.mjs";
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked } from "./resources.mjs";
-import { applyDamage, baseDamageFor, ensureStrength } from "./combat.mjs";
+import { applyDamage, damageFor, ensureStrength } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -479,11 +479,17 @@ export function repairStep(match) {
       continue;
     }
     const moving = Array.isArray(piece.path) && piece.path.length > 0;
+    // The original repairs only a piece that is not in contact: in the measured duel the dug-in
+    // garrison on Paris went 100 -> 87 -> 74 -> 61 -> 48 -> 35 with no repair between passes, and
+    // only began to repair (+10 a pass) once the attacking tank was dead (T-015,
+    // local/t015/duel-original.txt). Repairing under fire made the defender's bar rise between
+    // the beats of the same fight.
+    const fighting = piece.fighting !== null && piece.fighting !== undefined;
     if (!byCell) byCell = sitesByCell(match);
     const site = siteAtCell(byCell, piece);
     const kinds = piece.domain === "sea" ? ["dock", "docks"] : ["city", "capital", "base", "oilfield"];
     const friendly = Boolean(site) && site.owner === piece.side && kinds.includes(site.kind);
-    if (!friendly || moving) {
+    if (!friendly || moving || fighting) {
       if (piece.repairing === true && !friendly) piece.repairing = false;
       continue;
     }
@@ -622,39 +628,75 @@ export function advance(match) {
           piece.path = [];
           piece.pace = 1;
           piece.detours = 0;
+          piece.overrunBy = null;
+          piece.overrunCell = null;
           events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
           stopped = true;
           break;
         }
+        const onRound = Number(match.round) || 0;
+        // Overrun is a MOVEMENT result (Manual p.9) but its damage is an exchange like any other:
+        // one matrix cell, the defender's entrenchment and the defender's terrain cover, all from
+        // damageFor (FUN_194c_000e). It is applied ONCE and the round's front beat is consumed
+        // (match.foughtRound), so combat.resolve does not fire the same pair again in this round -
+        // that double exchange is what let a lone tank kill a dug-in garrison on Paris
+        // (T-015, local/t015/duel-remake.txt).
         const combat = combatRules();
-        // The overrun exchange reads the same 0x18f0 pairing cells as a normal fight: tank->infantry
-        // is 26 (2->1), infantry->tank 17 (1->2). The old per-kind collapse had 20 here.
-        const foot = applyDamage(occupant, baseDamageFor("tank", occupant, combat));
-        const hull = applyDamage(piece, baseDamageFor("infantry", piece, combat));
-        events.push({
-          type: "overrun",
-          side: piece.side,
-          pieceId: piece.id,
-          by: occupant.id,
-          target: occupant.id,
-          x: nx,
-          y: ny,
-          tankLoss: hull.dealt,
-          infantryStrength: foot.after,
-          tankStrength: hull.after,
-          round: Number(match.round) || 0,
-        });
-        if (foot.dead) {
-          doomed.add(occupant.id);
-          events.push({ type: "destroyed", side: occupant.side, pieceId: occupant.id, by: piece.id, x: nx, y: ny, strength: 0, round: Number(match.round) || 0, note: "Overrun." });
-          // fall through: the cell is free this round and the tank steps into it
-        } else if (hull.dead) {
-          doomed.add(piece.id);
-          events.push({ type: "destroyed", side: piece.side, pieceId: piece.id, by: occupant.id, x: piece.x, y: piece.y, strength: 0, round: Number(match.round) || 0, note: "Overrun. The tank was lost." });
-          stopped = true;
-          break;
+        const max = combat.maxStrength;
+        if (match.foughtRound !== onRound) {
+          const foot = damageFor(piece, occupant, combat);
+          const hull = damageFor(occupant, piece, combat);
+          piece.fighting = occupant.id;
+          occupant.fighting = piece.id;
+          piece.fightRounds = Number(piece.fightRounds || 0) + 1;
+          occupant.fightRounds = Number(occupant.fightRounds || 0) + 1;
+          match.foughtRound = onRound;
+          const footHit = applyDamage(occupant, foot.amount, max);
+          const hullHit = applyDamage(piece, hull.amount, max);
+          events.push({
+            type: "shot", side: piece.side, pieceId: piece.id, target: occupant.id,
+            base: foot.base, amount: foot.amount, covered: foot.covered, entrenched: foot.entrenched,
+            flank: foot.flank, rear: foot.rear, after: footHit.after, round: onRound, overrun: true,
+          });
+          events.push({
+            type: "shot", side: occupant.side, pieceId: occupant.id, target: piece.id,
+            base: hull.base, amount: hull.amount, covered: hull.covered, entrenched: hull.entrenched,
+            flank: hull.flank, rear: hull.rear, after: hullHit.after, round: onRound, overrun: true,
+          });
+          if (footHit.dead) {
+            doomed.add(occupant.id);
+            events.push({
+              type: "destroyed", side: occupant.side, pieceId: occupant.id, by: piece.id,
+              x: nx, y: ny, strength: 0, round: onRound, note: "Overrun.",
+            });
+            // The cell is free; the tank walks into it and keeps its order.
+            events.push({
+              type: "overrun", side: piece.side, pieceId: piece.id, by: occupant.id,
+              target: occupant.id, x: nx, y: ny, round: onRound,
+              tankLoss: hull.amount, infantryStrength: footHit.after, tankStrength: hullHit.after,
+              note: "Overrun.",
+            });
+          } else if (hullHit.dead) {
+            doomed.add(piece.id);
+            events.push({
+              type: "destroyed", side: piece.side, pieceId: piece.id, by: occupant.id,
+              x: piece.x, y: piece.y, strength: 0, round: onRound,
+              note: "Overrun. The tank was lost.",
+            });
+            piece.path = [];
+            stopped = true;
+            break;
+          } else {
+            piece.overrunBy = occupant.id;
+            piece.overrunCell = { x: nx, y: ny };
+            events.push({ type: "overrun_hold", pieceId: piece.id, by: occupant.id, x: nx, y: ny, round: onRound });
+            stopped = true;
+            break;
+          }
         } else {
-          events.push({ type: "overrun_hold", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
+          piece.overrunBy = occupant.id;
+          piece.overrunCell = { x: nx, y: ny };
+          events.push({ type: "overrun_hold", pieceId: piece.id, by: occupant.id, x: nx, y: ny, round: onRound });
           stopped = true;
           break;
         }
@@ -662,6 +704,23 @@ export function advance(match) {
 
       const fromX = piece.x;
       const fromY = piece.y;
+      // The tank that was held out of this cell walks into it now that combat has cleared it:
+      // that arrival is the overrun the log and the player see.
+      if (piece.overrunCell && wrapX(piece.overrunCell.x) === nx && Number(piece.overrunCell.y) === ny) {
+        events.push({
+          type: "overrun",
+          side: piece.side,
+          pieceId: piece.id,
+          by: piece.overrunBy,
+          target: piece.overrunBy,
+          x: nx,
+          y: ny,
+          round: Number(match.round) || 0,
+          note: "Overrun.",
+        });
+        piece.overrunBy = null;
+        piece.overrunCell = null;
+      }
       piece.facing = facingFor(fromX, fromY, nx, ny);
       piece.x = nx;
       piece.y = ny;
