@@ -80,8 +80,13 @@
         "transport": 2,
         "refused": -1
       },
+      "beats": {
+        "forest": 1,
+        "mountain": 2,
+        "jungle": 2,
+        "polar": 2
+      },
       "slow": [
-        "forest",
         "mountain",
         "jungle",
         "polar"
@@ -93,9 +98,17 @@
       "refused": [
         "wasteland"
       ],
+      "tags": {
+        "forest": "measured",
+        "mountain": "measured",
+        "jungle": "unverified",
+        "polar": "unverified",
+        "open": "measured",
+        "transport": "measured"
+      },
       "tag": "unverified",
-      "source": "STAND-IN, UNMEASURED (Q5). The two-beat slow/transport ratio and the refusal of wasteland come from the archive's own two-beat stand-in plus the walker's class test; the real cells-per-pass slowdown on forest, mountain, jungle and polar was never recovered. Do not invent a factor: the Q5 DOSBox leg measures it.",
-      "evidenceRef": "docs/re/RULES.md section 2; docs/re/MOVEMENT.md"
+      "source": "Q5 MEASURED (T-016 DOSBox legs, tank kind 2, one straight corridor per terrain, pass cursor DS:0x147c, round clock DS:0x157e). Game-clock units per cell: speed 1 plain 720, forest 720, mountain 1440; speed 6 plain 122, forest 122, mountain 163 (one 2-beat cell in six). So forest is NOT slower than plain (1 beat, the archive's 2-beat stand-in was wrong for forest) and mountain is 2 beats at speed 1 and 1.33 average at speed 6. Jungle and polar keep 2 beats as UNVERIFIED because their path-cost bytes (9 and 13 of the 24-point allowance) were never walked in a leg. Transport stays the walker class rule; wasteland stays refused. Legs: docs/re/evidence/t016/q5-*.txt.",
+      "evidenceRef": "docs/re/T016_TERRAIN.md s2; docs/re/RULES.md section 2; docs/re/MOVEMENT.md; docs/re/evidence/t016/q5-plain-s1.txt, q5-forest-s1.txt, q5-mountain-s1.txt, q5-plain-s6.txt, q5-forest-s6.txt, q5-mountain-s6.txt, t016_q5.py"
     },
     "cover": {
       "value": {
@@ -140,8 +153,8 @@
       "tags": {
         "lake": "measured",
         "polar": "measured",
-        "desert": "disassembly",
-        "jungle": "disassembly",
+        "desert": "measured",
+        "jungle": "measured",
         "wasteland": "disassembly",
         "capital": "measured",
         "base": "measured",
@@ -149,16 +162,17 @@
         "docks": "measured"
       },
       "wired": false,
-      "source": "DS:0x1996 low 5 bits, applied PER PASS (FUN_1c0d_00b4). Lake 3 and polar 5 are MEASURED (T-009b live: lake 22 -> 20 then flat, polar likewise). Desert 3 and jungle 3 are DISASSEMBLY: shared byte 0x23, and desert did NOT fire in three live runs (Q6 open). Wasteland is DISASSEMBLY and the dumped byte is 31 (0x1f); T-016's spec text says 34, which is the carrier column of the damage matrix - the bytes are the authoritative reading here, and no era's board has a wasteland cell to measure it (Q6). Site terrains (244 = 0xf4, bit 0x80 = through the combat path, low 5 bits = 20) drain only a unit that does not own the site. Not wired as the runtime rate while passes-per-round is speed-dependent (11 wraps per round at speed 1, 16 at speed 3): runtime stays on combat.attritionPerRound, which is a labelled per-round stand-in, until the D-017 pacing ruling.",
-      "evidenceRef": "config combat.measured.attritionTable; docs/re/T009b attrition notes"
+      "source": "DS:0x1996 low 5 bits, applied once per unit pass (FUN_1c0d_00b4, a unit is visited once per pass-cursor wrap). Q6 MEASURED live 2026-11-14 (T-016): desert 3/pass at (200,38), jungle 3/pass at (89,79), polar 5/pass at (36,10), lake 3/pass at (194,36), each one delta per pass-cursor wrap over 12 wraps from strength 100 (docs/re/evidence/t016/q6-*.txt). That closes Q6's desert contradiction: the three earlier 'flat' desert runs were taken while the round clock was 0xffff (round over, no pass), not because the terrain is inert. Wasteland stays DISASSEMBLY: the dumped byte is 31 (0x1f), the spec text says 34, and no era board contains a wasteland cell, so no leg can pin the amount or the destroy branch (a 1986 nuclear strike could create one; not feasible in a pinned single-piece probe). Site terrains (244 = 0xf4, bit 0x80) drain only a unit that does not own the site. NOT wired as the runtime rate: the remake has no pass, and the original's pass count per round is speed-dependent (measured wraps per round: ~10.6 at speed 1, ~62 at speed 6), so turning 3/pass into 3/round would be a 6-60x rate change that needs the D-017 pacing ruling. Runtime stays on combat.attritionPerRound, a labelled per-round stand-in.",
+      "evidenceRef": "docs/re/evidence/t016/q6-desert.txt, q6-jungle.txt, q6-polar.txt, q6-lake.txt, t016_q6.py; docs/re/T016_TERRAIN.md s3; config combat.measured.attritionTable"
     },
     "shoreFire": {
+      "range": 2,
       "cap": 30,
       "halveBelow": 25,
-      "wired": false,
+      "wired": true,
       "tag": "disassembly",
-      "source": "Fire beyond 2 cells caps damage at (target strength - 30), halved while the target is under 25. DISASSEMBLY ONLY, never live-measured; left unwired in T-016 and reported as a deferral rather than shipped as if measured.",
-      "evidenceRef": "docs/re/COMBAT.md"
+      "source": "Fire beyond 2 cells caps damage at (target strength - 30); under 25 strength the shot is halved instead. DISASSEMBLY ONLY, never live-measured. WIRED in T-016 behind this block and labelled disassembly: combat.damageFor applies shoreFireCap when a sea attacker fires farther than `range`. The two clauses overlap for a target at 25-29 strength, where the cap (strength - 30) is negative; the implementation reads the halving clause as the operative one under 25 and the cap as 'a long shot cannot take a target below 30' otherwise, and docs/re/T016_TERRAIN.md s5 records that reading as the open question.",
+      "evidenceRef": "docs/re/COMBAT.md; docs/re/T016_TERRAIN.md s5"
     }
   },
   "payEvery": 1,

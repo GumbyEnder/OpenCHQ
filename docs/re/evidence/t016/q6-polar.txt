@@ -1,0 +1,14 @@
+Q6 polar: P=1 status=0x43 kind=3 at (36,10) terrain_byte=13 start=100
+  t=0.64 wraps=0 str 100 -> 95 delta=5 clock=7608
+  t=2.70 wraps=1 str 95 -> 90 delta=5 clock=7486
+  t=4.76 wraps=2 str 90 -> 85 delta=5 clock=7364
+  t=6.81 wraps=3 str 85 -> 80 delta=5 clock=7243
+  t=8.87 wraps=4 str 80 -> 75 delta=5 clock=7121
+  t=10.95 wraps=5 str 75 -> 70 delta=5 clock=6998
+  t=13.01 wraps=6 str 70 -> 65 delta=5 clock=6876
+  t=15.08 wraps=7 str 65 -> 60 delta=5 clock=6754
+  t=17.12 wraps=8 str 60 -> 55 delta=5 clock=6633
+  t=19.20 wraps=9 str 55 -> 50 delta=5 clock=6510
+  t=21.25 wraps=10 str 50 -> 45 delta=5 clock=6388
+  t=23.31 wraps=11 str 45 -> 40 delta=5 clock=6267
+Q6 polar RESULT: 60 total loss in 25.0s over 12 wraps

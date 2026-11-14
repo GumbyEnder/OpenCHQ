@@ -236,7 +236,21 @@ export function damageFor(attacker, defender, combat = null) {
     amount *= block.entrenchDamageFactor;
     entrenched = true;
   }
-  return { base, covered: coverDamage(base, defender), amount, flank, rear, entrenched };
+  // Shore fire (DS:0x194c path, disassembly only): a ship firing farther than `range` cannot take
+  // a target below `cap` strength, and the shot is halved while the target is under `halveBelow`.
+  // Both numbers are config; the two clauses overlap on a 25-29 strength target, where the cap
+  // would go negative, so the halving clause wins there and the cap is read as a floor. This is
+  // labelled `disassembly` in config and is NOT live-measured - see docs/re/T016_TERRAIN.md s5.
+  const shore = terrainTables().shoreFire;
+  let shoreFire = false;
+  if (shore.enabled && attacker.domain === "sea" && defender.domain !== "sea"
+      && distance(attacker, defender) > shore.range) {
+    shoreFire = true;
+    const strength = ensureStrength(defender, block.maxStrength);
+    if (strength < shore.halveBelow) amount = amount / 2;
+    else amount = Math.min(amount, Math.max(0, strength - shore.cap));
+  }
+  return { base, covered: coverDamage(base, defender), amount, flank, rear, entrenched, shoreFire };
 }
 
 // Target selection for the whole match in one pass over numeric arrays. `chooseTarget` below is
