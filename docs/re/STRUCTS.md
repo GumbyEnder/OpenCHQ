@@ -4,7 +4,9 @@
 > **Record (2026-11-11).** This is the canonical copy of STRUCTS.md, added to `docs/re/` by B-3b at
 > commit `f0551df` on branch `b3b-capitals` (full sha in `git log docs/re/STRUCTS.md`). The `0x1102`
 > owner row below is measured here: **owner = bits 7:6** (mask `0xC0`), **subtype = `&7`**, evidence
-> `1c0d:000c`. The `0x906` unit-status row is marked UNVERIFIED in the row itself and listed in §19.
+> `1c0d:000c`. The `0x906` unit-status row is measured, not tagged: the read sites settle it
+> (`FUN_107e_0fa4` :1407/:1477/:1524, `FUN_15f4_0e7a` :5076-5086 writes and compares, purchase
+> writer `FUN_1ac5_008e` :8183), and §19 records it as closed 2026-11-12 (T-008).
 > The NAS extract-side working copy carries only a dated one-line pointer to this commit.
 
 > **Confidence: LOW (names re-checked 2026-11-09).** The function names in this document came
