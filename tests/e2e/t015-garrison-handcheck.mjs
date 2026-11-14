@@ -143,7 +143,20 @@ async function buyNear(kind, target, standoff = 4) {
   await page.waitForFunction((n) => window.__chq.room().pieces.some((p) => !n.includes(p.id)), [...had], { timeout: 15000 }).catch(() => {});
   const after = await room();
   const fresh = (after.pieces || []).find((p) => !had.has(p.id));
-  return fresh ? { ...fresh, placedAt: pick } : null;
+  if (!fresh) return null;
+  // Name the site the tank was bought from, not just where it landed. The post calls it "the
+  // ready site nearest Paris"; an artifact that records only (133,14) cannot back that name, so
+  // the nearest own land site to the placement cell is recorded with its own label and distance.
+  const landSites = new Set(["city", "capital", "base", "facility"]);
+  const near = (after.sites || [])
+    .filter((s) => s.owner === after.you && landSites.has(String(s.kind)))
+    .map((s) => ({ ...s, cellsFromTank: dist(s, pick) }))
+    .sort((a, b) => a.cellsFromTank - b.cellsFromTank)[0];
+  return {
+    ...fresh,
+    placedAt: pick,
+    readySite: near ? { id: near.id, name: near.name, x: near.x, y: near.y, kind: near.kind, cellsFromTank: near.cellsFromTank } : null,
+  };
 }
 
 try {
@@ -199,7 +212,9 @@ try {
   await clockIs("held");
   await setSpeed(SPEED);
   const tank = await buyNear("tank", target, 4);
-  mark(Boolean(tank), "a tank was bought beside the capital", tank && { id: tank.id, at: tank.placedAt, strength: tank.strength });
+  summary.buySite = tank ? tank.readySite : null;
+  mark(Boolean(tank), "a tank was bought beside the capital",
+    tank && { id: tank.id, at: tank.placedAt, strength: tank.strength, readySite: tank.readySite });
   if (!tank) throw new Error("could not buy a tank");
 
   const order = await orderTo(tank.id, { x: target.x, y: target.y });
