@@ -32,7 +32,7 @@ import {
   walkCostLimit,
 } from "../../server/rules.mjs";
 import { walkLine } from "../../server/move.mjs";
-import { coverFor } from "../../server/combat.mjs";
+import { coverFor, damageFor } from "../../server/combat.mjs";
 
 export const name = "t016_terrain";
 
@@ -130,14 +130,21 @@ export async function run(ctx) {
   must(/digInIds\(\)/.test(source("combat.mjs")), "tickEntrench no longer consults the dig-in terrain list");
   must(/digInIds\(\)/.test(moveSrc), "the entrench order no longer consults the dig-in terrain list");
 
-  // ---- crawl pace: a labelled stand-in, ordering only -------------------------------------
+  // ---- crawl pace: Q5 measured forest/mountain, labelled stand-in for jungle/polar ----------
+  // Q5 DOSBox legs (notes/t016/q5-*.txt): forest is 1 beat, exactly like plain; mountain is 2
+  // beats at speed 1 and ~1.33 average at speed 6. The archive's 2-beat stand-in was wrong for
+  // forest. Jungle and polar were never walked, so they keep the stand-in labelled unverified.
   eq(landPace(8), 1, "plain pace");
-  eq(landPace(9), 2, "forest is slow");
-  eq(landPace(10), 2, "mountain is slow");
-  eq(landPace(13), 2, "polar is slow");
+  eq(landPace(9), 1, "forest is NOT slower than plain (Q5 measured)");
+  eq(landPace(10), 2, "mountain is two beats");
+  eq(landPace(12), 2, "jungle keeps the labelled stand-in (Q5 not walked)");
+  eq(landPace(13), 2, "polar keeps the labelled stand-in (Q5 not walked)");
   eq(landPace(14), -1, "wasteland is refused");
   eq(landPace(0), 2, "ocean is a transport pace");
-  eq(block.crawlPace.tag, "unverified", "the crawl ratio is a stand-in and must stay unverified (Q5)");
+  eq(String(block.crawlPace.tags.forest), "measured", "forest beats are Q5-measured");
+  eq(String(block.crawlPace.tags.mountain), "measured", "mountain beats are Q5-measured");
+  eq(String(block.crawlPace.tags.jungle), "unverified", "jungle beats are unverified");
+  eq(String(block.crawlPace.tags.polar), "unverified", "polar beats are unverified");
 
   // ---- attrition: per PASS rows, labelled, not the runtime rate ---------------------------
   const perPass = block.attritionPerPass || {};
@@ -148,17 +155,30 @@ export async function run(ctx) {
   eq(Number(perPass.value.jungle), 3, "jungle attrition is 3 per pass (disassembly)");
   eq(Number(perPass.value.wasteland), 31, "wasteland attrition is the dumped byte 31 (0x1f)");
   eq(String(perPass.tags.lake), "measured", "lake is measured");
-  eq(String(perPass.tags.desert), "disassembly", "desert is disassembly until Q6");
-  eq(String(perPass.tags.jungle), "disassembly", "jungle is disassembly until Q6");
-  eq(String(perPass.tags.wasteland), "disassembly", "wasteland is disassembly until Q6");
+  eq(String(perPass.tags.desert), "measured", "desert is Q6-measured (3/pass, desert cell)");
+  eq(String(perPass.tags.jungle), "measured", "jungle is Q6-measured (3/pass, jungle cell)");
+  eq(String(perPass.tags.wasteland), "disassembly", "wasteland is disassembly until Q6 can place a cell");
   must(/attritionPerRound/.test(moveSrc) && !/attritionPerPass/.test(moveSrc),
     "attritionStep changed its rate source; the per-round stand-in is the runtime until D-017 is ruled");
 
-  // ---- shore fire is a labelled deferral, not a shipped rule ------------------------------
-  eq(block.shoreFire.wired, false, "shoreFire claims to be wired while it is disassembly only");
-  eq(block.shoreFire.tag, "disassembly", "shore fire is disassembly only");
-  must(!/shoreFire|halveBelow/.test(moveSrc) && !/shoreFire|halveBelow/.test(source("combat.mjs")),
-    "a shore-fire cap appeared in the runtime without a live leg");
+  // ---- shore fire: wired behind a disassembly label, arithmetic pinned ---------------------
+  eq(block.shoreFire.wired, true, "shoreFire is wired in T-016");
+  eq(block.shoreFire.tag, "disassembly", "shore fire is disassembly only, never measured");
+  eq(Number(block.shoreFire.range), 2, "shore fire starts beyond 2 cells");
+  {
+    const near = { x: 4, y: 4, strength: 100, kind: "infantry", domain: "land", id: "near" };
+    const far = { x: 4, y: 4, strength: 100, kind: "infantry", domain: "land", id: "far" };
+    const ship = (x) => ({ x, y: 4, kind: "battleship", domain: "sea", id: "hull" });
+    const close = damageFor(ship(2), near);
+    eq(close.shoreFire, false, "a 2-cell shot was treated as shore fire");
+    eq(close.amount, close.covered, "a 2-cell shot was capped");
+    const beyond = damageFor(ship(0), far);
+    eq(beyond.shoreFire, true, "a 6-cell sea shot did not take the shore-fire path");
+    eq(beyond.amount, Math.min(beyond.covered, 100 - 30), "long shot did not cap at strength-30");
+    const wounded = { x: 4, y: 4, strength: 20, kind: "infantry", domain: "land", id: "wounded" };
+    const half = damageFor(ship(0), wounded);
+    eq(half.amount, half.covered / 2, "a shot at a 20-strength target was not halved");
+  }
 
   // ---- a config edit moves the runtime ----------------------------------------------------
   // The whole point of AC1: change the file and the walker must change with it. This runs last
@@ -171,6 +191,8 @@ export async function run(ctx) {
     cfg.terrain.pathCost.limit = 100;
     cfg.terrain.crawlPace.refused = ["wasteland", "polar"];
     cfg.terrain.digIn.value = ["plain"];
+    cfg.terrain.shoreFire.range = 10;
+    cfg.terrain.crawlPace.beats.forest = 3;
     const alt = path.join(dir, "game.json");
     writeFileSync(alt, JSON.stringify(cfg, null, 2));
     process.env.OPENCHQ_CONFIG = alt;
@@ -179,7 +201,11 @@ export async function run(ctx) {
     eq(walkLine({ x: 0, y: 4 }, { x: 4, y: 4 }, 3, (x) => (x >= 1 ? 11 : 8)).ok, false,
       "a one-cell desert crossing at cost 100 was accepted");
     eq(landPace(13), -1, "a configured polar refusal did not reach landPace");
+    eq(landPace(9), 3, "a configured forest beat count did not reach landPace");
     must(!digInIds().has(10), "a narrowed dig-in list did not reach digInIds");
+    const wide = damageFor({ x: 0, y: 4, kind: "battleship", domain: "sea", id: "hull" },
+      { x: 6, y: 4, strength: 100, kind: "infantry", domain: "land", id: "dug" });
+    eq(wide.shoreFire, false, "a configured shore-fire range of 10 did not reach combat.damageFor");
   } finally {
     if (shipped) process.env.OPENCHQ_CONFIG = shipped;
     else delete process.env.OPENCHQ_CONFIG;

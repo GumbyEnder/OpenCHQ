@@ -169,6 +169,7 @@ export function terrainTables() {
   }
   terrainCache = {
     crawl: entryValue(block.crawlPace) || {},
+    beats: Object.fromEntries(Object.entries((block.crawlPace && block.crawlPace.beats) || {}).map(([name, value]) => [name, Math.max(1, Number(value) || 1)])),
     slow: idSet(block.crawlPace && block.crawlPace.slow),
     transport: idSet(block.crawlPace && block.crawlPace.transport),
     refused: idSet(block.crawlPace && block.crawlPace.refused),
@@ -177,6 +178,12 @@ export function terrainTables() {
     mountain: idSet(block.cover && block.cover.value && block.cover.value.mountain),
     costById,
     costLimit: Number(block.pathCost && block.pathCost.limit) || 100,
+    shoreFire: {
+      enabled: Boolean(block.shoreFire && block.shoreFire.wired === true),
+      range: Math.max(0, Number(block.shoreFire && block.shoreFire.range) || 0),
+      cap: Number(block.shoreFire && block.shoreFire.cap) || 30,
+      halveBelow: Number(block.shoreFire && block.shoreFire.halveBelow) || 25,
+    },
   };
   terrainCacheOf = cfg;
   return terrainCache;
@@ -209,6 +216,9 @@ export function landPace(terrainId) {
   const id = Number(terrainId);
   const tables = terrainTables();
   if (tables.refused.has(id)) return Number(tables.crawl.refused) || -1;
+  // A per-terrain beat count wins when config has one (T-016 Q5: forest 1, mountain 2 measured).
+  const name = TERRAIN[id];
+  if (name && Object.hasOwn(tables.beats, name)) return tables.beats[name];
   if (tables.slow.has(id) || tables.transport.has(id)) return Number(tables.crawl.slow) || 2;
   return Number(tables.crawl.open) || 1;
 }

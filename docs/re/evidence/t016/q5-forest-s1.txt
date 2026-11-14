@@ -1,0 +1,12 @@
+idx 0 kind 2 owner 0x40 speed 1
+intended leg: (51, 24):9 (52, 24):9 (53, 24):9 (54, 24):9 (55, 24):9 (56, 24):9 (57, 24):9
+terrain set on the leg: {'forest'}
+speed byte read back: 1
+teleported to (51,24) terr 9 -> (57,24) run 6 pts0 40
+  cells 4 wraps 5 reached_target False pts_now 50 wall 60.0s
+   t=3.57 pass=0 pos=(52, 24) terr=forest pts=40 clock=7435
+   t=15.74 pass=1 pos=(53, 24) terr=forest pts=14 clock=6715
+   t=27.91 pass=2 pos=(54, 24) terr=forest pts=8 clock=5995
+   t=40.07 pass=3 pos=(55, 24) terr=forest pts=2 clock=5275
+  Q5 RESULT: 4 cells / 5 pass-wraps = 0.80 cells/pass
+  Q5 RESULT: 4 cells in 0.310 rounds = 12.90 cells/round

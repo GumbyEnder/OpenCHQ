@@ -1,0 +1,14 @@
+Q6 desert: P=1 status=0x43 kind=3 at (200,38) terrain_byte=11 start=100
+  t=0.22 wraps=0 str 100 -> 97 delta=3 clock=7633
+  t=2.30 wraps=1 str 97 -> 94 delta=3 clock=7510
+  t=4.37 wraps=2 str 94 -> 91 delta=3 clock=7387
+  t=6.43 wraps=3 str 91 -> 88 delta=3 clock=7265
+  t=8.49 wraps=4 str 88 -> 85 delta=3 clock=7143
+  t=10.55 wraps=5 str 85 -> 82 delta=3 clock=7022
+  t=12.62 wraps=6 str 82 -> 79 delta=3 clock=6899
+  t=14.70 wraps=7 str 79 -> 76 delta=3 clock=6776
+  t=16.74 wraps=8 str 76 -> 73 delta=3 clock=6655
+  t=18.82 wraps=9 str 73 -> 70 delta=3 clock=6532
+  t=20.87 wraps=10 str 70 -> 67 delta=3 clock=6411
+  t=22.95 wraps=11 str 67 -> 64 delta=3 clock=6288
+Q6 desert RESULT: 36 total loss in 25.0s over 12 wraps

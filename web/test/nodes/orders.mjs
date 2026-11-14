@@ -107,23 +107,39 @@ export async function run(ctx) {
   if (!/wasteland/i.test(String(wasteland.error))) fail("wasteland refusal reads: " + wasteland.error);
 
   // ---- slow ground takes more rounds, at whatever pace the rules give -----------------
+  // The probe cell is derived from the extract rather than hardcoded: forest is NOT slow
+  // ground any more (T-016 Q5 measured it at one beat, the same as plain), so the old
+  // (166,8) forest coordinate now pins the wrong rule. Scan for a mountain cell whose west
+  // neighbour is plain, and walk in from there.
   const slowMatch = openMatch("1986");
   const walker = slowMatch.pieces.find((unit) => unit.id === "blue:land");
-  walker.x = 165;
-  walker.y = 8;
+  let slowX = -1;
+  let slowY = -1;
+  for (let y = 0; y < CELL_H && slowX < 0; y += 1) {
+    for (let x = 1; x < CELL_W; x += 1) {
+      if (terrainAt(x, y) === 10 && terrainAt(x - 1, y) === 8 && !isRefused(terrainAt(x - 1, y))) {
+        slowX = x;
+        slowY = y;
+        break;
+      }
+    }
+  }
+  if (slowX < 0) fail("no mountain cell with a plain west neighbour in this extract");
+  walker.x = slowX - 1;
+  walker.y = slowY;
   walker.path = [];
   walker.pace = 1;
-  const slowPace = landPace(terrainAt(166, 8));
-  if (slowPace < 2) fail("the probe neighbour is not slow ground: " + slowPace);
-  const slowOrder = issueOrder(slowMatch, "blue", "blue:land", 166, 8);
+  const slowPace = landPace(terrainAt(slowX, slowY));
+  if (slowPace < 2) fail("the probe neighbour is not slow ground: " + slowPace + " at " + slowX + "," + slowY);
+  const slowOrder = issueOrder(slowMatch, "blue", "blue:land", slowX, slowY);
   if (!slowOrder.ok) fail("a slow-ground step was refused: " + JSON.stringify(slowOrder));
   if (slowOrder.path.length !== 1) fail("slow path length " + slowOrder.path.length);
   if (slowOrder.path[0].pace !== slowPace) fail("slow step pace " + slowOrder.path[0].pace + " vs " + slowPace);
   slowMatch.clock = "running";
   tickMatch(slowMatch);
-  if (walker.x !== 165 || walker.y !== 8) fail("slow ground was crossed in one round: " + walker.x + "," + walker.y);
+  if (walker.x !== slowX - 1 || walker.y !== slowY) fail("slow ground was crossed in one round: " + walker.x + "," + walker.y);
   tickMatch(slowMatch);
-  if (walker.x !== 166 || walker.y !== 8) fail("slow ground was not crossed on the second round: " + walker.x + "," + walker.y);
+  if (walker.x !== slowX || walker.y !== slowY) fail("slow ground was not crossed on the second round: " + walker.x + "," + walker.y);
 
   // ---- X wraps, Y does not -----------------------------------------------------------
   // The seam columns are ocean on this extract, so the wrap probe walks a transport cell

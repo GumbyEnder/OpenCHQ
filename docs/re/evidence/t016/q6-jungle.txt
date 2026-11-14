@@ -1,0 +1,14 @@
+Q6 jungle: P=1 status=0x43 kind=3 at (89,79) terrain_byte=12 start=100
+  t=1.49 wraps=0 str 100 -> 97 delta=3 clock=7558
+  t=3.57 wraps=1 str 97 -> 94 delta=3 clock=7435
+  t=5.63 wraps=2 str 94 -> 91 delta=3 clock=7313
+  t=7.69 wraps=3 str 91 -> 88 delta=3 clock=7192
+  t=9.76 wraps=4 str 88 -> 85 delta=3 clock=7069
+  t=11.82 wraps=5 str 85 -> 82 delta=3 clock=6947
+  t=13.87 wraps=6 str 82 -> 79 delta=3 clock=6825
+  t=15.93 wraps=7 str 79 -> 76 delta=3 clock=6704
+  t=17.99 wraps=8 str 76 -> 73 delta=3 clock=6582
+  t=20.06 wraps=9 str 73 -> 70 delta=3 clock=6459
+  t=22.12 wraps=10 str 70 -> 67 delta=3 clock=6337
+  t=24.19 wraps=11 str 67 -> 64 delta=3 clock=6215
+Q6 jungle RESULT: 36 total loss in 25.0s over 12 wraps
