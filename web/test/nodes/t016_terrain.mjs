@@ -18,7 +18,7 @@
 // factor, because a test that reads the same constant the code reads stays green with the branch
 // deleted.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +75,62 @@ export async function run(ctx) {
       `config.terrain.${key} names no evidence file`);
   }
   must(block.coverage === undefined, "a `coverage` row was invented; the tag lives on each row");
+
+  // ---- AC6, machine-enforced: every citation resolves to a real file ------------------------
+  // frodo #4467 finding 2: b875077 fixed three citations by hand and nothing stopped the next
+  // one going stale. Tokenise each evidenceRef and require every repo-relative docs/ or web/
+  // path to exist; a comma list after a path is read as siblings in that path's directory
+  // ("q6-jungle.txt, q6-polar.txt"). Absolute /mnt/nas references name the reference tree, which
+  // a CI box does not have: checked when the file is present, otherwise printed as skipped so
+  // "not checked here" is visible instead of green.
+  const repoRoot = path.resolve(here, "..", "..", "..");
+  const missingAbs = [];
+  const cited = [];
+  for (const key of rows) {
+    const ref = String(block[key].evidenceRef || "");
+    let found = 0;
+    for (const clause of ref.split(";")) {
+      const text = clause.trim();
+      if (!text) continue;
+      // Absolute reference-tree citations first: the path may itself contain docs/, so it is
+      // removed from the clause before the repo-relative scan looks for docs/ or web/.
+      let rest = text;
+      const absolute = text.match(/\/mnt\/nas\/[^\n;]+/);
+      if (absolute) {
+        const candidate = absolute[0]
+          .replace(/[,(].*$/, "")
+          .trim()
+          .replace(/\s+section\s+\S+$/i, "")
+          .trim();
+        if (existsSync(candidate)) { cited.push(candidate); found += 1; }
+        else missingAbs.push(`${key}: ${candidate}`);
+        rest = text.replace(absolute[0], " ");
+      }
+      const rels = rest.match(/\b(?:docs|web)\/[A-Za-z0-9_./-]+/g) || [];
+      for (const rel of rels) {
+        const target = path.join(repoRoot, rel);
+        must(existsSync(target), `config.terrain.${key}.evidenceRef cites ${rel}, which does not exist`);
+        cited.push(rel);
+        found += 1;
+      }
+      if (rels.length) {
+        const dir = path.dirname(path.join(repoRoot, rels[0]));
+        for (const sibling of rest.match(/,\s*[A-Za-z0-9_.-]+\.[A-Za-z0-9]+/g) || []) {
+          const file = sibling.replace(/^,\s*/, "");
+          must(existsSync(path.join(dir, file)),
+            `config.terrain.${key}.evidenceRef cites ${file} beside ${rels[0]}, which does not exist`);
+          cited.push(path.join(path.dirname(rels[0]), file));
+          found += 1;
+        }
+      }
+    }
+    must(found > 0, `config.terrain.${key}.evidenceRef names no path this test can resolve`);
+  }
+  // A tokeniser that matches nothing must not read as a pass.
+  must(cited.length >= rows.length, `only ${cited.length} citations resolved across ${rows.length} rows`);
+  if (missingAbs.length) {
+    console.log("t016_terrain: absolute citations not present on this host (skipped): " + missingAbs.join(" | "));
+  }
 
   // ---- no second copy of a recovered table in code -----------------------------------------
   const moveSrc = source("move.mjs");
