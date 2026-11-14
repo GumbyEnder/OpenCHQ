@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { deleteRoom, flushRooms, flushWindow, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
 import { tickMatch } from "./tick.mjs";
-import { forSeat, resultNote, resultOf } from "./view.mjs";
+import { forSeat, resultNote, resultOf, capitalListOf } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { boardPayload, matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
@@ -1138,7 +1138,48 @@ export function createLobby() {
     return sent;
   }
 
-  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast };
+  // A read-only dump of what the server holds for one room. main.mjs serves it only when
+  // OPENCHQ_DEBUG=1, so a public host never exposes it; it exists so a stalled leg can be
+  // diagnosed from the server's own state instead of the seat's filtered view. It answers the
+  // questions a freeze raises: which round, is the clock held, what is every piece's next step,
+  // who is fighting whom, what did the bot last do, and what did the log say.
+  function debugRoom(id) {
+    const room = rooms.get(id);
+    if (!room) return null;
+    const match = room.match || {};
+    const pieces = (match.pieces || []).slice(0, 600).map((p) => ({
+      id: p.id, side: p.side, domain: p.domain, kind: p.kind, x: p.x, y: p.y,
+      steps: Array.isArray(p.path) ? p.path.length : 0,
+      next: Array.isArray(p.path) && p.path.length ? p.path[0] : null,
+      fighting: p.fighting ?? null, shots: p.shots ?? 0,
+      strength: p.strength ?? null, entrenched: p.entrenched === true, pinned: p.pinned === true,
+    }));
+    return {
+      id: room.id,
+      round: match.round ?? null,
+      clock: room.clock ?? match.clock ?? null,
+      speed: room.speed ?? null,
+      over: Boolean(match.over),
+      winner: match.winner ?? null,
+      note: room.note || "",
+      seats: {
+        blue: room.seats && room.seats.blue ? room.seats.blue.kind : null,
+        red: room.seats && room.seats.red ? room.seats.red.kind : null,
+      },
+      pendingEvents: Array.isArray(match.pendingEvents) ? match.pendingEvents.slice(-20) : [],
+      botActions: Array.isArray(room.botActions) ? room.botActions.slice(-10) : [],
+      log: {
+        blue: ((room.log && room.log.blue) || []).slice(-15),
+        red: ((room.log && room.log.red) || []).slice(-15),
+      },
+      pieces,
+      pieceCount: (match.pieces || []).length,
+      capitals: capitalListOf(match),
+      capitalSet: match.capitalSet ? { size: (match.capitalSet.list || []).length, missing: match.capitalSet.missing || [] } : null,
+    };
+  }
+
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom };
 }
 
 // What an era sells lives in shop.mjs; it is pure so the roster test can read it without a
