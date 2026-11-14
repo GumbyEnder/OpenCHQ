@@ -1160,7 +1160,7 @@ function toolRow(room) {
         button.title = !briefing.ready
           ? "This aircraft is away for " + briefing.roundsLeft + " more rounds."
           : needsBase && !briefing.canFly
-            ? (briefing.strandedNote || "No friendly city, dock or ship in reach.")
+            ? "No friendly city, dock or ship in reach."
             : mission.mode === "strike"
               ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
@@ -1599,9 +1599,7 @@ const DIALOG_PAINTERS = {
         });
         acts.append(button);
       }
-      // A plane whose site changed hands stays on the map and is stranded, not destroyed
-      // (air.mjs STRANDED_NOTE: REMAKE CHOICE, Q50). The base column is where a player reads it.
-      line.append(cell(plane.id), cell(plane.base || (plane.canFly ? "—" : "stranded")),
+      line.append(cell(plane.id), cell(plane.base || "—"),
         cell(plane.ready ? "ready" : String(plane.roundsLeft) + " rounds"), acts);
       table.append(line);
     }

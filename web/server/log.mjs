@@ -126,9 +126,14 @@ export function logLines(match, side, events, round) {
       }
       case "destroyed": {
         const cell = cellOf(event);
-        const where = cell ? " at " + cell.x + "," + cell.y : "";
-        if (mine) push("lost " + (event.kind ? unitPhrase(event.kind) : "a unit") + where);
-        else if (legible(match, side, event)) push("an enemy unit was destroyed" + where);
+        // A destroy event that names its site says why in the same line: an aircraft lost because its
+        // air strip was taken reads as that, not as a bare "lost an aircraft at 80,99" (Manual p.10 is
+        // the rule; economy.occupy emits the event inside the capture pass).
+        const named = event.name ? " at " + event.name : "";
+        const where = named || (cell ? " at " + cell.x + "," + cell.y : "");
+        const why = event.cause === "capture" ? "; the air strip was captured" : "";
+        if (mine) push("lost " + (event.kind ? unitPhrase(event.kind) : "a unit") + where + why);
+        else if (legible(match, side, event)) push("an enemy unit was destroyed" + where + why);
         break;
       }
       case "overrun":

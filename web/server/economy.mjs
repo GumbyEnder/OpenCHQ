@@ -32,6 +32,12 @@ const WELL_KINDS = new Set(["oilfield", "well"]);
 // opening holder (1942 hands both seats to blue), and a capture overwrites the byte. The byte is
 // the win condition's own field, not a country claim - no income is ever counted from a capital.
 const CAPITAL_KINDS = new Set(["capital"]);
+// A site an air unit can be based in. Capturing one destroys the enemy aircraft sitting on it
+// (Manual printed p.10, "City Conquest"): "note that the enemy air unit was destroyed when you
+// took the city. Capturing the air strip is the most certain way of destroying enemy air units."
+// The list is the same one air.transferPlane accepts as a berth, so capture and transfer agree
+// about what an air strip is.
+const AIRSTRIP_KINDS = new Set(["city", "capital", "base", "facility"]);
 
 function occupiable(kind) {
   return ownable(kind) || CAPITAL_KINDS.has(kind);
@@ -325,6 +331,9 @@ export function occupy(match) {
 
   const sites = match.sites;
   const cells = siteCells(sites);
+  // Air units destroyed by this pass's captures, removed once after the walk (never while the site
+  // loop is still reading match.pieces).
+  let doomed = null;
   for (let i = 0; i < sites.length; i++) {
     const site = sites[i];
     if (!site) continue;
@@ -337,6 +346,33 @@ export function occupy(match) {
     if (side && site.owner !== side) {
       events.push({ type: "capture", site: site.id, name: site.name, kind, side, from: site.owner ?? null });
       site.owner = side;
+      // A captured air strip destroys the enemy aircraft based on it, in this same pass (Manual
+      // printed p.10: the enemy air unit is destroyed when the city is taken). "Based on it" is the
+      // plane's own cell being the site's cell - the same geometry transferPlane lands it on.
+      if (cells && cells[i] !== null && AIRSTRIP_KINDS.has(kind)) {
+        const key = cells[i];
+        for (const piece of match.pieces) {
+          if (!piece || piece.side === side) continue;
+          if (layerOf(piece) !== "air") continue;
+          if (cellKeyOf(piece) !== key) continue;
+          if (!doomed) doomed = new Set();
+          if (doomed.has(piece.id)) continue;
+          doomed.add(piece.id);
+          events.push({
+            type: "destroyed",
+            side: piece.side,
+            pieceId: piece.id,
+            kind: piece.kind,
+            x: Number(piece.x),
+            y: Number(piece.y),
+            site: site.id,
+            name: site.name,
+            cause: "capture",
+            round: Number(match.round) || 0,
+            note: "Air unit destroyed: its air strip was captured (Manual p.10).",
+          });
+        }
+      }
     }
 
     const owner = site.owner;
@@ -346,6 +382,8 @@ export function occupy(match) {
     else if (kind === "capital") row.capitals += 1;
     else if (WELL_KINDS.has(kind)) row.wells += 1;
   }
+
+  if (doomed) match.pieces = match.pieces.filter((piece) => !piece || !doomed.has(piece.id));
 
   match.incomeSummary = tally;
   return events;

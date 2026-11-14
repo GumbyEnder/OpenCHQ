@@ -99,9 +99,6 @@ export function airBriefing(match, side) {
       reach: reach > 0 ? reach : null,
       base: base ? (base.name || base.id) : null,
       canFly: Boolean(base),
-      // A plane with no friendly base in reach says why, in the same field whether the cause is a
-      // captured site or an empty map (air.mjs STRANDED_NOTE: REMAKE CHOICE, Q50).
-      strandedNote: base ? null : STRANDED_NOTE,
       missions: [
         { mode: "patrol", label: "Scramble (CAP)", rounds: costs.patrol },
         { mode: "strike", label: "Strike", rounds: costs.strike },
@@ -126,14 +123,15 @@ export function airBriefing(match, side) {
 // Q50's first sub-item and is deliberately NOT capped here.
 export const TRANSFER_NOTE = "Transfer. The aircraft rebases; the original's transfer range (stand-in reach, UNMEASURED) and round cost (UNVERIFIED) were not recovered.";
 
-// An aircraft whose site changes hands is NOT removed and NOT displaced (REMAKE CHOICE, Q50
-// sub-item "an aircraft whose site is captured"): it stays on the cell, on the air layer, and is
-// stranded. A mission needs a friendly city or dock within the stand-in reach (baseFor above) and
-// a transfer needs a friendly city, base or carrier within that same reach, so a plane whose only
-// site is now enemy-held can do neither until something friendly comes within reach or it is
-// transferred out. Neither the manual nor decompiled.c answers this, so it is the remake's choice,
-// not a recovered rule - the same standing as the transfer cost and range beside it.
-export const STRANDED_NOTE = "Stranded: its site changed hands, so it may fly or transfer only once a friendly city, base or carrier is within the stand-in reach (UNMEASURED).";
+// An aircraft based at a city, base or capital is DESTROYED when that site is captured, not stranded
+// or displaced. This is a RECOVERED RULE, not the remake's choice: Manual printed p.10 ("City
+// Conquest") - "note that the enemy air unit was destroyed when you took the city. Capturing the air
+// strip is the most certain way of destroying enemy air units." economy.occupy enforces it inside the
+// capture pass that flips the owner byte, and emits a `destroyed` event that names the site.
+//
+// Two cases stay UNVERIFIED and are recorded as Q50 sub-items: an aircraft already airborne on a
+// mission when its base falls, and an aircraft based on a carrier (a piece, not a site - out of scope
+// for a capture, since carriers change hands only by combat).
 
 export function transferPlane(match, side, pieceId, target) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to rebase in." };
