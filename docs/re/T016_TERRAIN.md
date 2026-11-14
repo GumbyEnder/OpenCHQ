@@ -105,8 +105,11 @@ factor-keyed assertion stays green with the branch deleted.
 
 Fire **beyond 2 cells** by a sea attacker at a land target caps damage at `(target strength - 30)`;
 under 25 strength the shot is halved instead. `config.terrain.shoreFire` = `{range: 2, cap: 30,
-halveBelow: 25, wired: true, tag: "disassembly"}`. `combat.damageFor` applies it as the last step and
-reports `shoreFire: true` on the hit.
+`halveBelow: 25, wired: true, tag: "disassembly"}`. `combat.damageFor` applies it as the last step and
+reports `shoreFire: true` on the hit. The manual's "down to about 20 %" (p.42) is recorded as
+`terrain.bombardFloor` = 0.2, source "Manual p.42, UNMEASURED" — normalised into
+`combatRules().bombardFloor` but never applied by `combat.damageFor` — so the runtime rule is the
+`(s-30)` cap with the halving clause under 25, not a percentage floor.
 
 The two clauses overlap on a target at 25-30 strength, where `strength - 30` is zero or negative
 (at 30 the cap is `max(0, 0) = 0`). The implementation reads the halving clause as operative under 25
