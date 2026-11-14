@@ -74,6 +74,9 @@ export async function run(ctx) {
   const buyEnd = app.indexOf("\n  },", buyAt);
   const buyBlock = app.slice(buyAt, buyEnd < 0 ? buyAt + 2600 : buyEnd);
   if (!buyBlock.includes('"buybadge"')) fail("the buy row does not draw the buybadge span");
+  // ...and the span has to be appended to the line: a block that builds the icon and drops it
+  // still carries the class name, so the string alone passes on a row that draws nothing.
+  if (!buyBlock.includes("name.append(icon")) fail("the buy row builds the badge and never appends it");
   if (!buyBlock.includes("badgeSvg(")) fail("the buy table does not draw the unit badge");
   if (buyBlock.includes("glyphDataUrl")) fail("the buy table still falls back to the five-cell glyph");
   if (app.includes("glyphDataUrl")) fail("glyphDataUrl is still reachable from the page");
