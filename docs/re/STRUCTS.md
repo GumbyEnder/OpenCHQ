@@ -112,6 +112,10 @@
 - Bit 7 is part of the owner pair, not an active flag: a blue capital is `0x41` (bit 7 clear) and a red one is `0x81`/`0x82` (bit 7 set). "Active" is "byte != 0" plus subtype `< 3`.
 - Capital sites per era, read from `extracted/data/cbr_type_by_era.json` (`(byte&7) in {1,2}`, owner `byte&0xc0`): 1918 → 3, 1942 → 6, 1986 → 4, 2023 and ???? → 0 in the file (rolled at launch). Owners agree with the original's turn-0 RAM; see `B3_CAPITALS.md` and `ERA_PHASE_B_SPEC.md` R6/B-3.
 - `0x906` (`unit_status`, row below) and the unit tables in `SYSTEMS.md`/`MOVEMENT.md`/`COMBAT.md` still say bits 6:5. That is **unverified, not corrected** — this note covers the site byte only.
+  - *Superseded 2026-11-14:* the `0x906` half is now measured (T-008, closed in §19) and the row
+    below reads bits 7:6 owner / bits 3:0 kind; the record header no longer carries the UNVERIFIED
+    tag (D-026 landing of `323e5e7`). The sentences above about `SYSTEMS.md`/`MOVEMENT.md`/
+    `COMBAT.md` are kept as the 2026-11-11 wording they were written under.
 
 **Known site types** (from strings): `capital`, `city`, `oilfield`, `docks`, `base`, `ocean`, `plain`, `forest`, `mountain`, `desert`, `jungle`, `polar`, `wasteland`.
 
