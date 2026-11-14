@@ -23,7 +23,7 @@
 // rule. A transport is cargo: it neither fires nor survives an exchange.
 
 import { CELL_W, boardPayload } from "./board.mjs";
-import { combatRules, seaRangeFor } from "./rules.mjs";
+import { combatRules, seaRangeFor, digInIds, terrainTables } from "./rules.mjs";
 import { siteIndex } from "./siteindex.mjs";
 
 // The words that ride the events. The numbers ride as fields, so a test asserts a figure instead
@@ -181,19 +181,24 @@ function terrainIdAt(x, y) {
 //   lake/capital/base/city (4..6): infantry kinds 1/3 lose (cell+1)/3, tanks (2) a fifth.
 // Integer arithmetic, so 20 is 15 on a mountain and 13 in a city, and a 17 against a tank is
 // 14 in a city. IDs are board.TERRAIN; the original's 0x836 is the same terrain map.
-export function coverDamage(base, defender) {
+export function coverFor(base, terrainId, defenderKind) {
   const amount = Number(base) || 0;
-  if (!defender) return amount;
-  const terrain = terrainIdAt(defender.x, defender.y);
-  if (terrain === null || terrain === undefined) return amount;
-  const kind = String(defender.kind) === "tank" ? 2 : 1;
-  if (terrain === 10) {
+  if (terrainId === null || terrainId === undefined) return amount;
+  const id = Number(terrainId);
+  const tables = terrainTables();
+  const kind = String(defenderKind) === "tank" ? 2 : 1;   // 1 = kinds 1/3 (infantry and dug-in)
+  if (tables.mountain.has(id)) {
     return kind === 2 ? amount - Math.floor(amount / 6) : amount - (amount >> 2);
   }
-  if (terrain > 3 && terrain < 7) {
+  if (tables.cityLike.has(id)) {
     return kind === 2 ? amount - Math.floor(amount / 5) : amount - Math.floor((amount + 1) / 3);
   }
   return amount;
+}
+
+export function coverDamage(base, defender) {
+  if (!defender) return Number(base) || 0;
+  return coverFor(base, terrainIdAt(defender.x, defender.y), defender.kind);
 }
 
 // Damage one piece deals to another. The modifiers the manual names, in one place: terrain
@@ -481,6 +486,12 @@ export function resolve(match) {
 // Infantry digs in after `entrenchRounds` rounds of standing still without fighting (p.22: "an
 // infantry that has not moved or fought"). Being attacked does not clear the state; only a move
 // order does (move.mjs), which is why this never lowers a flag.
+//
+// T-016: the ground decides whether the state is available at all. DS:0x1996 bit 0x20 marks the
+// dig-in terrains (plain, forest, mountain, oilfield, desert, jungle) and the config carries that
+// list; a city, base, capital, lake, polar or wasteland cell carries no bit 0x20, so infantry
+// standing there does not entrench. A tree with no board extract cannot name a terrain and is
+// treated like open plain — the same fallback the walker uses — so a test without data still runs.
 export function tickEntrench(match) {
   const events = [];
   if (!match || !Array.isArray(match.pieces)) return events;
@@ -492,6 +503,11 @@ export function tickEntrench(match) {
     const moving = Array.isArray(piece.path) && piece.path.length > 0;
     const fighting = piece.fighting !== null && piece.fighting !== undefined;
     if (moving || fighting) {
+      piece.stillRounds = 0;
+      continue;
+    }
+    const terrain = terrainIdAt(piece.x, piece.y);
+    if (terrain !== null && terrain !== undefined && !digInIds().has(Number(terrain))) {
       piece.stillRounds = 0;
       continue;
     }

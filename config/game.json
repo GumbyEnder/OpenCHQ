@@ -59,6 +59,108 @@
       "source": "STAND-IN, UNMEASURED (orderings only: Manual p.9 tank at most 2x infantry; p.21 sea faster than land, transports slightly slower than other ships). No per-round cell rate was ever printed."
     }
   },
+  "terrain": {
+    "_comment": "T-016: every original terrain effect in one block, each value tagged measured / disassembly / unverified with its citation. Runtime reads pathCost, crawlPace and digIn from here; attritionPerPass and shoreFire are recorded reference rows (see each entry's `wired` field). Ids are board.TERRAIN: 0 ocean, 1 docks, 2 shallows, 3 lake, 4 capital, 5 base, 6 city, 7 oilfield, 8 plain, 9 forest, 10 mountain, 11 desert, 12 jungle, 13 polar, 14 wasteland, 15 facility.",
+    "pathCost": {
+      "value": {
+        "desert": 3,
+        "jungle": 9,
+        "polar": 13,
+        "wasteland": 77
+      },
+      "limit": 100,
+      "tag": "disassembly",
+      "source": "DS:0x011C walker cost bytes; a class 3/4 route whose costs sum to 100 is refused by the walker (FUN_16ee_0728). Every other terrain id costs 0. The manual's printed Slowed column (p.21) disagrees with this table; the table is the recovered fact and wins. Function: web/server/move.mjs walkLine.",
+      "evidenceRef": "docs/re/RULES.md section 2"
+    },
+    "crawlPace": {
+      "value": {
+        "open": 1,
+        "slow": 2,
+        "transport": 2,
+        "refused": -1
+      },
+      "slow": [
+        "forest",
+        "mountain",
+        "jungle",
+        "polar"
+      ],
+      "transport": [
+        "ocean",
+        "lake"
+      ],
+      "refused": [
+        "wasteland"
+      ],
+      "tag": "unverified",
+      "source": "STAND-IN, UNMEASURED (Q5). The two-beat slow/transport ratio and the refusal of wasteland come from the archive's own two-beat stand-in plus the walker's class test; the real cells-per-pass slowdown on forest, mountain, jungle and polar was never recovered. Do not invent a factor: the Q5 DOSBox leg measures it.",
+      "evidenceRef": "docs/re/RULES.md section 2; docs/re/MOVEMENT.md"
+    },
+    "cover": {
+      "value": {
+        "cityLike": [
+          "capital",
+          "base",
+          "city"
+        ],
+        "mountain": [
+          "mountain"
+        ]
+      },
+      "tag": "measured",
+      "source": "FUN_194c_000e @ 194c:000e, decompiled.c 7039-7054: the DEFENDER's terrain byte decides cover, applied to the damage-matrix cell before flank/rear. City, capital or base: infantry kinds 1/3 lose (dmg+1)/3 and tanks (kind 2) lose dmg/5. Mountain: infantry lose dmg>>2 and tanks lose dmg/6. No attacker terrain bonus exists. This block names the id sets; the integer arithmetic lives in web/server/combat.mjs coverFor. MEASURED live (T-009b): 20 -> 13 on a city cell, 20 -> 15 on a mountain, same pairing on plain 20.",
+      "evidenceRef": "config combat.measured.modifiers.terrainCoverCityFormula; docs/re/COMBAT.md section 2"
+    },
+    "digIn": {
+      "value": [
+        "plain",
+        "forest",
+        "mountain",
+        "oilfield",
+        "desert",
+        "jungle"
+      ],
+      "tag": "disassembly",
+      "source": "DS:0x1996 bit 0x20 marks a dig-in terrain: ids 7 oilfield (0xe0), 8 plain (0x60), 9 forest (0x60), 10 mountain (0x20), 11 desert (0x23), 12 jungle (0x23). decompiled.c 4523-4525 flips kind 1 to 3 on the first eligible pass (stationary, no target, bit 0x20); a move order reverts it. Not in a city or on any site terrain (their bytes carry 0x80, not 0x20).",
+      "evidenceRef": "config combat.measured.attritionTable; docs/re/T009b/T-009b notes entrench-2026-11-13.txt"
+    },
+    "attritionPerPass": {
+      "value": {
+        "lake": 3,
+        "polar": 5,
+        "desert": 3,
+        "jungle": 3,
+        "wasteland": 31,
+        "capital": 20,
+        "base": 20,
+        "city": 20,
+        "docks": 20
+      },
+      "tags": {
+        "lake": "measured",
+        "polar": "measured",
+        "desert": "disassembly",
+        "jungle": "disassembly",
+        "wasteland": "disassembly",
+        "capital": "measured",
+        "base": "measured",
+        "city": "measured",
+        "docks": "measured"
+      },
+      "wired": false,
+      "source": "DS:0x1996 low 5 bits, applied PER PASS (FUN_1c0d_00b4). Lake 3 and polar 5 are MEASURED (T-009b live: lake 22 -> 20 then flat, polar likewise). Desert 3 and jungle 3 are DISASSEMBLY: shared byte 0x23, and desert did NOT fire in three live runs (Q6 open). Wasteland is DISASSEMBLY and the dumped byte is 31 (0x1f); T-016's spec text says 34, which is the carrier column of the damage matrix - the bytes are the authoritative reading here, and no era's board has a wasteland cell to measure it (Q6). Site terrains (244 = 0xf4, bit 0x80 = through the combat path, low 5 bits = 20) drain only a unit that does not own the site. Not wired as the runtime rate while passes-per-round is speed-dependent (11 wraps per round at speed 1, 16 at speed 3): runtime stays on combat.attritionPerRound, which is a labelled per-round stand-in, until the D-017 pacing ruling.",
+      "evidenceRef": "config combat.measured.attritionTable; docs/re/T009b attrition notes"
+    },
+    "shoreFire": {
+      "cap": 30,
+      "halveBelow": 25,
+      "wired": false,
+      "tag": "disassembly",
+      "source": "Fire beyond 2 cells caps damage at (target strength - 30), halved while the target is under 25. DISASSEMBLY ONLY, never live-measured; left unwired in T-016 and reported as a deferral rather than shipped as if measured.",
+      "evidenceRef": "docs/re/COMBAT.md"
+    }
+  },
   "payEvery": 1,
   "money": {
     "perBillion": 1000,
@@ -145,7 +247,7 @@
       "9999": "UNVERIFIED: manual does not name this era's roster; uses the 1986 set"
     },
     "speeds": "MEASURED 2026-11-12 (T-008, docs/re/MOVEMENT.md): the original's round clock is 7646 units at 1/64 s each, i.e. 119.5 s of nominal game time, and it counts down at the same rate at every speed 0-6 (59.16 units/s in DOSBox 0.74-3 at 3000 cycles, so 129.2 s of wall clock; 3 legs per speed, 0/1/3/6). Every speed setting therefore has the SAME round length; the speed control paces piece and combat animation, not the round. Speed 0 stops piece movement dead (0 piece steps in 8 s) while the round clock still runs. DELIBERATE DEVIATION: `roundSeconds` and `speeds` above are not these numbers. They are the owner's 5 s round and 0/5/3.5/2.4/1.6/1/0.6 ramp, kept so a browser war lasts minutes rather than the original's two-hour campaign. The stand-in ordering (higher speed = shorter round) is contradicted by the original and is kept on purpose, pending a PM ruling; nothing outside this file treats it as recovered.",
-    "move": "cellsPerRound: STAND-IN, UNMEASURED for the per-kind numbers. Orderings only - tank > infantry and no more than 2x (p.9), ship > transport > infantry (p.21). MEASURED 2026-11-12 (T-008): the war room walks all 100 pieces in one pass and the pass rate is 7.37/s at speed 1, 12.25/s at speed 3 and 49.23/s at speed 6, with 0 steps at speed 0, so a unit under orders can advance at most one cell per pass - about 9.5, 15.8 and 63.7 cells in one 119.5 s round at speeds 1/3/6 before its per-kind budget (DS:0x6FE against DS:0x1976) throttles it. The per-kind split was NOT captured (no unit could be put under orders in the driven walk), so no per-kind number is sourced. The map's own path costs (DS:0x011C, docs/re/RULES.md section 1) are recovered facts and live in rules.mjs, not here."
+    "move": "cellsPerRound: STAND-IN, UNMEASURED for the per-kind numbers. Orderings only - tank > infantry and no more than 2x (p.9), ship > transport > infantry (p.21). MEASURED 2026-11-12 (T-008): the war room walks all 100 pieces in one pass and the pass rate is 7.37/s at speed 1, 12.25/s at speed 3 and 49.23/s at speed 6, with 0 steps at speed 0, so a unit under orders can advance at most one cell per pass - about 9.5, 15.8 and 63.7 cells in one 119.5 s round at speeds 1/3/6 before its per-kind budget (DS:0x6FE against DS:0x1976) throttles it. The per-kind split was NOT captured (no unit could be put under orders in the driven walk), so no per-kind number is sourced. The map's own path costs (DS:0x011C, docs/re/RULES.md section 2) are recovered facts and live in terrain.pathCost below (T-016), not in this block."
   },
   "resources": {
     "fuel": {

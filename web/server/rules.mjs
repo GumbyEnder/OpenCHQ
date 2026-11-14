@@ -132,25 +132,101 @@ export function cellsPerRound(piece) {
   return Number.isFinite(raw) && raw > 0 ? Math.max(1, Math.floor(raw)) : 1;
 }
 
-// Terrain ids that take longer than open ground. From the manual's slowed column, which the
-// successor follows: forest (9), mountain (10), jungle (12), polar (13).
+// --- terrain effects (T-016) ---------------------------------------------------------------
 //
-// T-004 removed shallows (2): it is water, and a land unit never walks on it - the walker boards a
-// transport and follows the lanes instead. Keeping it in this set charged a land pace for a cell
-// no land piece can stand on (DISPOSITIONS.md, "Terrain id 2").
-const SLOW = new Set([9, 10, 12, 13]);
-// Wasteland is a blast result and is refused by walkers.
-const REFUSED = 14;
-// Ocean and lake are transport, and use the same two-beat stand-in as slow ground.
-const TRANSPORT = new Set([0, 3]);
+// Every terrain table the server applies lives in config.terrain, tagged measured / disassembly /
+// unverified. Nothing here may carry a second copy of a number the config states: the ids are
+// derived from the terrain names the config lists, so a config edit moves the runtime and a name
+// the board does not know is dropped rather than silently treated as open ground.
+//
+// Ids are board.TERRAIN: 0 ocean, 1 docks, 2 shallows, 3 lake, 4 capital, 5 base, 6 city,
+// 7 oilfield, 8 plain, 9 forest, 10 mountain, 11 desert, 12 jungle, 13 polar, 14 wasteland.
+let terrainCache = null;
+let terrainCacheOf = null;
 
+function entryValue(entry) {
+  return entry && typeof entry === "object" && Object.hasOwn(entry, "value") ? entry.value : entry;
+}
+
+function idSet(names) {
+  const out = new Set();
+  for (const name of Array.isArray(names) ? names : []) {
+    const id = TERRAIN.indexOf(String(name));
+    if (id >= 0) out.add(id);
+  }
+  return out;
+}
+
+export function terrainTables() {
+  const cfg = rules();
+  if (terrainCache && terrainCacheOf === cfg) return terrainCache;
+  const block = cfg.terrain || {};
+  const cost = entryValue(block.pathCost) || {};
+  const costById = new Array(TERRAIN.length).fill(0);
+  for (const [name, value] of Object.entries(cost)) {
+    const id = TERRAIN.indexOf(String(name));
+    if (id >= 0) costById[id] = Number(value) || 0;
+  }
+  terrainCache = {
+    crawl: entryValue(block.crawlPace) || {},
+    slow: idSet(block.crawlPace && block.crawlPace.slow),
+    transport: idSet(block.crawlPace && block.crawlPace.transport),
+    refused: idSet(block.crawlPace && block.crawlPace.refused),
+    digIn: idSet(block.digIn && block.digIn.value),
+    cityLike: idSet(block.cover && block.cover.value && block.cover.value.cityLike),
+    mountain: idSet(block.cover && block.cover.value && block.cover.value.mountain),
+    costById,
+    costLimit: Number(block.pathCost && block.pathCost.limit) || 100,
+  };
+  terrainCacheOf = cfg;
+  return terrainCache;
+}
+
+export function terrainValue(key, fallback = null) {
+  const entry = (rules().terrain || {})[key];
+  const value = entryValue(entry);
+  return value === undefined || value === null ? fallback : value;
+}
+
+export function terrainTag(key) {
+  const entry = (rules().terrain || {})[key];
+  const tag = entry && typeof entry === "object" ? entry.tag : undefined;
+  return typeof tag === "string" ? tag : "";
+}
+
+export function terrainWired(key) {
+  const entry = (rules().terrain || {})[key];
+  return Boolean(entry && typeof entry === "object" && entry.wired === true);
+}
+
+// Terrain ids that take longer than open ground (config terrain.crawlPace.slow): forest, mountain,
+// jungle, polar. T-004 removed shallows (2): it is water, and a land unit never walks on it - the
+// walker boards a transport and follows the lanes instead.
+//
 // 1 open, 2 slow or transport, -1 refused. The ratio itself was never recovered and stays
-// unnamed; this is the archive's own two-beat stand-in.
+// unnamed; this is the archive's own two-beat stand-in (Q5).
 export function landPace(terrainId) {
   const id = Number(terrainId);
-  if (id === REFUSED) return -1;
-  if (SLOW.has(id) || TRANSPORT.has(id)) return 2;
-  return 1;
+  const tables = terrainTables();
+  if (tables.refused.has(id)) return Number(tables.crawl.refused) || -1;
+  if (tables.slow.has(id) || tables.transport.has(id)) return Number(tables.crawl.slow) || 2;
+  return Number(tables.crawl.open) || 1;
+}
+
+// The archive's path-cost byte for entering a terrain (DS:0x011C), and the sum that refuses a
+// class-3/4 route. Both are read from config.terrain.pathCost.
+export function pathCostFor(terrainId) {
+  const id = Number(terrainId);
+  return Number(terrainTables().costById[id]) || 0;
+}
+
+export function walkCostLimit() {
+  return terrainTables().costLimit;
+}
+
+// Terrains whose DS:0x1996 byte carries bit 0x20: infantry may dig in there (and only there).
+export function digInIds() {
+  return terrainTables().digIn;
 }
 
 export function terrainName(id) {
@@ -158,7 +234,7 @@ export function terrainName(id) {
 }
 
 export function isRefused(id) {
-  return Number(id) === REFUSED;
+  return terrainTables().refused.has(Number(id));
 }
 
 // Sea walker classes, recovered from the binary's path test.
