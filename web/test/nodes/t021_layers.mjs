@@ -17,12 +17,14 @@
 //   - a hull lands on the city cell instead of the water beside it -> the tie-break is gone
 //   - the unready coastal city loses its round                -> readiness stopped applying to ships
 
+import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { canPlace, friendlySites, layerOf, placementMask, siteLabel } from "../../server/placement.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { buy } from "../../server/economy.mjs";
 import { planOrder } from "../../server/move.mjs";
 import { sendMission, transferPlane, airBriefing } from "../../server/air.mjs";
-import { rules } from "../../server/rules.mjs";
+import { configPath, resetRules, rules } from "../../server/rules.mjs";
 
 export const name = "t021_layers";
 
@@ -140,9 +142,32 @@ export async function run(ctx) {
     eq("the plane rebased onto the base cell", [moved.piece.x, moved.piece.y], [60, 99]);
     eq("the tank is untouched", match.pieces.find((p) => p.id === "blue:tank:1").x, 60);
     // A transfer's round cost is config's air.transferRounds, tagged UNVERIFIED (Q50 sub-item):
-    // the manual names the sites, never a cost. Pin the value the config carries.
+    // the manual names the sites, never a cost. 0 is today's file value, so a check against it
+    // alone cannot tell "reads config" from "free transfer". Point config at a copy that charges
+    // 3 rounds and re-run: a module that hard-codes 0 (or a price) fails here.
     eq("a transfer costs config's transferRounds (UNVERIFIED)",
       Number(moved.piece.inactiveUntil) || 0, Number(rules().air.transferRounds));
+    {
+      const priced = JSON.parse(readFileSync(configPath(), "utf8"));
+      const configFile = path.join(ctx.dataDir, "game-transfer-cost.json");
+      priced.air = { ...priced.air, transferRounds: 3 };
+      writeFileSync(configFile, JSON.stringify(priced, null, 2));
+      const previous = process.env.OPENCHQ_CONFIG;
+      process.env.OPENCHQ_CONFIG = configFile;
+      resetRules();
+      try {
+        const probe = { id: "blue:aircraft:2", side: "blue", domain: "land", kind: "aircraft", x: 65, y: 99, strength: 20, maxStrength: 20 };
+        const pricedMatch = matchWith([CITY, INLAND, BASE], [probe]);
+        pricedMatch.round = 7;
+        const paid = transferPlane(pricedMatch, "blue", "blue:aircraft:2", { x: 60, y: 99 });
+        if (paid.error) fail("a priced transfer was refused: " + paid.error);
+        eq("a priced transfer charges the config rounds", Number(paid.piece.inactiveUntil), 10);
+      } finally {
+        if (previous === undefined) delete process.env.OPENCHQ_CONFIG;
+        else process.env.OPENCHQ_CONFIG = previous;
+        resetRules();
+      }
+    }
     // Enemy ground and open ground are refused.
     const enemyCity = { id: 4, name: "TheirTown", x: 100, y: 99, kind: "city", owner: "red" };
     match.sites.push({ owner: "red", ...enemyCity });
