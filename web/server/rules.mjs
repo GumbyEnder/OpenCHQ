@@ -320,6 +320,28 @@ export function readinessRules() {
   };
 }
 
+// The placement forgiveness values (T-017). The rule itself is a site kind (D-019, placement.mjs);
+// these two blocks only say how big the click target and the painted box are, so a page can be
+// forgiving without inventing a rule the original never had. Defaults live here only so a config
+// without the block still plays; the shipped values are in config/game.json.
+export function placementRules() {
+  const block = rules().placement || {};
+  const number = (value, fallback, min) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= min ? n : fallback;
+  };
+  const snap = block.snap || {};
+  const box = block.box || {};
+  return {
+    rule: String(block.rule || "friendly-site"),
+    snapPx: number(snap.px, 12, 0),
+    snapCells: Math.max(0, Math.floor(number(snap.cells, 2, 0))),
+    boxPx: number(box.px, 10, 0),
+    snapSource: typeof snap.source === "string" ? snap.source : "",
+    boxSource: typeof box.source === "string" ? box.source : "",
+  };
+}
+
 export function sightCells() {
   return Number(rules().sightCells);
 }

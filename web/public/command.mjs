@@ -64,6 +64,63 @@ function cell(value) {
   return { x: wrapX(x), y: Math.trunc(y) };
 }
 
+// ---- placement click forgiveness (T-017, PB-029) -------------------------------------------
+//
+// D-019 does not move: land and air go on a friendly city or base cell, ships on a friendly dock
+// cell. What moves is the CLICK TARGET. At the whole-world fit a cell is one pixel wide, so a
+// player aiming at a city square missed it by one pixel and the server, correctly, refused.
+//
+// The server sends the mask and the forgiveness it wants in the same placement payload
+// (`snap: {px, cells}`, `box: {px}`, from config.placement), so the page carries no copy of those
+// numbers. A click inside the radius snaps to the nearest legal cell - ready or unready, in the
+// domain the mask was built for, so a hull can still only find a dock and a land unit only a
+// city or base. A click outside the radius is NOT swallowed here: it is sent as the cell the
+// player actually clicked, and the server refuses it in its own words.
+
+// How far a click may miss and still count, in screen pixels. Two ways to say the same distance:
+// a flat pixel budget (what a hand and a mouse actually feel) and a cell count (what survives a
+// zoom change), and the wider of the two wins.
+export function snapRadiusPx(placement, view, override = null) {
+  const snap = override || (placement && placement.snap) || {};
+  const px = Number(snap.px);
+  const cells = Number(snap.cells);
+  const scale = Math.max(1, Number(view && view.scale) || 1);
+  const budget = Number.isFinite(px) ? px : 12;
+  const byCells = (Number.isFinite(cells) ? cells : 2) * scale;
+  return Math.max(budget, byCells);
+}
+
+// The nearest legal placement cell to `target`, or null when nothing is in range. Pure: the mask
+// comes from the server and the view from the canvas, so the answer is the one the page will use.
+export function snapPlacementCell(target, placement, view, override = null) {
+  const at = cell(target);
+  if (!at || !placement || !placement.mask || !view) return null;
+  const width = Number(placement.width) || 0;
+  const height = Number(placement.height) || 0;
+  if (width <= 0 || height <= 0) return null;
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const limit = snapRadiusPx(placement, view, override);
+  // Only the cells whose centre can be inside the radius need looking at. The radius is in
+  // screen pixels, so it is this many cells wide at this zoom, and x wraps across the seam.
+  const span = Math.ceil(limit / scale);
+  let best = null;
+  for (let dy = -span; dy <= span; dy++) {
+    const y = at.y + dy;
+    if (y < 0 || y >= height) continue;
+    for (let dx = -span; dx <= span; dx++) {
+      const x = wrapX(at.x + dx, width);
+      const value = placement.mask[y * width + x];
+      if (!value) continue;
+      const distance = Math.sqrt(dx * dx + dy * dy) * scale;
+      if (distance > limit + 1e-9) continue;
+      if (!best || distance < best.distance) {
+        best = { x, y, value, ready: value === 1, unready: value === 2, distance };
+      }
+    }
+  }
+  return best;
+}
+
 export function sameCell(a, b) {
   const one = cell(a);
   const two = cell(b);
