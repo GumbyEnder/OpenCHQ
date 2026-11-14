@@ -80,7 +80,8 @@ in its `source` line, tagged `disassembly`.
 **Not wired as the runtime rate.** These amounts are per *pass*, and passes per round are
 speed-dependent (measured ~10.6 wraps/round at s1 and ~62 at s6 in the Q6/Q5 logs). Wiring 3/pass as
 3/round would be a 6-60x rate change nobody gated. Runtime stays on `combat.attritionPerRound`, a
-labelled per-round stand-in, until the D-017 pacing ruling. `config.terrain.attritionPerPass.wired`
+labelled per-round stand-in, until the D-017 pacing ruling. The deferral is a filed decision row,
+**D-024** in `Decisions.md`, so it survives without this file being read. `config.terrain.attritionPerPass.wired`
 is `false` and the node test asserts it.
 
 ## 4. Defence cover — `FUN_194c_000e` (measured, wired in T-015)
@@ -137,8 +138,8 @@ one-cell water gap in lane routing) stays a deviation; T-016 does not reopen it.
 - **Q47 (new).** Shore fire: which clause wins for a 25-29 strength target, and whether the cap is a
   floor on damage or a floor on remaining strength. Disassembly only, no live leg; wired behind an
   explicit `disassembly` tag and reported as such.
-- **D-017.** Per-pass attrition cannot become a per-round rate while passes per round depend on
-  speed. Runtime stays on the labelled per-round stand-in.
+- **D-017 / D-024.** Per-pass attrition cannot become a per-round rate while passes per round depend
+  on speed. Runtime stays on the labelled per-round stand-in; the deferral is decision **D-024**.
 
 ## 9. Evidence
 
