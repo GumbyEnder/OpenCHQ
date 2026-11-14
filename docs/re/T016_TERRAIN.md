@@ -112,10 +112,11 @@ The two clauses overlap on a target at 25-30 strength, where `strength - 30` is 
 (at 30 the cap is `max(0, 0) = 0`). The implementation reads the halving clause as operative under 25
 and the cap as "a long shot cannot take a target below 30" otherwise, so **25-30 is an immunity
 band**. PM ruling 2026-11-14 (room 4572), interim: that reading is kept with no behaviour change and
-the label stays `disassembly`. frodo's cruiser probe at `eca1fa8` measures the arithmetic the
-implementation produces — s=20/24 → 6, s=25-30 → 0, s=31 → 1, s=45+ → 12 — but it runs the remake's
-code, it is not a live leg of the original. Q47 stays "ruled (interim), measure later"; the DOSBox
-leg is pending on an input path, not measured.
+the label stays `disassembly`. The cruiser pin at `00f78a2` (`web/test/nodes/t016_terrain.mjs`)
+asserts the arithmetic the implementation produces — s=20 and s=24 → 6 (halved), s=25-30 → 0,
+s=31 → 1, s=45+ → 12 — so every number in that row is a test assertion, not a probe readout. It runs
+the remake's code and is not a live leg of the original. Q47 stays "ruled (interim), measure later";
+the DOSBox leg is pending, not blocked: placement unverified (Q45, room 4615/4616).
 
 ## 6. Dig-in terrain bits — `DS:0x1996` bit `0x20` (disassembly)
 

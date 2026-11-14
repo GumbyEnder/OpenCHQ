@@ -236,9 +236,15 @@ export async function run(ctx) {
     eq(beyond.shoreFire, true, "a 6-cell sea shot did not take the shore-fire path");
     eq(beyond.amount, Math.min(beyond.covered, 100 - 30), "long shot did not cap at strength-30");
     eq(beyond.amount, 12, "a long shot at full strength is not the full covered damage");
-    const half = damageFor(ship(0), land(20, "wounded"));
-    eq(half.amount, half.covered / 2, "a shot at a 20-strength target was not halved");
-    eq(half.amount, 6, "the halved shot is not half of the cruiser base");
+    // The halving clause is pinned either side of its own edge: 20 is well under `halveBelow`,
+    // 24 is the last strength that still halves (12 -> 6). A pin on 20 alone leaves the doc's
+    // "s=20/24 -> 6" sentence quoting a probe instead of a test.
+    for (const s of [20, 24]) {
+      const half = damageFor(ship(0), land(s, "wounded" + s));
+      eq(half.shoreFire, true, `a shot at a ${s}-strength target did not take the shore-fire path`);
+      eq(half.amount, half.covered / 2, `a shot at a ${s}-strength target was not halved`);
+      eq(half.amount, 6, `the ${s}-strength shot is not half of the cruiser base`);
+    }
     // 25-30 is an immunity band, not a floor: at strength >= halveBelow (25) the cap branch wins
     // and max(0, strength - 30) is zero. Assert the band by number so a change to either clause
     // moves a value instead of emptying a comparison.
