@@ -16,6 +16,7 @@ const BASE = (arg("url", "") || "").replace(/\/+$/, "");
 const OUT = arg("out", "/mnt/nas/projects/OpenCHQ/local/t014-shots");
 const TAG = arg("tag", "live-ac7");
 const ERA = arg("era", "1942");
+const ZOOM = Number(arg("zoom", "2"));
 if (!BASE) { console.error("usage: node t014-ac7-wash-live.mjs --url=<base> --out=<dir> [--tag=live-ac7]"); process.exit(2); }
 
 async function loadPlaywright() {
@@ -117,16 +118,25 @@ async function main() {
   await page.waitForFunction(() => window.__chq.state().placement === true, null, { timeout: 15000, polling: 100 });
   // Let one full draw land, then measure and capture without touching the camera.
   await sleep(500);
+  // A leg that samples nothing has measured nothing: it must fail, never print as a pass.
+  const measure = (label, snap) => {
+    const hot = snap.filter((s) => s.changed > 12);
+    if (!snap.length) throw new Error(label + " sampled 0 legal cells — nothing was measured, so this is not a pass");
+    if (!hot.length) throw new Error(label + " sampled " + snap.length + " legal cells but none changed — the wash is not on screen");
+    return hot;
+  };
   const samples = await page.evaluate(SAMPLE_LEGAL);
-  const changed = samples.filter((s) => s.changed > 12);
+  const changed = measure("wash-fit", samples);
   const armedShot = await shot("wash-fit", "live, full-map fit, infantry armed: cyan ready wash over held city cells, unit badges still drawn");
 
   // Zoom while still armed; the mask repaints under the camera, so the same wash is measured again.
-  for (let i = 0; i < 4; i++) { await page.evaluate(() => document.getElementById("camIn").click()); await sleep(90); }
+  // Two steps, not four: four lands past the legal cells and the leg samples nothing (T-014a proof fix).
+  // --zoom=<n> exists so the 0-sample guard can be demonstrated: node ... --zoom=6 must exit 1.
+  for (let i = 0; i < ZOOM; i++) { await page.evaluate(() => document.getElementById("camIn").click()); await sleep(90); }
   await page.mouse.move(8, 8);
   await sleep(500);
   const zoomSamples = await page.evaluate(SAMPLE_LEGAL);
-  const zoomChanged = zoomSamples.filter((s) => s.changed > 12);
+  const zoomChanged = measure("wash-zoom", zoomSamples);
   const zoomShot = await shot("wash-zoom-armed", "live, close zoom, still armed: wash on the offered city cells with badges on the board");
 
   const summary = {

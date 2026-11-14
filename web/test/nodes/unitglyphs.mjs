@@ -67,6 +67,14 @@ export async function run(ctx) {
   if (!app.includes('op: "resign"')) fail("the page never sends a resign");
   if (!app.includes('op: "newgame"')) fail("the page never sends a new game");
   if (!app.includes('op: "quit"')) fail("the page never sends a quit");
-  if (!app.includes("badgeSvg")) fail("the buy table does not draw the unit badge");
-  if (app.includes("glyphDataUrl")) fail("the buy table still falls back to the five-cell glyph");
+  // The positive leg has to be read inside the Buy painter itself: `badgeSvg` is already true of the
+  // Kit legend, so a whole-file search still passes if the Buy icon is deleted outright.
+  const buyAt = app.indexOf("  buy(body) {");
+  if (buyAt < 0) fail("the dialog painters have no buy row");
+  const buyEnd = app.indexOf("\n  },", buyAt);
+  const buyBlock = app.slice(buyAt, buyEnd < 0 ? buyAt + 2600 : buyEnd);
+  if (!buyBlock.includes('"buybadge"')) fail("the buy row does not draw the buybadge span");
+  if (!buyBlock.includes("badgeSvg(")) fail("the buy table does not draw the unit badge");
+  if (buyBlock.includes("glyphDataUrl")) fail("the buy table still falls back to the five-cell glyph");
+  if (app.includes("glyphDataUrl")) fail("glyphDataUrl is still reachable from the page");
 }
