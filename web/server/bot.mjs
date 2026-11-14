@@ -242,6 +242,124 @@ export function marchOne(match, side, piece, capital, events) {
   events.push(note(side, piece.id, last));
 }
 
+// ---- capital defence (T-015 Part B) ---------------------------------------
+//
+// Ported from the two routines T-013 cited as missing. Both act on a SITE, not a piece:
+// `FUN_107e_0bd6 @ 107e:0bd6` (decompiled.c 1124-1302) walks the 84 sites in ascending order of
+// the site's score byte `0xea6e`, up to three actions a pass, and calls
+//   FUN_107e_1612 @ 107e:1612 (decompiled.c 1607-1657) — buy a defender AT the site, and
+//   FUN_107e_1750 @ 107e:1750 (decompiled.c 1661-1778) — send an existing land unit TO it.
+// `0xea6e` is rewritten every AI turn from `FUN_107e_0fa4(site,0,0)` (decompiled.c 112-114,
+// 1304-1602), the site's own threat score: every piece inside the site's radius adds strength/25,
+// positive when it belongs to the site's owner and negative when it does not (decompiled.c
+// 1487-1507, 1442-1465). A site of ours therefore scores negative when enemies near it outweigh its
+// friends, and the defence routines only fire on a negative score (decompiled.c 1190).
+const DEFEND_RADIUS_SITE = 15; // local_28 = 0xf, decompiled.c 1355-1356
+const DEFEND_RADIUS_OWN_CITY = 20; // local_28 = 0x14 when our site kind < 3, 1352-1353
+const DEFEND_RADIUS_CAPITAL = 25; // local_28 = 0x19 for the flagged site at 0xe47e, 1358-1359
+const DEFEND_REACH = 0x9c4; // local_18 starts at 2500 = 50 cells squared, decompiled.c 1687-1688
+const DEFEND_MIN = 8; // "8 < local_8": closer than 3 cells is already a fight, 1720
+const DEFEND_MIN_INFANTRY = 0x18; // and 0x18 for kind 3 (infantry), same line
+
+// Squared distance with X wrapping at the half-width, which is what the original's
+// calculate_distance @ 188b:0216 does (COMBAT.md section 1: dx*dx+dy*dy, X wraps at 0xa0).
+function squaredDistance(a, b) {
+  let dx = Math.abs(Number(a.x) - Number(b.x));
+  if (dx > CELL_W / 2) dx = CELL_W - dx;
+  const dy = Number(a.y) - Number(b.y);
+  return dx * dx + dy * dy;
+}
+
+function threatRadius(site) {
+  if (site.kind === "capital") return DEFEND_RADIUS_CAPITAL;
+  if (site.kind === "city" || site.kind === "base") return DEFEND_RADIUS_OWN_CITY;
+  return DEFEND_RADIUS_SITE;
+}
+
+// `FUN_107e_0fa4(site, 0, 0)` reduced to its return value: the signed weight of the pieces near a
+// site, relative to the site's owner. UNVERIFIED: the original also folds in each piece's distance
+// and its approach route (decompiled.c 1521-1560); this port keeps the sign and the radius, which
+// is what the two defence routines branch on.
+export function siteThreat(match, site) {
+  const limit = threatRadius(site) ** 2 + 1; // uVar5 = local_28*local_28 + 1, decompiled.c 1352
+  let score = 0;
+  for (const piece of match.pieces || []) {
+    if (!piece) continue;
+    const strength = Number(piece.strength);
+    if (!Number.isFinite(strength) || strength <= 0) continue;
+    if (squaredDistance(site, piece) >= limit) continue;
+    const weight = Math.floor(strength / 25); // strength / 0x19, decompiled.c 1501
+    score += piece.side === site.owner ? weight : -weight;
+  }
+  return score;
+}
+
+// The sites of ours the AI would act on this pass, most threatened first. Only a negative score
+// counts: the original gates both defence routines on `0xea6e < 0` (decompiled.c 1190).
+export function threatenedSites(match, side) {
+  const out = [];
+  for (const site of match.sites || []) {
+    if (!site || site.owner !== side) continue;
+    const threat = siteThreat(match, site);
+    if (threat < 0) out.push({ site, threat });
+  }
+  out.sort((a, b) => a.threat - b.threat);
+  return out;
+}
+
+// Send one unit to the most threatened site: nearest idle land unit between 3 and 50 cells away
+// (decompiled.c 1727-1728 picks the smallest adjusted distance and rejects anything beyond 2500
+// or closer than 9 squared). The original issues one order per pass and marks the site defended.
+// A site cell its own garrison already stands on refuses the order, so the fallback is the nearest
+// free neighbour — a bot decision, not a combat rule.
+export function defendSites(match, side, events, threatened = null) {
+  const claimed = new Set();
+  const rows = threatened || threatenedSites(match, side);
+  if (rows.length === 0) return claimed;
+  const { site } = rows[0];
+
+  const candidates = (match.pieces || [])
+    .filter((piece) => piece && piece.side === side && piece.domain === "land" &&
+      !hasPath(piece) && Number(piece.strength) > 0)
+    .map((piece) => ({ piece, d2: squaredDistance(piece, site) }))
+    // `8 < local_8`, and `0x18 < local_8` for kind 3 (infantry) — decompiled.c 1720.
+    .filter((row) => row.d2 > (row.piece.kind === "infantry" ? DEFEND_MIN_INFANTRY : DEFEND_MIN) &&
+      row.d2 <= DEFEND_REACH)
+    .sort((a, b) => a.d2 - b.d2);
+  if (candidates.length === 0) return claimed;
+
+  const targets = [{ x: site.x, y: site.y }];
+  for (let oy = -1; oy <= 1; oy++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      if (ox === 0 && oy === 0) continue;
+      const y = Number(site.y) + oy;
+      if (y < 0 || y >= CELL_H) continue;
+      targets.push({ x: wrapX(Number(site.x) + ox), y });
+    }
+  }
+
+  for (const { piece, d2 } of candidates) {
+    for (const target of targets) {
+      let result;
+      try {
+        result = issueOrder(match, side, piece.id, target.x, target.y);
+      } catch (err) {
+        continue;
+      }
+      if (result && result.ok && Array.isArray(result.path) && result.path.length > 0) {
+        events.push({
+          type: "bot_defend", side, pieceId: piece.id, site: site.id ?? site.name ?? null,
+          threat: rows[0].threat, distance: Math.round(Math.sqrt(d2)),
+          to: target, path: result.path,
+        });
+        claimed.add(piece.id);
+        return claimed;
+      }
+    }
+  }
+  return claimed;
+}
+
 // A bot that only ever moves its opening two pieces is a bot a reviewer cannot see acting, and
 // it can never press an advantage. It buys when it can afford to, up to this many pieces, and
 // every purchase is reported as a bot_buy event so the server log and the owner's debug view
@@ -251,7 +369,7 @@ export function marchOne(match, side, piece, capital, events) {
 // the bot buying forever (T-013b).
 const BOT_UNIT_CAP = 6;
 
-function botBuy(match, side, events) {
+function botBuy(match, side, events, urgentSite = null) {
   const seat = match.sides && match.sides[side];
   if (!seat) return;
   if (Number(seat.bought || 0) >= BOT_UNIT_CAP) return;
@@ -281,7 +399,10 @@ function botBuy(match, side, events) {
   // Prefer a cell near a site this side holds, so the new unit joins the war rather than
   // appearing in a corner. Mask byte 1 is a ready city or base; 2 is a friendly site that is
   // still unready, and a bot obeys the same readiness rule as the player (T-011 AC6).
-  const sites = (match.sites || []).filter((site) => site && site.owner === side);
+  // When a site of ours is under threat, the original buys AT that site instead
+  // (FUN_107e_1612, decompiled.c 1644-1657), so the threatened site is the anchor.
+  const sites = urgentSite ? [urgentSite]
+    : (match.sites || []).filter((site) => site && site.owner === side);
   let target = null;
   let best = Infinity;
   for (let id = 0; id < mask.mask.length; id++) {
@@ -328,8 +449,13 @@ export function ordersFor(match, side) {
   if (!capital || !Number.isInteger(capital.x) || !Number.isInteger(capital.y)) return events;
 
   const mine = match.pieces.filter((piece) => piece && piece.side === side);
-  // Reinforce first, so a unit bought this round can march this round.
-  botBuy(match, side, events);
+  // A site of ours under attack is answered before the march, and answered by a unit the march
+  // then leaves alone (that is what the original's per-site pass does: 0bd6, decompiled.c 1186-1213).
+  const threatened = threatenedSites(match, side);
+  // Reinforce first, so a unit bought this round can march this round. The buy goes to the
+  // threatened site when there is one (FUN_107e_1612).
+  botBuy(match, side, events, threatened.length ? threatened[0].site : null);
+  const claimed = defendSites(match, side, events, threatened);
   // One focus for the whole army: a weak point of the enemy line once there is contact, the
   // capital until then.
   const focus = focusTarget(match, side, foe, capital);
@@ -339,6 +465,7 @@ export function ordersFor(match, side) {
   for (const piece of mine) {
     if (piece.domain !== "land") continue;
     if (hasPath(piece)) continue;
+    if (claimed.has(piece.id)) continue;
     marchOne(match, side, piece, focus, events);
   }
 
