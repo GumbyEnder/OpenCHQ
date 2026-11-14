@@ -17,6 +17,7 @@
 //
 // --gate=none  buys only, no phase gate (kept for the control leg: the same policy without the
 //              pause-before-attack step).
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -55,7 +56,24 @@ async function loadPlaywright() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rows = [];
-const summary = { base: BASE, era: ERA, speed: WANT_SPEED, gate: GATE, startedAt: new Date().toISOString() };
+// The harness is policy, not game code, so the build stamp is identical before and after a policy
+// change: name the commit the policy itself came from, or a pre-fix and a post-fix artifact cannot
+// be told apart.
+const gitOut = (args) => {
+  try {
+    return execFileSync("git", args, { cwd: here, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+};
+const summary = {
+  base: BASE,
+  era: ERA,
+  speed: WANT_SPEED,
+  gate: GATE,
+  startedAt: new Date().toISOString(),
+  policy: { branch: gitOut(["rev-parse", "--abbrev-ref", "HEAD"]) || null, sha: gitOut(["rev-parse", "HEAD"]) || null },
+};
 function mark(ok, label, detail = "") {
   rows.push({ ok: Boolean(ok), label, detail });
   console.log((ok ? "PASS " : "FAIL ") + label + (detail ? " — " + (typeof detail === "string" ? detail : JSON.stringify(detail)) : ""));
@@ -65,6 +83,27 @@ const { chromium } = await loadPlaywright();
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
 const page = await context.newPage();
+// Observer, not a stub: every frame the page's own socket receives is kept, so a refusal can be
+// quoted in the server's words. #boardNote cannot be that source - it is shared with the alarms,
+// and "2 transports are crossing unscreened." is not a refusal of anything.
+await page.addInitScript(() => {
+  window.__chqWire = [];
+  const Native = window.WebSocket;
+  if (!Native) return;
+  function Tapped(url, protocols) {
+    const ws = protocols === undefined ? new Native(url) : new Native(url, protocols);
+    ws.addEventListener("message", (event) => {
+      try {
+        window.__chqWire.push(JSON.parse(String(event.data)));
+        if (window.__chqWire.length > 400) window.__chqWire.shift();
+      } catch { /* a non-JSON frame is not a reply */ }
+    });
+    return ws;
+  }
+  Tapped.prototype = Native.prototype;
+  for (const key of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) Tapped[key] = Native[key];
+  window.WebSocket = Tapped;
+});
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 
@@ -113,20 +152,38 @@ async function setSpeed(want) {
   const read = await page.evaluate(() => (document.querySelector("#speedReadout") || {}).textContent || "");
   return { shown: read.trim(), speed: Number((await room()).speed) };
 }
+// Two different failures were being recorded as one. A piece we could not even select (stale view,
+// click landed on nothing) is "not-attempted": nothing was asked of the server, so the next pass may
+// try again. A piece whose order the server refused is "refused": the ground is the answer, and
+// asking again every three rounds for a thousand rounds only hides it behind a retry count. Only a
+// refusal is a fact worth staying recorded; only the server's own sentence counts as one.
+const wireLen = () => page.evaluate(() => (window.__chqWire || []).length);
+const wireSince = (from) => page.evaluate((n) => (window.__chqWire || []).slice(n), from);
 async function orderTo(pieceId, cell) {
   const cur = await room();
   const me = (cur.pieces || []).find((p) => p.id === pieceId);
-  if (!me) return { ok: false, why: "piece not in the view" };
+  if (!me) return { ok: false, kind: "not-attempted", why: "piece not in the view", note: "", path: 0 };
   await clickCell({ x: me.x, y: me.y });
   await page.waitForFunction(() => window.__chq.state().selected !== null, null, { timeout: 6000 }).catch(() => {});
   const selected = await page.evaluate(() => window.__chq.state().selected);
-  if (String(selected) !== String(pieceId)) return { ok: false, why: "not selected" };
+  if (String(selected) !== String(pieceId)) return { ok: false, kind: "not-attempted", why: "not selected", note: "", path: 0 };
+  const marker = await wireLen();
   const pt = await page.evaluate(({ x, y }) => window.__chq.cellToScreen(x, y), cell);
   await page.mouse.move(pt.x, pt.y);
-  await sleep(250);
+  await sleep(450);
   // The note area is shared: an alarm ("A transport is crossing unscreened.") can hold it instead of
-  // the route preview, so the order is verified by the server's own path, not by the preview text.
+  // the route preview, so the order is read off the server's own frames, not off #boardNote.
   const note = await page.evaluate(() => (document.querySelector("#boardNote") || {}).textContent || "");
+  const frames = await wireSince(marker);
+  // Hovering asks the server the same planOrder the order would use, so its refusal is the order's
+  // refusal, quoted - not a guess prefixed "no route".
+  const preview = frames
+    .filter((m) => m && m.op === "route" && String(m.piece) === String(pieceId))
+    .filter((m) => m.to && Number(m.to.x) === Number(cell.x) && Number(m.to.y) === Number(cell.y))
+    .pop() || null;
+  if (preview && preview.error) {
+    return { ok: false, kind: "refused", why: String(preview.error), note: note.slice(0, 120), path: 0 };
+  }
   await clickCell(cell);
   await page
     .waitForFunction(
@@ -142,7 +199,18 @@ async function orderTo(pieceId, cell) {
   const after = await room();
   const piece = (after.pieces || []).find((p) => p.id === pieceId);
   const moved = Boolean(piece && Array.isArray(piece.path) && piece.path.length > 0);
-  return { ok: moved, note: note.slice(0, 120), path: piece ? piece.path.length : 0 };
+  if (moved) return { ok: true, kind: "ordered", why: "", note: note.slice(0, 120), path: piece.path.length };
+  const refused = (await wireSince(marker)).find((m) => m && m.op === "error" && m.error);
+  if (refused) return { ok: false, kind: "refused", why: String(refused.error), note: note.slice(0, 120), path: 0 };
+  // Nothing was asked and nothing answered: the click did not become an order. Not the ground's
+  // fault, so it is retried rather than retired.
+  return {
+    ok: false,
+    kind: "not-attempted",
+    why: preview ? "order sent, no path and no refusal" : "no preview and no path",
+    note: note.slice(0, 120),
+    path: 0,
+  };
 }
 // Buy one unit as near as the server's own mask allows, but never on a cell the target could be
 // captured from at distance 0..3, and never on an enemy-held site: the point is a march, not a
@@ -179,7 +247,15 @@ async function buyNear(kind, target, standoff = 4) {
   if (!placed) { await page.keyboard.press("Escape").catch(() => {}); return null; }
   await page.waitForFunction((n) => window.__chq.room().pieces.some((p) => !n.includes(p.id)), [...had], { timeout: 15000 }).catch(() => {});
   const after = await room();
-  return (after.pieces || []).find((p) => !had.has(p.id)) || null;
+  const fresh = (after.pieces || []).filter((p) => !had.has(p.id));
+  // The bot buys in the same rounds we do, so the first new piece on the board is not necessarily
+  // the one this harness paid for. Recording a red piece as an attacker for a red capital is a false
+  // reading in exactly the field the "unbeatable" diagnosis leans on, so only our own piece counts.
+  const mine = fresh.find((p) => p.side === cur.you) || null;
+  if (fresh.length && !mine) {
+    console.log("buy near " + target.name + ": new piece " + fresh[0].id + " is " + fresh[0].side + ", not ours; not recorded");
+  }
+  return mine;
 }
 
 const t0 = Date.now();
@@ -446,7 +522,7 @@ try {
     for (const piece of mine) {
       const nearest = [...foeCaps].sort((a, b) => dist(piece, a) - dist(piece, b))[0];
       const res = await orderTo(piece.id, { x: nearest.x, y: nearest.y });
-      console.log("order " + piece.id + " -> " + nearest.name + ": " + (res.ok ? "ok" : res.why));
+      console.log("order " + piece.id + " -> " + nearest.name + ": " + (res.ok ? "ok" : res.kind + " (" + res.why + ")"));
     }
     mark(await clockIs("running"), "clock running for the attack");
   }
@@ -527,18 +603,20 @@ try {
       if (reds.length) {
         const idle = (now.pieces || []).filter((p) => p.side === you && p.domain === "land" && !(p.path || []).length && !p.fighting);
         for (const piece of idle.slice(0, 2)) {
-          // A refused order is a fact about the ground, not a transient: a land piece in Europe
-          // cannot reach Tokyo at path cost 100 (the manual's march limit), so re-trying it every
-          // three rounds for a thousand rounds only hides that. Name it and move on.
-          if (unreachable.has(piece.id)) continue;
+          // Only a refusal retires a piece. "The ground on that line costs more than a march" is a
+          // fact about the map and stays recorded; a piece we failed to select is not, and comes
+          // back on the next pass instead of sitting out the rest of the budget.
+          const known = unreachable.get(piece.id);
+          if (known && known.kind === "refused") continue;
           const nearest = [...reds].sort((a, b) => dist(piece, a) - dist(piece, b))[0];
           const res = await orderTo(piece.id, { x: nearest.x, y: nearest.y });
-          if (!res.ok && !res.path) {
-            unreachable.set(piece.id, res.note || "no route");
-            console.log("re-order " + piece.id + " -> " + nearest.name + ": NO ROUTE (" + (res.note || "no note") + ")");
-          } else {
-            console.log("re-order " + piece.id + " -> " + nearest.name + ": " + (res.ok ? "path " + res.path : res.why));
+          if (res.ok) {
+            unreachable.delete(piece.id);
+            console.log("re-order " + piece.id + " -> " + nearest.name + ": path " + res.path);
+            continue;
           }
+          unreachable.set(piece.id, { kind: res.kind, why: res.why, to: nearest.name, round: Number(now.round) });
+          console.log("re-order " + piece.id + " -> " + nearest.name + ": " + res.kind.toUpperCase() + " (" + res.why + ")");
         }
         for (const cap of foeCaps) {
           if (reds.some((s) => s.name === cap.name) && !tanks[cap.name]) {
@@ -560,7 +638,7 @@ try {
   summary.cap = CAP || null;
   summary.capped = capped;
   summary.stall = stall || null;
-  summary.unreachable = [...unreachable.entries()].map(([piece, why]) => ({ piece, why }));
+  summary.unreachable = [...unreachable.entries()].map(([piece, v]) => ({ piece, kind: v.kind, why: v.why, to: v.to, round: v.round }));
   summary.endRound = final ? final.round : null;
   summary.cadence = cadenceRate();
   summary.cadenceSamples = cadence.length;
