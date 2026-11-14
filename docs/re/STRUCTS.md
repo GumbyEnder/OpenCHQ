@@ -114,7 +114,9 @@
 - `0x906` (`unit_status`, row below) and the unit tables in `SYSTEMS.md`/`MOVEMENT.md`/`COMBAT.md` still say bits 6:5. That is **unverified, not corrected** — this note covers the site byte only.
   - *Superseded 2026-11-14:* the `0x906` half is now measured (T-008, closed in §19) and the row
     below reads bits 7:6 owner / bits 3:0 kind; the record header no longer carries the UNVERIFIED
-    tag (D-026 landing of `323e5e7`). The sentences above about `SYSTEMS.md`/`MOVEMENT.md`/
+    tag (landed from `323e5e7` under the PM's content approval of 2026-11-14 13:35, Review Log;
+    docs-only, no deploy, under frodo's docs read). The sentences above about
+    `SYSTEMS.md`/`MOVEMENT.md`/
     `COMBAT.md` are kept as the 2026-11-11 wording they were written under.
 
 **Known site types** (from strings): `capital`, `city`, `oilfield`, `docks`, `base`, `ocean`, `plain`, `forest`, `mountain`, `desert`, `jungle`, `polar`, `wasteland`.
