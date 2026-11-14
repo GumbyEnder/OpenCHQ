@@ -239,20 +239,30 @@ export async function run(ctx) {
     // The halving clause is pinned either side of its own edge: 20 is well under `halveBelow`,
     // 24 is the last strength that still halves (12 -> 6). A pin on 20 alone leaves the doc's
     // "s=20/24 -> 6" sentence quoting a probe instead of a test.
+    const halved = [];
     for (const s of [20, 24]) {
+      halved.push(s);
       const half = damageFor(ship(0), land(s, "wounded" + s));
       eq(half.shoreFire, true, `a shot at a ${s}-strength target did not take the shore-fire path`);
       eq(half.amount, half.covered / 2, `a shot at a ${s}-strength target was not halved`);
       eq(half.amount, 6, `the ${s}-strength shot is not half of the cruiser base`);
     }
+    // The rows above bite one at a time, but an emptied or trimmed `of [...]` list leaves the
+    // suite green: deleting an assertion is invisible to the assertions that survive it. So the
+    // loop records the strengths it actually visited and the record is compared to the literal
+    // row set (PM ruling, room 4723). An empty loop now lands here instead of passing silently.
+    eq(halved.join(","), "20,24", "the halving loop did not exercise the row set 20,24");
     // 25-30 is an immunity band, not a floor: at strength >= halveBelow (25) the cap branch wins
     // and max(0, strength - 30) is zero. Assert the band by number so a change to either clause
     // moves a value instead of emptying a comparison.
+    const bandRows = [];
     for (const s of [25, 26, 27, 28, 29, 30]) {
+      bandRows.push(s);
       const band = damageFor(ship(0), land(s, "band" + s));
       eq(band.shoreFire, true, `a shot at a ${s}-strength target did not take the shore-fire path`);
       eq(band.amount, 0, `a ${s}-strength target took ${band.amount} shore fire; 25-30 is an immunity band`);
     }
+    eq(bandRows.join(","), "25,26,27,28,29,30", "the immunity loop did not exercise the six rows 25-30");
     const just = damageFor(ship(0), land(31, "just"));
     eq(just.amount, 1, "a 31-strength target did not take exactly strength-30");
     const healthy = damageFor(ship(0), land(45, "healthy"));
