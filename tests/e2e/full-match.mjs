@@ -37,6 +37,12 @@ const GATE = arg("gate", "contact");
 // and nothing is ever ordered at a capital - no phase-2 attack, no phase-3 re-order.
 const NO_ORDERS = process.argv.includes("--no-orders");
 const MAX_MS = Number(arg("budget", "900000")) || 900000;
+// --cap=<round>: stop the leg at this round even if nobody has won. T-015 AC4 compares two legs
+// over the same round cap, so "none by cap" is a data point, not a failure; the leg only fails if
+// the server stops advancing rounds while the clock says running (a stall), which is dumped.
+const CAP = Number(arg("cap", "0")) || 0;
+// A round at speed 6 is ~0.6 s; a minute without the round counter moving is not slow play.
+const STALL_MS = Number(arg("stall-ms", "45000")) || 45000;
 const OUT = path.join(here, "t010-full-match-" + ERA + "-s" + WANT_SPEED + "-" + new Date().toISOString().replace(/[:.]/g, "-"));
 
 async function loadPlaywright() {
@@ -182,6 +188,26 @@ const timeline = { firstContact: null, firstCapture: null, end: null };
 // that cell when it was first seen. This is what a capture looks like from outside: the room view
 // carries owners, not events, so the poll interval is the resolution of the "how".
 const TRACE = process.argv.includes("--trace");
+// Cadence, measured, not assumed: (round, clock) at each poll, so the leg can say what the server
+// actually ran at (rounds per running wall second) instead of what config/game.json would imply.
+const cadence = [];
+function cadenceStep(now) {
+  if (!now) return;
+  const last = cadence[cadence.length - 1];
+  if (last && last.round === now.round && last.clock === now.clock) return;
+  cadence.push({ t: Date.now(), round: Number(now.round), clock: now.clock });
+}
+function cadenceRate() {
+  let rounds = 0, ms = 0;
+  for (let i = 1; i < cadence.length; i++) {
+    const a = cadence[i - 1], b = cadence[i];
+    if (a.clock !== "running" || b.clock !== "running") continue;
+    const dr = b.round - a.round;
+    if (dr <= 0) continue;
+    rounds += dr; ms += b.t - a.t;
+  }
+  return ms > 0 ? { rounds, ms, roundsPerSecond: Number((rounds / (ms / 1000)).toFixed(3)), secondsPerRound: Number((ms / 1000 / rounds).toFixed(3)) } : null;
+}
 const ownerTrace = new Map();
 const traceLog = [];
 function traceStep(now) {
@@ -208,6 +234,72 @@ function traceStep(now) {
   }
 }
 let endShot = null, captureShot = null;
+
+// ---- the stall guard -------------------------------------------------------
+// Two different things look the same from outside: a match nobody can win (rounds keep coming,
+// no capital changes hands) and a server that has stopped running rounds (the counter freezes
+// while the clock still says running). Only the second is a defect. The guard separates them by
+// watching the round counter, and on a freeze it dumps what the server itself holds - not only
+// what the seat is allowed to see - so the cause can be read after the fact.
+let capped = false;
+let stall = null;
+let watchRound = null;
+let watchAt = Date.now();
+function guard(now) {
+  if (!now) return null;
+  if (CAP && Number(now.round) >= CAP) return "cap";
+  if (now.over) return null;
+  const round = Number(now.round);
+  if (round !== watchRound) {
+    watchRound = round;
+    watchAt = Date.now();
+    return null;
+  }
+  // A held clock is not a stall: the player paused it.
+  if (now.clock !== "running") {
+    watchAt = Date.now();
+    return null;
+  }
+  return Date.now() - watchAt >= STALL_MS ? "stall" : null;
+}
+function serverState(now) {
+  return {
+    round: now ? now.round : null,
+    clock: now ? now.clock : null,
+    over: now ? now.over : null,
+    pieces: (now && now.pieces || []).map((p) => ({
+      id: p.id, side: p.side, domain: p.domain, kind: p.kind, x: p.x, y: p.y,
+      path: Array.isArray(p.path) ? p.path.length : 0,
+      fighting: p.fighting ?? null, shots: p.shots ?? 0,
+      strength: p.strength, entrenched: Boolean(p.entrenched), pinned: Boolean(p.pinned),
+    })),
+    capitals: now ? now.capitalList : null,
+  };
+}
+async function dumpStall(now, phase) {
+  const id = summary.room;
+  const raw = id
+    ? await page.evaluate((rid) => fetch("/api/debug/room?id=" + encodeURIComponent(rid))
+        .then((r) => (r.ok ? r.json() : { status: r.status, note: "no debug endpoint on this host" }))
+        .catch((e) => ({ error: String(e) })), id).catch(() => null)
+    : null;
+  let shotPath = null;
+  try { shotPath = await shot("06-stall-" + phase + "-r" + (now && now.round) + ".png"); } catch { /* the dump matters more */ }
+  const payload = {
+    at: new Date().toISOString(),
+    phase,
+    wallMs: Date.now() - timeline.playAt,
+    stallMs: STALL_MS,
+    client: serverState(now),
+    server: raw,
+    screenshot: shotPath,
+  };
+  writeFileSync(path.join(OUT, "stall-" + phase + ".json"), JSON.stringify(payload, null, 2));
+  summary.stall = payload;
+  console.log("STALL " + JSON.stringify({ phase, round: payload.client.round, clock: payload.client.clock, pieces: payload.client.pieces.length }));
+  return payload;
+}
+
 
 try {
   mkdirSync(OUT, { recursive: true });
@@ -304,10 +396,15 @@ try {
   const deadline = Date.now() + MAX_MS;
   let contact = false;
   let lastBuyTry = 0;
+  let lastBuyRound = null;
   while (Date.now() < deadline && !contact) {
     const now = await room();
     if (!now) break;
     if (now.over) break;
+    const g = guard(now);
+    if (g === "cap") { capped = true; break; }
+    if (g === "stall") { stall = await dumpStall(now, "contact"); break; }
+    cadenceStep(now);
     traceStep(now);
     // --trace also names where the seat's own pieces stand each poll: a capture is attributed to
     // the pieces the poll finds on the cell, and at speed 6 the poll can be a round late, so the
@@ -315,10 +412,11 @@ try {
     if (TRACE) console.log("PIECES " + JSON.stringify((now.pieces || []).filter((p) => p.side === you).map((p) => [p.id, p.x, p.y, p.kind])));
     contact = (now.pieces || []).some((p) => p.side === you && p.fighting);
     if (!contact) {
-      // keep one attacker per capital available while we wait - at most once every 4 s, and only
+      // keep one attacker per capital available while we wait - at most once every 4 ROUNDS (a
+      // wall-clock retry fired ~7x more often per round at speed 1 than at speed 6), and only
       // for a capital that has no attacker yet
-      if (Date.now() - lastBuyTry > 4000) {
-        lastBuyTry = Date.now();
+      if (lastBuyRound === null || Number(now.round) - lastBuyRound >= 4) {
+        lastBuyRound = Number(now.round);
         for (const cap of foeCaps) {
           if (tanks[cap.name]) continue;
           const unit = await buyNear("tank", cap, 4);
@@ -334,7 +432,7 @@ try {
   await shot("02-first-contact.png");
 
   // ---- phase 2: take the capitals -----------------------------------------
-  if (GATE === "contact" && !NO_ORDERS) {
+  if (GATE === "contact" && !NO_ORDERS && !capped && !stall) {
     await clockIs("held");
     for (const cap of foeCaps) {
       if (!tanks[cap.name]) {
@@ -368,10 +466,18 @@ try {
   // The capture is read off the room's own site owners, not off a log line: the capital rows are in
   // the seat view, so a capital that flips to us is the fact the win check just read.
   const owners = new Map((await room()).sites.filter((s) => Number(s.type) === 1 || Number(s.type) === 2).map((s) => [s.name, s.owner]));
-  let ticks = 0;
-  while (Date.now() < deadline) {
+  // The re-task cadence is the ROUND, not the poll. The poll interval is wall clock, so a
+  // tick-based cadence re-tasked roughly eight times more often per round at speed 1 than at
+  // speed 6: the two speeds were playing different matches instead of one match at two paces,
+  // and the s1 leg could stall the march by re-pointing every piece before it had walked.
+  let lastRetaskRound = null;
+  while (!capped && !stall && Date.now() < deadline) {
     const now = await room();
     if (!now) break;
+    const g = guard(now);
+    if (g === "cap") { capped = true; break; }
+    if (g === "stall") { stall = await dumpStall(now, "attack"); break; }
+    cadenceStep(now);
     traceStep(now);
     if (TRACE) console.log("PIECES " + now.round + " " + JSON.stringify((now.pieces || []).filter((p) => p.side === you).map((p) => [p.id, p.x, p.y, p.kind])));
     for (const site of now.sites || []) {
@@ -403,8 +509,8 @@ try {
       break;
     }
     // retry buys while income arrives, and re-order an idle piece whose capital is still red
-    ticks += 1;
-    if (!NO_ORDERS && ticks % 12 === 0) {
+    if (!NO_ORDERS && (lastRetaskRound === null || Number(now.round) - lastRetaskRound >= 3)) {
+      lastRetaskRound = Number(now.round);
       const reds = (now.sites || []).filter((s) => (Number(s.type) === 1 || Number(s.type) === 2) && s.owner !== you);
       if (reds.length) {
         const idle = (now.pieces || []).filter((p) => p.side === you && p.domain === "land" && !(p.path || []).length && !p.fighting);
@@ -430,8 +536,54 @@ try {
   summary.winner = final && final.winner;
   summary.trace = traceLog;
   summary.wallMs = Date.now() - t0;
-  mark(Boolean(timeline.firstCapture), "a city capture happened", { round: timeline.firstCapture, site: timeline.captureSite });
-  mark(Boolean(final && final.over), "the match reached a game end", { round: final && final.round, winner: final && final.winner, capitalOwners: summary.captures });
+  summary.cap = CAP || null;
+  summary.capped = capped;
+  summary.stall = stall || null;
+  summary.endRound = final ? final.round : null;
+  summary.cadence = cadenceRate();
+  summary.cadenceSamples = cadence.length;
+
+  // --- the before/after comparison, in the shape AC4 asks for -----------------
+  // First contact round, every capital that changed hands and when, and the holder of each
+  // capital after each change: the same three readings taken on both legs.
+  const isCapital = (e) => Number(e.type) === 1 || Number(e.type) === 2;
+  summary.capitalTimeline = traceLog.filter(isCapital)
+    .map((e) => ({ round: e.round, name: e.name, from: e.from, to: e.to, by: e.by }));
+  summary.captureRounds = summary.capitalTimeline.filter((e) => e.to === you);
+  const start = (summary.capitalSet || []).map((c) => ({ name: c.name, owner: c.owner }));
+  const ownersAt = new Map(start.map((c) => [c.name, c.owner]));
+  const series = [];
+  const countOwners = (round) => {
+    const tally = { blue: 0, red: 0, null: 0 };
+    for (const c of start) tally[ownersAt.get(c.name) ?? "null"] = (tally[ownersAt.get(c.name) ?? "null"] || 0) + 1;
+    series.push({ round, ...tally, holders: start.map((c) => `${c.name}:${ownersAt.get(c.name) ?? "none"}`) });
+  };
+  countOwners(0);
+  for (const e of summary.capitalTimeline) {
+    if (!ownersAt.has(e.name)) continue;
+    ownersAt.set(e.name, e.to);
+    countOwners(e.round);
+  }
+  summary.capitalHoldSeries = series;
+  summary.firstContactRound = timeline.firstContact;
+  summary.capturesByRound = summary.captureRounds.map((e) => `${e.name}@r${e.round}`);
+
+  if (stall) {
+    mark(false, "rounds kept advancing (no stall)", {
+      round: stall.client.round, clock: stall.client.clock, dump: path.join(OUT, "stall-" + stall.phase + ".json"),
+    });
+  } else {
+    mark(true, "rounds kept advancing (no stall)", { round: summary.endRound, capped, cap: CAP || null });
+  }
+  if (capped) {
+    // A cap is a data point: the same cap on both legs is the comparison. "none by cap" is a
+    // reading, not a failure, and the leg is only red if the clock froze (the stall row above).
+    mark(true, "the leg ran to the round cap",
+      { cap: CAP, round: summary.endRound, winner: summary.winner || "none by cap", captures: summary.capturesByRound });
+  } else {
+    mark(Boolean(timeline.firstCapture), "a city capture happened", { round: timeline.firstCapture, site: timeline.captureSite });
+    mark(Boolean(final && final.over), "the match reached a game end", { round: final && final.round, winner: final && final.winner, capitalOwners: summary.captures });
+  }
   mark(errors.length === 0, "no page error during the match", errors.slice(0, 3));
   // T-012: when the match ended by capitals, the live page must name the capital that fell last,
   // and that name must be the last capital transition the trace recorded.
