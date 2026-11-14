@@ -10,13 +10,14 @@
 // The duel legs need the board extract; on a host without it they skip, the way every other
 // board-dependent node here does.
 
-import { boardPayload, matchSites } from "../../server/board.mjs";
+import { boardPayload, matchSites, TERRAIN, CELL_W } from "../../server/board.mjs";
+import { baseDamageFor, damageFor } from "../../server/combat.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { tickMatch } from "../../server/tick.mjs";
 import { issueOrder } from "../../server/move.mjs";
 import { seedOwners } from "../../server/economy.mjs";
 import { holderOf } from "../../server/capitals.mjs";
-import { ordersFor, siteThreat, threatenedSites } from "../../server/bot.mjs";
+import { holdsOwnCapital, ordersFor, siteThreat, threatenedSites } from "../../server/bot.mjs";
 
 export const name = "t015_capital";
 
@@ -180,6 +181,110 @@ export async function run(ctx) {
     }
     const calmEvents = ordersFor(calm, "blue").filter((e) => e.type === "bot_defend");
     if (calmEvents.length !== 0) say("the bot defended a capital nobody threatens", calmEvents);
+  }
+
+  // ---- 3b. the capital's own garrison does not march off it -----------------------------------
+  // Measured on 37b7537 and on this branch before the rule: red's Paris garrison left the cell on
+  // round 1 and the capital stood empty, so a lone tank met nothing and took it. The march is the
+  // remake's behaviour, not a ported routine, so this is pinned as behaviour: a dug-in piece ON one
+  // of its own capitals holds the cell, while a dug-in piece anywhere else still gets its march.
+  {
+    const match = openMatch("1942", JSON.parse(JSON.stringify(sites)), { handicapSide: "red" });
+    match.clock = "running";
+    match.seats = { blue: { kind: "bot" }, red: { kind: "human" } };
+    match.botSide = "blue";
+    match.sides = { blue: { cash: 0, bought: 99 }, red: { cash: 0, bought: 99 } };
+    seedOwners(match);
+    const capital = match.sites.find((s) => s.kind === "capital" && s.owner === "blue")
+      || match.sites.find((s) => s.owner === "blue");
+    if (!capital) fail("the 1942 board gives blue no capital to garrison");
+    capital.kind = "capital";
+    const garrison = piece("blue:garrison", "blue", "infantry", capital.x, capital.y, { entrenched: true });
+    const marcher = piece("blue:marcher", "blue", "infantry", capital.x + 6, capital.y, { entrenched: true });
+    const foe = { x: (capital.x + 60) % CELL_W, y: capital.y };
+    match.pieces = [garrison, marcher, piece("red:far", "red", "infantry", foe.x, foe.y)];
+    const events = ordersFor(match, "blue");
+    const ordered = new Set(events.filter((e) => e.type === "bot_order").map((e) => e.pieceId));
+    if (ordered.has(garrison.id)) say("the capital garrison was marched off its own capital", events);
+    if (Array.isArray(garrison.path) && garrison.path.length) say("the capital garrison was given a path away from its capital", garrison.path);
+    if (!ordered.has(marcher.id)) say("a dug-in piece that is not on a capital was not marched", events);
+    // And the rule is narrow: the same piece one cell off the capital is marchable again.
+    const offCell = piece("blue:off", "blue", "infantry", capital.x + 1, capital.y, { entrenched: true });
+    if (holdsOwnCapital(match, "blue", offCell)) say("a piece one cell off the capital still counted as its garrison", offCell);
+  }
+
+  // ---- 4. terrain cover: mountain, on the real board (D-020) ----------------------------------
+  // Leg 1 pins a CITY cell (the 1942 capital's own terrain byte). D-020 also asks for mountain
+  // cover, and mountain is different arithmetic in the same function: the DEFENDER's terrain byte
+  // (unit+0x836) is read before flank/rear, infantry kinds 1/3 lose a quarter (`dmg-(dmg>>2)`),
+  // tanks (2) a sixth (`dmg-dmg/6`) - versus the city's `(dmg+1)/3` and `dmg/5`. Both are read from
+  // `FUN_194c_000e` @ 194c:000e (decompiled.c 7032-7046).
+  //   MEASURED (T-009): the matrix cell under it, tank -> dug-in infantry = 20.
+  //   DISASSEMBLY (T-015 scope note): the mountain factors. Not measured on a live run yet; the
+  //   assertion is exact arithmetic, so a change to the factors fails here.
+  {
+    const cells = boardPayload().cells;
+    // The duel needs the defender standing on mountain and the attacker on a land cell beside it.
+    let pair = null;
+    for (let y = 1; y < 135 && !pair; y++) {
+      for (let x = 1; x < CELL_W - 1 && !pair; x++) {
+        if (cells[y * CELL_W + x] !== 10) continue;
+        const east = cells[y * CELL_W + x + 1];
+        if (east > 3 && east !== 10) pair = { mountain: [x, y], beside: [x + 1, y], besideTerrain: TERRAIN[east] };
+      }
+    }
+    if (!pair) fail("the 1942 board has no mountain cell with a land neighbour, so the mountain duel cannot be set up");
+
+    const tankAt = (x, y) => piece("blue:probe", "blue", "tank", x, y, { domain: "land", facing: "e" });
+    const dugInAt = (x, y) => piece("red:garrison", "red", "infantry", x, y, { entrenched: true });
+
+    // The matrix cell, before any terrain: 20 is the measured tank -> entrenched infantry value.
+    const base = baseDamageFor("tank", dugInAt(pair.mountain[0], pair.mountain[1]));
+    if (base !== 20) say("tank -> dug-in infantry is no longer matrix cell 2->3 = 20", base);
+
+    // Plain control: no cover, so the cell is untouched. Same pairing, defender one cell off mountain.
+    const plainDef = dugInAt(pair.beside[0], pair.beside[1]);
+    if (pair.besideTerrain === "mountain") say("the control cell is a mountain too", pair.besideTerrain);
+    const onPlain = damageFor(tankAt(pair.mountain[0], pair.mountain[1]), plainDef);
+    if (onPlain.amount !== base) say("open ground modified the damage; cover must be the defender's terrain only", onPlain);
+
+    // Mountain: infantry loses a quarter of the cell, integer arithmetic.
+    const onMountain = damageFor(tankAt(pair.beside[0], pair.beside[1]), dugInAt(pair.mountain[0], pair.mountain[1]));
+    const wantMountain = base - (base >> 2);
+    if (onMountain.amount !== wantMountain) {
+      say("mountain cover for infantry is not dmg-(dmg>>2) = " + wantMountain, { cell: base, got: onMountain.amount, at: pair.mountain });
+    }
+    // A tank defender on the same mountain loses a sixth, not a quarter.
+    const tankDef = piece("red:armour", "red", "tank", pair.mountain[0], pair.mountain[1], { domain: "land" });
+    const tankBase = baseDamageFor("tank", tankDef);
+    const onMountainTank = damageFor(tankAt(pair.beside[0], pair.beside[1]), tankDef);
+    const wantTank = tankBase - Math.floor(tankBase / 6);
+    if (onMountainTank.amount !== wantTank) {
+      say("mountain cover for tanks is not dmg-dmg/6 = " + wantTank, { cell: tankBase, got: onMountainTank.amount });
+    }
+
+    // The same arithmetic through the match tick, so the wiring (coordinates -> terrain byte) is
+    // pinned and not just the helper: the garrison on the mountain must be hit for 15, not 20.
+    {
+      const match = openMatch("1942", JSON.parse(JSON.stringify(sites)), { handicapSide: "red" });
+      match.clock = "running";
+      match.seats = { blue: { kind: "human" }, red: { kind: "human" } };
+      seedOwners(match);
+      const attacker = tankAt(pair.beside[0], pair.beside[1]);
+      const garrison = dugInAt(pair.mountain[0], pair.mountain[1]);
+      match.pieces = [attacker, garrison];
+      const hits = [];
+      for (let round = 1; round <= 8 && match.pieces.includes(garrison); round++) {
+        const result = tickMatch(match);
+        for (const event of result.events || []) {
+          if (event.type === "shot" && event.target === "red:garrison") hits.push(event.amount);
+        }
+      }
+      if (!hits.length) fail("no shot landed on the mountain garrison through the match tick");
+      if (hits.some((amount) => amount !== wantMountain)) {
+        say("the tick path did not apply mountain cover (want " + wantMountain + " per exchange)", hits);
+      }
+    }
   }
 
   void block;
