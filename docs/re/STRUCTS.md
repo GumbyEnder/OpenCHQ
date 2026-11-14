@@ -163,23 +163,50 @@ Per-unit fields, all indexed by the record number 0..99:
 
 | Offset (base + i) | Size | Type | Name | Evidence |
 |-------------------|------|------|------|----------|
-| `0x1b6` + `i*2` | 2 | `uint` | `unit_coords` | 4511 `iVar7*2 + 0x1b6`; packed `x*256+y`; compared against `0x96e` at 4520 |
+| `0x1b6` + `i*2` | 2 | `uint` | `unit_x` | 4511 `iVar7*2 + 0x1b6`; **a plain 16-bit x, not `x*256+y`** (corrected 2026-11-14, see the note below). Compared against `0x96e` at 4520 |
 | `0x286` + `i` | 1 | `byte` | `unit_y` | 4512 read as the current y and compared against `0xa3e` at 4520; 5082 compares it against `0x4f6`. **Was mislabelled `unit_type`; the y reading is what the code does.** |
-| `0x426` + `i*2` | 2 | `uint` | `unit_dest_coords` | 5082 compared with `0x1b6`; packed `x*256+y` |
+| `0x426` + `i*2` | 2 | `uint` | `unit_dest_x` | 5082 compared with `0x1b6`; **a plain 16-bit x**, not packed (same correction) |
 | `0x4f6` + `i` | 1 | `byte` | `unit_dest_y` | 5083 compared with `0x286` |
 | `0x6fe` + `i*2` | 2 | `int` | `unit_move_points` | 4526/4588 spend, 4791-4813 refill; capped at 0x50 (`if < 0x50` 4797) |
 | `0x836` + `i` | 1 | `byte` | `unit_side` | 4517 `bVar4` used to index `0x1976`; 5082 area uses status bits instead |
 | `0x89e` + `i` | 1 | `byte` | `unit_strength` | 4513, 4566; compared to 0x50 and 0x3d elsewhere |
 | `0x906` + `i` | 1 | `byte` | `unit_status` | 4509-4524, 4589, 4794. **Measured 2026-11-12:** bits 7:6 = owner (`& 0xc0` == side*0x40 + 0x40, `FUN_15f4_0e7a` 5076-5086; written at creation `FUN_1ac5_008e` 8183), bits 3:0 = kind (`& 0xf`, indexes `0x19a6`). Bit 7 is not an "active" bit. The old "bits 6:5" wording is wrong. |
-| `0x96e` + `i*2` | 2 | `uint` | `unit_target_coords` | 4520 compared against `0x1b6`, stride 2. **Was listed as a 1-byte target_y; that is wrong.** |
+| `0x96e` + `i*2` | 2 | `uint` | `unit_target_x` | 4520 compared against `0x1b6`, stride 2. **Was listed as a 1-byte target_y; that is wrong.** A plain 16-bit x, not a packed word. |
 | `0xa3e` + `i` | 1 | `byte` | `unit_target_y` | 4520 compared against `0x286` |
 | `0xbde` + `i` | 1 | `byte` | `unit_link` | 4544 (`!= 0xff` and flag 0x20), 7040-7065 — 0xff sentinel, otherwise a unit index |
 | `0xc46` + `i` | 1 | `byte` | `unit_flags` | 4515, 4519/4522 (0x40 has-destination), 4544 (0x20), 4586 (0x08 and 0x10), low 3 bits = movement state |
 | `0xd16` + `i` | 1 | `byte` | `unit_settle` | 4570-4578 — counts down; 1 clears to 0 once the unit has settled |
-| `0x62e` + `i*2` | 2 | `uint` | `?` | **UNVERIFIED.** The old `unit_target_x` name cannot be right next to `0x96e` being a packed target word; not read in the pass. |
+| `0x62e` + `i*2` | 2 | `uint` | `?` | **UNVERIFIED.** The old `unit_target_x` name is redundant next to `0x96e` (`unit_target_x`); not read in the pass. |
 | `0x55e` + `i*2` | 2 | `uint` | `?` | **UNVERIFIED.** Old `unit_misc1`; not read in the pass. |
 | `0x3588` + `i*2` | 2 | `uint` | `unit_current_site` | Not re-checked this pass (old: FUN_107e_336a, 0xff = at sea) |
 | `0x3650` + `i*2` | 2 | `uint` | `unit_flags` | Not re-checked this pass (old: FUN_107e_2ff4, bit 10 moving, 9 at sea, 8 at site) — do not assume the bit numbering |
+
+### Unit coordinates are a plain x word and a y byte (corrected 2026-11-14)
+
+`0x1b6 + i*2`, `0x426 + i*2` and `0x96e + i*2` are **plain 16-bit x values**, not `x*256+y` words.
+The read sites that settle it are all in `decompiled.c`:
+
+- `calculate_distance(x1, y1, x2, y2)` (`:472`) takes the four coordinates separately and wraps x at
+  320 (`0x140`, half-swap when `|dx| > 0xa0`), so both x arguments must be full-width values.
+- `FUN_107e_0fa4` `:1407` and `:1477` call it as
+  `calculate_distance(word[0x1b6], byte[0x286], word[0x1b6], byte[0x286])` — argument 1 is the
+  width-2 slot and argument 2 the width-1 slot.
+- `FUN_107e_0fa4` `:1524` averages a current position with a destination:
+  `x = (word[0x1b6] + word[0x426]) >> 1`, `y = (byte[0x286] + byte[0x4f6]) >> 1`. An average only
+  lands on the board if both operands are plain coordinates; on a packed word it would produce a
+  nonsense pair.
+- `FUN_15f4_0e7a` `:5082-5083` compares dest x with current x and dest y with current y.
+
+Live probe (`local/q45/q45-units2.py`, 2026-11-14, 31 active records on the 1942 board): read as
+packed, 3 records fall outside the 320x200 world (i=50 y=253, i=57 y=252, i=58 y=255) and 28 read
+`x=0`; read as `x = u16[0x1b6 + i*2]`, `y = u8[0x286 + i]`, 31/31 land in the world and the blue
+pieces are the cells the war-room cursor names — `(130,34) (154,26) (166,44) (175,28) (267,45)`.
+
+Earlier findings checked: `notes/t013/t013_units.py` (the T-013 round-0 dispositions capture) already
+read x as a word and y as a byte, so the opening-disposition table is unaffected. `docs/re/MOVEMENT.md`
+repeated the packed wording in its per-piece-pass table and is corrected with this note. The one
+finding that described `0x1b6` as stale (`x=0`) was harness state in a paused setup modal; it reads
+the same under either decode.
 
 Per-kind and per-side tables the pass reads:
 

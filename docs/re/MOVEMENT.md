@@ -114,7 +114,7 @@ task. Logged as an open RE question in `docs/re/TODO.md` §2 rather than "fixed"
 4502    ... ; FUN_15f4_0598();                          // shuffle two slots
 4506    *(uint *)0x147a = (uint)*(byte *)(*(int *)0x147c + 0xde2);
 4509    iVar7 = *(int *)0x147a;                         // <-- unit record index
-4511    iVar5 = *(int *)(iVar7 * 2 + 0x1b6);            // current packed coords
+4511    iVar5 = *(int *)(iVar7 * 2 + 0x1b6);            // current x (plain u16; y is 0x286)
 4512    cVar2 = *(char *)(iVar7 + 0x286);               // current y
 4513    cVar3 = *(char *)(iVar7 + 0x89e);               // strength
 4515    bVar6 = *(byte *)(iVar7 + 0xc46);               // flags
@@ -141,15 +141,15 @@ the same 0..99 record number, stride 1 or 2:
 | `0xde2` | 1 | walk slot → unit record index (the table the pass indexes) | 4506, 4637-4663 |
 | `0x147a` | — | current unit record index (word) | 4506, 4509 |
 | `0x147c` | — | walk cursor 0..99 (word) | 4499, 4502, 4592-4593 |
-| `0x1b6` | 2 | current packed coords `x<<8 \| y` | 4511 |
+| `0x1b6` | 2 | current **x**, a plain 16-bit value (not `x<<8 \| y`; see STRUCTS.md §"Unit coordinates are a plain x word and a y byte") | 4511 |
 | `0x286` | 1 | current y | 4512 |
-| `0x426` | 2 | destination packed coords | 5082 |
+| `0x426` | 2 | destination **x**, plain 16-bit | 5082 |
 | `0x4f6` | 1 | destination y | 5083 |
 | `0x6fe` | 2 | per-unit movement points (word, refilled each pass, max 0x50) | 4526, 4588, 4791-4813 |
 | `0x836` | 1 | side index 0..3 (`byte[side + 0x1976]`) | 4517-4518 |
 | `0x89e` | 1 | strength | 4513, 4566 |
 | `0x906` | 1 | status: bits 7:6 owner, bits 3:0 kind | 4509-4524, 4589 |
-| `0x96e` | 2 | target packed coords (compared against `0x1b6`) | 4520 |
+| `0x96e` | 2 | target **x**, plain 16-bit (compared against `0x1b6`) | 4520 |
 | `0xa3e` | 1 | target y (compared against `0x286`) | 4520 |
 | `0xbde` | 1 | 0xff sentinel, else a unit index | 4544, 7040 |
 | `0xc46` | 1 | flags: 0x40 has-destination, 0x20, 0x10, 0x08, low 3 bits | 4515-4522, 4544 |
@@ -590,7 +590,7 @@ site 63 at (183,25) byte 0x9a
 **Why the earlier attempt looked impossible.** The prior session was not in a live war room: it was
 parked in the `OPPONENT'S STARTING MONEY` setup modal with `film_mode` (`DS:0x1478`) = 2 and the
 main loop's frame counter at 0, so the per-piece pass never ran. Every unit record therefore read
-stale coordinates (`x=0` in `0x1b6`), and no order could be acted on because no pass ran — the
+stale coordinates (`x=0` in `0x1b6`, `y=0` in `0x286`), and no order could be acted on because no pass ran — the
 `0x40` flag had nothing to consume it. Resume the game (`alt+p`, then zero both `0x1478` and
 `0xc8cc`), verify the pass cursor `0x147c` is advancing, and the same offsets read sane coords.
 That is harness state, not a finding about the game, and it is now the first check in the run
