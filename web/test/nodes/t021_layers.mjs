@@ -11,6 +11,10 @@
 //     the ground layer and blocks its own aircraft
 //   - a ground order onto a city holding a friendly plane is refused -> the walker still treats a
 //     based plane as solid ground
+//   - a city holding a based plane cannot be captured, or a lone plane takes a red site -> capture
+//     is reading pieces from the air layer again (economy.occupy; gate 4869)
+//   - the plane is removed, or stops being labelled stranded, when its site changes hands -> the
+//     remake choice about an aircraft's fate lost its label (Q50 sub-item)
 //   - a coastal city offers no ship berth                     -> D-025 did not land, ships are back
 //     to the 1 px dock cells T-017 already called too small
 //   - an inland city or a landlocked base offers a berth      -> D-025 lost its "touches water" test
@@ -21,9 +25,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { canPlace, friendlySites, layerOf, placementMask, siteLabel } from "../../server/placement.mjs";
 import { openMatch } from "../../server/match.mjs";
-import { buy } from "../../server/economy.mjs";
+import { buy, occupy } from "../../server/economy.mjs";
 import { planOrder } from "../../server/move.mjs";
-import { sendMission, transferPlane, airBriefing } from "../../server/air.mjs";
+import { sendMission, transferPlane, airBriefing, STRANDED_NOTE } from "../../server/air.mjs";
 import { configPath, resetRules, rules } from "../../server/rules.mjs";
 
 export const name = "t021_layers";
@@ -188,6 +192,47 @@ export async function run(ctx) {
     const order = planOrder(match, "blue", "blue:infantry:1", 80, 99);
     if (order.error) fail("a walk into a city holding a based plane was refused: " + order.error);
     if (!Array.isArray(order.path) || order.path.length === 0) fail("the walk planned no path");
+  }
+
+  // --- capture reads the ground layer only (gate room 4869) --------------------------
+  // The rule the three cases below pin: capture is decided by the GROUND layer, exactly the layer
+  // placement.mask / the walker / combat already use. Without it a based plane vetoed every
+  // capture of its own city (A) and a lone unarmed plane flipped a red site blue (B).
+  {
+    // A. A blue city with a blue plane based on it: a red infantry walks in and takes it.
+    const plane = { id: "blue:aircraft:20", side: "blue", domain: "land", kind: "aircraft", x: 80, y: 99, strength: 20, maxStrength: 20 };
+    const inf = { id: "red:infantry:20", side: "red", domain: "land", kind: "infantry", x: 80, y: 99, strength: 20, maxStrength: 20 };
+    const match = matchWith([CITY, INLAND], [plane, inf]);
+    const events = occupy(match);
+    eq("A: a based plane does not veto the capture of its own city",
+      events.filter((event) => event.site === 1).map((event) => [event.side, event.from]), [["red", "blue"]]);
+    eq("A: the city's owner byte is red", match.sites.find((site) => site.id === 1).owner, "red");
+
+    // C. Control: red ground alone on a blue city takes it too (the same path, no plane).
+    const solo = matchWith([CITY, INLAND], [inf]);
+    eq("C: red infantry alone takes the blue city",
+      occupy(solo).filter((event) => event.site === 1).map((event) => [event.side, event.from]), [["red", "blue"]]);
+
+    // B. A lone blue plane on a RED city takes nothing - and the city stays red.
+    const redCity = { id: 5, name: "TheirPort", x: 80, y: 99, kind: "city", owner: "red" };
+    const lone = matchWith([redCity, INLAND], [plane]);
+    eq("B: a lone plane captures nothing", occupy(lone), []);
+    eq("B: the red city stays red", lone.sites.find((site) => site.id === 5).owner, "red");
+
+    // The aircraft's fate when its site IS captured: not removed, not displaced - stranded, and
+    // labelled as a remake choice (Q50 sub-item), not a recovered rule.
+    eq("the plane is still on the map after its site changed hands",
+      match.pieces.filter((piece) => piece.id === "blue:aircraft:20").length, 1);
+    eq("it is still on the cell it was based at",
+      [match.pieces[0].x, match.pieces[0].y], [80, 99]);
+    const brief = airBriefing(match, "blue").find((entry) => entry.id === "blue:aircraft:20");
+    eq("with no friendly base left in reach it cannot fly", brief.canFly, false);
+    eq("and the briefing says why, as STRANDED_NOTE", brief.strandedNote, STRANDED_NOTE);
+    // A friendly site inside the stand-in reach gives it a way out again.
+    match.sites.push({ owner: "blue", id: 7, name: "Nearby Base", x: 75, y: 99, kind: "base" });
+    const out = transferPlane(match, "blue", "blue:aircraft:20", { x: 75, y: 99 });
+    if (out.error) fail("a stranded plane could not transfer to a friendly base in reach: " + out.error);
+    eq("the transfer rebased it", [out.piece.x, out.piece.y], [75, 99]);
   }
 
   // --- AC2: D-025, a hull from any friendly coastal city or base --------------------

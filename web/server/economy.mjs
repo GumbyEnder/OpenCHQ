@@ -12,7 +12,7 @@
 import { payEvery, priceOf, cityIncome, capitalPays, combatRules } from "./rules.mjs";
 import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
-import { canPlace, siteLabel } from "./placement.mjs";
+import { canPlace, siteLabel, layerOf } from "./placement.mjs";
 import { markUnready } from "./readiness.mjs";
 import { CELL_W } from "./board.mjs";
 import { siteAtCell, siteCells, cellKeyOf } from "./siteindex.mjs";
@@ -304,9 +304,14 @@ export function occupy(match) {
   // One pass over the pieces, not one pass per site: with 84 sites and 1000 rooms a round the
   // per-site filter was the difference between 10x and 3x headroom in the capacity bench. A cell
   // key is numeric and a side is a bit, so the pass allocates nothing per piece.
+  // Ground layer only. A plane based at a city shares its cell (T-021) but does not hold its
+  // streets: counting it here let a based aircraft veto every capture of its own city and let a
+  // lone unarmed plane flip a red site blue. The predicate is placement.layerOf, the same one the
+  // placement mask, the walker and combat already use, so capture cannot disagree with them.
   const byCell = new Map();
   for (const piece of match.pieces) {
     if (!piece || !isSide(piece.side)) continue;
+    if (layerOf(piece) !== "ground") continue;
     const key = cellKeyOf(piece);
     byCell.set(key, (byCell.get(key) || 0) | (piece.side === "blue" ? 1 : 2));
   }
