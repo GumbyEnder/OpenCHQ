@@ -21,7 +21,8 @@
 //
 // D-025 (deliberate deviation from p.28's docks-only wording): a hull may also be bought by
 // clicking a friendly city, capital or base that touches water. The ship lands on an ADJACENT
-// free water cell, docks first, then the nearest free water cell. The coastal site is a click
+// free water cell, docks first, then the nearest free water cell in the ADJACENT order below
+// (a REMAKE CHOICE, not an original rule). The coastal site is a click
 // target, using the same snap and box as T-017, and the mask paints it.
 //
 // Readiness is the second half of the rule and it is per site (readiness.mjs). The mask marks a
@@ -53,8 +54,10 @@ const CARRIER_KIND = "carrier";
 // 1 docks, 2 shallows.
 const WATER_MAX_ID = 2;
 const DOCK_TERRAIN_ID = 1;
-// Adjacent cells, clockwise from north. The tie-break between two equally near berths is this
-// order, so the same click always lands on the same water cell.
+// Adjacent cells, clockwise from north: N, NE, E, SE, S, SW, W, NW. The tie-break between two
+// equally near berths is this order, so the same click always lands on the same water cell. This
+// order is a REMAKE CHOICE, not an original rule: no manual page or disassembly read gives the
+// original's preference, it only makes the same click deterministic.
 const ADJACENT = Object.freeze([
   [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1],
 ]);

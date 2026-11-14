@@ -1148,8 +1148,10 @@ function toolRow(room) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "buy";
-        // A transfer costs no rounds, so it carries no price and does not need a base in reach:
-        // it moves the base. Everything else keeps the mission wording.
+        // A transfer's round cost is config's air.transferRounds, tagged UNVERIFIED
+        // (air.transferRoundsSource): the manual names the sites, never a price. So the label
+        // shows a price only when the file sets one, and a transfer never needs a base in reach -
+        // it moves the base.
         const needsBase = mission.mode !== "transfer";
         button.textContent = mission.rounds > 0
           ? mission.label + " (" + mission.rounds + "r)"
@@ -1162,7 +1164,7 @@ function toolRow(room) {
             : mission.mode === "strike"
               ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
-                ? "Pick a friendly city, base or carrier cell; the aircraft rebases there."
+                ? "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED."
                 : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
         button.addEventListener("click", () => {
           // A strike hits the cell the player names, not the base the plane sits on. A transfer
@@ -1171,7 +1173,7 @@ function toolRow(room) {
           if (mission.mode === "strike" || mission.mode === "transfer") {
             pendingMission = mission.mode;
             say(mission.mode === "transfer"
-              ? "Transfer: pick a friendly city, base or carrier cell."
+              ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : "Strike: pick the target cell on the map.");
             closeDialog();
             return;
@@ -1575,7 +1577,7 @@ const DIALOG_PAINTERS = {
         button.textContent = mission.label;
         button.title = mission.rounds > 0
           ? "Away for " + mission.rounds + " rounds."
-          : "Pick a friendly city, base or carrier cell; the aircraft rebases there.";
+          : "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED.";
         button.disabled = !plane.ready;
         button.addEventListener("click", () => {
           // A strike or a transfer is aimed: the air dialog names the plane and hands the player
@@ -1585,7 +1587,7 @@ const DIALOG_PAINTERS = {
             if (planePiece) selected = planePiece;
             pendingMission = mission.mode;
             say(mission.mode === "transfer"
-              ? "Transfer: pick a friendly city, base or carrier cell."
+              ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : "Strike: pick the target cell on the map.");
             closeDialog();
             drawMatch();

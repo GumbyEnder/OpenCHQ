@@ -121,7 +121,7 @@ export function airBriefing(match, side) {
 // air.transferRounds, UNVERIFIED (air.transferRoundsSource) - the manual prints none, so 0 is an
 // assumption recorded in Q50, not a recovered rule. How many aircraft may base on one site is
 // Q50's first sub-item and is deliberately NOT capped here.
-export const TRANSFER_NOTE = "Transfer. The aircraft rebases; the original's transfer range was not recovered.";
+export const TRANSFER_NOTE = "Transfer. The aircraft rebases; the original's transfer range (stand-in reach, UNMEASURED) and round cost (UNVERIFIED) were not recovered.";
 
 export function transferPlane(match, side, pieceId, target) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to rebase in." };
@@ -166,6 +166,11 @@ export function transferPlane(match, side, pieceId, target) {
   plane.path = [];
   plane.pace = 1;
   plane.readyAnnounced = false;
+  // The round cost is charged from config, like the missions': 0 today, tagged UNVERIFIED
+  // (air.transferRoundsSource). A non-zero value in the file charges the plane, so this module
+  // never hard-codes either a free transfer or a price.
+  const cost = missionCosts().transfer;
+  if (cost > 0) plane.inactiveUntil = (Number(match.round) || 0) + cost;
   return {
     ok: true,
     piece: plane,
