@@ -17,6 +17,7 @@ function recorder() {
     set fillStyle(value) { this._style = value; },
     get fillStyle() { return this._style; },
     fillRect(x, y, w, h) { fills.push({ x, y, w, h, color: this._style }); },
+    strokeRect() {},
   };
   return { ctx, fills };
 }

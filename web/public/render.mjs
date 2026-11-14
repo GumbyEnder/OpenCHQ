@@ -386,6 +386,18 @@ export function legendEntries() {
 
 // ---- painting --------------------------------------------------------------
 
+// The coloured box the original draws around a city (manual printed p.14: green = ready, yellow =
+// soon, red = a long wait). At a 1-pixel-per-cell fit a single tinted cell is not a target a hand
+// can hit or an eye can find, so every legal site gets a box of at least PLACEMENT_BOX_PX screen
+// pixels around its cell, at every zoom, in both readiness colours. The casing is drawn first and
+// wider, so the box reads over a black city square as well as over water (PB-029).
+export const PLACEMENT_BOX_PX = 10;
+export const PLACEMENT_BOX = {
+  ready: "rgba(140, 245, 255, 0.95)",
+  unready: "rgba(255, 196, 96, 0.95)",
+  casing: "rgba(6, 10, 18, 0.9)",
+};
+
 // The cells a purchase may stand on, painted over the board. `placement` is exactly what the server
 // sent: {width, height, mask} with the mask a byte per cell. The page never re-derives the rule.
 export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255, 0.62)", unreadyColor = "rgba(255, 186, 92, 0.62)") {
@@ -400,6 +412,7 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
     cols.last = view.boardW - 1;
   }
   let painted = 0;
+  const boxes = [];
   for (let y = rows.first; y <= rows.last; y++) {
     if (y < 0 || y >= bh) continue;
     for (let sx = cols.first; sx <= cols.last; sx++) {
@@ -413,7 +426,27 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
       // strength a player can see; a 30%-alpha single pixel read as "no highlights at all".
       const size = Math.max(1, Math.round(view.scale));
       ctx.fillRect(view.left + sx * view.scale, view.top + y * view.scale, size, size);
+      boxes.push({
+        cx: view.left + (sx + 0.5) * view.scale,
+        cy: view.top + (y + 0.5) * view.scale,
+        value,
+      });
       painted += 1;
+    }
+  }
+  // The box, in two passes: one dark casing under every box, then one bright outline. Painting
+  // casing+bright per site would let a neighbour's casing eat this site's outline where two
+  // friendly sites are adjacent.
+  const boxPx = Number(placement.box && placement.box.px);
+  const side = Math.max(PLACEMENT_BOX_PX, Number.isFinite(boxPx) ? boxPx : 0);
+  if (boxes.length && typeof ctx.strokeRect === "function") {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = PLACEMENT_BOX.casing;
+    for (const box of boxes) ctx.strokeRect(box.cx - side / 2, box.cy - side / 2, side, side);
+    ctx.lineWidth = 1.5;
+    for (const box of boxes) {
+      ctx.strokeStyle = box.value === 2 ? PLACEMENT_BOX.unready : PLACEMENT_BOX.ready;
+      ctx.strokeRect(box.cx - side / 2, box.cy - side / 2, side, side);
     }
   }
   return painted;

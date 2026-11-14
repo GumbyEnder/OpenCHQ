@@ -20,6 +20,7 @@ import {
   purseText,
   refusalText,
   routeRequest,
+  snapPlacementCell,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
@@ -661,7 +662,7 @@ function askRoute(cell) {
 // piece selected: the order goes to the server as {op:"order",piece,to:{x,y}}.
 board.addEventListener("click", (event) => {
   if (!room || !room.you) return;
-  const cell = cellAtEvent(event, board, viewForCanvas());
+  let cell = cellAtEvent(event, board, viewForCanvas());
   if (!cell) return;
 
   // A unit on the build cursor claims the click: the cell has to be one of the seat's own
@@ -671,6 +672,13 @@ board.addEventListener("click", (event) => {
     // picked and repeats the refusal in the server's own words when it comes back.
     // The cursor stays armed until a purchase actually lands: a refused cell must not cost the
     // player their place-in-mode, and buying several units in a row is the normal case.
+    //
+    // The click target is forgiving by T-017: within the radius the server sent with the mask, the
+    // nearest legal cell (ready or unready, this domain only) takes the click. Outside it the raw
+    // cell goes to the server and is refused there, so a far click is still a refusal and not a
+    // silent redirect.
+    const snapped = snapPlacementCell(cell, placement, viewForCanvas());
+    if (snapped) cell = { x: snapped.x, y: snapped.y };
     sendOrder(buyMessage(buying, cell));
     drawMatch();
     return;
@@ -1870,7 +1878,7 @@ function connect() {
       const binary = atob(message.mask);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      placement = { width: message.width, height: message.height, mask: bytes, count: message.count, ready: message.ready, unready: message.unready, domain: message.domain };
+      placement = { width: message.width, height: message.height, mask: bytes, count: message.count, ready: message.ready, unready: message.unready, domain: message.domain, snap: message.snap || null, box: message.box || null };
       drawMatch();
     } else if (message.op === "route") {
       // Late replies for another piece are not this selection's route.
@@ -2112,6 +2120,8 @@ window.__chq = {
     buying,
     selected: selected ? selected.id : null,
     placement: Boolean(placement),
+    placementSnap: placement ? placement.snap : null,
+    placementBox: placement ? placement.box : null,
     following,
     camera: camera ? { scale: camera.scale, left: camera.left, top: camera.top } : null,
   }),

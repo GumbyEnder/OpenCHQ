@@ -689,6 +689,8 @@ export function createLobby() {
         unready: mask.unready,
         domain: mask.domain,
         rule: mask.rule,
+        snap: mask.snap,
+        box: mask.box,
         mask: maskBase64(mask.mask),
       });
     }

@@ -19,7 +19,7 @@
 // paints the mask this module returns, so the highlight a player clicks is exactly what the
 // server accepts.
 
-import { readinessRules } from "./rules.mjs";
+import { placementRules, readinessRules } from "./rules.mjs";
 import { isSiteReady, readyRoundOf, unreadyRefusal } from "./readiness.mjs";
 
 const SEA_KINDS = new Set(["cruiser", "carrier", "submarine"]);
@@ -85,6 +85,10 @@ export function placementMask(match, side, kind, board) {
   }
   const domain = domainOf(kind);
   const { radius } = readinessRules();
+  // The click forgiveness a page may use, sent with the mask so the page never carries its own
+  // copy of the numbers (T-017). They widen the TARGET, never the rule: the mask below is still
+  // one byte per friendly site cell, ready or unready.
+  const forgiveness = placementRules();
   const rule = domain === "sea"
     ? "Ships go only on a friendly dock."
     : "Land units and aircraft go only on a friendly city or base.";
@@ -118,7 +122,11 @@ export function placementMask(match, side, kind, board) {
       : "You hold no city or base to place a land unit in.";
     return { error: none, domain, rule };
   }
-  return { ok: true, width: w, height: h, mask, count, ready, unready, domain, rule, radius };
+  return {
+    ok: true, width: w, height: h, mask, count, ready, unready, domain, rule, radius,
+    snap: { px: forgiveness.snapPx, cells: forgiveness.snapCells },
+    box: { px: forgiveness.boxPx },
+  };
 }
 
 // The sentence a refused cell gets. It names the rule; when the cell is a friendly site that is

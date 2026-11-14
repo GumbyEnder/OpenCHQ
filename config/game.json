@@ -461,7 +461,16 @@
     "exclusion": 2
   },
   "placement": {
-    "rule": "friendly-site"
+    "rule": "friendly-site",
+    "snap": {
+      "px": 12,
+      "cells": 2,
+      "source": "T-017 / PB-029: a click within this many screen pixels or this many cells of a legal placement cell snaps to the nearest one. A remake forgiveness value, not a rule of the original: the original's coloured box is drawn around the city (manual printed p.14) and its click tolerance was never recovered."
+    },
+    "box": {
+      "px": 10,
+      "source": "T-017 / PB-029: the smallest box the page may draw around a legal placement site, in screen pixels. Manual printed p.14 - green ready, yellow soon, red a long wait; the remake uses cyan/amber."
+    }
   },
   "readiness": {
     "radiusCells": 5,
