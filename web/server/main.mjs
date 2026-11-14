@@ -202,6 +202,21 @@ const server = createServer(async (req, res) => {
     }
     return;
   }
+  // OPENCHQ_DEBUG=1 only: the raw room the tick is running, for a harness that has to explain a
+  // stall. Absent from every deployed host unless the operator sets the flag, and read-only.
+  if (req.method === "GET" && url.pathname === "/api/debug/room") {
+    if (String(process.env.OPENCHQ_DEBUG || "") !== "1") {
+      send(res, 404, { error: "debug is off; start the server with OPENCHQ_DEBUG=1" });
+      return;
+    }
+    try {
+      const room = lobby.debugRoom(String(url.searchParams.get("id") || ""));
+      send(res, room ? 200 : 404, room || { error: "no such room" });
+    } catch (err) {
+      send(res, 500, { error: String(err && err.message ? err.message : err) });
+    }
+    return;
+  }
   if (req.method === "POST" && (url.pathname === "/api/register" || url.pathname === "/api/login")) {
     let body;
     try {
