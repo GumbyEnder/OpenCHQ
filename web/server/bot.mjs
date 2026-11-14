@@ -348,10 +348,17 @@ export function defendSites(match, side, events, threatened = null) {
   const rows = threatened || threatenedSites(match, side);
   if (rows.length === 0) return claimed;
   const { site } = rows[0];
+  // Built once per pass: the candidate filter asks per piece.
+  const held = capitalCells(match, side);
 
   const candidates = (match.pieces || [])
     .filter((piece) => piece && piece.side === side && piece.domain === "land" &&
       !hasPath(piece) && Number(piece.strength) > 0)
+    // A dug-in garrison standing on its own capital is not a spare defender: sending it at a
+    // threatened neighbour empties the capital, and a lone tank then walks in. Measured live on
+    // ad71410: Paris' garrison left at r6 and the tank took Paris at r20
+    // (local/t015-shots/t015-garrison-handcheck.json); pinned in nodes/t015_capital.mjs 3b.
+    .filter((piece) => !holdsOwnCapital(match, side, piece, held))
     .map((piece) => ({ piece, d2: squaredDistance(piece, site) }))
     // `8 < local_8`, and `0x18 < local_8` for kind 3 (infantry) — decompiled.c 1720.
     .filter((row) => row.d2 > (row.piece.kind === "infantry" ? DEFEND_MIN_INFANTRY : DEFEND_MIN) &&

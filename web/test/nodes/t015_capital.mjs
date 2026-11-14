@@ -213,6 +213,62 @@ export async function run(ctx) {
     if (holdsOwnCapital(match, "blue", offCell)) say("a piece one cell off the capital still counted as its garrison", offCell);
   }
 
+  // ---- 3b. a threat ELSEWHERE must not pull the garrison off its capital either ----------------
+  // The march is not the only order a bot gives: `defendSites` answers a threatened site of its own
+  // by sending the nearest idle land unit, and a dug-in garrison standing on a capital is idle, land,
+  // and close enough to qualify. Live evidence that it does (2026-11-14, ad71410): Paris' red
+  // garrison left its cell at r6 with the blue tank still 30 cells out, and the tank took an empty
+  // Paris at r20 - /mnt/nas/projects/OpenCHQ/local/t015-shots/t015-garrison-handcheck.json.
+  // So the hold has to be a property of the piece, not of one call site.
+  {
+    const match = openMatch("1942", JSON.parse(JSON.stringify(sites)), { handicapSide: "red" });
+    match.clock = "running";
+    match.seats = { blue: { kind: "bot" }, red: { kind: "human" } };
+    match.botSide = "blue";
+    match.sides = { blue: { cash: 0, bought: 99 }, red: { cash: 0, bought: 99 } };
+    seedOwners(match);
+    const capital = match.sites.find((s) => s.kind === "capital" && s.owner === "blue")
+      || match.sites.find((s) => s.owner === "blue");
+    if (!capital) fail("the 1942 board gives blue no capital to garrison");
+    capital.kind = "capital";
+    // A second blue site close enough that the capital's garrison is a legal defender for it
+    // (defendSites only reaches DEFEND_REACH = 50 cells, squared 2500) but far enough that the
+    // capital is not itself the threatened site.
+    const reach = (s) => Math.max(Math.abs(s.x - capital.x), Math.abs(s.y - capital.y));
+    const other = match.sites.filter((s) => s.owner === "blue" && s !== capital)
+      .filter((s) => reach(s) > 12 && reach(s) <= 40)
+      .sort((a, b) => reach(a) - reach(b))[0];
+    if (!other) fail("the 1942 board gives blue no second site between 13 and 40 cells of its capital");
+    const garrison = piece("blue:garrison", "blue", "infantry", capital.x, capital.y, { entrenched: true });
+    // One enemy tank on the neighbouring cell of that other site: a negative score, so the ported
+    // defence routine runs and looks for a defender.
+    const threat = piece("red:threat", "red", "tank", (other.x + 1) % CELL_W, other.y, {});
+    match.pieces = [garrison, threat];
+    const threatened = threatenedSites(match, "blue");
+    if (!threatened.length) say("the threatened blue site is not scored as threatened, so the leg is vacuous", { site: other.name });
+    const events = ordersFor(match, "blue");
+    const sent = events.filter((e) => e.type === "bot_defend" && e.pieceId === garrison.id);
+    if (sent.length) say("a threat elsewhere sent the capital garrison off its capital", sent.map((e) => ({ site: e.site, to: e.to, path: (e.path || []).length })));
+    if (Array.isArray(garrison.path) && garrison.path.length) say("the capital garrison was given a path toward another site", garrison.path);
+    if (garrison.x !== capital.x || garrison.y !== capital.y) say("the capital garrison left its cell", { from: [capital.x, capital.y], to: [garrison.x, garrison.y] });
+    // The control: no threat, no order — so the leg above is measuring the defence routine and not
+    // the march (which 3. already covers).
+    const quiet = openMatch("1942", JSON.parse(JSON.stringify(sites)), { handicapSide: "red" });
+    quiet.clock = "running";
+    quiet.seats = { blue: { kind: "bot" }, red: { kind: "human" } };
+    quiet.botSide = "blue";
+    quiet.sides = { blue: { cash: 0, bought: 99 }, red: { cash: 0, bought: 99 } };
+    seedOwners(quiet);
+    const qCapital = quiet.sites.find((s) => String(s.name) === String(capital.name));
+    qCapital.kind = "capital";
+    const qGarrison = piece("blue:garrison", "blue", "infantry", qCapital.x, qCapital.y, { entrenched: true });
+    quiet.pieces = [qGarrison];
+    if (threatenedSites(quiet, "blue").length) fail("the control leg has a threatened site, so it is not a control");
+    const qEvents = ordersFor(quiet, "blue");
+    if (qEvents.some((e) => e.type === "bot_defend")) say("the control leg issued a defend order with nothing threatening", qEvents.filter((e) => e.type === "bot_defend"));
+    if (Array.isArray(qGarrison.path) && qGarrison.path.length) say("the control leg moved the garrison with nothing threatening", qGarrison.path);
+  }
+
   // ---- 4. terrain cover: mountain, on the real board (D-020) ----------------------------------
   // Leg 1 pins a CITY cell (the 1942 capital's own terrain byte). D-020 also asks for mountain
   // cover, and mountain is different arithmetic in the same function: the DEFENDER's terrain byte
