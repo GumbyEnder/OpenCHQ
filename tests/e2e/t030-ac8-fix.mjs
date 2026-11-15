@@ -313,6 +313,31 @@ try {
     mark("item 1 a one-cell move is still a destination, not a reselect",
       orders(oneCellWire).length > 0, { wire: oneCellWire, toast: await toast() });
 
+    // The reserved radius is capped below one cell, so the neighbouring cell's centre is a
+    // destination at every zoom a player uses, not only at the fit (PM 5641(3), ruled in 5677:
+    // a pin or numbers, their hand-check repeats it after deploy). Measured at ~x2 and ~x4.
+    for (const presses of [2, 4]) {
+      await fit();
+      await clickCell(cell);
+      for (let i = 0; i < presses; i++) {
+        await page.keyboard.press("+");
+        await sleep(160);
+      }
+      await centreOn(cell);
+      const zoomScale = (await state()).camera.scale;
+      const target = { x: (cell.x + 1) % 320, y: cell.y };
+      const tp = await pointOf(target.x, target.y);
+      before = await wireLen();
+      await page.mouse.move(tp.x, tp.y);
+      await sleep(120);
+      await page.mouse.click(tp.x, tp.y);
+      await sleep(320);
+      const zoomWire = await wireFrom(before);
+      mark("item 1 a one-cell move still orders at x" + zoomScale.toFixed(2),
+        orders(zoomWire).length > 0,
+        { presses, scale: zoomScale, wire: zoomWire, toast: await toast() });
+    }
+
     // The PM's own repro (shot 05-escape): a click the player read as a selection, then Escape
     // before the ack lands. The order must never be on the wire, so nothing can overwrite the clear.
     await page.keyboard.press("Escape");
