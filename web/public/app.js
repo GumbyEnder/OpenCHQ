@@ -1,7 +1,7 @@
 import {
   capitalMarkers, cellToPixel, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch,
-  panBy, pixelToCell, paintPlacement, rememberSeen, sightTable, statusLine, wrapX, zoomAt, badgeAt,
-  renderBadgeSprite,
+  panBy, pixelToCell, paintPlacement, rememberSeen, routePolyline, routeSpan, sightTable, statusLine,
+  wrapX, zoomAt, badgeAt, renderBadgeSprite,
 } from "./render.mjs";
 import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
 import { unitLabel } from "./units.mjs";
@@ -21,6 +21,8 @@ import {
   purseText,
   refusalText,
   routeRequest,
+  selectionNote,
+  selectionToast,
   snapPlacementCell,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
@@ -117,6 +119,24 @@ let room = null;
 // Click-to-command: the selected own piece, and the server's plan for the cell the pointer
 // is over. The page never invents a route; `preview` is the reply to `op: "route"`.
 let selected = null;
+// The selected mark breathes. A still frame always carries the ring (casing + accent), so the mark
+// does not depend on where the pulse happens to be when a screenshot is taken (T-030 AC1).
+let selectPulse = 0;
+let selectPulseTimer = null;
+function startSelectionPulse() {
+  if (selectPulseTimer) return;
+  selectPulseTimer = setInterval(() => {
+    if (!selected) {
+      clearInterval(selectPulseTimer);
+      selectPulseTimer = null;
+      selectPulse = 0;
+      drawMatch();
+      return;
+    }
+    selectPulse = (selectPulse + 0.16) % 1;
+    drawMatch();
+  }, 90);
+}
 let preview = null;
 let hoverKey = "";
 // The last /api/board payload. A missing extract is a normal state here: the
@@ -569,6 +589,7 @@ function drawMatch() {
     badgeMinPx: BADGE_MIN_PX * dpr(),
     badgeSprites,
     selectedId: selected ? selected.id : null,
+    selectedPulse: selectPulse,
     preview,
     fog: fogFor(view),
     sight: Number(boardPayload.sightCells || 8),
@@ -596,7 +617,8 @@ function drawMatch() {
       ", neutral " + result.tally.neutral + "."
     : "";
   boardNote.textContent = politicalNote || escortNote ||
-    previewLine(preview) || cargoNote(selected) || airNote(selected) || statusLine(boardPayload, room, result);
+    previewLine(preview) || [selectionNote(selected), cargoNote(selected) || airNote(selected)].filter(Boolean).join(" ") ||
+    statusLine(boardPayload, room, result);
   // A capital under threat is the loudest thing on the page, and it stays up until the threat
   // passes: the last ten rounds of a match are not the time to be quiet.
   if (alarmStrip) {
@@ -709,7 +731,11 @@ board.addEventListener("click", (event) => {
     hoverKey = selected.id + ":" + selected.x + "," + selected.y;
     // Selecting a piece does not move the camera. It used to centre a zoomed view on the piece,
     // which read as the map jumping under the click that made the selection (T-007 AC10).
-    say(PICK_HINT + " Then pick a destination.");
+    //
+    // The toast names the piece now: it used to say "Select one of your pieces" AFTER a selection,
+    // while the board note named the selected route, and the two lines disagreed (PB-053, T-030).
+    say(selectionToast(selected));
+    startSelectionPulse();
     drawMatch();
     return;
   }
@@ -798,22 +824,33 @@ board.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 let panFrom = null;
+let panTravel = 0;
 board.addEventListener("contextmenu", (event) => event.preventDefault());
 board.addEventListener("pointerdown", (event) => {
   if (event.button !== 2) return;
   event.preventDefault();
   panFrom = { x: event.clientX, y: event.clientY };
+  panTravel = 0;
   board.setPointerCapture?.(event.pointerId);
 });
 board.addEventListener("pointermove", (event) => {
   if (!panFrom) return;
+  panTravel += Math.abs(event.clientX - panFrom.x) + Math.abs(event.clientY - panFrom.y);
   userCamera = true;
   camera = panBy(viewForCanvas(), event.clientX - panFrom.x, event.clientY - panFrom.y);
   panFrom = { x: event.clientX, y: event.clientY };
   drawMatch();
 });
-board.addEventListener("pointerup", () => {
+board.addEventListener("pointerup", (event) => {
+  const travelled = panTravel;
   panFrom = null;
+  panTravel = 0;
+  // A right-click that did not drag is a cancel, not a pan (T-030 AC3). The distance floor keeps
+  // the right-drag camera exactly as it was: only a click that stayed put clears the selection.
+  if (event && event.button === 2 && travelled < 4 && selected) {
+    clearCommand();
+    say("Selection cleared.");
+  }
 });
 window.addEventListener("keydown", (event) => {
   // Typing a name or a password is not a command: the shortcuts only apply away from the gate's
@@ -833,6 +870,13 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && buying) {
     clearCommand();
     say("Build cursor off.");
+    return;
+  }
+  // T-030 AC3: Escape clears a selection, and clearing is not an order. It is the same handler
+  // that closes a dialogue and drops the build cursor, so PB-047 and this close together.
+  if (event.key === "Escape" && selected) {
+    clearCommand();
+    say("Selection cleared.");
     return;
   }
   if (event.key === "b" || event.key === "B") return openDialog("buy");
@@ -1611,7 +1655,10 @@ const DIALOG_PAINTERS = {
           // the map, because the cell the plane sits on is its base, not the cell meant (T-003).
           if (mission.mode === "strike" || mission.mode === "transfer") {
             const planePiece = (room.pieces || []).find((piece) => piece.id === plane.id);
-            if (planePiece) selected = planePiece;
+            if (planePiece) {
+              selected = planePiece;
+              startSelectionPulse();
+            }
             pendingMission = mission.mode;
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
@@ -2165,6 +2212,22 @@ window.__chq = {
   room: () => room,
   socketState: () => socketState,
   toast: () => flash.textContent || "",
+  // The board's own one-liner. It sits under the canvas and used to disagree with the toast
+  // (PB-053), so the e2e reads both (T-030 AC4).
+  note: () => (boardNote && boardNote.textContent) || "",
+  // The drawn span of the hovered route, measured the way the painter draws it (T-030 AC5).
+  previewSpan: () => {
+    const span = routeSpan(preview, viewForCanvas());
+    const points = routePolyline(preview, viewForCanvas());
+    const boardW = Number(viewForCanvas().boardW) || 320;
+    return {
+      has: Boolean(preview),
+      rounds: preview ? Number(preview.rounds) || 0 : 0,
+      crossing: points.some((p) => p.x >= boardW || p.x < 0),
+      ...span,
+    };
+  },
+  selectPulse: () => selectPulse,
   outbox: () => outbox.length,
   wire: () => wireLog.slice(),
   board: () => boardPayload,

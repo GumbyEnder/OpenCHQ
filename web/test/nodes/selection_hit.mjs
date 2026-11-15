@@ -180,14 +180,21 @@ export function run({ fail }) {
   }
 
   // A different own piece one cell away is still SELECTED, not ordered onto: nearest centre wins
-  // before the destination branch, and a click on a friend's badge is a selection.
-  {
-    const view = viewAt(4);
-    const at = cellToPixel(BLUE_NEAR.x, BLUE_NEAR.y, view);
-    const got = clickIntent([BLUE_INF, BLUE_NEAR], view, at.x, at.y,
-      { side: "blue", selectedId: BLUE_INF.id, badgeMinPx: 14, cell: { x: BLUE_NEAR.x, y: BLUE_NEAR.y } });
-    if (!got || got.kind !== "piece" || String(got.piece.id) !== BLUE_NEAR.id) {
-      fail("a click on another own piece one cell away did not select it");
+  // before the destination branch, and a click on a friend's badge is a selection. T-030 AC2 names
+  // the point exactly: every own piece's drawn badge, at the world fit and both zooms, and the edge
+  // of that badge as well as its centre - "clicking another own piece" must never reach the order
+  // branch, whatever part of the icon the pointer landed on (PB-052).
+  for (const scale of [2, 4, 8]) {
+    const view = viewAt(scale);
+    const half = badgePx(scale) / 2;
+    for (const [dx, dy] of [[0, 0], [half * 0.9, 0], [-half * 0.9, 0], [0, half * 0.9], [0, -half * 0.9]]) {
+      const centre = cellToPixel(BLUE_NEAR.x, BLUE_NEAR.y, view);
+      const got = clickIntent([BLUE_INF, BLUE_NEAR], view, centre.x + dx, centre.y + dy,
+        { side: "blue", selectedId: BLUE_INF.id, badgeMinPx: 14, cell: { x: BLUE_NEAR.x, y: BLUE_NEAR.y } });
+      if (!got || got.kind !== "piece" || String(got.piece.id) !== BLUE_NEAR.id) {
+        fail("a click at (" + dx.toFixed(1) + "," + dy.toFixed(1) + ") on another own piece one cell away at scale "
+          + scale + " resolved to " + (got ? got.kind : "nothing") + ", not a selection of that piece");
+      }
     }
   }
 

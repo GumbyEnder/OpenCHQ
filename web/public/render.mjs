@@ -979,9 +979,121 @@ export function paintCapitals(ctx, markers, view) {
 // the dark ink and no line; the sentence itself goes on the board note.
 export const ROUTE_INK = "#ffd166";
 
+// The route's cells with x UNWRAPPED across the seam. The server plans in wrapped columns (319 ->
+// 0 is one step east); drawing each point at its own wrapped pixel made that step a line from one
+// edge of the map to the other, so a 94-round sea route zig-zagged the whole board (PB-053, T-030).
+// Unwrapping keeps the path one continuous line: `x` runs past 0 or past boardW and the painter
+// blits the run at -boardW, 0 and +boardW so both edges of the seam show the part that belongs to
+// them. Pure, so a test measures the drawn span without a canvas.
+export function routePolyline(preview, view) {
+  if (!preview) return [];
+  const boardW = Math.max(1, Math.floor(Number(view && view.boardW) || BOARD_W));
+  const cells = [];
+  const from = preview.from;
+  if (from && Number.isFinite(Number(from.x)) && Number.isFinite(Number(from.y))) {
+    cells.push({ x: Number(from.x), y: Number(from.y) });
+  }
+  for (const step of Array.isArray(preview.path) ? preview.path : []) {
+    if (!step || !Number.isFinite(Number(step.x)) || !Number.isFinite(Number(step.y))) continue;
+    cells.push({ x: Number(step.x), y: Number(step.y) });
+  }
+  const to = preview.to;
+  if (to && Number.isFinite(Number(to.x)) && Number.isFinite(Number(to.y))) {
+    const last = cells[cells.length - 1];
+    if (!last || wrapX(last.x, boardW) !== wrapX(Number(to.x), boardW) || last.y !== Number(to.y)) {
+      cells.push({ x: Number(to.x), y: Number(to.y) });
+    }
+  }
+  const points = [];
+  let raw = null;
+  let x = 0;
+  for (const cell of cells) {
+    if (raw === null) x = wrapX(cell.x, boardW);
+    else x += wrapDelta(raw, cell.x, boardW);
+    raw = cell.x;
+    points.push({ x, y: cell.y, cellX: wrapX(cell.x, boardW), cellY: cell.y });
+  }
+  return points;
+}
+
+// The longest hop a route draws, in cells. A seam crossing is one cell (319 -> 0 is +1); before the
+// unwrap it measured the whole board width. AC5 of T-030 asserts this stays under half the map.
+export function routeSpan(preview, view) {
+  const points = routePolyline(preview, view);
+  let maxCells = 0;
+  for (let i = 1; i < points.length; i++) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+    const len = Math.hypot(dx, dy);
+    if (len > maxCells) maxCells = len;
+  }
+  return { points: points.length, maxCells };
+}
+
+export const SELECT_MARK_INK = "#ffe066";
+
+// Where the selected piece's mark goes, and how big. Exported so a test can assert the mark exists
+// at the world fit and both zooms WITHOUT reading pixels back off a canvas.
+export function selectionMarkFor(groups, view, opts = {}) {
+  const selectedId = opts.selectedId;
+  if (selectedId === undefined || selectedId === null) return null;
+  const id = String(selectedId);
+  const group = (Array.isArray(groups) ? groups : []).find((entry) => {
+    if (!entry) return false;
+    if (Array.isArray(entry.pieces) && entry.pieces.some((piece) => piece && String(piece.id) === id)) return true;
+    return entry.top && String(entry.top.id) === id;
+  });
+  if (!group || !view) return null;
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const size = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX);
+  const at = cellToPixel(wrapX(group.x, view.boardW || BOARD_W), group.y, view);
+  // The pulse phase grows the ring by up to 3 px; the ring itself is always drawn, so the mark is
+  // visible in a still screenshot at any phase and only breathes on screen.
+  const pulse = Math.max(0, Math.min(1, Number(opts.pulse ?? opts.selectedPulse) || 0));
+  return {
+    x: at.x, y: at.y, size, half: size / 2 + 2 + 3 * pulse, pulse,
+    ink: SELECT_MARK_INK, casing: "#0b0f14",
+  };
+}
+
+// The selected piece's mark: a dark casing under a bright ring, plus a faint ring that expands with
+// the pulse. The old white-only ring sat on the badge's own pale face and read as nothing (PB-051);
+// casing + accent is legible on both map themes and at the world fit, where the badge is smallest.
+export function paintSelectionMark(ctx, groups, view, opts = {}) {
+  const mark = selectionMarkFor(groups, view, opts);
+  if (!mark) return null;
+  const { x, y, half } = mark;
+  const ring = () => {
+    ctx.beginPath();
+    ctx.rect(Math.round(x - half) + 0.5, Math.round(y - half) + 0.5,
+      Math.round(half * 2), Math.round(half * 2));
+  };
+  ring();
+  ctx.strokeStyle = mark.casing;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ring();
+  ctx.strokeStyle = mark.ink;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  // The breathing half: a wider ring fading out as it grows, so the mark moves without the still
+  // frame depending on where the pulse happens to be.
+  const outer = half + 5 + 5 * mark.pulse;
+  ctx.beginPath();
+  ctx.rect(Math.round(x - outer) + 0.5, Math.round(y - outer) + 0.5,
+    Math.round(outer * 2), Math.round(outer * 2));
+  ctx.globalAlpha = 0.45 * (1 - mark.pulse);
+  ctx.strokeStyle = mark.ink;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  return mark;
+}
+
 export function paintPreview(ctx, preview, view, opts = {}) {
   if (!preview) return 0;
   const v = view;
+  const points = routePolyline(preview, v);
   const path = Array.isArray(preview.path) ? preview.path : [];
   const to = preview.to || (path.length ? path[path.length - 1] : null);
   const ink = preview.error ? PIECE_INK.enemy : ROUTE_INK;
@@ -992,53 +1104,53 @@ export function paintPreview(ctx, preview, view, opts = {}) {
   // one pixel and the casing still carries it, at every zoom.
   const width = Math.max(1.25, v.scale * 0.6);
 
-  let started = false;
-  const trace = () => {
-    started = false;
+  // The unwrapped run is drawn at three offsets: the one the camera shows, and one map-width to
+  // either side, so a route that leaves the east edge reappears at the west edge instead of
+  // streaking across the board. The canvas clips the rest.
+  const widthCells = Math.max(1, Math.floor(Number(v.boardW) || BOARD_W));
+  const offsets = [-widthCells * v.scale, 0, widthCells * v.scale];
+  const trace = (shift) => {
+    if (!points.length) return false;
     ctx.beginPath();
-    const from = preview.from;
-    if (from && Number.isFinite(Number(from.x)) && Number.isFinite(Number(from.y))) {
-      const at = cellToPixel(wrapX(from.x, v.boardW), Number(from.y), v);
-      ctx.moveTo(at.x, at.y);
-      started = true;
+    for (let i = 0; i < points.length; i++) {
+      const at = cellToPixel(points[i].x, points[i].y, v);
+      if (i === 0) ctx.moveTo(at.x + shift, at.y);
+      else ctx.lineTo(at.x + shift, at.y);
     }
-    for (const step of path) {
-      if (!step || !Number.isFinite(Number(step.x)) || !Number.isFinite(Number(step.y))) continue;
-      const at = cellToPixel(wrapX(step.x, v.boardW), Number(step.y), v);
-      if (!started) {
-        ctx.moveTo(at.x, at.y);
-        started = true;
-      } else {
-        ctx.lineTo(at.x, at.y);
-      }
-    }
-    if (started) ctx.stroke();
+    return true;
   };
 
-  // The casing first, then the bright line over it.
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
-  ctx.lineWidth = width + 1.5;
-  trace();
-  ctx.strokeStyle = ink;
-  ctx.lineWidth = width;
-  trace();
+  for (const shift of offsets) {
+    if (!trace(shift)) break;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+    ctx.lineWidth = width + 1.5;
+    ctx.stroke();
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = width;
+    ctx.stroke();
+  }
 
   if (to && Number.isFinite(Number(to.x)) && Number.isFinite(Number(to.y))) {
     // The end marker: a filled diamond on a dark ring, so "this is where the order lands" is not a
-    // hairline square nobody can see. T-021 thinned it with the line it ends.
-    const at = cellToPixel(wrapX(to.x, v.boardW), Number(to.y), v);
+    // hairline square nobody can see. T-021 thinned it with the line it ends. Drawn at every copy of
+    // the seam the run occupies, so the marker is on screen when the route crosses.
+    const base = cellToPixel(wrapX(to.x, v.boardW || BOARD_W), Number(to.y), v);
     const r = Math.max(2.5, v.scale * 1.2);
-    ctx.beginPath();
-    ctx.moveTo(at.x, at.y - r);
-    ctx.lineTo(at.x + r, at.y);
-    ctx.lineTo(at.x, at.y + r);
-    ctx.lineTo(at.x - r, at.y);
-    ctx.closePath();
-    ctx.fillStyle = ink;
-    ctx.fill();
-    ctx.lineWidth = Math.max(0.75, width * 0.45);
-    ctx.strokeStyle = "#0b0f14";
-    ctx.stroke();
+    for (const shift of offsets) {
+      const at = { x: base.x + shift, y: base.y };
+      if (at.x < -r || at.x > v.viewW + r) continue;
+      ctx.beginPath();
+      ctx.moveTo(at.x, at.y - r);
+      ctx.lineTo(at.x + r, at.y);
+      ctx.lineTo(at.x, at.y + r);
+      ctx.lineTo(at.x - r, at.y);
+      ctx.closePath();
+      ctx.fillStyle = ink;
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.75, width * 0.45);
+      ctx.strokeStyle = "#0b0f14";
+      ctx.stroke();
+    }
   }
   return path.length;
 }
@@ -1095,9 +1207,10 @@ export function paintMatch(ctx, board, room, opts = {}) {
     paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale });
     const preview = paintPreview(ctx, opts.preview, flat, opts);
     const groups = paintPieces(ctx, room && room.pieces, flat, opts);
+    const selection = paintSelectionMark(ctx, groups, flat, opts);
     const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
     const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat);
-    return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, message: EXTRACT_MISSING, view: flat };
+    return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, selection, message: EXTRACT_MISSING, view: flat };
   }
 
   if (opts.sightAt && Number(opts.sight) > 0) {
@@ -1105,6 +1218,9 @@ export function paintMatch(ctx, board, room, opts = {}) {
   }
   const preview = paintPreview(ctx, opts.preview, view, opts);
   const groups = paintPieces(ctx, room && room.pieces, view, opts);
+  // The selected piece's mark rides on top of the badges: a ring under the badge is a ring nobody
+  // can see when the badge is the light face the ring sits on (PB-051).
+  const selection = paintSelectionMark(ctx, groups, view, opts);
   const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
   // A badge is never smaller than its floor, so one can cover the city square it stands on. The
   // sites under badges get their own cell tick back after the pieces are painted: the city has to
@@ -1123,7 +1239,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   const labels = visibleLabels(room && room.sites, view);
   const labelled = paintLabels(ctx, opts.atlas, labels);
   return { mode, painted, fogged, pieces, groups: groups.length, siteTicks, capitals, labels: labelled,
-    political, tally, preview, message: "", view };
+    political, tally, preview, selection, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.

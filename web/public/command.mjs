@@ -396,3 +396,17 @@ export function previewLine(preview) {
   if (rounds === 0) return "Already on that cell.";
   return "Route: " + roundsText(rounds) + ". Click to send the order.";
 }
+
+// The two sentences that say a piece is selected. They live here, next to PICK_HINT, because the
+// toast and the board note used to disagree: after a selection the toast still read "Select one of
+// your pieces" while the note named a route (PB-053). One helper per surface, one phrase naming the
+// unit, and a test reads both after select, reselect, clear and order.
+export function selectionToast(piece) {
+  if (!piece) return "";
+  return unitLabel(piece.kind) + " selected. Pick a destination.";
+}
+
+export function selectionNote(piece) {
+  if (!piece) return "";
+  return unitLabel(piece.kind) + " selected — hover a destination to see the route.";
+}
