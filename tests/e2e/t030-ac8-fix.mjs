@@ -232,8 +232,11 @@ async function ringBox(cell, span = 60) {
 try {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 30000 });
+  // Provenance, not a pin: /api/version cannot fail while the page has loaded, so it is printed
+  // and never counted. Identity is proven where it can be measured - the served-file md5 versus
+  // the git blob at the gate sha, in the run-gate log.
   const version = await ev(() => fetch("/api/version").then((r) => r.json()));
-  mark("build under test", Boolean(version && version.short), { version });
+  console.log("served version " + JSON.stringify(version));
   if (!(await ev(() => Boolean(window.__chq && window.__chq.me())))) {
     const name = "t30f" + Date.now().toString(36).slice(-6);
     await page.fill("#register input[name=username]", name);
