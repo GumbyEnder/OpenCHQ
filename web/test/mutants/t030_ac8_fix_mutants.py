@@ -19,7 +19,9 @@ import sys
 MUTANTS = [
     ("M1 item1 reselect radius", "web/public/command.mjs",
      [("if (own && others.length === 0 && own.distance < reserved - 1e-9) {", "if (false) {")],
-     ["item 1 a re-click on the badge", "item 1 a badge click immediately followed by Escape"]),
+     # A 1 px miss is absorbed by the own-cell clause with or without the ring, so the ring's own
+     # witness is the compound leg (a miss past half a cell, then Escape).
+     ["item 1 a badge click immediately followed by Escape"]),
     ("M2 item2 pending path painted", "web/public/render.mjs",
      [("  const pending = paintPendingOrders(ctx, room, view, opts);", "  const pending = 0;")],
      ["item 2 the pending path is drawn at the world fit", "item 2 the pending path is drawn when zoomed"]),
@@ -59,7 +61,7 @@ MUTANTS = [
     ("M7 item1 reserved radius shrunk to 1px", "web/public/command.mjs",
      [("    const reserved = Math.min(badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2, Math.max(1, scale * 0.6));",
        "    const reserved = 1;")],
-     ["item 1 a re-click on the badge", "item 1 a badge click immediately followed by Escape"]),
+     ["item 1 a badge click immediately followed by Escape"]),
     # The other direction, and the one room 5641(3) is about: put the OLD cap back (`scale - 0.5`),
     # which leaves half a pixel between the ring and the neighbouring icon centre. A pointer reports
     # whole pixels, so a click on that centre floors inside the ring and reselects - the one-cell move
@@ -68,7 +70,7 @@ MUTANTS = [
     # one-cell-out legs, which need the node leg to be re-run for this mutant (run_node below).
     ("M8 item3 radius cap too close to the cell boundary", "web/public/command.mjs",
      [("Math.max(1, scale * 0.6));", "Math.max(1, scale - 0.5));")],
-     ["item 1 a one-cell move is still a destination"], 1),
+     [], 1),
 ]
 
 
