@@ -14,6 +14,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { badgePx } from "../../web/public/badges.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 function argOf(name, fallback = "") {
@@ -296,7 +297,61 @@ try {
   mark("AC4 an order was actually sent for the note check", wireOrder.some((line) => /^ordered|^error/.test(line)), { wire: wireOrder });
   await pair("after an order");
 
-  // ---- AC5: five long sea routes, one across the seam ----------------------------------------
+  // ---- One cell out still orders a move, at the fit and at zoom 2 and zoom 4 (PM 5641 item 3) --
+  // The selected badge is wider than its cell, so a neighbour's centre sits INSIDE the selected
+  // icon; the reserved-radius rule is what keeps that click a destination instead of a re-selection.
+  // This is a real pointer click at each zoom, and the witness is the wire: an "ordered" frame for a
+  // neighbour the page itself has previewed as a legal route. Numbers are printed for the report.
+  const oneCellOut = [];
+  // "zoom 2" and "zoom 4" are the second and fourth user-facing zoom steps (the + key / the
+  // Cam + button), because the page has continuous zoom and no numbered levels. The measured cell
+  // size is printed for each, and the node pin selection_hit covers literal 2 px and 4 px cells.
+  for (const target of [0, 2, 4]) {
+    await fit();
+    if (target) await zoomPresses(target);
+    const cam = (await state()).camera;
+    const cellPx = Math.max(1, Math.round(cam.scale));
+    const half = badgePx(cellPx, 14) / 2;
+    await clickCell({ x: isolated.x, y: isolated.y });
+    const selectedNow2 = (await state()).selected;
+    if (String(selectedNow2) !== String(isolated.id)) {
+      mark("one cell out: the piece could not be selected at " + (target || "fit"), false, { selected: selectedNow2 });
+      continue;
+    }
+    // The eight neighbours, in order; the first one the page previews as a legal route is the
+    // destination. A hover that says "Route:" is the server's own answer, not the test's guess.
+    let picked = null;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const cell = { x: (Number(isolated.x) + dx + 320) % 320, y: Math.max(0, Math.min(135, Number(isolated.y) + dy)) };
+      await hoverCell(cell);
+      const span = await page.evaluate(() => window.__chq.previewSpan());
+      const wanted = await note();
+      if (span.has && /^Route:/.test(wanted)) { picked = { cell, dx, dy, rounds: span.rounds }; break; }
+    }
+    if (!picked) {
+      mark("one cell out at cell " + cellPx + " px: a legal neighbour was previewed", false,
+        { camera: cam, half, tried: "8 neighbours" });
+      continue;
+    }
+    const inside = Math.max(Math.abs(picked.dx), Math.abs(picked.dy)) * cellPx <= half;
+    const before = await wireLen();
+    await clickAt(await panToCell(picked.cell));
+    await sleep(600);
+    const lines = await wireFrom(before);
+    const ordered = lines.filter((line) => /^ordered/.test(line));
+    const selectedAfter = (await state()).selected;
+    mark("one cell out at cell " + cellPx + " px (badge half " + half + " px, click inside the icon: " + inside + ")"
+      + " orders a move", ordered.length === 1 && selectedAfter === null,
+      { camera: cam, cellPx, half, offset: [picked.dx, picked.dy], target: picked.cell, rounds: picked.rounds,
+        wire: lines, selectedAfter });
+    oneCellOut.push({ label: target || "fit", cellPx, half, inside, dx: picked.dx, dy: picked.dy,
+      target: picked.cell, rounds: picked.rounds, ordered: ordered.length });
+    await shot("one-cell-out-" + (target ? "zoom" + target : "fit"));
+  }
+  mark("one cell out ordered a move at the fit, zoom 2 and zoom 4",
+    oneCellOut.length === 3 && oneCellOut.every((r) => r.ordered === 1), { measured: oneCellOut });
+
+  // ---- AC5: five long sea routes, one across the seam -----------------------------------------
   const ships = mine.filter((p) => p.domain === "sea");
   await fit();
   const routes = [];

@@ -167,6 +167,37 @@ export function run({ fail }) {
     }
   }
 
+  // ---- T-030 follow-up (room 5641 item 3): ONE CELL OUT is a destination at the world fit and at
+  // zoom 2 / zoom 4, with the reserved radius doing the work. The selected badge is wider than its
+  // own cell at every zoom past the fit: at the fit a badge is BADGE_MIN_PX wide, so a neighbour's
+  // centre (one cell away) is deep inside the selected icon's box. If the radius rule that keeps the
+  // selected piece out of its neighbours' hit set shrinks or goes, this click selects the piece
+  // again and no order is ever sent - the defect PB-050/T-028 shipped. The numbers below are the
+  // ones the deploy report quotes: badge half-box, one-cell distance, and how far inside the box the
+  // click lands, per zoom.
+  for (const scale of [1, 2, 4]) {
+    const view = viewAt(scale);
+    const half = badgePx(scale, 14) / 2;
+    const oneCell = scale;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const cell = { x: (BLUE_INF.x + dx + BOARD_W) % BOARD_W, y: Math.max(0, Math.min(BOARD_H - 1, BLUE_INF.y + dy)) };
+      const at = cellToPixel(cell.x, cell.y, view);
+      const inside = Math.abs(at.x - cellToPixel(BLUE_INF.x, BLUE_INF.y, view).x) <= half
+        && Math.abs(at.y - cellToPixel(BLUE_INF.x, BLUE_INF.y, view).y) <= half;
+      if (!inside) fail("the one-cell-out probe at scale " + scale + " is outside the badge box; the tight-radius case is not being exercised");
+      const got = clickIntent([BLUE_INF], view, at.x, at.y,
+        { side: "blue", selectedId: BLUE_INF.id, badgeMinPx: 14, cell });
+      if (!got || got.kind !== "cell") {
+        fail("ONE CELL OUT at scale " + scale + " (badge half " + half + " px, cell " + oneCell + " px) resolved to "
+          + (got ? got.kind : "nothing") + ", not a move destination");
+      }
+      if (got.cell.x !== cell.x || got.cell.y !== cell.y) {
+        fail("the one-cell-out destination at scale " + scale + " was (" + got.cell.x + "," + got.cell.y
+          + "), not the clicked cell (" + cell.x + "," + cell.y + ")");
+      }
+    }
+  }
+
   // The piece's own cell stays a re-selection: an order to the cell the unit already stands on is
   // nothing, so the click must keep the selection (and the prompt) rather than send it.
   for (const scale of [4, 8]) {
