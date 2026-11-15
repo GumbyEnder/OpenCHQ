@@ -39,6 +39,18 @@ export const STRIKE_NOTE = "Air strike.";
 export const REACH_NOTE = "Stand-in reach. The aircraft range was not recovered.";
 export const PARADROP_NOTE = "Paradrop. The infantry pays its strength cost.";
 
+// The site kinds an air unit may be based at. ONE list, exported, because three rules read the same
+// fact and a duplicate is how they drifted apart: capture destroys the enemy aircraft based on the
+// captured strip (below, and `economy.occupy`), a transfer rebases the plane only onto one of these
+// (manual printed p.22: "Air units may only be transferred to cities, bases, and aircraft
+// carriers"), and a mission has to be flown from one of these or from a carrier. A dock is NOT in
+// this list even though the manual names ports for ships: p.22 names cities, bases and carriers.
+export const AIRSTRIP_KINDS = new Set(["city", "capital", "base", "facility"]);
+
+export function isAirStrip(kind) {
+  return AIRSTRIP_KINDS.has(String(kind));
+}
+
 export function isAircraft(piece) {
   return Boolean(piece) && piece.kind === "aircraft";
 }
@@ -62,17 +74,22 @@ function chebyshev(a, b) {
   return Math.max(wrap, Math.abs(Number(a.y) - Number(b.y)));
 }
 
-// A mission has to be flown from somewhere: a friendly city, dock or ship within reach.
+// A mission has to be flown from somewhere: a friendly city, base or capital (the same berth list a
+// transfer accepts), or the cell a friendly carrier stands on. Manual printed p.22 names exactly
+// those: cities, bases and aircraft carriers. This used to accept a `dock`/`docks` site and ANY
+// non-transport sea piece, which is the T-021 divergence frodo flagged (room 4890): a plane could
+// fly from a base that capture does not treat as an air strip, and from a hull the manual never
+// names. Both are gone; the shared list is the point.
 function baseFor(match, side, from) {
   const reach = airReach();
   if (reach <= 0) return null;
   const candidate = (cell) => cell && chebyshev(from, cell) <= reach;
   const home = (match.sites || []).find(
-    (site) => site && site.owner === side && (site.kind === "city" || site.kind === "dock" || site.kind === "docks") && candidate(site),
+    (site) => site && site.owner === side && isAirStrip(site.kind) && candidate(site),
   );
   if (home) return home;
   return (match.pieces || []).find(
-    (unit) => unit && unit.side === side && unit.domain === "sea" && unit.transport !== true && candidate(unit),
+    (unit) => unit && unit.side === side && unit.kind === "carrier" && candidate(unit),
   ) || null;
 }
 
@@ -94,7 +111,7 @@ export function airBriefing(match, side) {
       y: Number(plane.y),
       roundsLeft: left,
       ready: left === 0,
-      // A mission needs somewhere to fly from. Without a city, dock or ship in reach the choice
+      // A mission needs somewhere to fly from. Without a city, base or carrier in reach the choice
       // exists on the page but is refused by the server, and this says which.
       reach: reach > 0 ? reach : null,
       base: base ? (base.name || base.id) : null,
@@ -153,8 +170,7 @@ export function transferPlane(match, side, pieceId, target) {
   const site = (match.sites || []).find(
     (entry) => entry && Number(entry.x) === wx && Number(entry.y) === y,
   );
-  const siteOk = Boolean(site) && site.owner === side &&
-    ["city", "capital", "base", "facility"].includes(String(site.kind));
+  const siteOk = Boolean(site) && site.owner === side && isAirStrip(site.kind);
   const carrier = (match.pieces || []).find(
     (unit) => unit && unit !== plane && unit.side === side && unit.kind === "carrier" &&
       Number(unit.x) === wx && Number(unit.y) === y,
@@ -219,7 +235,7 @@ export function sendMission(match, side, pieceId, mode, target) {
   if (at.y < 0 || at.y > 135) return { error: "The target is off the map." };
 
   const base = baseFor(match, side, plane);
-  if (!base) return { error: "No friendly city, dock or ship within reach." };
+  if (!base) return { error: "No friendly city, base or carrier within reach." };
 
   const events = [];
   plane.inactiveUntil = (Number(match.round) || 0) + mission.rounds;

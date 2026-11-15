@@ -16,19 +16,28 @@
 //   - the plane based on a captured city survives        -> the Manual p.10 rule (an air unit is
 //     destroyed when its air strip is taken) is gone, and the remake's earlier "stranded" choice is
 //     back (Q50)
+//   - a plane on a captured dock is destroyed               -> the AIRSTRIP_KINDS guard is gone, and
+//     capture destroys a plane on a site no rule calls an air strip (Q50(a) residue)
+//   - a non-aircraft enemy piece on the captured cell is destroyed -> the air-layer guard inside the
+//     removal loop is gone, so the capture sweeps up whatever shares the cell
+//   - a mission can be flown from a dock, or from a cruiser   -> air.baseFor carries its own berth
+//     list again, and p.22's "cities, bases, and aircraft carriers" is not what the code reads
+//   - a plane on a mission survives its base falling          -> air.missionedSurvivesBaseCapture is
+//     being read as true, or not read at all (Q50(a), rooms 5031/5045)
 //   - a coastal city offers no ship berth                     -> D-025 did not land, ships are back
 //     to the 1 px dock cells T-017 already called too small
 //   - an inland city or a landlocked base offers a berth      -> D-025 lost its "touches water" test
 //   - a hull lands on the city cell instead of the water beside it -> the tie-break is gone
 //   - the unready coastal city loses its round                -> readiness stopped applying to ships
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { canPlace, friendlySites, layerOf, placementMask, siteLabel } from "../../server/placement.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { buy, occupy } from "../../server/economy.mjs";
 import { planOrder } from "../../server/move.mjs";
-import { sendMission, transferPlane, airBriefing } from "../../server/air.mjs";
+import { sendMission, transferPlane, airBriefing, inactiveRounds } from "../../server/air.mjs";
+import { missionedSurvivesCapture } from "../../server/rules.mjs";
 import { logLines } from "../../server/log.mjs";
 import { configPath, resetRules, rules } from "../../server/rules.mjs";
 
@@ -237,6 +246,124 @@ export async function run(ctx) {
     // No capture happened, so nothing was destroyed: the removal is keyed on the capture, not on the
     // air layer alone.
     eq("B: the lone plane is still on the map", lone.pieces.map((piece) => piece.id), ["blue:aircraft:20"]);
+  }
+
+  // --- the two guards around the p.10 removal, and the berth list it must share ------
+  // These three cases are the T-021 owed pins (frodo, rooms 4890/4893): each one pins a line of
+  // economy.occupy / air.baseFor that nothing else reached, so removing that line would otherwise
+  // stay 76/0/0 green. The mutants that must go red on each are in
+  // /mnt/nas/host-ops/openchq/t021-cells-mutants.sh.
+  {
+    // D. A NON-air-strip site: a plane standing on a captured dock survives, because a dock is not
+    // an air strip. Unreachable through placement today (aircraft go to city/base/carrier), which is
+    // exactly why it needs a hand-built state - it stops being unreachable the day placement widens,
+    // and then the AIRSTRIP_KINDS guard is the only thing that keeps capture honest.
+    const onDock = { id: "blue:aircraft:30", side: "blue", domain: "land", kind: "aircraft", x: 80, y: 100, strength: 20, maxStrength: 20 };
+    const taker = { id: "red:infantry:30", side: "red", domain: "land", kind: "infantry", x: 80, y: 100, strength: 20, maxStrength: 20 };
+    const onDockMatch = matchWith([DOCK, INLAND], [onDock, taker]);
+    const dockEvents = occupy(onDockMatch);
+    eq("D: the red infantry takes the blue dock",
+      dockEvents.filter((event) => event.type === "capture").map((event) => [event.site, event.side]), [[4, "red"]]);
+    eq("D: a plane on a captured dock survives - a dock is not an air strip",
+      onDockMatch.pieces.map((piece) => piece.id), ["blue:aircraft:30", "red:infantry:30"]);
+    eq("D: no destruction event is invented for it",
+      dockEvents.filter((event) => event.type === "destroyed").length, 0);
+
+    // E. The air-layer guard inside the removal loop. A same-cell ENEMY ground piece cannot reach the
+    // loop in a state this engine builds: layerOf is air-or-ground only, so every non-air piece counts
+    // in byCell, and a same-cell enemy ground piece makes the cell contested so no capture fires. The
+    // guard is still the line that stops the removal sweeping up whatever shares the captured cell, so
+    // it is pinned at the one shape the loop can reach: a piece with NO side, which byCell skips on its
+    // isSide test before the layer test ever runs. Without the guard the removal destroys it.
+    const based = { id: "blue:aircraft:31", side: "blue", domain: "land", kind: "aircraft", x: 80, y: 99, strength: 20, maxStrength: 20 };
+    const neutral = { id: "neutral:garrison:31", side: null, kind: "infantry", x: 80, y: 99, strength: 20, maxStrength: 20 };
+    const taker2 = { id: "red:infantry:31", side: "red", domain: "land", kind: "infantry", x: 80, y: 99, strength: 20, maxStrength: 20 };
+    const layered = matchWith([CITY, INLAND], [based, neutral, taker2]);
+    const layeredEvents = occupy(layered);
+    eq("E: a side-less piece on the cell does not contest the capture",
+      layeredEvents.filter((event) => event.type === "capture").map((event) => event.site), [1]);
+    eq("E: the capture destroys the aircraft and leaves the non-air piece alone",
+      layered.pieces.map((piece) => piece.id), ["neutral:garrison:31", "red:infantry:31"]);
+    eq("E: the only destruction event names the aircraft",
+      layeredEvents.filter((event) => event.type === "destroyed").map((event) => event.pieceId), ["blue:aircraft:31"]);
+
+    // F. The berth list is one list. air.baseFor used to count a friendly `dock`/`docks` site and ANY
+    // non-transport sea piece as a mission base while capture and transfer did not (room 4890).
+    // Manual printed p.22 names cities, bases and aircraft carriers, so the dock and the non-carrier
+    // hull are both refusals now, and the carrier - the manual's third berth - still works.
+    const flyer = { id: "blue:aircraft:32", side: "blue", domain: "land", kind: "aircraft", x: 60, y: 99, strength: 20, maxStrength: 20 };
+    const nearDock = { id: 6, name: "Sparrow Dock", x: 62, y: 100, kind: "dock", owner: "blue" };
+    const dockOnly = matchWith([nearDock, INLAND], [flyer]);
+    const fromDock = sendMission(dockOnly, "blue", "blue:aircraft:32", "patrol");
+    if (!fromDock.error) fail("a mission was flown from a friendly dock");
+    if (!/within reach/.test(fromDock.error)) fail("the refusal did not name the reason: " + fromDock.error);
+    eq("F: the briefing says the dock is not a mission base", airBriefing(dockOnly, "blue")[0].canFly, false);
+
+    const cruiser = { id: "blue:cruiser:32", side: "blue", domain: "sea", kind: "cruiser", x: 61, y: 99, strength: 60, maxStrength: 60 };
+    const fromCruiser = sendMission(matchWith([INLAND], [flyer, { ...cruiser }]), "blue", "blue:aircraft:32", "patrol");
+    if (!fromCruiser.error) fail("a mission was flown from a cruiser");
+
+    const carrier = { id: "blue:carrier:32", side: "blue", domain: "sea", kind: "carrier", x: 61, y: 99, strength: 60, maxStrength: 60 };
+    const carrierMatch = matchWith([INLAND], [flyer, carrier]);
+    eq("F: a friendly carrier is a mission base (manual p.22)",
+      airBriefing(carrierMatch, "blue")[0].canFly, true);
+    const fromCarrier = sendMission(carrierMatch, "blue", "blue:aircraft:32", "patrol");
+    if (fromCarrier.error) fail("a mission from a carrier was refused: " + fromCarrier.error);
+  }
+
+  // --- Q50(a): a plane away on a mission, when its base falls (PM rooms 5031/5045) -----
+  // The flag is `air.missionedSurvivesBaseCapture`, shipped false. Both arms are pinned here, in one
+  // leg, because the arm that is not in the shipped file is the one a later edit can silently keep.
+  {
+    const shipped = rules().air || {};
+    eq("Q50(a): the shipped arm is the remake's current behaviour (the plane dies)", shipped.missionedSurvivesBaseCapture, false);
+    eq("Q50(a): the source string states it is UNVERIFIED and needs a DOSBox experiment",
+      shipped.missionedSurvivesBaseCaptureSource,
+      "remake current behaviour, Q50(a) UNVERIFIED, needs a DOSBox experiment");
+    eq("Q50(a): the reader follows the file, not a default",
+      missionedSurvivesCapture(), false);
+
+    // Arm 1 - false: a plane on a mission keeps its base cell (no airborne position exists), so it
+    // dies with the base, exactly like the plane based there.
+    const flying = { id: "blue:aircraft:40", side: "blue", domain: "land", kind: "aircraft", x: 80, y: 99, strength: 20, maxStrength: 20, inactiveUntil: 8 };
+    const taker3 = { id: "red:infantry:40", side: "red", domain: "land", kind: "infantry", x: 80, y: 99, strength: 20, maxStrength: 20 };
+    const armOff = matchWith([CITY, INLAND], [flying, taker3]);
+    armOff.round = 0;
+    eq("Q50(a): a missioned plane still counts as inactive on that round", inactiveRounds(flying, armOff.round), 8);
+    const offEvents = occupy(armOff);
+    eq("Q50(a) arm false: the missioned plane dies with its base",
+      armOff.pieces.map((piece) => piece.id), ["red:infantry:40"]);
+    eq("Q50(a) arm false: the log says why",
+      logLines(armOff, "blue", offEvents, 1).map((line) => line.text).filter((text) => text.indexOf("aircraft") !== -1),
+      ["lost an aircraft at Portsmouth; the air strip was captured"]);
+
+    // Arm 2 - true: same state, flag flipped in a temp config. The plane is spared and stays on the
+    // captured cell (there is nowhere else to put it: the engine has no airborne position).
+    const base = JSON.parse(readFileSync(configPath(), "utf8"));
+    const tmp = path.join(process.env.TMPDIR || "/tmp", "t021-flag-" + process.pid + ".json");
+    base.air.missionedSurvivesBaseCapture = true;
+    writeFileSync(tmp, JSON.stringify(base));
+    const before = process.env.OPENCHQ_CONFIG;
+    process.env.OPENCHQ_CONFIG = tmp;
+    resetRules();
+    try {
+      eq("Q50(a): the reader follows the flipped flag", missionedSurvivesCapture(), true);
+      const spared = { id: "blue:aircraft:41", side: "blue", domain: "land", kind: "aircraft", x: 80, y: 99, strength: 20, maxStrength: 20, inactiveUntil: 8 };
+      const grounded = { id: "blue:aircraft:42", side: "blue", domain: "land", kind: "aircraft", x: 80, y: 99, strength: 20, maxStrength: 20 };
+      const taker4 = { id: "red:infantry:41", side: "red", domain: "land", kind: "infantry", x: 80, y: 99, strength: 20, maxStrength: 20 };
+      const armOn = matchWith([CITY, INLAND], [spared, grounded, taker4]);
+      armOn.round = 0;
+      const onEvents = occupy(armOn);
+      eq("Q50(a) arm true: the missioned plane survives",
+        armOn.pieces.map((piece) => piece.id), ["blue:aircraft:41", "red:infantry:41"]);
+      eq("Q50(a) arm true: the plane that was merely based there still dies",
+        onEvents.filter((event) => event.type === "destroyed").map((event) => event.pieceId), ["blue:aircraft:42"]);
+    } finally {
+      if (before === undefined) delete process.env.OPENCHQ_CONFIG;
+      else process.env.OPENCHQ_CONFIG = before;
+      resetRules();
+      try { unlinkSync(tmp); } catch (error) { /* the temp file is the test's, not the tree's */ }
+    }
   }
 
   // --- AC2: D-025, a hull from any friendly coastal city or base --------------------

@@ -277,6 +277,16 @@ export function capitalPays() {
   return rules().money?.capitalPays === true;
 }
 
+// Whether an aircraft away on a mission survives the capture of its base. Q50(a), UNVERIFIED: the
+// manual's p.10 "City Conquest" rule covers a plane BASED on the captured strip and says nothing
+// about one already in the air, so this is the remake's choice and not a recovered rule. `false` is
+// the remake's current behaviour (PM ruling, rooms 5031/5045): the engine has no airborne position -
+// a plane on a mission keeps its base cell and `inactiveUntil` is its only marker - so it dies with
+// the base. Flip it only when a DOSBox experiment shows the original spares the plane.
+export function missionedSurvivesCapture() {
+  return rules().air?.missionedSurvivesBaseCapture === true;
+}
+
 // A price in integer millions, converted from the manual's billions. A kind with no price has no
 // entry at all: undefined, not null, so a caller cannot mistake "unknown" for a free unit.
 export function priceOf(kind) {

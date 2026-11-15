@@ -9,7 +9,7 @@
 // starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
 // because no duration was recovered.
 
-import { payEvery, priceOf, cityIncome, capitalPays, combatRules } from "./rules.mjs";
+import { payEvery, priceOf, cityIncome, capitalPays, combatRules, missionedSurvivesCapture } from "./rules.mjs";
 import { upkeepResources } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace, siteLabel, layerOf } from "./placement.mjs";
@@ -20,6 +20,9 @@ import { siteAtCell, siteCells, cellKeyOf } from "./siteindex.mjs";
 import { eraTable } from "./era.mjs";
 // A rolled era's capital set has to be drawn after owners exist, so seeding rebuilds it here.
 import { capitalSetFor } from "./match.mjs";
+// The berth list is air.mjs's, not a second copy here: capture destroys the enemy aircraft on the
+// strip it takes, so it has to read the same set a transfer lands on and a mission flies from.
+import { AIRSTRIP_KINDS, inactiveRounds } from "./air.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -35,9 +38,11 @@ const CAPITAL_KINDS = new Set(["capital"]);
 // A site an air unit can be based in. Capturing one destroys the enemy aircraft sitting on it
 // (Manual printed p.10, "City Conquest"): "note that the enemy air unit was destroyed when you
 // took the city. Capturing the air strip is the most certain way of destroying enemy air units."
-// The list is the same one air.transferPlane accepts as a berth, so capture and transfer agree
-// about what an air strip is.
-const AIRSTRIP_KINDS = new Set(["city", "capital", "base", "facility"]);
+// The set itself lives in air.mjs (AIRSTRIP_KINDS) and is imported here, so capture, transfer and
+// the mission base search cannot drift apart - they did once (room 4890: a mission could be flown
+// from a `dock`/`docks` site and from any non-transport hull, neither of which capture treats as
+// an air strip). A carrier is a piece, not a site, so it has no entry here: it changes hands only
+// by combat, and a capture pass can never reach it.
 
 function occupiable(kind) {
   return ownable(kind) || CAPITAL_KINDS.has(kind);
@@ -331,6 +336,12 @@ export function occupy(match) {
 
   const sites = match.sites;
   const cells = siteCells(sites);
+  // Q50(a): does a plane AWAY ON A MISSION survive its base being taken? Read once per pass, not
+  // per piece. `false` (the shipped default, PM ruling rooms 5031/5045) keeps the remake's current
+  // behaviour: the engine has no airborne position, so a missioned plane stands on its base cell and
+  // dies with it, exactly as a plane that was sitting there. air.missionedSurvivesBaseCaptureSource
+  // states that this is UNVERIFIED and needs a DOSBox experiment before anyone flips it.
+  const survivorsFlyAway = missionedSurvivesCapture();
   // Air units destroyed by this pass's captures, removed once after the walk (never while the site
   // loop is still reading match.pieces).
   let doomed = null;
@@ -355,6 +366,11 @@ export function occupy(match) {
           if (!piece || piece.side === side) continue;
           if (layerOf(piece) !== "air") continue;
           if (cellKeyOf(piece) !== key) continue;
+          // The Q50(a) arm: with the flag on, a plane that is still flying its mission (its only
+          // airborne marker is `inactiveUntil`) is spared and stays on the captured cell. With the
+          // flag off - the shipped default - this line spares nothing and the plane dies with its
+          // base, which is the behaviour Q50 records as current.
+          if (survivorsFlyAway && inactiveRounds(piece, match.round) > 0) continue;
           if (!doomed) doomed = new Set();
           if (doomed.has(piece.id)) continue;
           doomed.add(piece.id);
