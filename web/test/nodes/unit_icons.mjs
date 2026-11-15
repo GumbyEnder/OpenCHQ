@@ -277,6 +277,23 @@ export async function run() {
     badgeAt(crowd, view, cellToPixel(stack[0].x, stack[0].y, view).x, cellToPixel(stack[0].x, stack[0].y, view).y,
       { groups: stack }).count, 3);
 
+  // Two badges of OPPOSITE sides are never merged (badgeGroups only fuses same-side pieces), so a
+  // pointer inside both boxes is a real ranking. The hover must rank by the same distance the click
+  // ranks by (Euclidean): at this point the Manhattan sum ties 7 and 7, and the old tie kept whichever
+  // group came first in the list, so the tip named the red infantry one cell away while a click at the
+  // same pointer selected the blue one. Order the list red-first to make the tie deterministic.
+  {
+    const blue = piece({ id: "blue-a", side: "blue", x: 79, y: 44 });
+    const red = piece({ id: "red-b", side: "red", x: 80, y: 45 });
+    const at = cellToPixel(79, 44, view);
+    const px = at.x + 4.5;
+    const py = at.y - 2.5;
+    const group = badgeAt([red, blue], view, px, py);
+    ok("the pointer is inside both boxes", group !== null);
+    eq("the hover names the badge whose centre is nearest (Euclidean, not the first in the list)",
+      group.top.id, "blue-a");
+  }
+
   // --- the city under a badge keeps its tick (AC7) -----------------------------------
   const sites = [
     { x: 100, y: 60, type: 1 },
