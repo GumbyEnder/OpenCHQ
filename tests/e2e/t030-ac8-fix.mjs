@@ -340,6 +340,9 @@ try {
 
     // The PM's own repro (shot 05-escape): a click the player read as a selection, then Escape
     // before the ack lands. The order must never be on the wire, so nothing can overwrite the clear.
+    // Refit first: at x15 a 2 px miss is still the same cell, so the ambiguity this pin is about
+    // only exists at the fit (the zoom loop above leaves the camera there).
+    await fit();
     await page.keyboard.press("Escape");
     await sleep(140);
     await clickCell(cell);
