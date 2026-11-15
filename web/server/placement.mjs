@@ -149,6 +149,16 @@ function siteKindsFor(domain) {
   return domain === "sea" ? SEA_SITE_KINDS : LAND_SITE_KINDS;
 }
 
+// D-026/Q45: one measured cell is painted city terrain and still refused by the original's own
+// placement check (Washington 80,44 -> `MUST BE PLACED IN CITY`). The painted set is the FOOTPRINT;
+// the legal set is the footprint minus the cells the original refused, keyed by site id in
+// config placement.footprint.measuredNotCity. One cell, carried with its evidence, never generalised.
+function measuredNotCityCells(site) {
+  const table = placementRules().footprintMeasuredNotCity || {};
+  const list = table[String(site && site.id)];
+  return Array.isArray(list) ? list : [];
+}
+
 // The footprint cells of one site, as [x, y] pairs. For a shipped site this is the measured list.
 // A site the measured dump does not know (a synthetic test board, a site added after the bake) gets
 // the painter's SHAPE from the exported loop — its 3x3 clipped by the land test — clearly the
@@ -162,7 +172,14 @@ export function footprintCells(site, board) {
   const h = Number(board && board.height) || 0;
   if (!footprintKinds().has(String(site.kind))) return [[x, y]];
   const measured = measuredFootprintCells(site);
-  if (measured) return measured;
+  if (measured) {
+    // Q45: the original's own check refused this painted cell, so it is not a legal target. The
+    // site's own cell is never dropped: an empty footprint would crash placement.
+    const refused = new Set(measuredNotCityCells(site).map(([cx, cy]) => Number(cx) + "," + Number(cy)));
+    const legal = measured.filter(([cx, cy]) => !refused.has(Number(cx) + "," + Number(cy)));
+    if (legal.length && legal.length < measured.length) return legal;
+    return measured;
+  }
   if (w <= 0 || h <= 0) return [[x, y]];
   const out = [];
   for (let dy = -1; dy <= 1; dy++) {

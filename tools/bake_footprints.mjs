@@ -62,8 +62,10 @@ const payload = {
     frame: "cells are in the SITE-RECORD frame: the painter writes at record + (2,0), measured on " +
       "every city-kind site in the dump. The remake's own painter draws at the site cell, so the " +
       "baked list is the painted set translated back by the measured offset.",
-    exclusions: "none. A cell the original's placement check refused is NOT removed here — see " +
-      "placement.footprint.deviation in config/game.json for the one measured case (Washington 80,44).",
+    exclusions: "the ONE cell the original's own placement check refused inside a painted block — " +
+      "Washington (80,44), Q45 2026-11-14 13:25 ET — is carried in config placement.footprint." +
+      "measuredNotCity and subtracted from the LEGAL set by footprintCells, so it is listed here " +
+      "(this file is the measured painted set) and never placed. No other cell is excluded.",
     kinds: "city, capital, base carry a painted block; a facility has no painted city terrain and " +
       "keeps its own cell (config placement.footprint.kinds)",
   },

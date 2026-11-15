@@ -344,10 +344,18 @@ export function placementRules() {
     footprintQ54: typeof footprint.q54 === "string" ? footprint.q54 : "",
     footprintQ45: typeof footprint.q45 === "string" ? footprint.q45 : "",
     footprintFrame: typeof footprint.frame === "string" ? footprint.frame : "",
-    // D-026/Q45: the one measured cell the remake accepts although the original refused it.
-    // Recorded, never narrowed out — the measured painted set contains it.
+    // D-026/Q45: the measured refusal, stated in words. The cell itself is subtracted by
+    // footprintCells through footprintMeasuredNotCity below.
     footprintDeviation: typeof footprint.deviation === "string" ? footprint.deviation : "",
     footprintGate: typeof footprint.gate === "string" ? footprint.gate : "",
+    // D-026/Q45: the cells the ORIGINAL's own placement check refused inside a painted block, keyed
+    // by site id. Carried as measured data, not as a rule: one cell, Washington (80,44).
+    footprintMeasuredNotCity: footprint.measuredNotCity && typeof footprint.measuredNotCity === "object"
+      ? footprint.measuredNotCity
+      : {},
+    footprintMeasuredNotCitySource: typeof footprint.measuredNotCitySource === "string"
+      ? footprint.measuredNotCitySource
+      : "",
     snapPx: number(snap.px, 12, 0),
     snapCells: Math.max(0, Math.floor(number(snap.cells, 2, 0))),
     boxPx: number(box.px, 10, 0),

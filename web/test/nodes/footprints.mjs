@@ -13,11 +13,13 @@
 //     was clicked, not on the centre — the assertion a "centre-only" mutant turns red;
 //  3. the Q49 cross-check in the measured frame: Detroit and Chicago hold the two cells that are
 //     lake in `tmap.bin` and city on the running board, once translated by (2, 0);
-//  4. Q45's two Washington cells, one measured state each, and the (80,44) DEVIATION made explicit:
-//     the original's placement check refused a cell its painter painted, and the remake accepts it;
+//  4. Q45's two Washington cells, one measured state each: (78,44) is a city cell, and (80,44) — a
+//     cell the painter painted — is REFUSED, because the original's own check refused it. The one
+//     measured refusal is subtracted through config placement.footprint.measuredNotCity, so the
+//     remake refuses it too and a click there snaps to the nearest legal cell;
 //  5. the config pin: placement.footprint.* is the statement of record (kinds, rule, frame, q45,
-//     q54, gate, deviation), the server reads it rather than a frozen array, and the UNVERIFIED
-//     tags stay while Q45 keeps its measured record.
+//     q54, gate, measuredNotCity), the server reads it rather than a frozen array, the frame and the
+//     gate stay tagged MEASURED, and Q54 keeps its UNVERIFIED tag while it is unmeasured.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,8 +109,13 @@ export async function run(ctx) {
   match.round = 3;
   const mask = placementMask(match, "blue", "infantry", board);
   if (mask.error) fail("a friendly capital offered no cells: " + mask.error);
-  eq("the mask is exactly the measured footprint", mask.count, block.length);
-  for (const [x, y] of block) eq("footprint cell " + x + "," + y + " is legal", mask.mask[y * W + x], 1);
+  eq("the mask is exactly the legal footprint", mask.count, block.length - 1);
+  const refusedCells = new Set([[washington.x + 1, washington.y].join(",")]);
+  for (const [x, y] of block) {
+    if (refusedCells.has(x + "," + y)) continue;
+    eq("footprint cell " + x + "," + y + " is legal", mask.mask[y * W + x], 1);
+  }
+  eq("Q45's refused cell 80,44 is not in the mask", mask.mask[washington.y * W + washington.x + 1] || 0, 0);
   eq("the cell outside the corner of the block is not", mask.mask[(washington.y - 2) * W + washington.x - 2] || 0, 0);
 
   // The landed cell is the clicked cell: the centre, the north cell and the south-east corner of
@@ -152,22 +159,33 @@ export async function run(ctx) {
     fail("the painter-frame check misses 72,41 in Chicago's block");
   }
 
-  // --- 4. Q45's two cells, and the deviation stated as a deviation ---------------------------
+  // --- 4. Q45's two cells, and the one measured refusal ---------------------------–-----------
   // One measured state per cell: (78,44) IS a city cell (the original answered `READY AT 0744`, the
   // city's own next-ready round, not a placement refusal); (80,44) was REFUSED by the placement
   // check (`MUST BE PLACED IN CITY`) although the painter painted city terrain there.
   if (!block.some(([x, y]) => x === washington.x - 1 && y === washington.y)) {
-    fail("Washington's footprint lost (78,44), which Q45 measured as a city cell (READY AT 0744)");
+    fail("Washington's painted footprint lost (78,44), which Q45 measured as a city cell (READY AT 0744)");
   }
   if (!block.some(([x, y]) => x === washington.x + 1 && y === washington.y)) {
-    fail("Washington's footprint lost (80,44), which the MEASURED painted set contains");
+    fail("Washington's painted footprint lost (80,44), which the MEASURED painted set contains");
   }
+  // The painted set keeps the cell; the LEGAL set drops it, because the original refused it. This is
+  // the point of the split: footprints.json is the measurement, the refusal is data on top of it, and
+  // neither is a rule invented in code.
+  eq("the legal cells of Washington are the painted nine minus Q45's one refusal",
+    footprintCells(match.sites[0], board).length, block.length - 1);
   const east = canPlace(match, "blue", "infantry", washington.x + 1, washington.y, board);
-  if (east.error) fail("canPlace refused the measured cell 80,44: " + east.error);
-  // This is the deviation, asserted so it cannot disappear quietly in either direction: the remake
-  // accepts a cell the original's placement check refused, because the painted set contains it and
-  // no measurement separates the check's frame from the painter's.
-  eq("the remake accepts 80,44 (the recorded deviation)", [east.place.x, east.place.y], [washington.x + 1, washington.y]);
+  if (!east.error && east.place && east.place.x === washington.x + 1 && east.place.y === washington.y) {
+    fail("canPlace placed a unit on (80,44), a cell the original's own check refused");
+  }
+  // A click on the refused cell is not a legal target; the T-017 snap takes it to the nearest legal
+  // cell, which is the same block one column west of its east edge.
+  if (east.place) {
+    const nearestLegal = [[0, -1], [-1, 0], [0, 1]].map(([dx, dy]) => [washington.x + dx, washington.y + dy]);
+    if (!nearestLegal.some(([x, y]) => x === east.place.x && y === east.place.y)) {
+      fail("a click on the refused cell resolved to " + east.place.x + "," + east.place.y + ", not a legal cell");
+    }
+  }
 
   // --- 5. the config pin: placement.footprint.* is the statement of record ------------------
   const rawConfig = JSON.parse(readFileSync(path.join(projectDir, "config", "game.json"), "utf8"));
@@ -180,8 +198,21 @@ export async function run(ctx) {
   eq("placementRules() exposes the recorded deviation", liveRules.footprintDeviation, fp.deviation);
   if (!/MEASURED/.test(String(fp.q45 || ""))) fail("placement.footprint.q45 lost its measured record");
   if (!/UNVERIFIED/.test(String(fp.q54 || ""))) fail("placement.footprint.q54 lost its UNVERIFIED tag");
-  if (!/UNVERIFIED/.test(String(fp.gate || ""))) fail("placement.footprint.gate lost its UNVERIFIED tag");
-  if (!/UNVERIFIED/.test(String(fp.frame || ""))) fail("placement.footprint.frame lost its UNVERIFIED tag");
+  // The frame and the gate are MEASURED as of the 20:55 ET audit: the check reads the site-record
+  // frame, and the ring loop's gate is the terrain test (139 clipped cells, all water, zero gaps).
+  if (!/MEASURED/.test(String(fp.frame || "")) || /UNVERIFIED/.test(String(fp.frame || ""))) {
+    fail("placement.footprint.frame is not the measured frame statement: " + JSON.stringify(fp.frame));
+  }
+  if (!/MEASURED/.test(String(fp.gate || "")) || /UNVERIFIED/.test(String(fp.gate || ""))) {
+    fail("placement.footprint.gate is not the measured gate statement: " + JSON.stringify(fp.gate));
+  }
+  eq("config carries the one measured refusal, keyed by site id",
+    fp.measuredNotCity && fp.measuredNotCity["62"], [[80, 44]]);
+  eq("placementRules() exposes the measured refusal to the placement code",
+    liveRules.footprintMeasuredNotCity && liveRules.footprintMeasuredNotCity["62"], [[80, 44]]);
+  if (!/Q45/.test(String(fp.measuredNotCitySource || ""))) {
+    fail("placement.footprint.measuredNotCitySource no longer cites Q45");
+  }
   if (!/80,\s*44|80,44|\(80,44\)/.test(String(fp.deviation || ""))) {
     fail("placement.footprint.deviation no longer names the measured cell (80,44)");
   }
