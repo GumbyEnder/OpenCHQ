@@ -13,7 +13,9 @@
 // Playwright is resolved from, in order: PLAYWRIGHT_MODULE, ./node_modules, the path printed by
 // tests/e2e/package.json's own note, then the agent-relay install on this machine. See README.md.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -43,6 +45,7 @@ const EMAIL_SHAPE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const results = [];
+let SERVED = null; // /api/version as read at run time: the tree the counts describe
 function check(ok, label, detail = "") {
   results.push({ ok: Boolean(ok), label, detail: String(detail || "") });
   console.log((ok ? "PASS " : "FAIL ") + label + (ok || !detail ? "" : " :: " + detail));
@@ -53,10 +56,42 @@ function summary() {
   const failed = results.length - passed;
   console.log("");
   console.log("E2E summary (" + BASE + ")");
+  console.log("  served " + (SERVED ? SERVED.short + " source=" + SERVED.source : "unreachable-or-unstamped"));
   console.log("  " + passed + " passed, " + failed + " failed, " + results.length + " checks");
+  // The instrument's own identity, printed with its counts: `run.mjs` also exists in the shared
+  // checkout on older branches, and a run driven from there reports legs this file no longer has
+  // as red against a server that is green (T-027: 26/3/29 from the t004-movement copy at md5
+  // 49bb6fb7, against 46/0/46 here). A count without the file's hash cannot be attributed.
+  const id = harnessIdentity();
+  console.log("  harness md5=" + id.md5 + " bytes=" + id.bytes + " git=" + id.git
+    + (id.git === "no-git" ? "" : " (" + id.path + ")"));
   for (const row of results.filter((r) => !r.ok)) console.log("  failed: " + row.label + " — " + row.detail);
   return failed;
 }
+
+// Byte identity of the harness, and the tree it is standing in. Both are recorded rather than
+// inferred: a copied script has no git, and a git answer names a checkout, not a commit of this file.
+function harnessIdentity() {
+  const file = fileURLToPath(import.meta.url);
+  let bytes = 0;
+  let md5 = "unreadable";
+  try {
+    const raw = readFileSync(file);
+    bytes = raw.length;
+    md5 = createHash("md5").update(raw).digest("hex");
+  } catch {
+    // leave the placeholders: a skipped read is visible in the summary
+  }
+  let git = "no-git";
+  try {
+    git = execFileSync("git", ["-C", here, "rev-parse", "--short", "HEAD"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    // a harness copied out of the repo: the bytes still identify it
+  }
+  return { md5, bytes, git, path: here };
+}
+
 
 async function loadPlaywright() {
   const candidates = [
@@ -362,6 +397,10 @@ const main = async () => {
     // The setup numbers the lobby itself reads: START_MONEY per era.
     const setup = await fetch(BASE + "/api/setup").then((res) => res.json());
     check(Boolean(setup && setup.startPool), "the server publishes its setup table");
+    // Which tree the counts are about, read from the server rather than assumed from the URL.
+    SERVED = await fetch(BASE + "/api/version").then((res) => res.json()).catch(() => null);
+    check(Boolean(SERVED && SERVED.short), "the server publishes its build identity",
+      SERVED ? JSON.stringify(SERVED) : "no /api/version");
 
     await signIn(page, context);
     await assertNoEmail(page, "in the lobby");
