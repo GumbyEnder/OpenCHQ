@@ -52,6 +52,14 @@ MUTANTS = [
      ["item 1 a badge click immediately followed by Escape",
       "item 1 the clear still reads as a clear a second later",
       "item 1 Escape clears the selection with no order on the wire"]),
+    # PM 5641(1): M1 removes the rule outright; this one only SHRINKS it, so it tests the value of
+    # `reserved` rather than the existence of the branch. At the fit the real radius is
+    # min(14/2, 4 - 0.5) = 3.5 px; 1 px keeps the ring's shape but puts the badge's own 2-3 px
+    # off-centre area back on the neighbouring cell, which is exactly the base defect (e9a8bfa).
+    ("M7 item1 reserved radius shrunk to 1px", "web/public/command.mjs",
+     [("    const reserved = Math.min(badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2, Math.max(1, scale - 0.5));",
+       "    const reserved = 1;")],
+     ["item 1 a re-click on the badge", "item 1 a badge click immediately followed by Escape"]),
 ]
 
 
