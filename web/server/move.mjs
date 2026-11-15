@@ -481,7 +481,7 @@ export function repairStep(match) {
   let byCell = null;
   for (const piece of match.pieces) {
     if (!piece) continue;
-    if (piece.kind === "aircraft") continue; // a plane away on a mission is not on the ground
+    if (isAircraft(piece)) continue; // a plane away on a mission is not on the ground
     // Nothing to do for a piece already at full strength: this is the common case in a bench
     // room and in a quiet match, so the site table is not even built for it.
     if (ensureStrength(piece, max) >= max) {
@@ -533,7 +533,7 @@ export function attritionStep(match, lookup = null) {
   const grid = lookup ? null : cells();
 
   for (const piece of match.pieces) {
-    if (!piece || piece.kind === "aircraft") continue;
+    if (!piece || isAircraft(piece)) continue;
     let name;
     if (lookup) {
       name = lookup(piece, match);

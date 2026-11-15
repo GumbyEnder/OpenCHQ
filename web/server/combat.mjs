@@ -23,8 +23,17 @@
 // rule. A transport is cargo: it neither fires nor survives an exchange.
 
 import { CELL_W, boardPayload } from "./board.mjs";
+import { layerOf } from "./placement.mjs";
 import { combatRules, seaRangeFor, digInIds, terrainTables } from "./rules.mjs";
 import { siteIndex } from "./siteindex.mjs";
+
+// "Is this piece on the air layer?" is asked in four places below (reach, two target scans, the
+// mass-selection pass) and every one of them used to inline `kind === "aircraft" || domain ===
+// "air"`. That expression is placement.layerOf's ground/air split written out a second, third and
+// fourth time: same meaning, no shared identity, so a change to the layer rule would leave combat
+// behind silently. T-029 imports the one predicate instead. The arm is behaviour-identical -
+// layerOf(x) === "air" is the same test, byte for byte - so this is a dedupe, not a rule change.
+const onAirLayer = (piece) => layerOf(piece) === "air";
 
 // The words that ride the events. The numbers ride as fields, so a test asserts a figure instead
 // of a sentence.
@@ -84,7 +93,7 @@ export function bearing(from, to) {
 // it per piece cost 8 ms of a 1000-room round in the bench, because every read walks rules().
 export function rangeOf(piece, combat = null) {
   if (!piece) return 0;
-  if (piece.kind === "aircraft" || piece.domain === "air") return 0;
+  if (onAirLayer(piece)) return 0;
   if (piece.domain === "sea") return seaRangeFor(piece.kind, combat);
   return (combat || combatRules()).landEngageCells;
 }
@@ -98,7 +107,7 @@ export function candidatesFor(piece, pieces) {
   for (const other of pieces || []) {
     if (!other || other.id === piece.id) continue;
     if (other.side === piece.side) continue;
-    if (other.kind === "aircraft" || other.domain === "air") continue;
+    if (onAirLayer(other)) continue;
     if (distance(piece, other) <= range) out.push(other);
   }
   return out;
@@ -120,7 +129,7 @@ export function chooseTarget(piece, pieces, combat = null) {
   for (const other of pieces || []) {
     if (!other || other.id === piece.id) continue;
     if (other.side === piece.side) continue;
-    if (other.kind === "aircraft" || other.domain === "air") continue;
+    if (onAirLayer(other)) continue;
     const raw = Math.abs(px - Number(other.x));
     const dx = raw > CELL_W / 2 ? CELL_W - raw : raw;
     const distanceTo = Math.max(dx, Math.abs(py - Number(other.y)));
@@ -287,7 +296,7 @@ export function computeTargets(pieces) {
     xs[i] = Number(piece.x);
     ys[i] = Number(piece.y);
     sides[i] = piece.side === "blue" ? 1 : piece.side === "red" ? 2 : 0;
-    armed[i] = piece.kind === "aircraft" || piece.domain === "air" ? 0 : 1;
+    armed[i] = onAirLayer(piece) ? 0 : 1;
     ranges[i] = Math.min(255, Math.max(0, rangeOf(piece, combat)));
     const side = sides[i];
     if (!armed[i] || side === 0 || ranges[i] <= 0) continue;

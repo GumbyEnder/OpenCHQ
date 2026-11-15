@@ -317,8 +317,11 @@ export function occupy(match) {
   // key is numeric and a side is a bit, so the pass allocates nothing per piece.
   // Ground layer only. A plane based at a city shares its cell (T-021) but does not hold its
   // streets: counting it here let a based aircraft veto every capture of its own city and let a
-  // lone unarmed plane flip a red site blue. The predicate is placement.layerOf, the same one the
-  // placement mask, the walker and combat already use, so capture cannot disagree with them.
+  // lone unarmed plane flip a red site blue. The predicate is placement.layerOf, and since T-029 it
+  // is the same FUNCTION the placement mask, the walker (air.isAircraft) and combat's four air
+  // checks call, not four copies of the same expression: until then the walker tested the kind
+  // alone and combat inlined `kind === "aircraft" || domain === "air"`, so this sentence was true
+  // of the meaning and false of the identity. web/test/nodes/air_predicate.mjs is what holds it.
   const byCell = new Map();
   for (const piece of match.pieces) {
     if (!piece || !isSide(piece.side)) continue;

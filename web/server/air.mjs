@@ -7,6 +7,7 @@
 // that can be measured, and says so.
 
 import { CELL_W } from "./board.mjs";
+import { layerOf } from "./placement.mjs";
 import { rules, combatRules } from "./rules.mjs";
 import { applyDamage, ensureStrength } from "./combat.mjs";
 
@@ -51,8 +52,14 @@ export function isAirStrip(kind) {
   return AIRSTRIP_KINDS.has(String(kind));
 }
 
+// Is this piece an aircraft? It is the same question placement asks to pick an occupancy layer, so
+// this delegates instead of restating it (T-029). The body used to test `kind === "aircraft"` alone
+// and silently dropped placement.layerOf's second arm (`domain === "air"`): a piece shaped
+// {kind:"tank", domain:"air"} was air to the placement mask, economy's capture pass and combat, and
+// ground to this walker. Latent today - no kind in config/game.json carries domain "air" - which is
+// exactly why it needed the unit test in web/test/nodes/air_predicate.mjs rather than a board pin.
 export function isAircraft(piece) {
-  return Boolean(piece) && piece.kind === "aircraft";
+  return layerOf(piece) === "air";
 }
 
 function airReach() {
