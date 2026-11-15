@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """T-030 AC8 fix-round mutant harness.
 
-One mutant per AC8 item, applied to the fix tree in place, the served tree re-read
-by the e2e (the server reads web/public from disk per request), then reverted.
-A mutant is GOOD when the pin(s) that own that item go RED and the rest stays green.
+One mutant per AC8 item, plus M6 for AC1's own rule (the Escape that must not order), applied
+to the fix tree in place, the served tree re-read by the e2e (the server reads web/public from
+disk per request), then reverted. A mutant is GOOD when the pin(s) that own that item go RED
+and the rest stays green: that is what makes a pin a probe rather than a caption.
 Pins are matched by prefix, because the check names carry their evidence suffix.
 
 usage: ac8-mutants.py [--url http://127.0.0.1:8097] [--tree /path/to/worktree]
@@ -39,6 +40,18 @@ MUTANTS = [
     ("M5 item5 ack says the selection cleared", "web/public/app.js",
      [('say(ackText(message) + (hadSelection ? " Selection cleared." : ""));', "say(ackText(message));")],
      ["item 5 an accepted order says the selection it cleared"]),
+    # M6 owns AC1 itself: Escape clears the selection but also walks the selected piece one cell,
+    # so an `ordered` frame comes back and its ack repaints the "Selection cleared." toast. This is
+    # the shape of the defect the PM hit at e9a8bfa, and the only mutant that can bite the two
+    # AC1 rule pins (M1 makes the click an order; M6 makes the Escape an order).
+    ("M6 item1 escape is an order", "web/public/app.js",
+     [("  if (event.key === \"Escape\" && selected) {\n    clearCommand();\n    say(\"Selection cleared.\");",
+       "  if (event.key === \"Escape\" && selected) {\n"
+       "    const escapeOrder = orderMessage(selected, { x: selected.x + 1, y: selected.y });\n"
+       "    if (escapeOrder) sendOrder(escapeOrder);\n    clearCommand();\n    say(\"Selection cleared.\");")],
+     ["item 1 a badge click immediately followed by Escape",
+      "item 1 the clear still reads as a clear a second later",
+      "item 1 Escape clears the selection with no order on the wire"]),
 ]
 
 
