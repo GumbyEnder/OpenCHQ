@@ -321,7 +321,7 @@ export function occupy(match) {
   // is the same FUNCTION the placement mask, the walker (air.isAircraft) and combat's four air
   // checks call, not four copies of the same expression: until then the walker tested the kind
   // alone and combat inlined `kind === "aircraft" || domain === "air"`, so this sentence was true
-  // of the meaning and false of the identity. web/test/nodes/air_predicate.mjs is what holds it.
+  // of the meaning and false of the identity. web/test/nodes/t029_air_predicate.mjs is what holds it.
   const byCell = new Map();
   for (const piece of match.pieces) {
     if (!piece || !isSide(piece.side)) continue;

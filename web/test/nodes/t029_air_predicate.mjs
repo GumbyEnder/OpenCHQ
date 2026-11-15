@@ -4,9 +4,12 @@
 // engine that answer "is this piece on the air layer?", of different widths:
 //
 //   placement.layerOf   -> kind === "aircraft" || domain === "air"   (the layer rule)
-//   air.isAircraft      -> kind === "aircraft" only  (before T-029; move.mjs 95/109/283 called it)
-//   combat.mjs 87/101/123/290 -> the same expression as layerOf, inlined four times, sharing the
-//                                meaning and none of the identity.
+//   air.isAircraft      -> kind === "aircraft" only  (before T-029; the walker's three air gates
+//                                called it)
+//   combat.mjs          -> the same expression as layerOf, inlined four times (rangeOf,
+//                                candidatesFor, chooseTarget, computeTargets), sharing the meaning
+//                                and none of the identity. No line numbers here on purpose: they
+//                                rotted once already, and section 6 below reports the live ones.
 //
 // A piece shaped {kind:"tank", domain:"air"} was therefore air to placement, economy and combat and
 // ground to the walker. Nothing in config/game.json carries domain "air" yet, so nothing was
@@ -75,28 +78,28 @@ export async function run(ctx) {
   const [subject, enemy] = widePair;
 
   if (rangeOf(subject) !== 0) {
-    fail("rangeOf: a tank carrying domain air still has a reach - combat re-narrowed to the kind (combat.mjs:87)");
+    fail("rangeOf: a tank carrying domain air still has a reach - rangeOf's air check re-narrowed to the kind");
   }
   if (candidatesFor(subject, widePair).length !== 0) {
-    fail("candidatesFor: a tank carrying domain air found a target - combat re-narrowed to the kind (combat.mjs:101)");
+    fail("candidatesFor: a tank carrying domain air found a target - candidatesFor's air check re-narrowed to the kind");
   }
   if (candidatesFor(enemy, widePair).length !== 0) {
-    fail("candidatesFor: an enemy can target a tank carrying domain air - combat re-narrowed to the kind (combat.mjs:123)");
+    fail("candidatesFor: an enemy can target a tank carrying domain air - candidatesFor's air check re-narrowed to the kind");
   }
   if (chooseTarget(subject, widePair) !== null) {
-    fail("chooseTarget: a tank carrying domain air chose a target - combat re-narrowed to the kind (combat.mjs:123)");
+    fail("chooseTarget: a tank carrying domain air chose a target - chooseTarget's air check re-narrowed to the kind");
   }
   const wideTargets = computeTargets(widePair);
   if (wideTargets[0] !== null) {
-    fail("computeTargets: a tank carrying domain air was armed - combat re-narrowed to the kind (combat.mjs:290)");
+    fail("computeTargets: a tank carrying domain air was armed - computeTargets' armed[] re-narrowed to the kind");
   }
   if (wideTargets[1] !== null) {
-    fail("computeTargets: an enemy was armed against a tank carrying domain air - combat re-narrowed to the kind (combat.mjs:290)");
+    fail("computeTargets: an enemy was armed against a tank carrying domain air - computeTargets' armed[] re-narrowed to the kind");
   }
 
   // --- 3. the same shape through the walker's own bridge ----------------------------------
-  // move.mjs 95/109/283 call isAircraft to decide whether a piece holds the cell under it. This is
-  // the one place the widening is a behaviour change, and it must be the same rule as combat's.
+  // move.mjs's three walker gates call isAircraft to decide whether a piece holds the cell under it.
+  // This is the one place the widening is a behaviour change, and it must be the same rule as combat's.
   if (isAircraft(subject) !== true) {
     fail("air.isAircraft: a tank carrying domain air is ground to the walker while combat calls it air");
   }
@@ -140,7 +143,8 @@ export async function run(ctx) {
   // IDENTITY and not behaviour - four copies of one expression are a trap even when they are all
   // correct today. So the last assertion is structural: the expression may not be written out again
   // in any module that is supposed to call the rule. move.mjs is in this list because PM's "one rule
-  // everywhere" names movement: 95/109/283 call isAircraft and 484/536 tested the kind inline.
+  // everywhere" names movement: its three walker gates call isAircraft and its repair passes tested
+  // the kind inline.
   // A re-inline of the full pre-T-029 expression fails here and passes the whole rest of the suite,
   // which is the honest pair: behaviour identical, identity lost.
   const guarded = ["../../server/combat.mjs", "../../server/air.mjs", "../../server/move.mjs"];

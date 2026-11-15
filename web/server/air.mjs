@@ -57,7 +57,7 @@ export function isAirStrip(kind) {
 // and silently dropped placement.layerOf's second arm (`domain === "air"`): a piece shaped
 // {kind:"tank", domain:"air"} was air to the placement mask, economy's capture pass and combat, and
 // ground to this walker. Latent today - no kind in config/game.json carries domain "air" - which is
-// exactly why it needed the unit test in web/test/nodes/air_predicate.mjs rather than a board pin.
+// exactly why it needed the unit test in web/test/nodes/t029_air_predicate.mjs rather than a board pin.
 export function isAircraft(piece) {
   return layerOf(piece) === "air";
 }
