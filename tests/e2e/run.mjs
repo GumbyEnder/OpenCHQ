@@ -46,6 +46,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const results = [];
 let SERVED = null; // /api/version as read at run time: the tree the counts describe
+let HARNESS_LINE = null; // the instrument's own identity, built once and ASSERTED before it is printed
 function check(ok, label, detail = "") {
   results.push({ ok: Boolean(ok), label, detail: String(detail || "") });
   console.log((ok ? "PASS " : "FAIL ") + label + (ok || !detail ? "" : " :: " + detail));
@@ -62,11 +63,18 @@ function summary() {
   // checkout on older branches, and a run driven from there reports legs this file no longer has
   // as red against a server that is green (T-027: 26/3/29 from the t004-movement copy at md5
   // 49bb6fb7, against 46/0/46 here). A count without the file's hash cannot be attributed.
-  const id = harnessIdentity();
-  console.log("  harness md5=" + id.md5 + " bytes=" + id.bytes + " git=" + id.git
-    + (id.git === "no-git" ? "" : " (" + id.path + ")"));
+  // The line is built and ASSERTED in main() (check "the summary can name the harness by bytes and
+  // tree") and only stored here: printed-only identity is decorative, a blank or malformed
+  // harnessIdentity() must turn the run red rather than ship a count nobody can attribute.
+  console.log("  " + (HARNESS_LINE || "harness md5=UNRECORDED bytes=0 git=no-git"));
   for (const row of results.filter((r) => !r.ok)) console.log("  failed: " + row.label + " — " + row.detail);
   return failed;
+}
+
+function harnessLine() {
+  const id = harnessIdentity();
+  return "harness md5=" + id.md5 + " bytes=" + id.bytes + " git=" + id.git
+    + (id.git === "no-git" ? "" : " (" + id.path + ")");
 }
 
 // Byte identity of the harness, and the tree it is standing in. Both are recorded rather than
@@ -401,6 +409,12 @@ const main = async () => {
     SERVED = await fetch(BASE + "/api/version").then((res) => res.json()).catch(() => null);
     check(Boolean(SERVED && SERVED.short), "the server publishes its build identity",
       SERVED ? JSON.stringify(SERVED) : "no /api/version");
+    // The instrument is gated like the server is: a count is attributable only if this file can
+    // say which bytes produced it. Asserted, not printed — the identity line was decorative while
+    // it was only a console.log argument (T-027 follow-up).
+    HARNESS_LINE = harnessLine();
+    check(/^harness md5=[0-9a-f]{32} bytes=[1-9][0-9]* git=\S+$/u.test(HARNESS_LINE),
+      "the summary can name the harness by bytes and tree", HARNESS_LINE);
 
     await signIn(page, context);
     await assertNoEmail(page, "in the lobby");
