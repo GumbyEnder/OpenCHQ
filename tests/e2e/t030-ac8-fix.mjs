@@ -8,7 +8,9 @@
 // Item 2  T-021 AC / PB-042: an accepted order keeps a thin path and a destination marker on the
 //         map until it arrives, at the fit and zoomed. Checked as INK, not as a screenshot.
 // Item 3  AC1 visibility: the ring is at least 3 cells (or the badge + 4 px) across and it is drawn
-//         ABOVE the city labels and the hover ring. Checked by the ring's own edge pixels.
+//         ABOVE the capital marker (and, by the paint order, the city labels too - the pixel probe
+//         only discriminates the capital, so the pin is named for what it measures). Checked by the
+//         ring's own edge pixels.
 // Item 4  AC4 note: while a selection exists the board note keeps naming it, whatever the cursor did
 //         last (route hover and leave, political view, an unscreened transport).
 // Item 5  PB-052 residue: a refused destination says why and keeps the selection.
@@ -285,8 +287,13 @@ try {
       { selected: st.selected, toast: await toast(), orders: orders(selectWire) });
 
     // The gesture the PM's hand-check made and called "re-click keeps the selection": a second
-    // click a couple of pixels off the centre is still ON the badge and must not order.
-    const offsets = [[2, 0], [-2, 0], [0, 2], [0, -2], [3, 0], [0, 3]];
+    // click a whole pixel off the centre is still ON the badge and must not order. One pixel, not
+    // three: the ring is capped at 0.6 cell (2.3-2.65 px at the fit, where a cell is ~4 px), which is
+    // exactly the two-sided constraint - it must absorb a pointer miss on the badge AND leave the
+    // neighbouring cell's icon centre a destination (room 5641 item 3; the whole-pixel flooring case
+    // is pinned in web/test/nodes/selection_hit.mjs). A 2-3 px miss at the fit is a destination, and
+    // the hover note ("Route: N rounds. Click to send the order.") names that before the click.
+    const offsets = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]];
     const stray = [];
     for (const [dx, dy] of offsets) {
       await page.keyboard.press("Escape");
@@ -299,7 +306,7 @@ try {
       const bad = orders(lines).length > 0 || String(after.selected) !== String(piece.id);
       if (bad) stray.push({ dx, dy, orders: orders(lines), selected: after.selected, toast: await toast() });
     }
-    mark("item 1 a re-click on the badge (2-3 px off centre) never orders and keeps the selection",
+    mark("item 1 a re-click on the badge (1 px off centre) never orders and keeps the selection",
       stray.length === 0, { offsets, stray });
 
     // A one-cell move must still be possible (the regression T-028 shipped had no one-cell move at
@@ -340,24 +347,56 @@ try {
 
     // The PM's own repro (shot 05-escape): a click the player read as a selection, then Escape
     // before the ack lands. The order must never be on the wire, so nothing can overwrite the clear.
-    // Refit first: at x15 a 2 px miss is still the same cell, so the ambiguity this pin is about
-    // only exists at the fit (the zoom loop above leaves the camera there).
+    //
+    // Two zooms, because the two-sided constraint has no room at the fit: the ring must absorb a
+    // pointer miss on the badge AND leave the neighbouring cell's icon centre a destination, and at
+    // the fit those are 2.2 px and 4.4 px apart. So the fit leg uses a 1 px miss (the largest miss
+    // that is unambiguously on the badge at a 4 px cell) and the x4 leg uses a half-cell miss -
+    // 17 px inside a badge whose half is 22.5 px. That x4 leg is also the one that is RED at
+    // e9a8bfa: base had no ring, so anything past half a cell (16 px at x4) fell through to a
+    // destination and its ack repainted the clear with "Order sent. N rounds to walk.".
     await fit();
-    await page.keyboard.press("Escape");
-    await sleep(140);
-    await clickCell(cell);
-    before = await wireLen();
-    const p = await pointOf(cell.x, cell.y);
-    await page.mouse.move(p.x - 2, p.y);
-    await sleep(60);
-    await page.mouse.click(p.x - 2, p.y);
-    await page.keyboard.press("Escape");
-    await sleep(1200);
-    const lateWire = await wireFrom(before);
-    const lateToast = await toast();
+    const cellDx = async () => {
+      const a = await pointOf(cell.x, cell.y);
+      const b = await pointOf(cell.x + 1, cell.y);
+      return Math.abs(b.x - a.x);
+    };
+    const missSeen = [];
+    for (const leg of [0, 1]) {
+      await fit();
+      await clickCell(cell);
+      let dx = await cellDx();
+      // Leg 2: zoom until a cell is at least 26 px. That is the smallest cell where the two sides of
+      // the constraint are more than a pixel apart ON SCREEN: the ring is 0.6 cell (15.6 px), base's
+      // own-cell clause is 0.5 cell (13 px), and a pointer click floors by up to 1 px, so a 14 px
+      // miss reselects at the head and still fell through to a destination at e9a8bfa.
+      if (leg === 1) {
+        for (let i = 0; i < 20 && dx < 26; i++) {
+          await page.keyboard.press("+");
+          await sleep(170);
+          dx = await cellDx();
+        }
+        await centreOn(cell);
+        dx = await cellDx();
+      }
+      const off = leg === 0 ? 1 : Math.round(dx * 0.54);
+      const scale = (await state()).camera.scale;
+      before = await wireLen();
+      const p = await pointOf(cell.x, cell.y);
+      await page.mouse.move(p.x - off, p.y);
+      await sleep(60);
+      await page.mouse.click(p.x - off, p.y);
+      await page.keyboard.press("Escape");
+      await sleep(1200);
+      const legWire = await wireFrom(before);
+      const legToast = await toast();
+      missSeen.push({ leg, cellPx: Number(dx.toFixed(3)), offPx: off, scale, orders: orders(legWire),
+        toast: legToast, wire: legWire, selected: (await state()).selected });
+    }
     mark("item 1 a badge click immediately followed by Escape puts no order on the wire",
-      orders(lateWire).length === 0 && /^Selection cleared\.$/.test(lateToast) && (await state()).selected === null,
-      { wire: lateWire, toast: lateToast, selected: (await state()).selected });
+      missSeen.every((m) => m.orders.length === 0 && /^Selection cleared\.$/.test(m.toast) && m.selected === null),
+      { legs: missSeen });
+    await fit();
 
     // The Escape contract itself, with a real keydown.
     await page.keyboard.press("Escape");
@@ -452,7 +491,7 @@ try {
     mark("item 3 the ring is at least 3 cells (or the badge + 4 px) across at the fit",
       boxFit.width > 0 && boxFit.width >= want * boxFit.ratio * 0.9,
       { scale, wantPx: want, ring: { width: boxFit.width, height: boxFit.height }, ratio: boxFit.ratio });
-    mark("item 3 the ring is drawn above the capital marker and the city labels (its top edge is unbroken)",
+    mark("item 3 the ring is drawn above the capital marker (its top edge is unbroken)",
       boxFit.topEdge >= 0.9 && boxFit.leftEdge >= 0.9,
       { topEdge: Number(boxFit.topEdge.toFixed(2)), leftEdge: Number(boxFit.leftEdge.toFixed(2)) });
     await shot("ring-fit");

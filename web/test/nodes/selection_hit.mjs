@@ -198,6 +198,32 @@ export function run({ fail }) {
     }
   }
 
+  // ---- Room 5641 item 3, the rounding half: a POINTER reports whole CSS pixels, so a click aimed at
+  // the neighbouring icon centre lands up to one pixel short of it. That pixel must still be a
+  // destination at every zoom, including the fractional world fit (measured on the page: cell 4.412
+  // px, badge half 7 px). If the reserved ring is allowed to reach within one pixel of the neighbour's
+  // centre - the old cap `scale - 0.5` did, ring 3.91 px against a centre 4.41 px away - a click at
+  // the floored centre resolves to a re-selection and the one-cell move is dead at the fit.
+  for (const scale of [4, 4.4124, 4.5, 6, 8, 8.8, 15, 29]) {
+    const view = viewAt(scale);
+    const own = cellToPixel(BLUE_INF.x, BLUE_INF.y, view);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const cell = { x: (BLUE_INF.x + dx + BOARD_W) % BOARD_W, y: Math.max(0, Math.min(BOARD_H - 1, BLUE_INF.y + dy)) };
+      const target = cellToPixel(cell.x, cell.y, view);
+      // Worst-case flooring: the pointer is one whole pixel short of the icon centre it aimed at.
+      const px = target.x - Math.sign(target.x - own.x);
+      const py = target.y - Math.sign(target.y - own.y);
+      const dist = Math.hypot(px - own.x, py - own.y);
+      const got = clickIntent([BLUE_INF], view, px, py,
+        { side: "blue", selectedId: BLUE_INF.id, badgeMinPx: 14, cell });
+      if (!got || got.kind !== "cell") {
+        fail("a whole-pixel pointer at the neighbouring icon centre (scale " + scale + ", " + dist.toFixed(3)
+          + " px out) resolved to " + (got ? got.kind : "nothing")
+          + ", not a destination - the reserved ring is too close to the one-cell boundary");
+      }
+    }
+  }
+
   // The piece's own cell stays a re-selection: an order to the cell the unit already stands on is
   // nothing, so the click must keep the selection (and the prompt) rather than send it.
   for (const scale of [4, 8]) {
