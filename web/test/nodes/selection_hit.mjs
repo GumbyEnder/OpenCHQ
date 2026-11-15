@@ -10,10 +10,16 @@
 //   - two overlapping badges resolve to the farther centre -> the nearest-centre rule is gone
 //   - a second click on an air/ground stack does not reach the ground piece -> the stack cycle is
 //     gone and the ground unit under a based plane is unreachable (T-021 made that stack legal)
+//   - a click ONE CELL off the selected piece is read as a re-selection instead of a destination ->
+//     the selected badge's box covers its neighbours and the unit has no one-cell move anywhere.
+//     That is the regression T-028 shipped at 188d574 (the standing e2e move-order leg caught it:
+//     "the move order is accepted by the server — Select one of your pieces. Then pick a
+//     destination."). The precedence is now clickIntent's: the selected piece is not a candidate
+//     for a neighbour cell, only for its own cell.
 
 import { badgePx } from "../../public/badges.mjs";
 import { cellToPixel } from "../../public/render.mjs";
-import { pickPieceAt, piecesAtPoint, layerOfPiece } from "../../public/command.mjs";
+import { pickPieceAt, piecesAtPoint, layerOfPiece, clickIntent } from "../../public/command.mjs";
 
 const BOARD_W = 320;
 const BOARD_H = 136;
@@ -138,5 +144,75 @@ export function run({ fail }) {
     // A click inside the stack's icon but off its centre still resolves to the same order.
     const off = pickPieceAt(stacked, view, centre.x + 4, centre.y - 4, { side: "blue", selectedId: first.id, badgeMinPx: 14 });
     if (!off || off.id !== BLUE_INF.id) fail("a click off-centre inside a stack did not continue the cycle");
+  }
+
+  // ---- AC4: a click off the selected piece's own cell is a DESTINATION, not a re-selection ------
+  // The selected piece's badge box is wider than its cell, so every neighbour's centre is inside
+  // it. If the piece itself stays a candidate, the click selects it again and no order is sent.
+  for (const scale of [4, 6, 8]) {
+    const view = viewAt(scale);
+    for (let radius = 1; radius <= 5; radius++) {
+      for (const [dx, dy] of [[radius, 0], [-radius, 0], [0, radius], [0, -radius], [radius, radius]]) {
+        const cell = { x: (BLUE_INF.x + dx + BOARD_W) % BOARD_W, y: Math.max(0, Math.min(BOARD_H - 1, BLUE_INF.y + dy)) };
+        const at = cellToPixel(cell.x, cell.y, view);
+        const got = clickIntent([BLUE_INF], view, at.x, at.y, { side: "blue", selectedId: BLUE_INF.id, badgeMinPx: 14, cell });
+        if (!got || got.kind !== "cell") {
+          fail("a click " + radius + " cell(s) off the selected piece at scale " + scale
+            + " resolved to " + (got ? got.kind : "nothing") + ", not a destination");
+        }
+        if (got && (got.cell.x !== cell.x || got.cell.y !== cell.y)) {
+          fail("the destination for a click " + radius + " cell(s) off at scale " + scale + " was not the clicked cell");
+        }
+      }
+    }
+  }
+
+  // The piece's own cell stays a re-selection: an order to the cell the unit already stands on is
+  // nothing, so the click must keep the selection (and the prompt) rather than send it.
+  for (const scale of [4, 8]) {
+    const view = viewAt(scale);
+    const at = cellToPixel(BLUE_INF.x, BLUE_INF.y, view);
+    const got = clickIntent([BLUE_INF], view, at.x, at.y,
+      { side: "blue", selectedId: BLUE_INF.id, badgeMinPx: 14, cell: { x: BLUE_INF.x, y: BLUE_INF.y } });
+    if (!got || got.kind !== "piece" || String(got.piece.id) !== BLUE_INF.id) {
+      fail("a click on the selected piece's own cell at scale " + scale + " did not resolve to the piece");
+    }
+  }
+
+  // A different own piece one cell away is still SELECTED, not ordered onto: nearest centre wins
+  // before the destination branch, and a click on a friend's badge is a selection.
+  {
+    const view = viewAt(4);
+    const at = cellToPixel(BLUE_NEAR.x, BLUE_NEAR.y, view);
+    const got = clickIntent([BLUE_INF, BLUE_NEAR], view, at.x, at.y,
+      { side: "blue", selectedId: BLUE_INF.id, badgeMinPx: 14, cell: { x: BLUE_NEAR.x, y: BLUE_NEAR.y } });
+    if (!got || got.kind !== "piece" || String(got.piece.id) !== BLUE_NEAR.id) {
+      fail("a click on another own piece one cell away did not select it");
+    }
+  }
+
+  // The same-cell stack still cycles through clickIntent, which is the case the drop must exempt.
+  {
+    const view = viewAt(4);
+    const stacked = [{ ...BLUE_INF, x: BLUE_PLANE.x }, BLUE_PLANE];
+    const at = cellToPixel(BLUE_PLANE.x, BLUE_PLANE.y, view);
+    const first = clickIntent(stacked, view, at.x, at.y,
+      { side: "blue", selectedId: null, badgeMinPx: 14, cell: { x: BLUE_PLANE.x, y: BLUE_PLANE.y } });
+    if (!first || first.kind !== "piece" || String(first.piece.id) !== BLUE_PLANE.id) {
+      fail("the first click on an air/ground stack through clickIntent did not select the air piece");
+    }
+    const second = clickIntent(stacked, view, at.x, at.y,
+      { side: "blue", selectedId: first.piece.id, badgeMinPx: 14, cell: { x: BLUE_PLANE.x, y: BLUE_PLANE.y } });
+    if (!second || second.kind !== "piece" || String(second.piece.id) !== BLUE_INF.id) {
+      fail("a second click on the stack through clickIntent did not reach the ground piece");
+    }
+  }
+
+  // Nothing of the seat's under the pointer and no selection is nothing at all, never an order.
+  {
+    const view = viewAt(4);
+    const empty = cellToPixel(200, 100, view);
+    const got = clickIntent([BLUE_INF], view, empty.x, empty.y, { side: "blue", badgeMinPx: 14 });
+    if (got) fail("a click on empty map with nothing selected resolved to " + got.kind);
   }
 }

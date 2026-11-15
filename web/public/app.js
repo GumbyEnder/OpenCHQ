@@ -13,10 +13,10 @@ import {
   buyMessage,
   cargoNote,
   cellAtEvent,
+  clickIntent,
   missionMessage,
   orderMessage,
   ownPieceAt,
-  pickPieceAt,
   previewLine,
   purseText,
   refusalText,
@@ -691,16 +691,22 @@ board.addEventListener("click", (event) => {
   // A click selects a piece by its ICON, not by the one cell under the pointer (T-028, PB-050):
   // the same badge box the hover uses, nearest icon centre wins, and a stack at one cell cycles.
   // The point is taken in device pixels, which is the frame the badge size is drawn in.
+  //
+  // clickIntent decides the precedence: a click that resolves to the ALREADY selected piece is not
+  // a re-selection unless it lands on that piece's own cell - it is a destination for it. Without
+  // that, the selected badge's box covers its neighbours and a selected unit has no one-cell move
+  // anywhere (the regression T-028 shipped and the standing move-order leg caught).
   const point = screenPoint(event);
-  const mine = pickPieceAt(room.pieces, viewForCanvas(), point.x, point.y, {
+  const intent = clickIntent(room.pieces, viewForCanvas(), point.x, point.y, {
     side: room.you,
     selectedId: selected ? selected.id : null,
     badgeMinPx: BADGE_MIN_PX * dpr(),
+    cell,
   });
-  if (mine) {
-    selected = mine;
+  if (intent && intent.kind === "piece") {
+    selected = intent.piece;
     preview = null;
-    hoverKey = mine.id + ":" + mine.x + "," + mine.y;
+    hoverKey = selected.id + ":" + selected.x + "," + selected.y;
     // Selecting a piece does not move the camera. It used to centre a zoomed view on the piece,
     // which read as the map jumping under the click that made the selection (T-007 AC10).
     say(PICK_HINT + " Then pick a destination.");

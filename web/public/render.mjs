@@ -808,7 +808,9 @@ export function badgeAt(pieces, view, px, py, opts = {}) {
     const dx = Math.abs(Number(px) - at.x);
     const dy = Math.abs(Number(py) - at.y);
     if (dx > half || dy > half) continue;
-    const distance = dx + dy;
+    // Euclidean, the same metric piecesAtPoint ranks by: a Manhattan sum can name one piece in a
+    // tooltip while the click under it selects another (T-028 nit).
+    const distance = Math.hypot(dx, dy);
     if (distance < best) {
       best = distance;
       hit = group;

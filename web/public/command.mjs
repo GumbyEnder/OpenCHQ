@@ -194,7 +194,7 @@ function layerRank(piece) {
 }
 
 function idRank(piece) {
-  return String(piece && piece.id === undefined ? "" : piece.id);
+  return piece && piece.id !== undefined && piece.id !== null ? String(piece.id) : "";
 }
 
 // Every own piece whose drawn icon box contains the pointer, nearest centre first. Pure: the view
@@ -225,15 +225,50 @@ export function piecesAtPoint(pieces, view, px, py, opts = {}) {
 
 // The piece a click on the board selects, or null when nothing of the seat's is under it.
 export function pickPieceAt(pieces, view, px, py, opts = {}) {
-  const hits = piecesAtPoint(pieces, view, px, py, opts);
+  return pieceFromHits(piecesAtPoint(pieces, view, px, py, opts), opts.selectedId);
+}
+
+// Nearest icon centre wins; equal distances cycle, starting after the piece already selected.
+// Shared by pickPieceAt and clickIntent so the tie order cannot drift between the two readers.
+function pieceFromHits(hits, selectedId) {
   if (!hits.length) return null;
   const nearest = hits[0].distance;
   const tied = hits.filter((hit) => Math.abs(hit.distance - nearest) < 1e-6);
   if (tied.length === 1) return tied[0].piece;
-  const selectedId = opts.selectedId;
   const at = tied.findIndex((hit) => selectedId !== undefined && selectedId !== null
     && String(hit.piece.id) === String(selectedId));
   return tied[(at + 1) % tied.length].piece;
+}
+
+// A board click has two meanings and the order between them is the rule (T-028 + PB-050): a piece
+// under the icon is SELECTED, and any other cell under the already-selected piece's icon is a
+// DESTINATION. Selecting first is right, but the selected piece's own badge box covers its
+// neighbours, so it must not be a candidate for its own cell's neighbours: a selected unit would
+// have no one-cell move anywhere (the badge is ~1.5 cells wide at every zoom past the world fit).
+// The exception is the pointer's own cell being the selected piece's cell - there the click can
+// only mean "this piece again" (or the next piece of a same-cell stack), and an order to a cell the
+// unit already stands on is nothing.
+//   -> {kind: "piece", piece}   select that piece
+//   -> {kind: "cell", piece, cell}  the selected piece is ordered to `cell`
+//   -> null                      nothing of the seat's under the pointer and nothing selected
+export function clickIntent(pieces, view, px, py, opts = {}) {
+  const side = opts.side;
+  if (!side || !view) return null;
+  const selectedId = opts.selectedId;
+  const hasSelection = selectedId !== undefined && selectedId !== null;
+  const cell = opts.cell || pixelToCell(px, py, view);
+  const boardW = Number(view.boardW) || 320;
+  let hits = piecesAtPoint(pieces, view, px, py, opts);
+  if (hasSelection) {
+    hits = hits.filter((hit) => String(hit.piece.id) !== String(selectedId)
+      || (wrapX(Number(hit.piece.x), boardW) === cell.x && Number(hit.piece.y) === cell.y));
+  }
+  const picked = pieceFromHits(hits, selectedId);
+  if (picked) return { kind: "piece", piece: picked };
+  if (!hasSelection) return null;
+  const selected = (Array.isArray(pieces) ? pieces : [])
+    .find((piece) => piece && String(piece.id) === String(selectedId));
+  return selected ? { kind: "cell", piece: selected, cell } : null;
 }
 
 export function orderMessage(piece, target) {
