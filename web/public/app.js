@@ -16,6 +16,7 @@ import {
   missionMessage,
   orderMessage,
   ownPieceAt,
+  pickPieceAt,
   previewLine,
   purseText,
   refusalText,
@@ -687,7 +688,15 @@ board.addEventListener("click", (event) => {
     return;
   }
 
-  const mine = ownPieceAt(room.pieces, cell, room.you);
+  // A click selects a piece by its ICON, not by the one cell under the pointer (T-028, PB-050):
+  // the same badge box the hover uses, nearest icon centre wins, and a stack at one cell cycles.
+  // The point is taken in device pixels, which is the frame the badge size is drawn in.
+  const point = screenPoint(event);
+  const mine = pickPieceAt(room.pieces, viewForCanvas(), point.x, point.y, {
+    side: room.you,
+    selectedId: selected ? selected.id : null,
+    badgeMinPx: BADGE_MIN_PX * dpr(),
+  });
   if (mine) {
     selected = mine;
     preview = null;

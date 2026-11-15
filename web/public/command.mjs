@@ -5,7 +5,8 @@
 // What this node exists for: a player must be able to select one of their own pieces, see
 // what an order would cost, send it, and be told plainly when the server refuses it.
 
-import { pixelToCell, wrapX } from "./render.mjs";
+import { cellToPixel, pixelToCell, wrapX } from "./render.mjs";
+import { BADGE_MIN_PX, badgePx } from "./badges.mjs";
 import { articleFor, unitLabel, unitPhrase } from "./units.mjs";
 
 export const PICK_HINT = "Select one of your pieces.";
@@ -156,6 +157,83 @@ export function ownPieceAt(pieces, target, side) {
     if (sameCell(piece, wanted)) return piece;
   }
   return null;
+}
+
+// ---- selection hit area (T-028, PB-050) ---------------------------------------------------
+//
+// The click target is the icon the frame DRAWS, not the one map cell under the pointer. At the
+// whole-world fit a badge is BADGE_MIN_PX wide - 3.73 cells - so a click squarely on a unit used
+// to answer "Select one of your pieces." (PB-050, measured: 184 of 196 positions inside the drawn
+// icon). This is the same box the hover uses (render.badgeAt), so the tip and the click agree.
+//
+// Rules, in this order:
+//   * only the seat's own pieces are candidates; an enemy or empty cell selects nothing and the
+//     page still says PICK_HINT;
+//   * the pointer must be inside the piece's own icon box, half a badge each side of the cell
+//     centre, measured in the same device pixels the painter draws in;
+//   * of the boxes that contain the pointer, the NEAREST ICON CENTRE wins (Euclidean, in screen
+//     pixels), so overlapping badges resolve the way the eye does;
+//   * an exact tie means two pieces draw at the same centre: the air/ground stack T-021 made
+//     legal. Ties are ordered air, sea, land - the air layer is the one a mission is issued from
+//     and the one drawn in front - and a second click on the same footprint selects the NEXT piece
+//     in that order, so the ground unit under a plane is still reachable.
+const LAYER_ORDER = Object.freeze({ air: 0, sea: 1, land: 2 });
+
+export function layerOfPiece(piece) {
+  if (!piece) return "land";
+  const domain = String(piece.domain || "").toLowerCase();
+  if (domain === "air" || domain === "sea" || domain === "land") return domain;
+  if (String(piece.kind) === "aircraft") return "air";
+  if (["cruiser", "carrier", "submarine", "transport"].includes(String(piece.kind))) return "sea";
+  return "land";
+}
+
+function layerRank(piece) {
+  const rank = LAYER_ORDER[layerOfPiece(piece)];
+  return Number.isFinite(rank) ? rank : LAYER_ORDER.land;
+}
+
+function idRank(piece) {
+  return String(piece && piece.id === undefined ? "" : piece.id);
+}
+
+// Every own piece whose drawn icon box contains the pointer, nearest centre first. Pure: the view
+// is the canvas's own camera, so the box is the box the frame painted.
+export function piecesAtPoint(pieces, view, px, py, opts = {}) {
+  const side = opts.side;
+  if (!side || !view) return [];
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const half = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2;
+  const width = Number(view.boardW) || 320;
+  const hits = [];
+  for (const piece of Array.isArray(pieces) ? pieces : []) {
+    if (!piece || String(piece.side) !== String(side)) continue;
+    const x = Number(piece.x);
+    const y = Number(piece.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const centre = cellToPixel(wrapX(x, width), y, view);
+    const dx = Number(px) - centre.x;
+    const dy = Number(py) - centre.y;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) continue;
+    if (Math.abs(dx) > half || Math.abs(dy) > half) continue;
+    hits.push({ piece, distance: Math.sqrt(dx * dx + dy * dy), centre });
+  }
+  hits.sort((a, b) => (a.distance - b.distance) || (layerRank(a.piece) - layerRank(b.piece))
+    || idRank(a.piece).localeCompare(idRank(b.piece)));
+  return hits;
+}
+
+// The piece a click on the board selects, or null when nothing of the seat's is under it.
+export function pickPieceAt(pieces, view, px, py, opts = {}) {
+  const hits = piecesAtPoint(pieces, view, px, py, opts);
+  if (!hits.length) return null;
+  const nearest = hits[0].distance;
+  const tied = hits.filter((hit) => Math.abs(hit.distance - nearest) < 1e-6);
+  if (tied.length === 1) return tied[0].piece;
+  const selectedId = opts.selectedId;
+  const at = tied.findIndex((hit) => selectedId !== undefined && selectedId !== null
+    && String(hit.piece.id) === String(selectedId));
+  return tied[(at + 1) % tied.length].piece;
 }
 
 export function orderMessage(piece, target) {
