@@ -1045,8 +1045,12 @@ export function selectionMarkFor(groups, view, opts = {}) {
   });
   if (!group || !view) return null;
   const scale = Math.max(1, Number(view.scale) || 1);
-  const size = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX);
+  const badge = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX);
   const at = cellToPixel(wrapX(group.x, view.boardW || BOARD_W), group.y, view);
+  // The mark's floor is a SCREEN size that scales with the cell: about three cells across, or the
+  // badge plus a 4 px margin, whichever is bigger (T-030 AC8 item 3). A fixed few pixels read as a
+  // flicker at the world fit and vanished beside a zoomed badge.
+  const size = Math.max(scale * 3, badge + 8);
   // The pulse phase grows the ring by up to 3 px; the ring itself is always drawn, so the mark is
   // visible in a still screenshot at any phase and only breathes on screen.
   const pulse = Math.max(0, Math.min(1, Number(opts.pulse ?? opts.selectedPulse) || 0));
@@ -1088,6 +1092,61 @@ export function paintSelectionMark(ctx, groups, view, opts = {}) {
   ctx.stroke();
   ctx.globalAlpha = 1;
   return mark;
+}
+
+// An order that is on the wire but has not arrived yet stays on the map (T-030 AC8 item 2). The
+// room frame carries the plan as `piece.path` (move.mjs writes it when the order lands), so the page
+// draws the same path the server will walk: a thin line from the piece through every step, and a
+// small hollow square on the destination. Without it an accepted order left the board unchanged and
+// the player sent the same order again believing nothing had happened.
+export function paintPendingOrders(ctx, room, view, opts = {}) {
+  if (!room || !view) return 0;
+  const you = room.you ? String(room.you) : "";
+  const pieces = Array.isArray(room.pieces) ? room.pieces : [];
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const widthCells = Math.max(1, Math.floor(Number(view.boardW) || BOARD_W));
+  const offsets = [-widthCells * scale, 0, widthCells * scale];
+  const width = Math.max(1.6, scale * 0.5);
+  let drawn = 0;
+  for (const piece of pieces) {
+    if (!you || !piece || String(piece.side) !== you) continue;
+    const path = Array.isArray(piece.path) ? piece.path : [];
+    if (!path.length) continue;
+    const points = [{ x: piece.x, y: piece.y }, ...path];
+    // Only paths that reach the visible board are traced; the seam offsets put a wrapped run back
+    // on screen instead of streaking it across the middle.
+    for (const shift of offsets) {
+      ctx.beginPath();
+      points.forEach((step, i) => {
+        const at = cellToPixel(wrapX(step.x, widthCells), Number(step.y), view);
+        if (i === 0) ctx.moveTo(at.x + shift, at.y);
+        else ctx.lineTo(at.x + shift, at.y);
+      });
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+      ctx.lineWidth = width + 1.2;
+      ctx.stroke();
+      ctx.strokeStyle = ROUTE_INK;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    }
+    const last = points[points.length - 1];
+    const end = cellToPixel(wrapX(last.x, widthCells), Number(last.y), view);
+    const half = Math.max(1.8, scale * 0.75);
+    for (const shift of offsets) {
+      const at = { x: end.x + shift, y: end.y };
+      if (at.x < -half - 4 || at.x > view.viewW + half + 4) continue;
+      ctx.beginPath();
+      ctx.rect(Math.round(at.x - half) + 0.5, Math.round(at.y - half) + 0.5,
+        Math.round(half * 2), Math.round(half * 2));
+      ctx.fillStyle = ROUTE_INK;
+      ctx.fill();
+      ctx.strokeStyle = "#0b0f14";
+      ctx.lineWidth = Math.max(1, scale * 0.28);
+      ctx.stroke();
+    }
+    drawn += 1;
+  }
+  return drawn;
 }
 
 export function paintPreview(ctx, preview, view, opts = {}) {
@@ -1207,10 +1266,11 @@ export function paintMatch(ctx, board, room, opts = {}) {
     paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale });
     const preview = paintPreview(ctx, opts.preview, flat, opts);
     const groups = paintPieces(ctx, room && room.pieces, flat, opts);
+    const pending = paintPendingOrders(ctx, room, flat, opts);
     const selection = paintSelectionMark(ctx, groups, flat, opts);
     const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
     const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat);
-    return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, selection, message: EXTRACT_MISSING, view: flat };
+    return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, pending, selection, message: EXTRACT_MISSING, view: flat };
   }
 
   if (opts.sightAt && Number(opts.sight) > 0) {
@@ -1218,9 +1278,6 @@ export function paintMatch(ctx, board, room, opts = {}) {
   }
   const preview = paintPreview(ctx, opts.preview, view, opts);
   const groups = paintPieces(ctx, room && room.pieces, view, opts);
-  // The selected piece's mark rides on top of the badges: a ring under the badge is a ring nobody
-  // can see when the badge is the light face the ring sits on (PB-051).
-  const selection = paintSelectionMark(ctx, groups, view, opts);
   const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
   // A badge is never smaller than its floor, so one can cover the city square it stands on. The
   // sites under badges get their own cell tick back after the pieces are painted: the city has to
@@ -1238,8 +1295,15 @@ export function paintMatch(ctx, board, room, opts = {}) {
   }
   const labels = visibleLabels(room && room.sites, view);
   const labelled = paintLabels(ctx, opts.atlas, labels);
+  // The orders that are on the wire, and the selected piece's mark, go LAST (T-030 AC8 items 2 and
+  // 3): the capital marker and the city labels were painted after the mark, so they cut its ring
+  // (measured at e9a8bfa: the ring's top edge read 10% covered, 1.0 after this order), and an
+  // accepted order was not painted at all. A pending path under a city name is still a path the
+  // player can read.
+  const pending = paintPendingOrders(ctx, room, view, opts);
+  const selection = paintSelectionMark(ctx, groups, view, opts);
   return { mode, painted, fogged, pieces, groups: groups.length, siteTicks, capitals, labels: labelled,
-    political, tally, preview, selection, message: "", view };
+    political, tally, preview, pending, selection, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.

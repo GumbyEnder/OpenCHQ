@@ -259,6 +259,28 @@ export function clickIntent(pieces, view, px, py, opts = {}) {
   const cell = opts.cell || pixelToCell(px, py, view);
   const boardW = Number(view.boardW) || 320;
   let hits = piecesAtPoint(pieces, view, px, py, opts);
+  // The selected piece's own badge is a selection surface, not a destination map (T-030 AC8 item 1).
+  // At the world fit a badge is 14 px over 4 px cells: 85% of the badge area used to fall on a
+  // NEIGHBOURING cell, so a click a couple of pixels off the badge's centre ordered a march the
+  // player read as "select this again" - its ack then cleared the selection and overwrote the clear
+  // message with "Order sent". The reserved radius is the badge's own half, capped at one cell, so
+  // the ambiguity only exists where the badge is bigger than a cell: at any zoom past the fit the
+  // whole neighbouring cell is a destination again, and a one-cell move still works at the fit by
+  // clicking the far half of that cell.
+  if (hasSelection) {
+    const scale = Math.max(1, Number(view.scale) || 1);
+    const reserved = Math.min(badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2, Math.max(1, scale - 0.5));
+    const own = hits.find((hit) => String(hit.piece.id) === String(selectedId));
+    // Another own piece's badge always wins: clicking a friend selects that friend (T-030 AC2,
+    // PB-052), so the reserved ring only applies when the selected piece is the only thing the
+    // pointer could mean.
+    const others = hits.filter((hit) => String(hit.piece.id) !== String(selectedId));
+    if (own && others.length === 0 && own.distance < reserved - 1e-9) {
+      // On its own cell or in the ring around it: a selection gesture, and a stack cycles the way a
+      // second click on the same cell does.
+      return { kind: "piece", piece: pieceFromHits(hits, selectedId) };
+    }
+  }
   if (hasSelection) {
     hits = hits.filter((hit) => String(hit.piece.id) !== String(selectedId)
       || (wrapX(Number(hit.piece.x), boardW) === cell.x && Number(hit.piece.y) === cell.y));

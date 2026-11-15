@@ -35,4 +35,6 @@ tests/e2e/t010-*/
 tests/e2e/t014-frame-time*/
 # The e2e suite's own Playwright install (package.json is committed; the install is not).
 tests/e2e/node_modules/
+# ...and the same path when it is a symlink to a shared install (a trailing slash does not match).
+tests/e2e/node_modules
 tests/e2e/package-lock.json

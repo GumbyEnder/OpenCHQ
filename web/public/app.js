@@ -616,8 +616,12 @@ function drawMatch() {
     ? "Political: blue holds " + result.tally.blue + ", red holds " + result.tally.red +
       ", neutral " + result.tally.neutral + "."
     : "";
-  boardNote.textContent = politicalNote || escortNote ||
-    previewLine(preview) || [selectionNote(selected), cargoNote(selected) || airNote(selected)].filter(Boolean).join(" ") ||
+  // While a piece is selected, the note keeps naming it (T-030 AC8 item 4). A route hover or a
+  // refusal speaks first, because it is about the cell under the pointer; after that the selection
+  // wins over the political tally, the crossing warning and the generic grid line, all of which used
+  // to overwrite the selection while the ring was still on the board.
+  const selectionLine = [selectionNote(selected), cargoNote(selected) || airNote(selected)].filter(Boolean).join(" ");
+  boardNote.textContent = previewLine(preview) || selectionLine || politicalNote || escortNote ||
     statusLine(boardPayload, room, result);
   // A capital under threat is the loudest thing on the page, and it stays up until the threat
   // passes: the last ten rounds of a match are not the time to be quiet.
@@ -2003,7 +2007,11 @@ function connect() {
       renderRoom();
     } else if (message.op === "ordered") {
       settleOrder(message.id);
-      say(ackText(message));
+      // An accepted order clears the selection (the PM's ruling, 2026-11-15) - and it says so, so a
+      // player who thought they were selecting a piece is not left clicking at nothing with the
+      // generic hint (T-030 AC8 items 2 and 5). The path that just went on the wire stays drawn.
+      const hadSelection = Boolean(selected);
+      say(ackText(message) + (hadSelection ? " Selection cleared." : ""));
       // An order is the player's own act, so it belongs in the log beside what the round did.
       noteLog([{ round: room && room.round ? room.round : 0, text: ackText(message).replace(/\.$/, "") }]);
       clearCommand();
