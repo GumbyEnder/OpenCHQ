@@ -332,8 +332,22 @@ export function placementRules() {
   };
   const snap = block.snap || {};
   const box = block.box || {};
+  const footprint = block.footprint || {};
   return {
     rule: String(block.rule || "friendly-site"),
+    // D-026: which site kinds carry a painted block. A list in the config, never a frozen array in
+    // the placement code, so the painter's branch has one statement of record.
+    footprintKinds: Array.isArray(footprint.kinds) && footprint.kinds.length
+      ? footprint.kinds.map(String)
+      : ["city", "capital", "base"],
+    footprintRule: String(footprint.rule || "any-footprint-cell-counts-as-the-site"),
+    footprintQ54: typeof footprint.q54 === "string" ? footprint.q54 : "",
+    footprintQ45: typeof footprint.q45 === "string" ? footprint.q45 : "",
+    footprintFrame: typeof footprint.frame === "string" ? footprint.frame : "",
+    // D-026/Q45: the one measured cell the remake accepts although the original refused it.
+    // Recorded, never narrowed out — the measured painted set contains it.
+    footprintDeviation: typeof footprint.deviation === "string" ? footprint.deviation : "",
+    footprintGate: typeof footprint.gate === "string" ? footprint.gate : "",
     snapPx: number(snap.px, 12, 0),
     snapCells: Math.max(0, Math.floor(number(snap.cells, 2, 0))),
     boxPx: number(box.px, 10, 0),

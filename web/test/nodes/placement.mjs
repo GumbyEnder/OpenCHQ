@@ -3,11 +3,12 @@
 // Manual p.27 "General Placement Rules": land units and aircraft go on any friendly city or
 // base; ships only on a friendly dock. There is no reach: this pins the mask to the site kinds,
 // the readiness byte, the refusal sentences, and the wire form the page paints.
-import { canPlace, domainOf, friendlySites, maskBase64, placementMask, placementRefusal, placementSite } from "../../server/placement.mjs";
+import { canPlace, domainOf, footprintCells, friendlySites, maskBase64, placementMask, placementRefusal, placementSite } from "../../server/placement.mjs";
 import { shopFor } from "../../server/shop.mjs";
 import { readinessRules } from "../../server/rules.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { buy } from "../../server/economy.mjs";
+import { boardPayload } from "../../server/board.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -75,19 +76,23 @@ export async function run(ctx) {
     eq("a friendly city cell is legal", at(80, 50), 1);
     eq("a friendly base cell is legal", at(82, 52), 1);
     eq("a friendly capital cell is legal", at(78, 50), 1);
-    eq("the cell beside a city is not", at(81, 50), 0);
+    // D-026: the painter's 3x3 block around a site cell is legal, not only its centre.
+    eq("the cell beside a city is legal (D-026 footprint)", at(81, 50), 1);
+    eq("the far corner of a city's block is legal", at(79, 49), 1);
+    eq("the cell just outside the block is not", at(84, 50), 0);
     eq("a ground cell with no site is not", at(85, 55), 0);
     eq("an enemy city is not", at(90, 50), 0);
     eq("a neutral city is not", at(70, 50), 0);
     eq("an oilfield is not a city or base", at(60, 50), 0);
     eq("a dock is not a land cell", at(80, 45), 0);
-    eq("the mask counts exactly the three friendly land sites", mask.count, 3);
+    // Three blocks: city 9, base 9, capital 9, sharing 1 (city/base) + 3 (city/capital) cells.
+    eq("the mask counts the three blocks' cells", mask.count, 23);
 
     // an occupied cell is not offered
     match.pieces.push({ id: "blue:land", side: "blue", domain: "land", kind: null, x: 80, y: 50 });
     const again = placementMask(match, "blue", "infantry", grid);
     eq("an occupied cell is not offered", again.mask[50 * W + 80], 0);
-    eq("the mask is down to the two open sites", again.count, 2);
+    eq("the occupied cell drops out of its block", again.count, 22);
 
     // a side with no territory has nowhere to place
     const none = matchWith([
@@ -113,7 +118,9 @@ export async function run(ctx) {
     const mask = placementMask(match, "blue", "infantry", grid);
     eq("an unready city is still offered, marked 2", mask.mask[50 * W + 80], 2);
     eq("a ready city is marked 1", mask.mask[50 * W + 120], 1);
-    eq("the counts split ready and unready", [mask.ready, mask.unready, mask.count], [1, 1, 2]);
+    // Home's whole 3x3 block is unready (9 cells); Far stands on the synthetic board's water ring,
+    // so the painter would keep only its centre cell (1).
+    eq("the counts split ready and unready", [mask.ready, mask.unready, mask.count], [1, 9, 10]);
     const blocked = canPlace(match, "blue", "infantry", 80, 50, grid);
     if (!blocked.error) fail("canPlace accepted a purchase in an unready city");
     eq("the refusal names the ready round", blocked.error.includes("ready at round 9"), true);
@@ -169,9 +176,11 @@ export async function run(ctx) {
   eq("the land sentence names the unit and the rule",
     placementRefusal("tank", "land", "Land units go only on a friendly city or base."),
     "Can't place tank here: that is not a friendly city or base you hold. Land units go only on a friendly city or base.");
+  // PB-046: the player sentence carries no decision tag. D-025 is a citation for the code, and a
+  // "(D-025)" in the mode bar is a note to the reviewer, not to the player.
   eq("the sea sentence names the unit and the berths",
-    placementRefusal("cruiser", "sea", "Ships go at a friendly dock or a coastal city or base (D-025)."),
-    "Can't place cruiser here: that is not a friendly coastal city, base or dock you hold. Ships go at a friendly dock or a coastal city or base (D-025).");
+    placementRefusal("cruiser", "sea", "Ships go only at a dock, or on the water beside a coastal city or base."),
+    "Can't place cruiser here: that is not a friendly coastal city, base or dock you hold. Ships go only at a dock, or on the water beside a coastal city or base.");
   eq("a named site leads the sentence",
     placementRefusal("infantry", "land", "rule", "Kharkov is not yours."),
     "Can't place infantry here: Kharkov is not yours. rule");
@@ -186,8 +195,8 @@ export async function run(ctx) {
     eq("a legal cell passes", ok.ok, true);
     eq("the legal cell names its site", ok.site && ok.site.id, 1);
     eq("placementSite finds the same site", placementSite(match, "blue", "infantry", 80, 50).id, 1);
-    const deep = canPlace(match, "blue", "infantry", 81, 51, grid);
-    if (!deep.error) fail("canPlace accepted a cell beside the city");
+    const deep = canPlace(match, "blue", "infantry", 84, 50, grid);
+    if (!deep.error) fail("canPlace accepted a cell outside every block");
     // This is the click on a cell the page did not highlight: the sentence must name the unit.
     if (!deep.error.includes("Can't place infantry here")) {
       fail("an unhighlighted click says " + JSON.stringify(deep.error));
@@ -229,8 +238,8 @@ export async function run(ctx) {
     eq("the piece stands on the chosen city cell", [bought.piece.x, bought.piece.y], [80, 50]);
     // 10b infantry, the producing city and its one neighbour inside radius 5: ceil(10 * 1.5) = 15.
     eq("the purchase reports the ready round", bought.readiness && bought.readiness.round, 15);
-    const off = buy(match, "blue", "infantry", 81, 51, grid);
-    if (!off.error) fail("a purchase off a city was accepted");
+    const off = buy(match, "blue", "infantry", 84, 50, grid);
+    if (!off.error) fail("a purchase outside every block was accepted");
     // the neighbouring city is unready too, and the refusal names its round
     const again = buy(match, "blue", "infantry", 82, 50, grid);
     if (!again.error) fail("a neighbouring unready city accepted a purchase");
@@ -254,10 +263,16 @@ export async function run(ctx) {
     const events = ordersFor(match, "red");
     const bought = events.find((event) => event.type === "bot_buy");
     if (!bought) fail("the bot never bought: " + JSON.stringify(events.slice(0, 3)));
-    eq("the bot purchase lands on the bot's own city cell", bought.at, { x: 80, y: 50 });
+    // D-026: the bot buys on a cell of its own city's footprint. On the real board the fixture
+    // site at (80,50) stands on water, so the painter keeps only the land cells of its block and
+    // the bot's nearest-cell choice lands on one of those, never inside the water.
+    const botBlock = footprintCells(match.sites[0], boardPayload());
+    eq("the bot purchase stands on a cell of the city's footprint",
+      botBlock.some(([x, y]) => x === bought.at.x && y === bought.at.y), true);
+    eq("the bot purchase names the bot's own city", placementSite(match, "red", "infantry", bought.at.x, bought.at.y, boardPayload()).id, 1);
     const piece = (match.pieces || []).find((unit) => unit.id === bought.pieceId);
     if (!piece) fail("the bot_buy event names no piece");
-    eq("the piece is the bot's and stands on the city", [piece.side, piece.x, piece.y], ["red", 80, 50]);
+    eq("the piece is the bot's and stands on its city's footprint", [piece.side, piece.x, piece.y], ["red", bought.at.x, bought.at.y]);
   }
 
   // --- the page asks the server, and paints what it is given -----------------

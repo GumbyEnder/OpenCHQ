@@ -465,6 +465,16 @@
   },
   "placement": {
     "rule": "friendly-site",
+    "footprint": {
+      "kinds": ["city", "capital", "base"],
+      "rule": "any-footprint-cell-counts-as-the-site",
+      "source": "D-026 (T-026). The legal click target is the site's painted block, not its centre: FUN_20b1_1a24 (decompiled.c:13935-13975) paints the centre and FUN_20b1_1b42 (decompiled.c:13981-14179) paints the eight ring cells, keeping a cell where the terrain is land (`2 < get_terrain_type`). Facility kinds are painted as a centre only. That shape is NOT re-derived: the list for the shipped board is web/data/footprints.json, the MEASURED painted set from the running original (see frame), baked by tools/bake_footprints.mjs.",
+      "q54": "UNVERIFIED: Q54 asks whether a unit standing on a NON-CENTRE footprint cell counts as in the city for terrain cover, garrison and capital hold, and whether it is captured with the site. That was not measured in DOSBox before this was wired, so the interim rule reads any footprint cell as the site, tagged here rather than assumed. Q54 stays open in Open RE Questions. Measurement plan: place a unit on a ring cell of a city via the original's own placement, then read its cover and, after taking the city, the unit's owner byte.",
+      "q45": "MEASURED, 2026-11-14 13:25 ET on the live original (1942/BLUE, room 4700). Washington (79,44) while unready: (78,44) answered `READY AT 0744` — a readiness refusal, so the cell IS a city cell; (80,44) answered `MUST BE PLACED IN CITY`. (79,43), (78,45) and (80,45) each placed the unit on exactly the clicked cell, no snap. One state per cell, both measured.",
+      "frame": "MEASURED for the painter, UNVERIFIED for the placement check. The runtime tile map paints Washington's block at map cells 80..82 x 43..45 (capital at 81,44) while the site record is (79,44): the painter writes at record + (2,0), measured on all 64 city-kind sites, so the painter frame is the record frame plus two in x, and web/data/footprints.json is translated back into the record frame. The placement check does NOT follow the painted set: it refused map-painted (80,44) and accepted map-plain (79,44). The five accepted cells all lie in the RECORD-frame 3x3, so the check looks like a record-frame test with one unexplained refusal; the two frames cannot be separated from the readings we have, so this is tagged UNVERIFIED rather than decided.",
+      "deviation": "KNOWN AND RECORDED: the measured footprint of Washington includes record (80,44), a cell the original's own placement check refused. The remake accepts it. Narrowing that one cell out would be a rule the measurement does not support — the painted set has a city cell there — so the acceptance ships as a labelled deviation, not as a silent fix.",
+      "gate": "UNVERIFIED, and not needed in the bake: the export gates each ring cell with thunk_EXT_FUN_0000_0000 (decompiled.c:13981-14179) and that symbol is unresolved, but the MEASURED painted set reproduces a full 3x3 at Washington including (80,44), so no gating is observed on the one site measured cell by cell. A cell the dump only covers once is not evidence that the gate never fires."
+    },
     "snap": {
       "px": 12,
       "cells": 2,

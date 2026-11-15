@@ -130,15 +130,24 @@ export async function run(ctx) {
     near("the fit zoom radius is the 12 px budget", snapRadiusPx(placement, v), 12);
     const hit = snapPlacementCell({ x: 83, y: 50 }, placement, v);
     if (!hit) fail("a click 3 px off a ready city did not snap");
-    eq("the snap lands on the city cell", [hit.x, hit.y], [80, 50]);
+    // D-026: the snap target is the nearest footprint cell, not the site centre. Home is a city at
+    // (80,50) with the painter's 3x3 block, so (81,50) is two pixels from this click and is the
+    // nearest legal place; the centre is three away.
+    eq("the snap lands on the nearest footprint cell", [hit.x, hit.y], [81, 50]);
     eq("the snapped cell is ready", [hit.value, hit.ready], [1, true]);
-    near("the snap reports its distance in screen pixels", hit.distance, 3);
+    near("the snap reports its distance in screen pixels", hit.distance, 2);
 
-    // 1 to 6 px off, in both axes and diagonally: the acceptance criterion's own numbers.
-    for (const [dx, dy] of [[1, 0], [3, 0], [6, 0], [0, 4], [4, 4], [6, 6], [2, 5]]) {
+    // 1 to 6 px off, in both axes and diagonally, each landing on the nearest footprint cell of
+    // the block (the centre when the click is inside the block, the edge cell when it is not).
+    const home = {
+      "1,0": [81, 50], "3,0": [81, 50], "6,0": [81, 50],
+      "0,4": [80, 51], "4,4": [81, 51], "6,6": [81, 51], "2,5": [81, 51],
+    };
+    for (const [dx, dy] of [[0, 0], [0, 1], [1, 0], [1, 1], [3, 0], [6, 0], [0, 4], [4, 4], [6, 6], [2, 5]]) {
       const at = snapPlacementCell({ x: 80 + dx, y: 50 + dy }, placement, v);
       if (!at) fail("a click " + dx + "," + dy + " px off the city was refused");
-      eq("the click " + dx + "," + dy + " px off snapped somewhere else", [at.x, at.y], [80, 50]);
+      const want = home[dx + "," + dy] || [80 + dx, 50 + dy];
+      eq("the click " + dx + "," + dy + " px off snapped somewhere else", [at.x, at.y], want);
     }
 
     // A click the player did not aim at a city is still refused.
@@ -148,10 +157,12 @@ export async function run(ctx) {
     // More than one friendly site can be in range; the nearest wins. (88,50) is 8 from Home and
     // 32 from Far, so Home takes the click and not the unready city.
     const closest = snapPlacementCell({ x: 88, y: 50 }, placement, v);
-    eq("the nearest site wins", closest && [closest.x, closest.y], [80, 50]);
-    // A click that is nearest to the unready city gets the unready city.
+    eq("the nearest site wins", closest && [closest.x, closest.y], [81, 50]);
+    // A click that is nearest to the unready city gets the unready city, on its nearest footprint
+    // cell (Far is a city at 120,50, so its block's west edge is 119).
     const unready = snapPlacementCell({ x: 118, y: 50 }, placement, v);
-    eq("the unready city takes a click that is nearest to it", unready && [unready.x, unready.y], [120, 50]);
+    eq("the unready city takes a click that is nearest to it", unready && [unready.x, unready.y], [119, 50]);
+    eq("the unready footprint cell keeps the unready byte", unready && [unready.value, unready.unready], [2, true]);
   }
 
   // --- the radius is a pixel budget, not a cell budget, when zoomed in ------------------------
@@ -160,16 +171,16 @@ export async function run(ctx) {
     const v = view(4);
     near("zoom 4 still keeps the 12 px budget", snapRadiusPx(placement, v), 12);
     const twoOff = snapPlacementCell({ x: 122, y: 50 }, placement, v);
-    eq("two cells off at zoom 4 (8 px) snaps", twoOff && [twoOff.x, twoOff.y], [120, 50]);
-    eq("four cells off at zoom 4 (16 px) is refused", snapPlacementCell({ x: 124, y: 50 }, placement, v), null);
+    eq("one cell off the block at zoom 4 (4 px) snaps", twoOff && [twoOff.x, twoOff.y], [121, 50]);
+    eq("five cells off at zoom 4 (20 px) is refused", snapPlacementCell({ x: 126, y: 50 }, placement, v), null);
     // The cell budget is what survives a zoom change: at 12x, 2 cells is 24 px, so a 20 px miss
     // still snaps even though the flat budget is 12.
     const deep = view(12);
     near("at 12x the cell budget is the wider one", snapRadiusPx(placement, deep), 24);
-    const far = snapPlacementCell({ x: 82, y: 50 }, placement, deep);
-    eq("a 24 px miss at 12x snaps to the nearest cell", far && [far.x, far.y], [80, 50]);
+    const far = snapPlacementCell({ x: 83, y: 50 }, placement, deep);
+    eq("a 24 px miss at 12x snaps to the nearest footprint cell", far && [far.x, far.y], [81, 50]);
     near("the 24 px miss is measured in screen pixels", far.distance, 24);
-    eq("a 36 px miss at 12x is refused", snapPlacementCell({ x: 83, y: 50 }, placement, deep), null);
+    eq("a 48 px miss at 12x is refused", snapPlacementCell({ x: 85, y: 50 }, placement, deep), null);
   }
 
   // --- D-019 is untouched: a land click cannot snap onto a dock, a hull cannot snap onto a city -
@@ -182,7 +193,8 @@ export async function run(ctx) {
     // water the player actually clicked.
     const fromDock = snapPlacementCell({ x: 80, y: 45 }, landPlacement, v);
     if (!fromDock) fail("an infantry click on a friendly dock was refused instead of snapping to a city");
-    eq("an infantry click on a dock snapped to a city cell", [fromDock.x, fromDock.y], [80, 50]);
+    // The nearest land cell is the city block's north edge (80,49), never the dock or the water.
+    eq("an infantry click on a dock snapped to a city cell", [fromDock.x, fromDock.y], [80, 49]);
     // And with a hull armed the same click stays on the dock.
     const hull = snapPlacementCell({ x: 80, y: 47 }, seaPlacement, v);
     if (!hull) fail("a hull click two cells off its dock was refused");
@@ -200,7 +212,7 @@ export async function run(ctx) {
     // to it and must be refused with the round it comes back - the "soon" box is not a dead click.
     const hit = snapPlacementCell({ x: 124, y: 50 }, placement, v);
     if (!hit) fail("a click beside the unready city did not snap");
-    eq("the snap lands on the unready city", [hit.x, hit.y, hit.value, hit.unready], [120, 50, 2, true]);
+    eq("the snap lands on the unready city's block", [hit.x, hit.y, hit.value, hit.unready], [121, 50, 2, true]);
     const refused = canPlace(match, "blue", "infantry", hit.x, hit.y, grid);
     if (!refused.error) fail("the snapped unready cell was accepted");
     if (!refused.error.includes("ready at round 9")) {
@@ -229,8 +241,11 @@ export async function run(ctx) {
     // The box is centred on the cell the player must click, so the target and the ink agree.
     const one = recorder();
     paintPlacement(one.ctx, placement, view(4));
+    // Both axes: the block's cells share x = 80 at three rows, so a stroke match on x alone would
+    // measure the north edge of the block and call it the centre.
     const cell80 = one.strokes.find((s) => s.color !== PLACEMENT_BOX.casing &&
-      Math.abs(s.x + s.w / 2 - (80 + 0.5) * 4) < 0.001);
+      Math.abs(s.x + s.w / 2 - (80 + 0.5) * 4) < 0.001 &&
+      Math.abs(s.y + s.h / 2 - (50 + 0.5) * 4) < 0.001);
     if (!cell80) fail("no box was drawn around the city cell at zoom 4");
     near("the box is centred on the cell", cell80.y + cell80.h / 2, (50 + 0.5) * 4);
 

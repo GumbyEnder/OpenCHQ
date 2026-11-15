@@ -813,6 +813,13 @@ window.addEventListener("keydown", (event) => {
     closeDialog();
     return;
   }
+  // PB-047: an armed purchase is a mode, and Escape gets out of it even with no dialogue open.
+  // Before this, the only way off the build cursor was to open the Buy menu again and close it.
+  if (event.key === "Escape" && buying) {
+    clearCommand();
+    say("Build cursor off.");
+    return;
+  }
   if (event.key === "b" || event.key === "B") return openDialog("buy");
   if (event.key === "e" || event.key === "E") return openDialog("economy");
   if (event.key === "p" || event.key === "P") return setViewMode(viewMode === "political" ? "terrain" : "political");
@@ -1466,7 +1473,11 @@ const DIALOG_PAINTERS = {
           closeDialog();
         });
       } else {
-        line.title = "Arm this, then click one of your " + (row.domain === "sea" ? "docks" : "cities") + ".";
+        // PB-046: a hull is not placed on docks alone - D-025 added coastal cities and bases - and a
+        // land unit goes on a city or a base, so the prompt names the cells the mask actually paints.
+        line.title = "Arm this, then click one of your " + (row.domain === "sea"
+          ? "highlighted docks, or a coastal city or base"
+          : "highlighted cities or bases") + ".";
         line.addEventListener("click", () => {
           buying = row.kind;
           selected = null;
@@ -1476,8 +1487,9 @@ const DIALOG_PAINTERS = {
           send({ op: "placement", kind: row.kind });
           // The sentence names the rule the server just enforced: a site cell this side owns,
           // not a radius and not coastal water (D-019).
+          // PB-046: the prompt says what is highlighted, not one outdated word for it.
           say("Buy " + row.kind + ": " + (row.domain === "sea"
-            ? "click one of the highlighted docks you hold to place it."
+            ? "click one of the highlighted docks, or a coastal city or base, to place it."
             : "click one of the highlighted cities or bases you hold to place it."));
           closeDialog();
         });
@@ -1920,7 +1932,9 @@ function connect() {
     } else if (message.op === "bought") {
       settleOrder(message.id);
       say(purchaseText(message.kind, message.site ? { site: message.site } : message.at, message.cash));
-      // One purchase lands, the cursor goes: the next click is a map click again.
+      // One purchase lands, the cursor goes: the next click is a map click again (PB-047). A buy
+      // that is REFUSED keeps the cursor armed - a mis-click must not cost the mode - but a landed
+      // purchase is the end of the arming, exactly like closing the menu.
       buying = null;
       placement = null;
       drawMatch();
