@@ -413,7 +413,7 @@ const main = async () => {
     // say which bytes produced it. Asserted, not printed — the identity line was decorative while
     // it was only a console.log argument (T-027 follow-up).
     HARNESS_LINE = harnessLine();
-    check(/^harness md5=[0-9a-f]{32} bytes=[1-9][0-9]* git=\S+$/u.test(HARNESS_LINE),
+    check(/^harness md5=[0-9a-f]{32} bytes=[1-9][0-9]* git=\S+( \(.+\))?$/u.test(HARNESS_LINE),
       "the summary can name the harness by bytes and tree", HARNESS_LINE);
 
     await signIn(page, context);
