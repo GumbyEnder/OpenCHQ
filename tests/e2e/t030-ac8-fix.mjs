@@ -103,6 +103,12 @@ async function hoverCell(cell, dx = 0, dy = 0) {
   await page.mouse.move(p.x + dx, p.y + dy);
   await sleep(220);
 }
+// How many CSS px one cell is on screen, measured now (the camera can be at a fractional fit).
+async function cellWidth(cell) {
+  const a = await pointOf(cell.x, cell.y);
+  const b = await pointOf(cell.x + 1, cell.y);
+  return Math.abs(b.x - a.x);
+}
 // Zooming is about the viewport centre, so a piece can leave the screen. Arrow-pan until the cell is
 // near the middle, or a pixel sample measures an empty canvas.
 async function centreOn(cell) {
@@ -312,6 +318,26 @@ try {
     mark("item 1 a re-click on the badge (1 px off centre) never orders and keeps the selection",
       stray.length === 0, { offsets, stray });
 
+    // The other half of the PM's ruling (room 5765): at the fit the one-cell move wins. A cell is
+    // 4.41 px there and the ring is 2.65 px, so a miss past the ring is in the neighbouring cell and
+    // must send the order, not reselect. The offset is 4 px, not 3, because the pointer is reported
+    // in whole CSS pixels and this fit phase truncates 364.79 + 3 to clientX 367, i.e. 2.0 canvas px
+    // - still inside the ring. 4 px floors to 2.7-3.6 canvas px, always outside it and always in the
+    // neighbouring cell. Under the old `scale - 0.5` cap (ring 3.91 px) this click reselected and
+    // nothing reached the wire.
+    await page.keyboard.press("Escape");
+    await sleep(140);
+    await clickCell(cell);
+    before = await wireLen();
+    await clickCell(cell, 4, 0);
+    const fitMissWire = await wireFrom(before);
+    const fitMissState = await state();
+    mark("item 1 at the fit a 4 px miss is a one-cell move, not a reselect",
+      orders(fitMissWire).length > 0 && /^Order sent/.test(await toast()),
+      { missPx: 4, wire: fitMissWire, toast: await toast(), selected: fitMissState.selected });
+    await page.keyboard.press("Escape");
+    await sleep(140);
+
     // A one-cell move must still be possible (the regression T-028 shipped had no one-cell move at
     // all): clicking the neighbouring cell's own centre, one cell out, is a destination.
     await page.keyboard.press("Escape");
@@ -346,6 +372,64 @@ try {
       mark("item 1 a one-cell move still orders at x" + zoomScale.toFixed(2),
         orders(zoomWire).length > 0,
         { presses, scale: zoomScale, wire: zoomWire, toast: await toast() });
+    }
+
+    // Room 5765's rule at z2 and up, in the words the PM used: a cell is 8 px or more there, so a
+    // 1-2 px miss on the badge is forgiven - the click stays a selection and sends nothing. This leg
+    // is green under the 1 px ring mutant too, and that is honest rather than a hole: a 2 px miss at
+    // a 8.8 px cell is inside the piece's OWN cell, so the own-cell clause keeps the selection
+    // whatever the ring does. The ring's own share of the forgiveness is the half-cell leg below.
+    {
+      await fit();
+      await clickCell(cell);
+      let dx = await cellWidth(cell);
+      for (let i = 0; i < 8 && dx < 8; i++) {
+        await page.keyboard.press("+");
+        await sleep(170);
+        dx = await cellWidth(cell);
+      }
+      await centreOn(cell);
+      dx = await cellWidth(cell);
+      const zScale = (await state()).camera.scale;
+      before = await wireLen();
+      await clickCell(cell, 2, 0);
+      const zWire = await wireFrom(before);
+      const zState = await state();
+      mark("item 1 a 2 px miss on the badge is forgiven at z" + zScale.toFixed(2),
+        orders(zWire).length === 0 && String(zState.selected) === String(piece.id),
+        { cellPx: Number(dx.toFixed(3)), missPx: 2, scale: zScale, wire: zWire,
+          toast: await toast(), selected: zState.selected });
+      await page.keyboard.press("Escape");
+      await sleep(140);
+    }
+
+    // The ring's own forgiveness when zoomed: a miss past HALF a cell means the pointer's cell is the
+    // neighbour, so the own-cell clause no longer saves it - the 0.6 cell reserved radius does. At a
+    // 32 px cell that window is 16-19.2 px; 0.53 cell is inside it. Shrinking the ring to 1 px (M7)
+    // turns this click into a destination, which is what makes this leg the ring's witness.
+    {
+      await fit();
+      await clickCell(cell);
+      let dx = await cellWidth(cell);
+      for (let i = 0; i < 20 && dx < 26; i++) {
+        await page.keyboard.press("+");
+        await sleep(170);
+        dx = await cellWidth(cell);
+      }
+      await centreOn(cell);
+      dx = await cellWidth(cell);
+      const off = Math.round(dx * 0.53);
+      const hcScale = (await state()).camera.scale;
+      before = await wireLen();
+      await clickCell(cell, off, 0);
+      const hcWire = await wireFrom(before);
+      const hcState = await state();
+      mark("item 1 a half-cell miss on the badge is forgiven when zoomed (z" + hcScale + ")",
+        orders(hcWire).length === 0 && String(hcState.selected) === String(piece.id),
+        { cellPx: Number(dx.toFixed(3)), missPx: off, scale: hcScale, wire: hcWire,
+          toast: await toast(), selected: hcState.selected });
+      await page.keyboard.press("Escape");
+      await sleep(140);
     }
 
     // The PM's own repro (shot 05-escape): a click the player read as a selection, then Escape

@@ -56,21 +56,27 @@ MUTANTS = [
       "item 1 Escape clears the selection with no order on the wire"]),
     # PM 5641(1): M1 removes the rule outright; this one only SHRINKS it, so it tests the value of
     # `reserved` rather than the existence of the branch. At the fit the real radius is
-    # min(14/2, 4 - 0.5) = 3.5 px; 1 px keeps the ring's shape but puts the badge's own 2-3 px
-    # off-centre area back on the neighbouring cell, which is exactly the base defect (e9a8bfa).
+    # min(14/2, 4.41 * 0.6) = 2.65 px at the fit, 0.6 cell when zoomed. The witness is the zoomed
+    # half-cell leg: 0.53 cell is past half a cell (so the pointer's own cell is the neighbour and the
+    # own-cell clause cannot save it) and inside the 0.6 cell ring, so a 1 px ring turns that click
+    # into a destination. A 2 px miss at z2 stays green under this mutant because it is inside the
+    # piece's own cell - that is the honest mechanism, not a hole.
     ("M7 item1 reserved radius shrunk to 1px", "web/public/command.mjs",
      [("    const reserved = Math.min(badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2, Math.max(1, scale * 0.6));",
        "    const reserved = 1;")],
-     ["item 1 a badge click immediately followed by Escape"]),
+     ["item 1 a badge click immediately followed by Escape",
+      "item 1 a half-cell miss on the badge is forgiven"]),
     # The other direction, and the one room 5641(3) is about: put the OLD cap back (`scale - 0.5`),
     # which leaves half a pixel between the ring and the neighbouring icon centre. A pointer reports
     # whole pixels, so a click on that centre floors inside the ring and reselects - the one-cell move
     # dies at the fit while still "working" at other sub-pixel phases. Owned by the node pin that
     # computes the floored pointer directly (web/test/nodes/selection_hit.mjs) and by the e2e
     # one-cell-out legs, which need the node leg to be re-run for this mutant (run_node below).
+    # The pointer miss at the fit is the PM's room-5765 wording as a pin: ring 3.91 px under the old cap
+    # swallows it, so it reselects instead of moving, and that leg goes red.
     ("M8 item3 radius cap too close to the cell boundary", "web/public/command.mjs",
      [("Math.max(1, scale * 0.6));", "Math.max(1, scale - 0.5));")],
-     [], 1),
+     ["item 1 at the fit a 4 px miss is a one-cell move"], 1),
 ]
 
 

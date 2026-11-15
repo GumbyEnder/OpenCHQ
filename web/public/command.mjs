@@ -260,17 +260,21 @@ export function clickIntent(pieces, view, px, py, opts = {}) {
   const boardW = Number(view.boardW) || 320;
   let hits = piecesAtPoint(pieces, view, px, py, opts);
   // The selected piece's own badge is a selection surface, not a destination map (T-030 AC8 item 1).
-  // At the world fit a badge is 14 px over 4 px cells: 85% of the badge area used to fall on a
+  // At the world fit a badge is 14 px over 4.4 px cells: 85% of the badge area used to fall on a
   // NEIGHBOURING cell, so a click a couple of pixels off the badge's centre ordered a march the
   // player read as "select this again" - its ack then cleared the selection and overwrote the clear
-  // The reserved radius is the badge's own half, capped at 0.6 of a cell, so the ambiguity only
-  // exists where the badge is bigger than a cell: at any zoom past the fit the whole neighbouring
-  // cell is a destination again, and a one-cell move still works at the fit by clicking the far
-  // half of that cell. The cap used to be `scale - 0.5`, which left half a pixel between the ring
-  // and the neighbouring cell's icon centre - and a pointer reports whole CSS pixels, so a click on
-  // that centre floored inside the ring and reselected instead of moving (measured at the fit:
-  // ring 3.91 px, neighbour centre 4.41 px, click rounded down to 3.66 px -> reselect). 0.6 cell
-  // keeps ~1.8 px of slack at the fit while still absorbing a 1-2 px miss on the badge.
+  // the player had just asked for.
+  //
+  // The reserved radius is the badge's own half, capped at 0.6 of a cell (PM ruling, room 5765). The
+  // cap is what decides which way a sub-pixel miss resolves, and it answers differently at the fit
+  // and when zoomed in: forgiveness at zoom 2 and up, the one-cell move wins at the fit. At the fit
+  // a cell is 4.41 px, so the ring is 2.65 px: a 1-2 px miss on the badge is forgiven as a
+  // selection, and any miss past the ring is already in the neighbouring cell, where that click is a
+  // one-cell move and not a reselect. At zoom 2 and up a cell is 8 px or more, so the ring is 4.8 px
+  // or more and the 1-2 px forgiveness holds there too. The cap used to be `scale - 0.5`, which at
+  // the fit left half a pixel between the ring (3.91 px) and the neighbouring cell's icon centre
+  // (4.41 px); a pointer reports whole CSS pixels, so a click aimed at that centre floored to
+  // 3.66 px and reselected - the one-cell move was dead at the fit.
   if (hasSelection) {
     const scale = Math.max(1, Number(view.scale) || 1);
     const reserved = Math.min(badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2, Math.max(1, scale * 0.6));
