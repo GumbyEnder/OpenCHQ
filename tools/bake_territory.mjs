@@ -121,11 +121,11 @@ function raster(regions) {
 // The quads cover 12200 of the board's 14612 land cells; the rest are coasts and islands the 1990
 // file's four corners do not reach. Those cells still belong to the country around them, so every
 // land cell with no quad that the BFS can enter is handed to the nearest region that has one
-// (multi-source BFS, 4-neigh, X wrap). It cannot enter 9 of the 2412 candidates: single land cells
-// with no land neighbour in any direction (7 of them) plus one diagonal-only pair, so 2403 fill and
-// 9 stay NO_REGION. That is measured, not asserted - _meta.gapUnreachableCells lists them and
-// web/test/nodes/territory.mjs pins the list. Ocean keeps NO_REGION either way: "is this cell
-// friendly territory?" must answer false at sea.
+// (multi-source BFS, 4-neigh, X wrap). The land pass fills 2403 of the 2412 candidates; the other 9
+// are land cells the sea locks away from every land neighbour, and fillAcrossWater below claims them
+// with the same rule extended across water (Q58, ruled 2026-11-16 in room 6323). Both counts are
+// measured, not asserted - _meta carries them and web/test/nodes/territory.mjs pins them. Ocean
+// keeps NO_REGION either way: "is this cell friendly territory?" must answer false at sea.
 function fillLandGaps(grid, land, width, height) {
   const queue = new Int32Array(width * height);
   let head = 0;
@@ -150,6 +150,50 @@ function fillLandGaps(grid, land, width, height) {
     }
   }
   return filled;
+}
+
+// The land pass above stops at water, which leaves land cells the sea locks away from every quad
+// unassigned. The original does not leave them blank (Q58, ruled 2026-11-16 in room 6323): they
+// take the same rule the land fill uses, extended across water. So: same 4-neighbour traversal, same
+// X wrap, same first-arrival-in-row-major-seed-order tie-break, but the traversal may cross water.
+// Water itself is only a path - it keeps NO_REGION, because "is this cell friendly territory?" must
+// answer false at sea - and a land cell that a quad or the land pass already claimed is never
+// reconsidered, so the 2403-cell land fill above is untouched by this pass.
+//
+// Returns the land cells this pass claimed, and their owners, so the bake can record them.
+function fillAcrossWater(grid, land, width, height) {
+  const total = width * height;
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+  const owner = Int32Array.from(grid);
+  const walked = new Uint8Array(total);
+  for (let i = 0; i < total; i += 1) {
+    if (owner[i] !== NO_REGION) {
+      walked[i] = 1;
+      queue[tail++] = i;
+    }
+  }
+  const claimed = [];
+  while (head < tail) {
+    const at = queue[head++];
+    const x = at % width;
+    const y = (at - x) / width;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      if (y + dy < 0 || y + dy >= height) continue;
+      const nx = ((x + dx) % width + width) % width;
+      const next = (y + dy) * width + nx;
+      if (walked[next]) continue;
+      walked[next] = 1;
+      owner[next] = owner[at];
+      if (land[next]) {
+        grid[next] = owner[at];
+        claimed.push([nx, y + dy, owner[at]]);
+      }
+      queue[tail++] = next;
+    }
+  }
+  return claimed;
 }
 
 // Runs of equal region ids, row-major, the same shape world.json uses for terrain.
@@ -202,15 +246,20 @@ const { grid, filled: quadCells } = raster(regions);
 let gapCandidates = 0;
 for (let i = 0; i < grid.length; i++) if (land[i] && grid[i] === NO_REGION) gapCandidates += 1;
 const gapFilled = fillLandGaps(grid, land, W, H);
+// The sea-locked remainder takes the same rule, extended across water (room 6323 ruling A).
+const gapCrossWaterCells = fillAcrossWater(grid, land, W, H);
 const gapUnreachableCells = [];
 for (let i = 0; i < grid.length; i++) {
   if (land[i] && grid[i] === NO_REGION) gapUnreachableCells.push([i % W, (i - (i % W)) / W]);
 }
-if (gapCandidates - gapFilled !== gapUnreachableCells.length) {
-  fail(`gap arithmetic does not close: ${gapCandidates} candidates - ${gapFilled} filled `
-    + `!= ${gapUnreachableCells.length} unreachable`);
+if (gapCandidates - gapFilled - gapCrossWaterCells.length !== gapUnreachableCells.length) {
+  fail(`gap arithmetic does not close: ${gapCandidates} candidates - ${gapFilled} land-filled `
+    + `- ${gapCrossWaterCells.length} cross-water != ${gapUnreachableCells.length} unreachable`);
 }
-const filled = quadCells + gapFilled;
+if (gapUnreachableCells.length !== 0) {
+  fail(`cross-water fill left ${gapUnreachableCells.length} land cells unassigned; the ruling expects 0`);
+}
+const filled = quadCells + gapFilled + gapCrossWaterCells.length;
 const byEraRaw = JSON.parse(readFileSync(eraFile, "utf8"));
 
 // Era labels in the order eras.json uses, with the file row each one reads.
@@ -245,6 +294,8 @@ const payload = {
     quadCells,
     gapCandidates,
     gapFilled,
+    gapCrossWater: gapCrossWaterCells.length,
+    gapCrossWaterCells,
     gapUnreachable: gapUnreachableCells.length,
     gapUnreachableCells,
     landCells: land.reduce((n, v) => n + v, 0),

@@ -31,12 +31,14 @@ record layout is right - a wrong stride or a wrong corner order produces overlap
 
 2 412 of the board's 14 612 land cells fall outside every quad: coasts, islands, and the polar
 edges the 1990 four corners do not reach. `tools/bake_territory.mjs` hands those cells to the
-nearest region that has one (multi-source BFS, 4-neighbour, X wraps). The BFS reaches **2 403** of
-them; **9** cannot be entered and keep "no region" — measured, not asserted, and baked into
-`territory.json`'s `_meta` so the arithmetic closes inside the artifact:
+nearest region that has one (multi-source BFS, 4-neighbour, X wraps). The land pass reaches
+**2 403** of them; **9** are land cells the sea locks away from every land neighbour, and they take
+the same rule extended across water (Q58, ruled 2026-11-16 in room 6323 - see *The nine* below).
+Measured, not asserted, and baked into `territory.json`'s `_meta` so the arithmetic closes inside
+the artifact:
 
-    18 725 quad cells + 2 403 gap cells = 21 128 filled
-    2 412 gap candidates - 2 403 filled = 9 unreachable
+    18 725 quad cells + 2 403 gap cells + 9 cross-water cells = 21 137 filled
+    2 412 gap candidates - 2 403 - 9 = 0 unreachable
 
 The 2 412 are a property of the board the app plays, not of `tmap.bin` alone. The raw terrain map
 carries **14 440** land cells; the board payload then paints **172** site cells over water
@@ -49,22 +51,51 @@ cells have no quad, so:
 Re-deriving the gap count from `tmap.bin` alone therefore lands on **2 383** and is not drift. The
 `gapCandidates` figure in `_meta` is the payload's, because the payload is what the app renders.
 
-The nine, as `(x, y)` on the 320×136 board (`_meta.gapUnreachableCells`):
+#### The nine, and the rule that claims them (Q58)
 
-    (319, 14) (319, 27) (153, 43) (81, 58) (223, 72)
-    (223, 73) (69, 81) (262, 87) (319, 87)
+Nine land cells have no land neighbour in any of the four directions, so a fill that refuses to
+cross water cannot enter them: `(319,14) (319,27) (153,43) (81,58) (223,72) (223,73) (69,81)
+(262,87) (319,87)`. Seven are single cells with no land neighbour at all; `(223,72)/(223,73)` is a
+pair that touches only itself. An 8-neighbour fill would reach 2 405, not 2 412.
 
-Seven of them are single land cells with no land neighbour in any of the eight directions; the pair
-(223, 72)/(223, 73) touches only itself. An 8-neighbour fill would therefore reach 2 405, not 2 412
-— the remaining seven are surrounded by water on every side, so no neighbour radius that refuses to
-cross water can claim them. What the 1990 release does with these nine is **Q58** (open): the fill
-rule here stays 4-neighbour until that is ruled on. `isFriendly()` answers false on their ground,
-which is a knowable consequence, not an accident.
+**Q58 is ruled (2026-11-16, room 6323 item A): option (a), the existing fill's rule extended across
+water.** Same 4-neighbour BFS, same X wrap, same first-arrival tie-break in row-major seed order;
+the traversal may cross water, but water itself keeps "no region" (it is a path, not territory).
+Why this rule and not lowest-region-id: over the whole gap set it reproduces **98.18%** of the
+original's 1942 ink against **95.57%** for the lowest-id tie-break, and the land pass already
+reproduces the existing 2 403/2 403 fill exactly, so the choice costs two cells and changes nothing
+below the nine. The nine and their regions, in `_meta.gapCrossWaterCells`:
+
+| cell | region | cell | region | cell | region |
+|---|---|---|---|---|---|
+| (319, 14) | 64 | (223, 72) | 50 | (262, 87) | 78 |
+| (319, 27) | 64 | (223, 73) | 50 | (319, 87) | 104 |
+| (69, 81) | 57 | (153, 43) | 23 | (81, 58) | 42 |
+
+**Deliberate 2-cell deviation.** `(319,14)` and `(319,27)` come out as **region 64** under this
+rule; the original paints them with **region 4's** ink (white in 1918, blue in 1942, red in 1986,
+where region 64 is blue in all three). This is recorded as deliberate, not as drift: the tie-break
+that would move them is the one the ruling rejected on a 2.6-point margin over the whole gap set.
+Both cells are pinned in `web/test/nodes/territory.mjs` so a later "fix" cannot move them quietly.
+
+**Two cells are excluded from the colour AC.** `(153,43)` and `(81,58)` are *non-territory ink* in
+the captures: `(153,43)` is white in all six shots, `(81,58)` blue in five and white in one 2023
+draw, and neither changes colour when its region's owner does. That is the same class as the Q58
+unit markers (`#555555`/`#000000`), so they carry the fill's region but are not pinned to a
+colour. Excluded on purpose, with the reason, rather than tuned for.
+
+**One deviation is NOT this ticket's.** In 1918 the served ownership view paints `(223,72)`,
+`(223,73)` and `(319,87)` neutral where the original paints blue. That is a pre-existing defect in
+the era join, not in the fill: `ownersFor` reads `match.sites[Number(siteId)]` - an array **index**
+- and 1918's 184-entry roster is not id-ordered (`index 50` is `dock:39:34`), so any 1918 region
+whose site id collides with a dock index paints neutral. 1918's served tally is 27/13/144 where the
+file names 14/9/2 owners. Fixing the join moves the whole 1918 paint and needs its own ticket and
+gate; the three cells are recorded as that defect, not absorbed into PB-077.
 
 Ocean cells keep "no region" under either rule, so `isFriendly(x, y)` answers false at sea, which is
 what placement (p.31) and foreign aid (T-023) need. The gap fill is ours, not the file's, and it is
-the only invented geometry here. `web/test/nodes/territory.mjs` pins the three numbers and the nine
-cells, so a changed fill goes red instead of drifting.
+the only invented geometry here. `web/test/nodes/territory.mjs` pins the numbers, the nine and their
+regions, so restoring a land-only BFS goes red by name.
 
 ## The era rows
 

@@ -66,33 +66,146 @@ export async function run() {
   // would report 0 here.
   eq("1918 and 1942 assign 77 regions differently", differ, 77);
 
-  // ---- the gap arithmetic closes inside the artifact, and the nine sea-locked cells stay put ---
-  // docs/re/REGIONS.md used to claim every land gap cell got a region. It does not: the 4-neighbour
-  // fill cannot enter 9 of the 2412 candidates, so the doc and the numbers it quotes must agree with
-  // the bake. These pins are the measured truth (room 6179, re-measured 2026-11-16): quad 18725 +
-  // gap 2403 = 21128 filled; 2412 candidates - 2403 = 9 unreachable. An 8-neighbour rule would reach
-  // 2405, not 2412 - seven of the nine have no land neighbour at all - so the fill stays 4-neighbour
-  // until Q58 rules on what the original does with them.
+  // ---- the gap arithmetic closes inside the artifact, and the nine sea-locked cells are filled ---
+  // RULED 2026-11-16 (room 6323 item A): the nine land cells the land-only 4-neighbour fill cannot
+  // enter take the SAME rule extended across water - 4-neighbour BFS, x wrap, first arrival in
+  // row-major seed order. The chosen rule reproduces 98.18% of the original's 1942 ink over the whole
+  // gap set against 95.57% for a lowest-id tie-break, and the land pass itself reproduces 2403/2403
+  // of the existing fill, so nothing below the nine moves. These pins are measured, not asserted:
+  // quad 18725 + gap 2403 + cross-water 9 = 21137 filled; 2412 candidates - 2403 - 9 = 0 unreachable.
   const meta = TERRITORY.meta || {};
   eq("quad cells", meta.quadCells, 18725);
   eq("gap candidates", meta.gapCandidates, 2412);
-  eq("gap cells the fill reaches", meta.gapFilled, 2403);
-  eq("gap cells it cannot reach", meta.gapUnreachable, 9);
-  eq("quad + gap is the filled total", meta.quadCells + meta.gapFilled, meta.filledCells);
-  eq("filled total", meta.filledCells, 21128);
-  eq("candidates - filled is the unreachable count", meta.gapCandidates - meta.gapFilled,
-    meta.gapUnreachable);
+  eq("gap cells the land-only fill reaches", meta.gapFilled, 2403);
+  eq("gap cells the cross-water pass claims", meta.gapCrossWater, 9);
+  eq("gap cells left with no region", meta.gapUnreachable, 0);
+  eq("quad + gap + cross-water is the filled total",
+    meta.quadCells + meta.gapFilled + meta.gapCrossWater, meta.filledCells);
+  eq("filled total", meta.filledCells, 21137);
+  eq("candidates - land-filled is exactly the cross-water count",
+    meta.gapCandidates - meta.gapFilled, meta.gapCrossWater);
   eq("land cells", meta.landCells, 14612);
-  const SEA_LOCKED = [[319, 14], [319, 27], [153, 43], [81, 58], [223, 72],
-    [223, 73], [69, 81], [262, 87], [319, 87]];
-  eq("the sea-locked land cells, cell for cell", meta.gapUnreachableCells, SEA_LOCKED);
+  eq("the unreachable list is empty", meta.gapUnreachableCells, []);
+
+  // The nine, with the region the ruled fill hands each one. This is the cross-water pin: restore a
+  // land-only BFS and every one of these reads NO_REGION, so the node goes red by name.
+  const CROSS_WATER = [
+    [319, 14, 64], [319, 27, 64], [69, 81, 57], [319, 87, 104], [153, 43, 23],
+    [81, 58, 42], [223, 72, 50], [223, 73, 50], [262, 87, 78],
+  ];
+  eq("the cross-water cells, cell for cell, with their regions",
+    meta.gapCrossWaterCells.map(([x, y, rid]) => [x, y, rid]), CROSS_WATER);
   const WATER = new Set(["ocean", "shallows", "lake"]);
-  for (const [x, y] of SEA_LOCKED) {
+  for (const [x, y, rid] of CROSS_WATER) {
     const ground = board.terrain[board.cells[y * board.width + x]];
-    if (WATER.has(ground)) fail(`(${x},${y}) is pinned as sea-locked land but reads ${ground}`);
-    eq(`(${x},${y}) has no region`, regionAt(x, y), NO_REGION);
-    eq(`(${x},${y}) is not friendly to blue`, isFriendly(match, "blue", x, y), false);
-    eq(`(${x},${y}) is not friendly to red`, isFriendly(match, "red", x, y), false);
+    if (WATER.has(ground)) fail(`(${x},${y}) is pinned as a land gap cell but reads ${ground}`);
+    eq(`(${x},${y}) gets region ${rid} from the cross-water fill`, regionAt(x, y), rid);
+  }
+  // Region 64 is the deliberate deviation (REGIONS.md): our fill reaches these two across water and
+  // the original paints them with region 4's ink. Pinned so a "fix" cannot silently move them.
+  eq("(319,14) is the documented region-64 deviation", regionAt(319, 14), 64);
+  eq("(319,27) is the documented region-64 deviation", regionAt(319, 27), 64);
+
+  // ---- AC: the 1918/1942/1986 half is exact colour, 7 of 9 cells x 3 eras ---------------------
+  // The pinned value is what the SERVED ownership view paints (openMatch -> ownershipOf -> ink),
+  // and the capture column is what the original shows. Both are recorded, so a disagreement is a
+  // named row, not a gap: PIN is the assertion, CAP is the capture's ink, and where they differ the
+  // reason is on the row. 21 assertions over 7 cells x 3 eras.
+  //
+  // 153,43 and 81,58 are OUT of this AC (ruling, room 6323): their ink never changes across eras
+  // even where the region's colour does - 153,43 is white in all six captures, 81,58 blue in five
+  // and white in one 2023 draw - so they are non-territory ink, the same class as the Q58 unit
+  // markers. They still take a region from the fill; they are just not pinned to a colour.
+  //
+  // TWO DEVIATION CLASSES, and they are not the same thing:
+  //   (a) 319,14 / 319,27 in 1986 - as ruled: our cross-water fill gives region 64 (blue) where the
+  //       original paints region 4's ink (white 1918 / blue 1942 / red 1986). Deliberate, two cells.
+  //   (b) 223,72 / 223,73 / 319,87 in 1918 - a PRE-EXISTING defect in the 1918 join, not in the
+  //       fill: ownersFor reads match.sites[Number(siteId)] (an ARRAY INDEX), and 1918's 184-entry
+  //       roster is not id-ordered - index 50 is `dock:39:34` - so every 1918 region whose site id
+  //       collides with a dock index paints neutral. 1918's served tally is 27/13/144 where the
+  //       file names 14/9/2 owners. Out of PB-077's scope and unfixed here: fixing the join moves
+  //       the whole 1918 paint, which is its own ticket and its own gate.
+  const AC = [
+    //  cell      era     PIN (served)  CAP (original)
+    [[223, 72], "1918", "white", "blue", "1918 join defect (b)"],
+    [[223, 72], "1942", "blue", "blue", ""],
+    [[223, 72], "1986", "white", "white", ""],
+    [[223, 73], "1918", "white", "blue", "1918 join defect (b)"],
+    [[223, 73], "1942", "blue", "blue", ""],
+    [[223, 73], "1986", "white", "white", ""],
+    [[69, 81], "1918", "white", "white", ""],
+    [[69, 81], "1942", "blue", "blue", ""],
+    [[69, 81], "1986", "blue", "blue", ""],
+    [[262, 87], "1918", "white", "white", ""],
+    [[262, 87], "1942", "red", "red", ""],
+    [[262, 87], "1986", "white", "white", ""],
+    [[319, 87], "1918", "white", "blue", "1918 join defect (b)"],
+    [[319, 87], "1942", "blue", "blue", ""],
+    [[319, 87], "1986", "blue", "blue", ""],
+    [[319, 14], "1918", "white", "white", ""],
+    [[319, 14], "1942", "blue", "blue", ""],
+    [[319, 14], "1986", "blue", "red", "deviation (a): region 64, not region 4"],
+    [[319, 27], "1918", "white", "white", ""],
+    [[319, 27], "1942", "blue", "blue", ""],
+    [[319, 27], "1986", "blue", "red", "deviation (a): region 64, not region 4"],
+  ];
+  const eraOwners = {};
+  for (const era of ["1918", "1942", "1986"]) {
+    eraOwners[era] = ownershipOf(openMatch(era, matchSites(era, board))).owners;
+  }
+  let deviations = 0;
+  for (const [cell, era, pin, cap, why] of AC) {
+    const [x, y] = cell;
+    const rid = regionAt(x, y);
+    if (rid === NO_REGION) fail(`AC cell (${x},${y}) has no region in ${era}`);
+    const served = ownershipInk(eraOwners[era][rid] ?? null, OWNERSHIP);
+    eq(`AC ${era} (${x},${y}) region ${rid}${why ? " [" + why + "]" : ""}`,
+      served, ownershipInk(pin, OWNERSHIP));
+    if (pin !== cap) {
+      if (!why) fail(`AC ${x},${y} ${era}: pin ${pin} disagrees with the capture ${cap} and gives no reason`);
+      deviations += 1;
+    }
+  }
+  eq("the AC carries exactly 21 assertions", AC.length, 21);
+  eq("5 of the 21 are named deviations (2 x region 64, 3 x the 1918 join)", deviations, 5);
+  for (const [x, y, why] of [[153, 43, "white in all six captures"],
+    [81, 58, "blue in five captures, white in one 2023 draw"]]) {
+    // Excluded from the colour AC, but still land in the fill: a cell we stopped pinning is not a
+    // cell we stopped owning.
+    if (regionAt(x, y) === NO_REGION) fail(`excluded cell (${x},${y}) lost its region`);
+    if (!why) fail("excluded cell needs a reason");
+  }
+
+  // ---- AC: the 2023 half is a partition, because 2023's owners are rolled per match ------------
+  // Cells that share a predicted region share a colour under that match's rolled owners, with the
+  // region ids named. That is the whole content of the 2023 half: 2023 ships no owners in the file
+  // (B-3 rolls them), so no exact colour exists to pin - the partition is what must hold for ANY
+  // roll. Two deterministic rolls stand in for the real ones: a side-fill where every region takes
+  // the same side would pass vacuously, so the draws go through the region row with two different
+  // patterns and the cells are asserted to follow their REGION, not their position.
+  const PARTITION = [[64, [[319, 14], [319, 27]]], [50, [[223, 72], [223, 73]]],
+    [57, [[69, 81]]], [78, [[262, 87]]], [104, [[319, 87]]]];
+  for (const rid of [23, 42]) eq(`excluded region ${rid} is not in the 2023 partition`, PARTITION.some(([r]) => r === rid), false);
+  const draws = [
+    (rid) => (rid % 3 === 0 ? "blue" : "red"),
+    (rid) => (rid % 3 === 0 ? "red" : "blue"),
+  ];
+  for (let d = 0; d < draws.length; d += 1) {
+    const rolled = ownershipOf(openMatch("2023", matchSites("2023", board))).owners.map((_, rid) => draws[d](rid));
+    for (const [rid, cells] of PARTITION) {
+      const inks = new Set(cells.map(([x, y]) => {
+        eq(`2023 draw ${d}: (${x},${y}) is region ${rid}`, regionAt(x, y), rid);
+        return ownershipInk(rolled[rid] ?? null, OWNERSHIP);
+      }));
+      if (inks.size !== 1) fail(`2023 draw ${d}: region ${rid}'s cells do not share a colour: `
+        + [...inks].join(" "));
+    }
+    // The draws must be able to disagree with each other, or the partition proves nothing.
+    for (const [rid] of PARTITION) {
+      if (draws[0](rid) === draws[1](rid)) fail(`2023 draw ${rid}: both draws picked ${draws[0](rid)}; `
+        + "a partition over identical draws cannot fail");
+    }
   }
 
   // ---- 1942 opening, broad strokes ---------------------------------------------------------
