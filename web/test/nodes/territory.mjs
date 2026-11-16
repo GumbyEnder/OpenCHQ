@@ -8,6 +8,7 @@
 //
 // Geometry source: web/data/territory.json, baked from REGIONS.DAT by tools/bake_territory.mjs.
 // Ownership source: the era's site table, joined through the region -> site row. No second copy.
+import { readFileSync } from "node:fs";
 import { boardPayload, matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import {
@@ -55,7 +56,10 @@ export async function run() {
 
   // ---- the model is the file's own shape ---------------------------------------------------
   eq("184 regions", opening.owners.length, 184);
-  for (const era of ["1918", "1942", "1986", "2023"]) {
+  // "9999" is named in this list on purpose (PB-087, room 6312 item 4): Concealed has no CBR-REGN row
+  // of its own, so a list of the four file eras stays green whether the bake donated a row or not, and
+  // the 84/0/0 tally the ownership view reads would have been asserted only by the arm below.
+  for (const era of ["1918", "1942", "1986", "2023", "9999"]) {
     const row = regionSites(era);
     if (!Array.isArray(row) || row.length !== 184) fail("era " + era + " has no 184-entry region row");
   }
@@ -184,6 +188,46 @@ export async function run() {
   eq("the delta rides the owner list whole", moved.ownership.owners.length, 184);
   eq("the delta's list is the new one", moved.ownership.owners[heldRegions[0]], "blue");
 
+
+  // ---- the concealed era rides the 2023 territory row (PB-087, room 6300) -----------------------
+  // Concealed ("9999") has no CBR-REGN row of its own, so the bake donates the 2023 row by name:
+  // byEra["9999"] = byEra["2023"] in tools/bake_territory.mjs. That is a deliberate remake choice
+  // (whether the 1990 original does the same is UNVERIFIED), not a recovered rule. Without the row
+  // the whole Concealed campaign's Show Ownership view answers ready:false and paints nothing.
+  const concealed = regionSites("9999");
+  if (!Array.isArray(concealed)) fail("the concealed era has no region row: regionSites(\"9999\") is null");
+  eq("the concealed era covers 184 regions", concealed.length, 184);
+  eq("the concealed era's row is the 2023 row", concealed, regionSites("2023"));
+  const concealedMatch = openMatch("9999", matchSites("9999", board));
+  const concealedOwnership = ownershipOf(concealedMatch);
+  if (!concealedOwnership.ready) fail("ownershipOf is not ready on the concealed era");
+  eq("concealed ownership follows every region", concealedOwnership.owners.length, 184);
+
+  // The row indexes the roster the era actually builds, and that roster is NOT 84 long: the modern
+  // eras append dock records, so 2023 and Concealed carry 271 sites (62 city + 2 capital +
+  // 20 facility + 150 dock + 37 oilfield) while the era row's ids stop at 83. Pin the prefix, not
+  // the length, or a dock-heavy roster reads as a broken row (PB-087, frodo 6295 item 7b).
+  eq("the concealed roster is the modern 271-site roster", concealedMatch.sites.length, 271);
+  const prefix = (list) => list.slice(0, 84).map((s) => s.id + "|" + s.name).join(";");
+  eq("the first 84 of the concealed roster are the 2023 sites", prefix(concealedMatch.sites),
+    prefix(openMatch("2023", matchSites("2023", board)).sites));
+  const highestAssigned = Math.max(...concealed.filter((v) => v !== null));
+  if (!(highestAssigned < concealedMatch.sites.length)) {
+    fail("the concealed row assigns site " + highestAssigned + " of " + concealedMatch.sites.length);
+  }
+
+  // The donor is a COPY, not an alias (room 6312 item 4). JSON serialisation splits the two rows
+  // whatever the bake did, so the served artifact cannot tell a copy from an alias; the pin belongs
+  // on the bake source, which is what a re-run uses.
+  const bakeSrc = readFileSync(new URL("../../../tools/bake_territory.mjs", import.meta.url), "utf8");
+  if (!bakeSrc.includes('byEra["9999"] = byEra["2023"].slice();')) {
+    fail("the bake aliases the concealed row to 2023 instead of copying it");
+  }
+
+  // Negative control: a label with no baked row must still answer null / not ready, or the pin above
+  // is a fallback that answers for any year rather than a row the bake actually wrote.
+  if (regionSites("8888") !== null) fail("an era with no baked row returned a region row");
+  if (ownershipOf({ era: "8888", sites: [] }).ready) fail("ownershipOf claims ready for an era with no row");
 
   return "184 regions; 1942 blue 146 / red 36 / neutral 2; Washington, Moscow, London blue; "
     + "Berlin, Paris, Tokyo red; Spain and Greenland unheld; Cam Ranh recolours "
