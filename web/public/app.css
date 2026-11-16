@@ -510,8 +510,21 @@ body.in-match .pursechip {
 
 /* The chip row above the map was the whole interface before the dialogues existed. Seats, the clock
    and the purse are in the strip; buying, the kit and the log have their own dialogues; so the row
-   itself is gone and the map gets its height. */
-body.in-match .matchhead { display: none; }
+   itself is gone and the map gets its height.
+   PB-078: the six map controls (theme, view, zoom in/out, fit, follow) lived in that row too, so the
+   hide took them with it and a player could only zoom or switch a theme with a key the page never
+   names. The row stays as the controls' own line; the heading and the old chip row stay retired. */
+body.in-match .matchhead {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+}
+
+body.in-match .matchhead > h1,
+body.in-match .matchhead > #room { display: none; }
+
+body.in-match .matchhead .cam { margin: 0 0 2px; }
 
 body.in-match .whoami {
   display: flex;
@@ -556,8 +569,8 @@ body.in-match .match {
 }
 
 /* The chip row is retired: every control it held is now a command in the strip that opens a
-   dialogue. Kept as an explicit none so no later rule can bring it back. */
-body.in-match .matchhead { display: none; }
+   dialogue. The one exception is the camera/theme line above (PB-078), which is the only on-screen
+   route to zoom, view and theme, so no rule may hide .matchhead again. */
 
 body.in-match #room { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* In a match the strip already says the era, the side, the round and the clock, so the room's own

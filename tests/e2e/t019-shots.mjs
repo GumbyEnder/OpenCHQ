@@ -1,4 +1,5 @@
-// T-019 shot matrix (AC2 / AC5 / T-030 extra), corrected by the PM in room 6107 item 2.
+// T-019 shot matrix (AC2 / AC5 / T-030 extra), corrected by the PM in room 6107 item 2, and
+// re-based by room 6250 item 1: every in-match control is PRESSED, never typed at.
 //
 //   node tests/e2e/t019-shots.mjs --url=http://127.0.0.1:8113 --out=local/t019-shots
 //
@@ -10,6 +11,13 @@
 //     1942/1918 openings show the whole map and hide only enemy pieces the seat cannot see.
 //   * Every shot records the painter's own layer list and fog rect count (window.__chq.paintReport()), so
 //     the ownership shots also hold the fill-under-fog order (PB-071) instead of a re-order pass.
+//
+// PB-078 (room 6240 item 3): the six map controls used to live in a `.matchhead` the in-match
+// stylesheet hid, so zoom/view/theme were keyboard-only in a match. This leg measures all six - a
+// non-zero box, inside the viewport, and elementFromPoint landing on the button - and then CLICKS
+// them for every camera and view step below. No "0"/"+"/"-"/"p"/"t" key is pressed anywhere in this
+// file; the keyboard path keeps its own pin (web/test/nodes/camera_zoom.mjs). A theme switch inside a
+// live match is shot and pinned too, so the theme button is proven by its own click.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -52,6 +60,8 @@ const THEMES = [
   { id: "D", label: "Classic" },
 ];
 
+const CONTROLS = ["themeToggle", "viewToggle", "camIn", "camOut", "camFit", "camFollow"];
+
 const evidence = [];
 const failures = [];
 function mark(step, ok, detail) {
@@ -77,6 +87,34 @@ async function shot(name) {
   await page.screenshot({ path: file });
   console.log("shot " + file);
   return file;
+}
+
+// Every control, as the browser lays it out: a real box, inside the window, and the element a
+// pointer would actually hit at its centre. A button under the fixed strip or an overlay fails here
+// even when CSS calls it visible.
+async function controlBoxes() {
+  return page.evaluate((ids) => ids.map((id) => {
+    const element = document.getElementById(id);
+    if (!element) return { id, found: false };
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2));
+    return {
+      id,
+      found: true,
+      w: Math.round(rect.width),
+      h: Math.round(rect.height),
+      inside: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+      hitSelf: Boolean(hit && (hit === element || element.contains(hit))),
+      hit: hit ? (hit.id || hit.tagName) : null,
+    };
+  }), CONTROLS);
+}
+
+// A click Playwright refuses (covered, zero-sized, detached) throws here instead of measuring
+// nothing, which is the whole point of PB-078.
+async function pressControl(id) {
+  await page.click("#" + id, { timeout: 5000 });
+  await sleep(500);
 }
 
 async function useTheme(id) {
@@ -117,21 +155,19 @@ async function newGame(era) {
   await page.evaluate(() => window.__chq.send({ op: "hold" }));
   await page.waitForFunction(() => window.__chq.room() && String(window.__chq.room().clock) === "held", null,
     { timeout: 15000 }).catch(() => {});
-  await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
-  await page.keyboard.press("0"); // world fit
-  await sleep(500);
+  await pressControl("camFit"); // world fit, by the button (PB-078)
   const room = await page.evaluate(() => window.__chq.room());
   return room;
 }
 
 async function setView(wanted) {
-  // `p` toggles terrain <-> political. Read the mode from the paint report, not from a guess.
+  // #viewToggle flips terrain <-> Show Ownership. Read the mode from the paint report, not from a
+  // guess, and stop as soon as it agrees.
   for (let i = 0; i < 4; i++) {
     const now = await paint();
     const political = (now && now.layers || []).includes("ownership");
     if ((wanted === "ownership") === political) return now;
-    await page.keyboard.press("p");
-    await sleep(400);
+    await pressControl("viewToggle");
   }
   return paint();
 }
@@ -160,6 +196,12 @@ try {
 
     // --- one 1942 shot per theme, terrain, no fog expected --------------------------------
     const r1942 = await newGame("1942");
+    const inMatch = await page.evaluate(() => document.body.classList.contains("in-match"));
+    const boxes = await controlBoxes();
+    // PB-078, measured in the state a player is in: a live match, all six on screen and hittable.
+    mark("all six match controls have a box, sit in the window, and are their own hit target (PB-078)",
+      boxes.every((box) => box.found && box.w > 0 && box.h > 0 && box.inside && box.hitSelf) && inMatch,
+      { inMatch, controls: boxes });
     const p1942 = await setView("terrain");
     const file1942 = await shot("t019-" + theme.id + "-1942-terrain.png");
     mark("1942 " + theme.id + " shot is the round 0 opening",
@@ -171,27 +213,35 @@ try {
 
     // --- item 3 (PM 6093): the zoom floor is the world fit, and one press is one whole cell ---
     if (theme.id === "C") {
-      await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
-      await page.keyboard.press("0"); // refit: the floor is the fit (PB-066/067)
-      await sleep(500);
+      // --- PB-078: the theme button, pressed inside a live match -----------------------------
+      const themeBefore = await page.evaluate(() => document.getElementById("themeToggle")?.textContent || "");
+      await pressControl("themeToggle");
+      const themeAfter = await page.evaluate(() => document.getElementById("themeToggle")?.textContent || "");
+      const fileThemeD = await shot("t019-D-1942-terrain-from-theme-click.png");
+      mark("the in-match theme button switches to D on a click",
+        themeBefore.includes("Dark tactical") && themeAfter.includes("Classic"),
+        { before: themeBefore, after: themeAfter, file: fileThemeD });
+      await pressControl("themeToggle");
+      const themeBack = await page.evaluate(() => document.getElementById("themeToggle")?.textContent || "");
+      mark("the in-match theme button returns to C on a second click", themeBack.includes("Dark tactical"),
+        { back: themeBack });
+
+      await pressControl("camFit"); // refit: the floor is the fit (PB-066/067)
       const fitCam = await page.evaluate(() => window.__chq.state().camera);
-      await page.keyboard.press("-");
-      await sleep(500);
+      await pressControl("camOut");
       const minusCam = await page.evaluate(() => window.__chq.state().camera);
       const fileZoomFloor = await shot("t019-C-zoom-floor-at-fit.png");
       mark("- at fit does not shrink the map (zoom floor = fit)",
         Boolean(fitCam && minusCam) && minusCam.scale === fitCam.scale
           && minusCam.left === fitCam.left && minusCam.top === fitCam.top,
         { fit: fitCam, afterMinus: minusCam, file: fileZoomFloor });
-      await page.keyboard.press("+");
-      await sleep(500);
+      await pressControl("camIn");
       const plusCam = await page.evaluate(() => window.__chq.state().camera);
       const fileZoomOne = await shot("t019-C-zoom-plus-one-step.png");
       mark("+ from fit is one whole cell of zoom, not a clamp",
         Boolean(fitCam && plusCam) && plusCam.scale === fitCam.scale + 1,
         { fit: fitCam, afterPlus: plusCam, file: fileZoomOne });
-      await page.keyboard.press("0");
-      await sleep(300);
+      await pressControl("camFit");
     }
 
     // --- fog shots: Concealed 9999, blue, round 0, both views -----------------------------
