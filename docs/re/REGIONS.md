@@ -38,6 +38,16 @@ them; **9** cannot be entered and keep "no region" — measured, not asserted, a
     18 725 quad cells + 2 403 gap cells = 21 128 filled
     2 412 gap candidates - 2 403 filled = 9 unreachable
 
+The 2 412 are a property of the board the app plays, not of `tmap.bin` alone. The raw terrain map
+carries **14 440** land cells; the board payload then paints **172** site cells over coastal water
+(150 docks + 22 city cells — the board's own counts are 150 docks / 407 cities / 2 capitals), for
+the 14 612 above. **29** of those 172 painted cells have no quad, so:
+
+    2 412 = 2 383 raw-terrain land cells with no quad + 29 painted site cells
+
+Re-deriving the gap count from `tmap.bin` alone therefore lands on **2 383** and is not drift. The
+`gapCandidates` figure in `_meta` is the payload's, because the payload is what the app renders.
+
 The nine, as `(x, y)` on the 320×136 board (`_meta.gapUnreachableCells`):
 
     (319, 14) (319, 27) (153, 43) (81, 58) (223, 72)
