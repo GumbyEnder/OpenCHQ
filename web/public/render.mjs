@@ -1376,10 +1376,37 @@ export function paintMatch(ctx, board, room, opts = {}) {
   let painted = 0;
 
   let fogged = 0;
+  // Show Ownership: the same board with whole countries filled by whoever holds them (T-018).
+  // The fill is a BASE layer, exactly like the terrain grid it replaces: pieces, city ticks,
+  // capitals and name labels are painted over it below, in the same order terrain mode uses. It
+  // used to be painted after the pieces, which covered every badge, city mark and capital on the
+  // map at every zoom (PM's AC4 hand-check on f1268d1). The layer list is returned so a test can
+  // assert the order instead of sampling a colour that an owner's edge also carries.
+  let political = 0;
+  let tally = null;
+  const layers = [];
   if (!schematic) {
     painted = paintCells(ctx, board, view);
+    layers.push("cells");
     if (painted === 0) mode = "schematic";
-    else if (opts.fog) fogged = paintFog(ctx, view, opts.fog.lit, opts.fog.seen);
+    else {
+      if (opts.viewMode === "political") {
+        const ownership = room && room.ownership;
+        if (ownership && ownership.ready && board && board.territory && Array.isArray(ownership.owners)) {
+          political = paintOwnership(ctx, board.territory, ownership.owners, board, view, opts);
+          tally = ownershipTally(ownership.owners);
+        } else {
+          const patches = politicalSites(room && room.sites, view);
+          political = paintPolitical(ctx, patches, view);
+          tally = politicalTally(patches);
+        }
+        layers.push("ownership");
+      }
+      if (opts.fog) {
+        fogged = paintFog(ctx, view, opts.fog.lit, opts.fog.seen);
+        layers.push("fog");
+      }
+    }
   } else {
     mode = "schematic";
   }
@@ -1394,47 +1421,40 @@ export function paintMatch(ctx, board, room, opts = {}) {
     const selection = paintSelectionMark(ctx, groups, flat, opts);
     const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
     const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat);
-    return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, pending, selection, message: EXTRACT_MISSING, view: flat };
+    return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, pending, selection,
+      layers: ["schematic", "preview", "pieces", "pending", "selection", "capitals"],
+      message: EXTRACT_MISSING, view: flat };
   }
 
   if (opts.sightAt && Number(opts.sight) > 0) {
     paintSightRing(ctx, opts.sightAt, view, opts.sight, opts.ringColor);
   }
   const preview = paintPreview(ctx, opts.preview, view, opts);
+  layers.push("preview");
   const groups = paintPieces(ctx, room && room.pieces, view, opts);
+  layers.push("pieces");
   const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
   // A badge is never smaller than its floor, so one can cover the city square it stands on. The
   // sites under badges get their own cell tick back after the pieces are painted: the city has to
   // stay visible on the board even when a garrison is standing on it (PB-029, T-014 AC7).
   const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view);
+  layers.push("siteTicks");
   const capitals = paintCapitals(ctx, capitalMarkers(board, room), view);
-  // Show Ownership: the same board with whole countries filled by whoever holds them (T-018).
-  // It replaces the city-cell political fallback whenever the territory model is present; the
-  // fallback stays for a board without one, so the toggle never dies on a missing bake.
-  let political = 0;
-  let tally = null;
-  if (opts.viewMode === "political") {
-    const ownership = room && room.ownership;
-    if (ownership && ownership.ready && board && board.territory && Array.isArray(ownership.owners)) {
-      political = paintOwnership(ctx, board.territory, ownership.owners, board, view, opts);
-      tally = ownershipTally(ownership.owners);
-    } else {
-      const patches = politicalSites(room && room.sites, view);
-      political = paintPolitical(ctx, patches, view);
-      tally = politicalTally(patches);
-    }
-  }
+  layers.push("capitals");
   const labels = visibleLabels(room && room.sites, view);
   const labelled = paintLabels(ctx, opts.atlas, labels);
+  layers.push("labels");
   // The orders that are on the wire, and the selected piece's mark, go LAST (T-030 AC8 items 2 and
   // 3): the capital marker and the city labels were painted after the mark, so they cut its ring
   // (measured at e9a8bfa: the ring's top edge read 10% covered, 1.0 after this order), and an
   // accepted order was not painted at all. A pending path under a city name is still a path the
   // player can read.
   const pending = paintPendingOrders(ctx, room, view, opts);
+  layers.push("pending");
   const selection = paintSelectionMark(ctx, groups, view, opts);
+  layers.push("selection");
   return { mode, painted, fogged, pieces, groups: groups.length, siteTicks, capitals, labels: labelled,
-    political, tally, preview, pending, selection, message: "", view };
+    political, tally, preview, pending, selection, layers, message: "", view };
 }
 
 // Re-exported so the page and the test read one name for the live table.
