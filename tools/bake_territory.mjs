@@ -194,6 +194,11 @@ const { grid, filled: quadCells } = raster(regions);
 // no quad claimed is a candidate, every candidate the BFS reaches is filled, and whatever is left
 // could not be entered even diagonally (see fillLandGaps). Recorded in _meta so the artifact's own
 // arithmetic closes: quadCells + gapFilled === filledCells === 18725 + 2403.
+//
+// gapCandidates is not a tmap.bin figure: land[] is the board payload, and the payload paints 150
+// docks + 22 city cells over coastal water (14 440 raw land cells -> 14 612). 29 of those 172 have
+// no quad, so 2412 = 2383 raw-terrain land cells + 29 painted site cells; a re-derivation straight
+// off tmap.bin finds 2383 and is not drift.
 let gapCandidates = 0;
 for (let i = 0; i < grid.length; i++) if (land[i] && grid[i] === NO_REGION) gapCandidates += 1;
 const gapFilled = fillLandGaps(grid, land, W, H);
