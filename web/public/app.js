@@ -1,7 +1,7 @@
 import {
   capitalMarkers, cellToPixel, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch,
   panBy, pixelToCell, paintPlacement, rememberSeen, routePolyline, routeSpan, sightTable, statusLine,
-  wrapX, zoomAt, badgeAt, renderBadgeSprite,
+  wrapX, zoomAt, zoomStepBy, badgeAt, renderBadgeSprite,
 } from "./render.mjs";
 import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
 import { THEMES, DEFAULT_THEME, isThemeId, nextThemeId, resolveTheme, themeById } from "./themes.mjs";
@@ -412,10 +412,12 @@ function refit() {
   drawMatch();
 }
 
-function zoomStep(factor) {
+// One key press is one whole cell of zoom (PB-066 follow-up): the press is a direction, not a
+// factor, so '+' off the fit and '-' back down each move exactly one step and hold at the ends.
+function zoomStep(direction) {
   userCamera = true;
   const view = viewForCanvas();
-  camera = zoomAt(view, factor, view.viewW / 2, view.viewH / 2);
+  camera = zoomStepBy(view, direction, view.viewW / 2, view.viewH / 2);
   drawMatch();
 }
 
@@ -950,8 +952,8 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "e" || event.key === "E") return openDialog("economy");
   if (event.key === "p" || event.key === "P") return setViewMode(viewMode === "political" ? "terrain" : "political");
   if (event.key === "t" || event.key === "T") return cycleTheme();
-  if (event.key === "+" || event.key === "=") return zoomStep(1.4);
-  if (event.key === "-" || event.key === "_") return zoomStep(0.7);
+  if (event.key === "+" || event.key === "=") return zoomStep(1);
+  if (event.key === "-" || event.key === "_") return zoomStep(-1);
   if (event.key === "0") return refit();
   if (event.key === "f" || event.key === "F") return setFollow(!following);
   const move = moves[event.key];
@@ -967,8 +969,8 @@ paintThemeControl();
 
 window.addEventListener("resize", () => refit());
 
-document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1.4));
-document.getElementById("camOut")?.addEventListener("click", () => zoomStep(0.7));
+document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1));
+document.getElementById("camOut")?.addEventListener("click", () => zoomStep(-1));
 document.getElementById("camFit")?.addEventListener("click", () => refit());
 document.getElementById("viewToggle")?.addEventListener("click", () => setViewMode(viewMode === "political" ? "terrain" : "political"));
 document.getElementById("camFollow")?.addEventListener("click", () => setFollow(!following));
@@ -1779,8 +1781,8 @@ const DIALOG_PAINTERS = {
       return button;
     };
     group.append(
-      act("Zoom in", "Bigger cells (+)", () => zoomStep(1.4)),
-      act("Zoom out", "Smaller cells (-)", () => zoomStep(0.7)),
+      act("Zoom in", "Bigger cells (+)", () => zoomStep(1)),
+      act("Zoom out", "Smaller cells (-)", () => zoomStep(-1)),
       act("Whole world", "Fit the planet (0)", () => refit()),
       act(viewMode === "political" ? "Ownership: on" : "Ownership: off", "Who holds what (P)",
         () => setViewMode(viewMode === "political" ? "terrain" : "political")),

@@ -305,6 +305,34 @@ export function panBy(view, dx, dy) {
   return { ...view, left: Math.round(Number(view.left || 0) + Number(dx || 0)), top: Math.round(Number(view.top || 0) + Number(dy || 0)) };
 }
 
+// Re-anchor a camera at a new scale so the world point under (screenX, screenY) stays there.
+function reanchor(view, next, screenX, screenY) {
+  const ax = Number(screenX);
+  const ay = Number(screenY);
+  const worldX = (ax - view.left) / view.scale;
+  const worldY = (ay - view.top) / view.scale;
+  return {
+    ...view,
+    scale: next,
+    left: Math.round(ax - worldX * next),
+    top: Math.round(ay - worldY * next),
+  };
+}
+
+// A discrete key press is ONE whole cell of zoom, not a factor that may round back onto the scale
+// it started from. A 1.4x factor off a one-pixel cell rounds to one pixel, which is how '+' became a
+// dead key at the fit (PB-066); a fallback that only fires when the factor happens to round the same
+// is still a clamp, not a step. `direction` is +1 for '+' and -1 for '-'; a press at the floor or
+// the ceiling is a hold, never a jump. The factor path (zoomAt) stays for the wheel, where a
+// proportional step is what the player asked for.
+export function zoomStepBy(view, direction, screenX, screenY) {
+  const dir = Math.sign(Number(direction) || 0);
+  if (!dir) return view;
+  const next = clampZoom(view.scale + dir, view.minScale);
+  if (next === view.scale) return view;
+  return reanchor(view, next, screenX, screenY);
+}
+
 // Zoom about a screen point, so the cell under the cursor stays under the cursor.
 export function zoomAt(view, factor, screenX, screenY) {
   const f = Number(factor || 1);
@@ -321,16 +349,7 @@ export function zoomAt(view, factor, screenX, screenY) {
     if (f > 1) next = clampZoom(view.scale + 1, floor);
   }
   if (next === view.scale) return view;
-  const ax = Number(screenX);
-  const ay = Number(screenY);
-  const worldX = (ax - view.left) / view.scale;
-  const worldY = (ay - view.top) / view.scale;
-  return {
-    ...view,
-    scale: next,
-    left: Math.round(ax - worldX * next),
-    top: Math.round(ay - worldY * next),
-  };
+  return reanchor(view, next, screenX, screenY);
 }
 
 // ---- palette ---------------------------------------------------------------
