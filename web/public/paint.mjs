@@ -52,14 +52,18 @@ export const EXTRACT_MISSING =
 const LAND = ["plain", "forest", "jungle", "mountain", "desert", "polar"];
 
 // Terrain name -> color. Unknown names stay unpainted and unnamed.
-export function colorForTerrain(name) {
+//
+// The table is a parameter because T-019 ships more than one: the painter is handed the theme's
+// terrain table (web/public/themes.mjs) and falls back to the original's measured hues. One grid,
+// one cell id, different ink - which is the whole of D-022.
+export function colorForTerrain(name, table = PALETTE) {
   const key = String(name ?? "").toLowerCase();
-  return Object.hasOwn(PALETTE, key) ? PALETTE[key] : null;
+  return Object.hasOwn(table, key) ? table[key] : null;
 }
 
-export function colorForCell(board, cellId) {
+export function colorForCell(board, cellId, table = PALETTE) {
   const terrain = Array.isArray(board && board.terrain) ? board.terrain : [];
-  return colorForTerrain(terrain[cellId]);
+  return colorForTerrain(terrain[cellId], table);
 }
 
 // Terrain names that count as open ground for the page's legend.
@@ -67,12 +71,12 @@ export function isLand(name) {
   return LAND.includes(String(name ?? "").toLowerCase());
 }
 
-function paintSchematic(ctx, board, scale) {
+function paintSchematic(ctx, board, scale, inks = SCHEMATIC) {
   const w = Number(board && board.width) || 320;
   const h = Number(board && board.height) || 136;
-  ctx.fillStyle = SCHEMATIC.water;
+  ctx.fillStyle = inks.water;
   ctx.fillRect(0, 0, w * scale, h * scale);
-  ctx.fillStyle = SCHEMATIC.grid;
+  ctx.fillStyle = inks.grid;
   for (let x = 20; x < w; x += 20) ctx.fillRect(x * scale, 0, scale, h * scale);
   for (let y = 20; y < h; y += 20) ctx.fillRect(0, y * scale, w * scale, scale);
   const seats = (board && board.capitals) || {
@@ -80,11 +84,11 @@ function paintSchematic(ctx, board, scale) {
     red: { x: 183, y: 25 },
   };
   if (seats.blue) {
-    ctx.fillStyle = SCHEMATIC.blue;
+    ctx.fillStyle = inks.blue;
     ctx.fillRect(seats.blue.x * scale, seats.blue.y * scale, 3 * scale, 3 * scale);
   }
   if (seats.red) {
-    ctx.fillStyle = SCHEMATIC.red;
+    ctx.fillStyle = inks.red;
     ctx.fillRect(seats.red.x * scale, seats.red.y * scale, 3 * scale, 3 * scale);
   }
   return { mode: "schematic", painted: 0, message: EXTRACT_MISSING };
@@ -97,15 +101,16 @@ export function paintBoard(ctx, board, opts = {}) {
   const w = Number(board && board.width) || 320;
   const h = Number(board && board.height) || 136;
   ctx.clearRect(0, 0, w * scale, h * scale);
+  const theme = opts.theme || null;
   if (!board || board.source === "missing" || !Array.isArray(board.cells)) {
-    return paintSchematic(ctx, board, scale);
+    return paintSchematic(ctx, board, scale, (theme && theme.schematic) || SCHEMATIC);
   }
   const cells = board.cells;
   const terrain = Array.isArray(board.terrain) ? board.terrain : [];
   let painted = 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const color = colorForTerrain(terrain[cells[y * w + x]]);
+      const color = colorForTerrain(terrain[cells[y * w + x]], (theme && theme.terrain) || PALETTE);
       if (!color) continue;
       ctx.fillStyle = color;
       ctx.fillRect(x * scale, y * scale, scale, scale);

@@ -4,6 +4,7 @@ import {
   wrapX, zoomAt, badgeAt, renderBadgeSprite,
 } from "./render.mjs";
 import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
+import { THEMES, DEFAULT_THEME, isThemeId, nextThemeId, resolveTheme, themeById } from "./themes.mjs";
 import { unitLabel } from "./units.mjs";
 import {
   PICK_HINT,
@@ -290,7 +291,8 @@ function sizeCanvas() {
       const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
       const midX = (old.left + old.viewW / 2) / old.scale;
       const midY = (old.top + old.viewH / 2) / old.scale;
-      camera = { ...fit, scale: Math.max(MIN_ZOOM, Math.min(64, old.scale)) };
+      camera = { ...fit, scale: Math.max(fit.scale, MIN_ZOOM, Math.min(64, old.scale)) };
+      camera.minScale = Math.max(MIN_ZOOM, fit.scale);
       camera.left = Math.round(camera.viewW / 2 - midX * camera.scale);
       camera.top = Math.round(camera.viewH / 2 - midY * camera.scale);
     }
@@ -319,6 +321,9 @@ function viewForCanvas() {
     // the zoom is for detail, not for finding the map.
     camera = { ...fit, scale: Math.max(MIN_ZOOM, fit.scale) };
   }
+  // The whole-world fit is the camera's floor (PB-067): below it the board is a small island in the
+  // margins and the seam copies of the route lines are drawn in the empty space beside it.
+  camera.minScale = Math.max(MIN_ZOOM, fit.scale);
   return camera;
 }
 
@@ -326,6 +331,54 @@ function viewForCanvas() {
 // ever runs when the player armed it with the Follow button: a camera that moves because a unit was
 // selected, or because a placement is pending, is the camera fighting the player (T-007 AC10).
 let following = false;
+
+// ---- map theme (T-019) ----------------------------------------------------------------------
+// A per-player, client-side preference (D-022): cosmetic only, never match state, never sent to the
+// server. A first load with nothing saved opens on the dark tactical theme; a saved id this build
+// does not ship falls back to that default rather than to a blank board.
+const THEME_KEY = "openchq.theme";
+// D-022: an empty (or unreadable) localStorage opens on the dark tactical theme. `resolveTheme` is
+// the same rule the node pin grades, so the page cannot drift from it.
+let themeId = (() => {
+  try {
+    return resolveTheme(localStorage.getItem(THEME_KEY));
+  } catch (err) {
+    return resolveTheme(null);
+  }
+})();
+
+function currentTheme() {
+  return themeById(themeId);
+}
+
+function paintThemeControl() {
+  const theme = currentTheme();
+  const button = document.getElementById("themeToggle");
+  if (button) {
+    // The label names the theme that is ON, and the title names the one the click will switch to.
+    // That is the opposite of the old ownership button, which named the view you would get while
+    // the status line said something else (PB-063).
+    button.textContent = "Map: " + theme.label;
+    button.title = "Switch to " + themeById(nextThemeId(themeId)).label + " (T)";
+  }
+}
+
+// One click, no reload, no gameplay change: the same room frame is repainted in the other theme.
+function setTheme(next) {
+  const id = String(next ?? "").toUpperCase();
+  themeId = isThemeId(id) ? id : DEFAULT_THEME;
+  try {
+    localStorage.setItem(THEME_KEY, themeId);
+  } catch (err) {
+    // A private-mode page without storage still gets the switch; it just will not remember it.
+  }
+  paintThemeControl();
+  drawMatch();
+}
+
+function cycleTheme() {
+  setTheme(nextThemeId(themeId));
+}
 
 // Terrain is the original's map; ownership is the original's other view (manual printed p.32):
 // countries filled in the owner's colour over the same grid, units still on top. The toggle only
@@ -337,7 +390,12 @@ function setViewMode(next) {
   const button = document.getElementById("viewToggle");
   if (button) {
     button.classList.toggle("armed", viewMode === "political");
-    button.textContent = viewMode === "political" ? "Terrain" : "Ownership";
+    // PB-063: the label names the view that is ON, and the status line names the same thing. It used
+    // to name the view a click would switch to while the status line said "political".
+    button.textContent = viewMode === "political" ? "Ownership" : "Terrain";
+    button.setAttribute("aria-pressed", viewMode === "political" ? "true" : "false");
+    button.title = viewMode === "political" ? "Showing who holds what; click for terrain (P)"
+      : "Showing terrain; click for who holds what (P)";
   }
   drawMatch();
 }
@@ -350,7 +408,7 @@ function refit() {
   userCamera = false;
   sizeCanvas();
   const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
-  camera = { ...fit, scale: Math.max(MIN_ZOOM, fit.scale) };
+  camera = { ...fit, scale: Math.max(MIN_ZOOM, fit.scale), minScale: Math.max(MIN_ZOOM, fit.scale) };
   drawMatch();
 }
 
@@ -449,7 +507,7 @@ const badgeSprites = (() => {
 function renderLegend() {
   if (!legendBox) return;
   legendBox.textContent = "";
-  for (const entry of legendEntries()) {
+  for (const entry of legendEntries(currentTheme(), { viewMode })) {
     const item = document.createElement("span");
     item.className = "swatch";
     const chip = document.createElement("i");
@@ -596,6 +654,9 @@ function drawMatch() {
     sight: Number(boardPayload.sightCells || 8),
     sightAt: selected,
     viewMode,
+    // The map theme: a table of inks the painter reads (T-019). Cosmetic, per player, never sent to
+    // the server and never part of a room frame.
+    theme: currentTheme(),
     // The original's lettering for city names, once the camera is close enough to read them.
     atlas: fontAtlas,
   });
@@ -605,7 +666,7 @@ function drawMatch() {
   const camNote = document.getElementById("camNote");
   if (camNote) {
     camNote.textContent = "cell " + (view.scale / dpr()).toFixed(0) + " px · " +
-      (following ? "following" : "free");
+      (following ? "following" : "free") + " · " + currentTheme().label;
   }
   // A crossing nobody screens is said out loud, in the seat's own words, before the loss.
   const unscreened = Array.isArray(room && room.unscreened) ? room.unscreened : [];
@@ -888,6 +949,7 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "b" || event.key === "B") return openDialog("buy");
   if (event.key === "e" || event.key === "E") return openDialog("economy");
   if (event.key === "p" || event.key === "P") return setViewMode(viewMode === "political" ? "terrain" : "political");
+  if (event.key === "t" || event.key === "T") return cycleTheme();
   if (event.key === "+" || event.key === "=") return zoomStep(1.4);
   if (event.key === "-" || event.key === "_") return zoomStep(0.7);
   if (event.key === "0") return refit();
@@ -899,6 +961,10 @@ window.addEventListener("keydown", (event) => {
   drawMatch();
 });
 
+// The theme control is on screen before the first frame of a match: the saved preference (or the
+// dark tactical default) has to be named in the button, not only applied to the canvas.
+paintThemeControl();
+
 window.addEventListener("resize", () => refit());
 
 document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1.4));
@@ -906,6 +972,7 @@ document.getElementById("camOut")?.addEventListener("click", () => zoomStep(0.7)
 document.getElementById("camFit")?.addEventListener("click", () => refit());
 document.getElementById("viewToggle")?.addEventListener("click", () => setViewMode(viewMode === "political" ? "terrain" : "political"));
 document.getElementById("camFollow")?.addEventListener("click", () => setFollow(!following));
+document.getElementById("themeToggle")?.addEventListener("click", () => cycleTheme());
 
 async function loadBoard() {
   // A board fetch that loses a race with server startup used to leave the page on the schematic for
@@ -1715,15 +1782,18 @@ const DIALOG_PAINTERS = {
       act("Zoom in", "Bigger cells (+)", () => zoomStep(1.4)),
       act("Zoom out", "Smaller cells (-)", () => zoomStep(0.7)),
       act("Whole world", "Fit the planet (0)", () => refit()),
-      act(viewMode === "political" ? "Terrain" : "Ownership", "Who holds what (P)",
+      act(viewMode === "political" ? "Ownership: on" : "Ownership: off", "Who holds what (P)",
         () => setViewMode(viewMode === "political" ? "terrain" : "political")),
+      act("Map: " + currentTheme().label, "Switch to " + themeById(nextThemeId(themeId)).label + " (T)",
+        () => cycleTheme()),
       act(following ? "Stop following" : "Follow piece", "Keep the selected piece centred (F)",
         () => setFollow(!following)),
     );
     const state = document.createElement("p");
     state.className = "dialogfoot";
     state.textContent = "cell " + Math.max(1, Math.round((camera ? camera.scale : 1) / dpr())) +
-      " px · " + (following ? "following" : "free") + " · " + viewMode;
+      " px · " + (following ? "following" : "free") + " · " + viewMode +
+      " · theme " + currentTheme().label;
     body.append(group, state);
   },
 

@@ -7,6 +7,7 @@
 // so the grid and the schematic keep one palette.
 
 import { colorForTerrain, paintBoard, PALETTE, SCHEMATIC, EXTRACT_MISSING } from "./paint.mjs";
+import { DEFAULT_THEME, terrainInk, themeById } from "./themes.mjs";
 import { textBitmap } from "./font.mjs";
 import {
   BADGE_INTERIOR, BADGE_MIN_PX, BADGE_SIDE, BADGE_UNIT, badgeForPiece, badgeGroups,
@@ -277,9 +278,14 @@ export const MIN_ZOOM = 1;
 // screen and 32 on a plain one.
 export const MAX_ZOOM = 32;
 
-export function clampZoom(scale) {
-  const zoom = Math.round(Number(scale) || MIN_ZOOM);
-  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+// `floor` is the lowest zoom this camera may take. The page passes the whole-world fit, because a
+// camera that will not go below what fits cannot leave the map small in a field of black (PB-067)
+// and cannot strand the '+' key at a floor it is already on (PB-066). Without a floor the camera
+// keeps the old one-pixel minimum, which is what the tests of the fit itself measure.
+export function clampZoom(scale, floor = MIN_ZOOM) {
+  const low = Math.max(MIN_ZOOM, Math.round(Number(floor) || MIN_ZOOM));
+  const zoom = Math.round(Number(scale) || low);
+  return Math.max(low, Math.min(MAX_ZOOM, zoom));
 }
 
 // Centre a cell in the viewport. `left` may be negative: the seam is handled by tiling.
@@ -301,7 +307,19 @@ export function panBy(view, dx, dy) {
 
 // Zoom about a screen point, so the cell under the cursor stays under the cursor.
 export function zoomAt(view, factor, screenX, screenY) {
-  const next = clampZoom(view.scale * Number(factor || 1));
+  const f = Number(factor || 1);
+  let next = clampZoom(view.scale * f, view.minScale);
+  // A 1.4x step off a one-pixel cell rounds back to the same pixel, which is how '+' became a dead
+  // key at the minimum zoom (PB-066). A step that would not move the zoom moves it one whole pixel
+  // in the direction asked for, or stays put at the floor.
+  if (next === view.scale && f !== 1) {
+    const floor = Math.max(MIN_ZOOM, Math.round(Number(view.minScale) || MIN_ZOOM));
+    // Only the zoom-IN step can round back onto the current scale: a 0.7 step from 2 px already
+    // rounds to 1, so a symmetric "minus one pixel" arm would be dead code (measured: mutating it
+    // changed no result). A step out at or below the fit falls through to `clampZoom`, which holds
+    // the floor.
+    if (f > 1) next = clampZoom(view.scale + 1, floor);
+  }
   if (next === view.scale) return view;
   const ax = Number(screenX);
   const ay = Number(screenY);
@@ -388,12 +406,27 @@ export function capitalMarkers(board, room) {
   return out;
 }
 
-export function legendEntries() {
-  const entries = LEGEND_TERRAIN.map((name) => ({ label: name, color: colorForTerrain(name) }))
+// The map's key, in the inks that are actually on the board.
+//
+// PB-063: in Show Ownership the legend went on naming terrain and never said what blue, red and
+// white meant, so the one view whose whole subject is ownership had no key for it. The ownership
+// rows are appended in that view, from the theme's own fills (no second copy of the colours), and
+// the terrain rows stay because terrain is still what the cities sit on.
+export function legendEntries(theme, opts = {}) {
+  const t = theme || themeById("D");
+  const inks = t.schematic || SCHEMATIC;
+  const entries = LEGEND_TERRAIN.map((name) => ({ label: name, color: terrainInk(t, name) }))
     .filter((entry) => entry.color);
-  entries.push({ label: "blue piece", color: SCHEMATIC.blue });
-  entries.push({ label: "red piece", color: SCHEMATIC.red });
-  entries.push({ label: "transport (cargo)", color: SCHEMATIC.blue });
+  if (opts.viewMode === "political") {
+    const palette = t.ownership || themeById("D").ownership;
+    entries.push({ label: "blue held", color: palette.blue });
+    entries.push({ label: "red held", color: palette.red });
+    entries.push({ label: "neutral ground", color: palette.neutral });
+    entries.push({ label: "national border", color: palette.edge.blue });
+  }
+  entries.push({ label: "blue piece", color: inks.blue });
+  entries.push({ label: "red piece", color: inks.red });
+  entries.push({ label: "transport (cargo)", color: inks.blue });
   return entries;
 }
 
@@ -450,8 +483,12 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
   // The box, in two passes: one dark casing under every box, then one bright outline. Painting
   // casing+bright per site would let a neighbour's casing eat this site's outline where two
   // friendly sites are adjacent.
+  // PB-045: the box used to be a fixed 10 px whatever the cell was, so zoomed in it was a small
+  // square lost inside a big city cell instead of an outline around the whole site. It is now the
+  // larger of the floor, the server's configured size and one whole cell, so the target the player
+  // sees is the cell the server will accept.
   const boxPx = Number(placement.box && placement.box.px);
-  const side = Math.max(PLACEMENT_BOX_PX, Number.isFinite(boxPx) ? boxPx : 0);
+  const side = Math.max(PLACEMENT_BOX_PX, Number.isFinite(boxPx) ? boxPx : 0, Math.round(view.scale));
   if (boxes.length && typeof ctx.strokeRect === "function") {
     ctx.lineWidth = 3;
     ctx.strokeStyle = PLACEMENT_BOX.casing;
@@ -465,10 +502,23 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
   return painted;
 }
 
-export function paintCells(ctx, board, view) {
+// The terrain layer of one theme. `opts.theme` is a table from themes.mjs; without it the painter
+// keeps the original's measured hues, which is also what the Classic theme ships.
+//
+// A theme that sets `coast` gets a bright edge on the land side of every land/water boundary. It is
+// drawn per visible cell, after that cell's fill, so it costs nothing on an ocean row and cannot
+// move a cell: the edge is painted inside a cell that was already being painted.
+export function paintCells(ctx, board, view, opts = {}) {
   const cells = board && Array.isArray(board.cells) ? board.cells : null;
   if (!cells) return 0;
   const terrain = Array.isArray(board.terrain) ? board.terrain : [];
+  // The painter's own default is the Classic table: a caller that never mentions a theme keeps the
+  // measured original hues, which is what every pin written before T-019 reads. The page always
+  // passes its theme, and the page's first-load default is the dark one.
+  const theme = opts.theme || themeById("D");
+  const table = (theme && theme.terrain) || PALETTE;
+  const coast = theme && theme.coast ? theme.coast : null;
+  const water = WATER_TERRAIN;
   const v = view;
   const cols = visibleColumns(v);
   const rows = visibleRows(v);
@@ -478,15 +528,30 @@ export function paintCells(ctx, board, view) {
     cols.first = 0;
     cols.last = v.boardW - 1;
   }
+  const nameAt = (x, y) => {
+    if (y < 0 || y >= v.boardH) return null;
+    return terrain[cells[y * v.boardW + wrapX(x, v.boardW)]] || null;
+  };
+  const edge = Math.max(1, Math.round(v.scale * 0.34));
   let painted = 0;
   for (let y = rows.first; y <= rows.last; y++) {
     const row = y * v.boardW;
     for (let sx = cols.first; sx <= cols.last; sx++) {
-      const color = colorForTerrain(terrain[cells[row + wrapX(sx, v.boardW)]]);
+      const name = terrain[cells[row + wrapX(sx, v.boardW)]];
+      const color = terrainInk(theme, name);
       if (!color) continue;
+      const px = v.left + sx * v.scale;
+      const py = v.top + y * v.scale;
       ctx.fillStyle = color;
-      ctx.fillRect(v.left + sx * v.scale, v.top + y * v.scale, v.scale, v.scale);
+      ctx.fillRect(px, py, v.scale, v.scale);
       painted++;
+      if (!coast || !name || water.has(String(name).toLowerCase())) continue;
+      // One strip per water neighbour, on the cell's own side of the boundary.
+      ctx.fillStyle = coast;
+      if (water.has(String(nameAt(sx, y - 1)).toLowerCase())) ctx.fillRect(px, py, v.scale, edge);
+      if (water.has(String(nameAt(sx, y + 1)).toLowerCase())) ctx.fillRect(px, py + v.scale - edge, v.scale, edge);
+      if (water.has(String(nameAt(sx - 1, y)).toLowerCase())) ctx.fillRect(px, py, edge, v.scale);
+      if (water.has(String(nameAt(sx + 1, y)).toLowerCase())) ctx.fillRect(px + v.scale - edge, py, edge, v.scale);
     }
   }
   return painted;
@@ -775,34 +840,50 @@ export function badgeFootprint(group, view, opts = {}) {
 // bar's green). The site is therefore a corner notch with a light rim: the city keeps its ink at the
 // badge's lower-left, where the stack disc (lower-right) and the strength bar (below the silhouette)
 // never sit, and the silhouette keeps the centre.
-export function paintSiteTicks(ctx, sites, groups, view) {
+export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
   const list = Array.isArray(sites) ? sites : [];
   const covered = Array.isArray(groups) ? groups.map((group) => badgeFootprint(group, view)) : [];
-  if (!covered.length) return 0;
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const everyVisible = opts.everyVisible === true;
+  if (!covered.length && !everyVisible) return 0;
   let drawn = 0;
   for (const site of list) {
     const x = Number(site && site.x);
     const y = Number(site && site.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    const box = covered.find((b) => x >= b.x0 - 0.5 && x <= b.x1 + 0.5 && y >= b.y0 - 0.5 && y <= b.y1 + 0.5);
-    if (!box) continue;
     // A capital keeps the capital ink, a city the city ink: the same two colours the terrain uses.
     const ink = (Number(site.type) === 1 || Number(site.type) === 2) ? PALETTE.capital : PALETTE.city;
     if (!ink) continue;
-    const topLeft = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
-    const bottomRight = cellToPixel(wrapX(box.x1, view.boardW || BOARD_W), box.y1, view);
-    // The span is measured before wrapping. A badge straddling the x seam has x0 near the right edge
-    // and x1 past it, so wrapping both ends made the subtraction negative and the notch collapsed to
-    // its 3 px floor (PB-035). Only the anchor column wraps.
-    const scale = Math.max(1, Number(view.scale) || 1);
-    const span = Math.max(3, Math.round((box.x1 - box.x0) * scale));
-    const side = Math.max(2, Math.round(span * 0.34));
-    const nx = Math.round(topLeft.x) + 1;
-    const ny = Math.round(bottomRight.y) - side - 1;
-    ctx.fillStyle = BADGE_INTERIOR.land;
-    ctx.fillRect(nx - 1, ny - 1, side + 2, side + 2);
+    const box = covered.find((b) => x >= b.x0 - 0.5 && x <= b.x1 + 0.5 && y >= b.y0 - 0.5 && y <= b.y1 + 0.5);
+    if (box) {
+      const topLeft = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
+      const bottomRight = cellToPixel(wrapX(box.x1, view.boardW || BOARD_W), box.y1, view);
+      // The span is measured before wrapping. A badge straddling the x seam has x0 near the right edge
+      // and x1 past it, so wrapping both ends made the subtraction negative and the notch collapsed to
+      // its 3 px floor (PB-035). Only the anchor column wraps.
+      const span = Math.max(3, Math.round((box.x1 - box.x0) * scale));
+      const side = Math.max(2, Math.round(span * 0.34));
+      const nx = Math.round(topLeft.x) + 1;
+      const ny = Math.round(bottomRight.y) - side - 1;
+      ctx.fillStyle = BADGE_INTERIOR.land;
+      ctx.fillRect(nx - 1, ny - 1, side + 2, side + 2);
+      ctx.fillStyle = ink;
+      ctx.fillRect(nx, ny, side, side);
+      drawn++;
+      continue;
+    }
+    if (!everyVisible) continue;
+    // Show Ownership fills the ground the terrain view drew cities on, so a city was only findable
+    // through the small tick a badge happened to leave (PB-068). Every site still on the board gets
+    // its own square over the fill: one cell at the fit, and a dot with a dark casing once a cell is
+    // wider than a pixel, so it reads on any owner's colour.
+    const at = cellToPixel(wrapX(x, view.boardW || BOARD_W), y, view);
+    if (at.x < -scale || at.x > view.viewW + scale || at.y < -scale || at.y > view.viewH + scale) continue;
+    const size = Math.max(2, Math.round(scale * 0.8));
+    ctx.fillStyle = "#0b0f14";
+    ctx.fillRect(Math.round(at.x - size / 2) - 1, Math.round(at.y - size / 2) - 1, size + 2, size + 2);
     ctx.fillStyle = ink;
-    ctx.fillRect(nx, ny, side, side);
+    ctx.fillRect(Math.round(at.x - size / 2), Math.round(at.y - size / 2), size, size);
     drawn++;
   }
   return drawn;
@@ -854,11 +935,57 @@ function labelBox(text, labelScale, at, view) {
   return { x, y, width, height };
 }
 
+// Two boxes collide when they share a pixel. Labels are drawn as text, not as cells, so a shared
+// pixel is unreadable overlap and the only honest answer is to move the label or drop it.
+function collides(a, b) {
+  return a.x < b.x + b.width + 1 && b.x < a.x + a.width + 1
+    && a.y < b.y + b.height + 1 && b.y < a.y + a.height + 1;
+}
+
+// Where a label may sit, tried in a fixed order: right of the cell (the original's own habit),
+// left, above, below. The first free one wins; with none free the label is dropped rather than
+// drawn over a name, a badge or a capital ring (PB-026: London, Berlin and Paris).
+export function placeLabel(text, labelScale, at, view, occupied = []) {
+  const width = String(text).length * 8 * labelScale;
+  const height = 6 * labelScale;
+  if (width + 4 > view.viewW) return null;
+  const gap = Math.max(2, Math.round(view.scale * 0.5));
+  const candidates = [
+    { x: at.x + gap, y: at.y - height / 2 },
+    { x: at.x - width - gap, y: at.y - height / 2 },
+    { x: at.x - width / 2, y: at.y - height - gap },
+    { x: at.x - width / 2, y: at.y + gap },
+  ];
+  for (const spot of candidates) {
+    const box = { x: Math.round(spot.x), y: Math.round(spot.y), width, height };
+    if (box.x < 2) box.x = 2;
+    if (box.y < 2) box.y = 2;
+    if (box.x + box.width > view.viewW - 2) box.x = view.viewW - box.width - 2;
+    if (box.y + box.height > view.viewH - 2) box.y = view.viewH - box.height - 2;
+    if (box.x < 2 || box.y < 2) continue;
+    if (occupied.some((other) => collides(box, other))) continue;
+    return box;
+  }
+  return null;
+}
+
 export function visibleLabels(sites, view, opts = {}) {
   const list = Array.isArray(sites) ? sites : [];
   const out = [];
   if (!view || Number(view.scale) < LABEL_ZOOM) return out;
   const labelScale = Math.max(1, Math.floor(Number(view.scale) / LABEL_ZOOM));
+  // Boxes that are already spoken for: the badges on the board (a name over a unit's face is the
+  // PB-069 report, and it is just as bad over somebody else's city) and the capital rings.
+  const occupied = Array.isArray(opts.occupied) ? opts.occupied.slice() : [];
+  if (Array.isArray(opts.groups)) {
+    for (const group of opts.groups) {
+      const box = badgeFootprint(group, view, opts);
+      if (!box) continue;
+      const a = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
+      const b = cellToPixel(wrapX(box.x1, view.boardW || BOARD_W), box.y1, view);
+      occupied.push({ x: a.x, y: a.y, width: Math.max(2, b.x - a.x), height: Math.max(2, b.y - a.y) });
+    }
+  }
   const seen = new Set();
   for (const site of list) {
     if (!site || !site.name) continue;
@@ -871,8 +998,9 @@ export function visibleLabels(sites, view, opts = {}) {
     // Off screen: a label for a city the player cannot see is noise.
     if (at.x < -8 || at.x > view.viewW + 8 || at.y < -8 || at.y > view.viewH + 8) continue;
     seen.add(key);
-    const box = labelBox(site.name, labelScale, at, view);
-    if (box.width + 4 > view.viewW) continue;
+    const box = placeLabel(site.name, labelScale, at, view, occupied);
+    if (!box) continue;
+    occupied.push(box);
     out.push({ text: String(site.name), x: box.x, y: box.y, width: box.width, height: box.height,
       scale: labelScale, cell: { x, y }, owner: site.owner || null });
   }
@@ -881,14 +1009,23 @@ export function visibleLabels(sites, view, opts = {}) {
 
 // Draw the labels from the decoded FONTS.CHQ atlas. Nothing is drawn without an atlas: the page
 // keeps the text in its board note instead of inventing a font.
+//
+// Each name sits on a plate. Without one, white lettering over pale desert, white polar ground or
+// the Classic ownership view's white neutral land vanished; the plate is the theme's own dark ink,
+// so the lettering belongs to the picture in both themes.
 export function paintLabels(ctx, atlas, labels, opts = {}) {
   if (!atlas || !Array.isArray(labels) || !labels.length) return 0;
   const ink = opts.ink || "#ffffff";
   const shadow = opts.shadow || "#000000";
+  const plate = opts.plate || null;
   let drawn = 0;
   for (const label of labels) {
     const bitmap = textBitmap(atlas, label.text, label.scale);
     if (!bitmap.width || !bitmap.height) continue;
+    if (plate) {
+      ctx.fillStyle = plate;
+      ctx.fillRect(label.x - 1, label.y - 1, bitmap.width + 2, bitmap.height + 2);
+    }
     for (let y = 0; y < bitmap.height; y++) {
       const row = bitmap.rows[y];
       for (let x = 0; x < bitmap.width; x++) {
@@ -955,15 +1092,12 @@ export function politicalSites(sites, view) {
 // the map viewport: fills #5555ff and #ff5555, sea #55ffff, and the outlined edge a dark shade of
 // the owner (#0000aa inside blue, #aa0000 inside red). The two unheld regions in that capture -
 // Spain and Greenland - are painted WHITE, not the #aaaaaa OMAP.PIC uses on the briefing picture.
-// A capture is a measurement of the live view, so white is what this palette carries; the theme
-// (T-019) passes its own through opts.palette and this stays the default.
-export const OWNERSHIP = Object.freeze({
-  blue: "#5555ff",
-  red: "#ff5555",
-  neutral: "#ffffff",
-  sea: "#55ffff",
-  edge: Object.freeze({ blue: "#0000aa", red: "#aa0000", neutral: "#555555" }),
-});
+// A capture is a measurement of the live view, so white is what this palette carries.
+//
+// These are the Classic theme's fills now (T-019). The table lives in themes.mjs with the rest of
+// the theme data and is re-exported here, where the painter and its pins already look for it: one
+// copy of the measured colours, and the dark theme cannot drift from them by accident.
+export const OWNERSHIP = themeById("D").ownership;
 
 const WATER_TERRAIN = new Set(["ocean", "lake"]);
 
@@ -1002,6 +1136,21 @@ export function ownershipRaster(geometry, owners, board, palette = OWNERSHIP) {
   const cells = board && Array.isArray(board.cells) ? board.cells : null;
   const terrain = board && Array.isArray(board.terrain) ? board.terrain : [];
   const ink = new Array(width * height).fill(null);
+  const terrainOf = (x, y) => {
+    if (y < 0 || y >= height) return null;
+    const cx = ((x % width) + width) % width;
+    if (!cells) return null;
+    return terrain[cells[y * width + cx]] || null;
+  };
+  // A coast is not a national border. Counting water, no-region and off-board neighbours as a
+  // "different owner" shaded every cell that touched a lake, an inlet or the map edge, and the
+  // interior of a big country came out speckled with dark single cells (PB-064: Canada, Russia).
+  // A border cell is one whose LAND neighbour belongs to somebody else.
+  const landOwnerAt = (x, y, owner) => {
+    const name = terrainOf(x, y);
+    if (name && WATER_TERRAIN.has(String(name).toLowerCase())) return owner;
+    return at(x, y);
+  };
   const at = (x, y) => {
     if (y < 0 || y >= height) return null;
     const cx = ((x % width) + width) % width;
@@ -1023,8 +1172,8 @@ export function ownershipRaster(geometry, owners, board, palette = OWNERSHIP) {
         continue;
       }
       const friendly = owner === "blue" || owner === "red";
-      const border = at(x - 1, y) !== owner || at(x + 1, y) !== owner
-        || at(x, y - 1) !== owner || at(x, y + 1) !== owner;
+      const border = landOwnerAt(x - 1, y, owner) !== owner || landOwnerAt(x + 1, y, owner) !== owner
+        || landOwnerAt(x, y - 1, owner) !== owner || landOwnerAt(x, y + 1, owner) !== owner;
       ink[index] = border ? (friendly ? palette.edge[owner] : palette.neutral) : ownershipInk(owner, palette);
     }
   }
@@ -1094,10 +1243,74 @@ export function politicalTally(patches) {
   return tally;
 }
 
-export function paintCapitals(ctx, markers, view) {
+// The capital ring, and the capital's name once the camera is close enough to read a name.
+//
+// The name used to be drawn at every zoom with the system font, anchored just off the ring: at the
+// whole-world fit that put "Washington" and "Moscow" straight across the opening pieces, the route
+// lines and the site markers (PB-069), and at label zoom the two words were wider than the ground
+// they named (PB-026). A capital is found by its ring; its name is a label like every other place
+// name, so it starts at LABEL_ZOOM, is placed by the same collision test, and sits on a plate in the
+// theme's ink.
+export function capitalLabels(markers, view, opts = {}) {
+  const out = [];
+  if (!view) return out;
+  const list = Array.isArray(markers) ? markers : [];
+  const occupied = Array.isArray(opts.occupied) ? opts.occupied.slice() : [];
+  const fontPx = Math.max(9, Math.round(view.scale * 0.75));
+  // A badge standing on the capital covers its ring and several cells around it, so the name is
+  // tried close to the ring first and then further out, past the badge (PB-069). Without this the
+  // only free spot on an opening capital - the one with a garrison on it - is nowhere near the city.
+  const badge = Number(opts.badgePx) || BADGE_MIN_PX;
+  const perChar = Math.max(6, Math.round(fontPx * 0.62));
+  for (const marker of list) {
+    const name = String(marker.name || "");
+    if (!name) continue;
+    const at = cellToPixel(marker.x, marker.y, view);
+    if (at.x < -8 || at.x > view.viewW + 8 || at.y < -8 || at.y > view.viewH + 8) continue;
+    const r = Math.max(3, view.scale * 2.4);
+    const spread = [r + 3, r + 3 + badge * 0.7, r + 3 + badge * 1.4];
+    const box = placeTextLabel(name, perChar, fontPx, { x: at.x, y: at.y, r, spread }, view, occupied);
+    if (!box) continue;
+    occupied.push(box);
+    out.push({ ...box, name, x: box.x, y: box.y, fontPx, at, ring: r, marker });
+  }
+  return out;
+}
+
+// Same four candidate spots as the atlas labels, measured in text pixels instead of atlas cells.
+function placeTextLabel(text, perChar, height, { x, y, r, spread = [] }, view, occupied) {
+  const width = String(text).length * perChar;
+  const boxH = Math.round(height * 1.15);
+  if (width + 4 > view.viewW) return null;
+  // Each distance is tried right, left, above, below, in that order, before the next one: the
+  // nearest free spot wins, so a name only travels as far from its city as it has to.
+  const candidates = [];
+  for (const d of (spread.length ? spread : [r + 3])) {
+    candidates.push(
+      { x: x + d, y: y - boxH / 2 },
+      { x: x - d - width, y: y - boxH / 2 },
+      { x: x - width / 2, y: y - d - boxH },
+      { x: x - width / 2, y: y + d },
+    );
+  }
+  for (const spot of candidates) {
+    const box = { x: Math.round(spot.x), y: Math.round(spot.y), width, height: boxH };
+    if (box.x < 2 || box.y < 2) continue;
+    if (box.x + box.width > view.viewW - 2 || box.y + box.height > view.viewH - 2) continue;
+    if (occupied.some((other) => collides(box, other))) continue;
+    return box;
+  }
+  return null;
+}
+
+export function paintCapitals(ctx, markers, view, opts = {}) {
   const list = Array.isArray(markers) ? markers : [];
   const r = Math.max(3, view.scale * 2.4);
-  ctx.font = `${Math.max(10, view.scale * 6)}px Palatino, Georgia, serif`;
+  const labels = Array.isArray(opts.labels) ? opts.labels : capitalLabels(list, view, opts);
+  // No plate unless the caller asks for one: the schematic fallback is pinned to the palette's own
+  // colours, and a plate would be a colour the palette never emits.
+  const plate = opts.plate || null;
+  const ink = opts.ink || PIECE_INK.own;
   for (const marker of list) {
     const at = cellToPixel(marker.x, marker.y, view);
     ctx.strokeStyle = marker.color;
@@ -1105,8 +1318,18 @@ export function paintCapitals(ctx, markers, view) {
     ctx.beginPath();
     ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = PIECE_INK.own;
-    ctx.fillText(marker.name, at.x + r + 3, at.y - r - 2);
+  }
+  if (!labels.length) return list.length;
+  for (const label of labels) {
+    ctx.font = label.fontPx + "px Palatino, Georgia, serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    if (plate && typeof ctx.fillRect === "function") {
+      ctx.fillStyle = plate;
+      ctx.fillRect(label.x - 2, label.y - 1, label.width + 4, label.height + 2);
+    }
+    ctx.fillStyle = ink;
+    if (typeof ctx.fillText === "function") ctx.fillText(label.name, label.x, label.y);
   }
   return list.length;
 }
@@ -1193,7 +1416,7 @@ export function selectionMarkFor(groups, view, opts = {}) {
   const pulse = Math.max(0, Math.min(1, Number(opts.pulse ?? opts.selectedPulse) || 0));
   return {
     x: at.x, y: at.y, size, half: size / 2 + 2 + 3 * pulse, pulse,
-    ink: SELECT_MARK_INK, casing: "#0b0f14",
+    ink: opts.ink || SELECT_MARK_INK, casing: "#0b0f14",
   };
 }
 
@@ -1209,13 +1432,16 @@ export function paintSelectionMark(ctx, groups, view, opts = {}) {
     ctx.rect(Math.round(x - half) + 0.5, Math.round(y - half) + 0.5,
       Math.round(half * 2), Math.round(half * 2));
   };
+  // PB-060: in a dense stack the old 1.8 px accent over a 4 px casing still read as a thin
+  // flicker against the badges. Both strokes are wider now, and the casing stays under the accent
+  // so the mark holds on light terrain and on the dark theme's ground alike.
   ring();
   ctx.strokeStyle = mark.casing;
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 5;
   ctx.stroke();
   ring();
   ctx.strokeStyle = mark.ink;
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 2.6;
   ctx.stroke();
   // The breathing half: a wider ring fading out as it grows, so the mark moves without the still
   // frame depending on where the pulse happens to be.
@@ -1242,8 +1468,14 @@ export function paintPendingOrders(ctx, room, view, opts = {}) {
   const pieces = Array.isArray(room.pieces) ? room.pieces : [];
   const scale = Math.max(1, Number(view.scale) || 1);
   const widthCells = Math.max(1, Math.floor(Number(view.boardW) || BOARD_W));
-  const offsets = [-widthCells * scale, 0, widthCells * scale];
-  const width = Math.max(1.6, scale * 0.5);
+  // The seam copies exist to put a run that leaves one edge back on the other. When the whole board
+  // is on screen they are pure margin: they were the route lines drawn in the empty space beside a
+  // zoomed-out map (PB-067), so they are skipped entirely.
+  const offsets = widthCells * scale <= view.viewW ? [0] : [-widthCells * scale, 0, widthCells * scale];
+  // PB-042 / PB-060: an order already on the wire is a reminder, not the news. Its line is thinner
+  // than a hovered route's and is stroked under a half-opaque casing, so a fresh preview reads as
+  // the bright line and the old paths stay legible without covering it.
+  const width = Math.max(1.2, scale * 0.34);
   let drawn = 0;
   for (const piece of pieces) {
     if (!you || !piece || String(piece.side) !== you) continue;
@@ -1259,23 +1491,25 @@ export function paintPendingOrders(ctx, room, view, opts = {}) {
         if (i === 0) ctx.moveTo(at.x + shift, at.y);
         else ctx.lineTo(at.x + shift, at.y);
       });
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
-      ctx.lineWidth = width + 1.2;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+      ctx.lineWidth = width + 1;
       ctx.stroke();
-      ctx.strokeStyle = ROUTE_INK;
+      ctx.globalAlpha = 0.72;
+      ctx.strokeStyle = opts.ink || ROUTE_INK;
       ctx.lineWidth = width;
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     const last = points[points.length - 1];
     const end = cellToPixel(wrapX(last.x, widthCells), Number(last.y), view);
-    const half = Math.max(1.8, scale * 0.75);
+    const half = Math.max(1.5, scale * 0.55);
     for (const shift of offsets) {
       const at = { x: end.x + shift, y: end.y };
       if (at.x < -half - 4 || at.x > view.viewW + half + 4) continue;
       ctx.beginPath();
       ctx.rect(Math.round(at.x - half) + 0.5, Math.round(at.y - half) + 0.5,
         Math.round(half * 2), Math.round(half * 2));
-      ctx.fillStyle = ROUTE_INK;
+      ctx.fillStyle = opts.ink || ROUTE_INK;
       ctx.fill();
       ctx.strokeStyle = "#0b0f14";
       ctx.lineWidth = Math.max(1, scale * 0.28);
@@ -1292,19 +1526,22 @@ export function paintPreview(ctx, preview, view, opts = {}) {
   const points = routePolyline(preview, v);
   const path = Array.isArray(preview.path) ? preview.path : [];
   const to = preview.to || (path.length ? path[path.length - 1] : null);
-  const ink = preview.error ? PIECE_INK.enemy : ROUTE_INK;
+  const ink = preview.error ? PIECE_INK.enemy : (opts.ink || ROUTE_INK);
+  const casing = opts.casing || "rgba(0, 0, 0, 0.65)";
   // Two passes: a dark casing under a bright line. At the whole-world fit a one-pixel hairline in
   // gold over pale terrain read as nothing at all (T-007 AC10), and the route a player is about to
   // send is the one thing on the map that must be legible. T-021 thinned it: the old 2 px floor
   // plus a 2 px casing read as a rope at fit and as a slab when zoomed in. The floor is still above
   // one pixel and the casing still carries it, at every zoom.
-  const width = Math.max(1.25, v.scale * 0.6);
+  const width = Math.max(1.25, v.scale * 0.5);
 
   // The unwrapped run is drawn at three offsets: the one the camera shows, and one map-width to
   // either side, so a route that leaves the east edge reappears at the west edge instead of
   // streaking across the board. The canvas clips the rest.
   const widthCells = Math.max(1, Math.floor(Number(v.boardW) || BOARD_W));
-  const offsets = [-widthCells * v.scale, 0, widthCells * v.scale];
+  // Same rule as the pending paths: with the whole board visible there is no seam to wrap, and a
+  // shifted copy would only paint in the margins (PB-067).
+  const offsets = widthCells * v.scale <= v.viewW ? [0] : [-widthCells * v.scale, 0, widthCells * v.scale];
   const trace = (shift) => {
     if (!points.length) return false;
     ctx.beginPath();
@@ -1318,7 +1555,7 @@ export function paintPreview(ctx, preview, view, opts = {}) {
 
   for (const shift of offsets) {
     if (!trace(shift)) break;
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+    ctx.strokeStyle = casing;
     ctx.lineWidth = width + 1.5;
     ctx.stroke();
     ctx.strokeStyle = ink;
@@ -1384,6 +1621,9 @@ export function paintMatch(ctx, board, room, opts = {}) {
   const view = opts.view || fitViewport(opts.availW, opts.availH, opts.boardW, opts.boardH);
   ctx.clearRect(0, 0, view.viewW, view.viewH);
 
+  // The theme is a table of inks, never a rule: the grid, the cell ids, the sites, the pieces and
+  // the camera are the caller's, so switching theme cannot move anything (T-019 AC1).
+  const theme = opts.theme || themeById(opts.themeId || "D");
   const schematic = !board || board.source === "missing" || !Array.isArray(board.cells);
   let mode = "cells";
   let painted = 0;
@@ -1396,7 +1636,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // and leaving them out let a re-order of the fill pass every pin (see the T-018 AC4 follow-up).
   const layers = [];
   if (!schematic) {
-    painted = paintCells(ctx, board, view);
+    painted = paintCells(ctx, board, view, { theme });
     if (painted === 0) mode = "schematic";
     else {
       layers.push("cells");
@@ -1406,7 +1646,8 @@ export function paintMatch(ctx, board, room, opts = {}) {
       if (opts.viewMode === "political") {
         const ownership = room && room.ownership;
         if (ownership && ownership.ready && board && board.territory && Array.isArray(ownership.owners)) {
-          political = paintOwnership(ctx, board.territory, ownership.owners, board, view, opts);
+          political = paintOwnership(ctx, board.territory, ownership.owners, board, view,
+            { ...opts, palette: theme.ownership });
           tally = ownershipTally(ownership.owners);
         } else {
           const patches = politicalSites(room && room.sites, view);
@@ -1427,22 +1668,28 @@ export function paintMatch(ctx, board, room, opts = {}) {
   if (mode === "schematic") {
     // The schematic painter draws at the origin, so this path stays unpanned.
     const flat = { ...view, left: 0, top: 0 };
-    paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale });
+    paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale, theme });
     const preview = paintPreview(ctx, opts.preview, flat, opts);
     const groups = paintPieces(ctx, room && room.pieces, flat, opts);
     const pending = paintPendingOrders(ctx, room, flat, opts);
     const selection = paintSelectionMark(ctx, groups, flat, opts);
     const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
-    const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat);
+    const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat, capitalOpts(flat, theme, opts));
     return { mode, painted: 0, pieces, groups: groups.length, capitals, preview, pending, selection,
+      theme: theme.id,
       layers: ["board", "preview", "pieces", "pending", "selection", "capitals"],
       message: EXTRACT_MISSING, view: flat };
   }
 
   if (opts.sightAt && Number(opts.sight) > 0) {
-    paintSightRing(ctx, opts.sightAt, view, opts.sight, opts.ringColor);
+    paintSightRing(ctx, opts.sightAt, view, opts.sight, opts.ringColor || theme.selectionInk);
   }
-  const preview = paintPreview(ctx, opts.preview, view, opts);
+  // Old orders first and on the ground (PB-060): a path already on the wire belongs under the
+  // pieces and under the route the player is hovering now, or the newest line is the one that
+  // disappears into the clutter.
+  const pending = paintPendingOrders(ctx, room, view, { ...opts, ink: theme.routeInk });
+  layers.push("pending");
+  const preview = paintPreview(ctx, opts.preview, view, { ...opts, ink: theme.routeInk, casing: theme.routeCasing });
   layers.push("preview");
   const groups = paintPieces(ctx, room && room.pieces, view, opts);
   const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
@@ -1450,24 +1697,48 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // sites under badges get their own cell tick back after the pieces are painted: the city has to
   // stay visible on the board even when a garrison is standing on it (PB-029, T-014 AC7).
   layers.push("pieces");
-  const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view);
+  // In Show Ownership the fill has taken the ground the terrain view drew its cities on, so every
+  // site gets a mark of its own and not only the ones a badge happens to sit on (PB-068).
+  const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view,
+    { everyVisible: opts.viewMode === "political" });
   layers.push("siteTicks");
-  const capitals = paintCapitals(ctx, capitalMarkers(board, room), view);
+  // Names are placed, not stamped: a capital's name starts at the readable zoom and takes a free
+  // spot around its ring (PB-026, PB-069), and city names then avoid both the badges and the
+  // capital names.
+  const occupied = badgeBoxes(groups, view, opts);
+  const capLabels = capitalLabels(capitalMarkers(board, room), view, { occupied });
+  const capitals = paintCapitals(ctx, capitalMarkers(board, room), view,
+    { labels: capLabels, plate: theme.labelPlate, ink: theme.labelInk });
   layers.push("capitals");
-  const labels = visibleLabels(room && room.sites, view);
-  const labelled = paintLabels(ctx, opts.atlas, labels);
+  const labels = visibleLabels(room && room.sites, view, {
+    groups, occupied: [...occupied, ...capLabels.map((label) => ({ x: label.x, y: label.y, width: label.width, height: label.height }))],
+  });
+  const labelled = paintLabels(ctx, opts.atlas, labels,
+    { ink: theme.labelInk, plate: theme.labelPlate });
   layers.push("labels");
-  // The orders that are on the wire, and the selected piece's mark, go LAST (T-030 AC8 items 2 and
-  // 3): the capital marker and the city labels were painted after the mark, so they cut its ring
-  // (measured at e9a8bfa: the ring's top edge read 10% covered, 1.0 after this order), and an
-  // accepted order was not painted at all. A pending path under a city name is still a path the
-  // player can read.
-  const pending = paintPendingOrders(ctx, room, view, opts);
-  layers.push("pending");
-  const selection = paintSelectionMark(ctx, groups, view, opts);
+  const selection = paintSelectionMark(ctx, groups, view, { ...opts, ink: theme.selectionInk });
   layers.push("selection");
   return { mode, painted, fogged, pieces, groups: groups.length, siteTicks, capitals, labels: labelled,
-    political, tally, preview, pending, selection, layers, message: "", view };
+    political, tally, preview, pending, selection, layers, theme: theme.id, message: "", view };
+}
+
+// The badge boxes as screen rects: what a name must not be drawn over.
+function badgeBoxes(groups, view, opts = {}) {
+  const out = [];
+  for (const group of Array.isArray(groups) ? groups : []) {
+    const box = badgeFootprint(group, view, opts);
+    if (!box) continue;
+    const a = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
+    const b = cellToPixel(wrapX(box.x1, view.boardW || BOARD_W), box.y1, view);
+    out.push({ x: a.x, y: a.y, width: Math.max(2, b.x - a.x), height: Math.max(2, b.y - a.y) });
+  }
+  return out;
+}
+
+// The schematic fallback keeps the palette's own colours only (its pin refuses an invented one), so
+// it takes the names but no plate and no theme label ink.
+function capitalOpts(view, theme, opts = {}) {
+  return { ...opts, plate: null, ink: PIECE_INK.own };
 }
 
 // Re-exported so the page and the test read one name for the live table.
