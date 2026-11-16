@@ -401,6 +401,10 @@ function setViewMode(next) {
 }
 
 let sawRoom = false;
+// What the last frame actually painted (layers, fog rects, tally), for the E2E hook. The canvas is
+// pixels; a shot script cannot read the fog count back out of them, so the painter's own return
+// value rides here.
+let lastPaint = null;
 
 // Fit shows the whole world, which is what the original game put on the screen: one planet, all of
 // it, with a click to zoom. It used to reset to the legible 8 px default, so "Fit" never fitted.
@@ -662,6 +666,14 @@ function drawMatch() {
     // The original's lettering for city names, once the camera is close enough to read them.
     atlas: fontAtlas,
   });
+  lastPaint = {
+    mode: result.mode,
+    layers: result.layers ? result.layers.slice() : [],
+    fogged: result.fogged || 0,
+    political: result.political || 0,
+    painted: result.painted || 0,
+    tally: result.tally || null,
+  };
   // While a unit is armed, the cells the server will accept are painted underneath everything else.
   if (placement) paintPlacement(ctx, placement, view);
   paintChrome(view);
@@ -2316,6 +2328,10 @@ window.__chq = {
   outbox: () => outbox.length,
   wire: () => wireLog.slice(),
   board: () => boardPayload,
+  // The last frame's own report: the layer order, how many fog rects were painted, the ownership
+  // tally. T-019's shot leg asserts fog presence and the fill-under-fog order from this, not from
+  // a screenshot.
+  paintReport: () => lastPaint,
   // The names the painter puts beside capitals, from the room's own era rows (PB-022). The canvas is
   // pixels, so a screenshot cannot be read back: this is the same call the frame makes.
   capitalLabels: () => capitalMarkers(boardPayload, room).map((c) => ({ name: c.name, x: c.x, y: c.y, side: c.side, color: c.color })),
