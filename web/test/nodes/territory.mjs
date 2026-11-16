@@ -56,7 +56,7 @@ export async function run() {
 
   // ---- the model is the file's own shape ---------------------------------------------------
   eq("184 regions", opening.owners.length, 184);
-  for (const era of ["1918", "1942", "1986", "2023"]) {
+  for (const era of ["1918", "1942", "1986", "2023", "9999"]) {
     const row = regionSites(era);
     if (!Array.isArray(row) || row.length !== 184) fail("era " + era + " has no 184-entry region row");
   }
