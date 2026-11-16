@@ -201,10 +201,11 @@ export function run({ fail }) {
   // ---- Room 5641 item 3, the rounding half: a POINTER reports whole CSS pixels, so a click aimed at
   // the neighbouring icon centre lands up to one pixel short of it. That pixel must still be a
   // destination at every zoom, including the fractional world fit (measured on the page: cell 4.412
-  // px, badge half 7 px). If the reserved ring is allowed to reach within one pixel of the neighbour's
-  // centre - the old cap `scale - 0.5` did, ring 3.91 px against a centre 4.41 px away - a click at
-  // the floored centre resolves to a re-selection and the one-cell move is dead at the fit.
-  for (const scale of [4, 4.4124, 4.5, 6, 8, 8.8, 15, 29]) {
+  // px, badge half 7 px) and the two lowest reachable zooms (1 px and 2 px cells, where the ring used
+  // to be a whole pixel and swallowed the move entirely - room 5969). A ring that reaches within one
+  // pixel of the neighbour's centre - the old `scale - 0.5` at the fit, and `Math.max(1, ...)` below
+  // 2.5 - resolves the floored click as a re-selection and the one-cell move is dead.
+  for (const scale of [1, 2, 2.4, 4, 4.4124, 4.5, 6, 8, 8.8, 15, 29]) {
     const view = viewAt(scale);
     const own = cellToPixel(BLUE_INF.x, BLUE_INF.y, view);
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -225,8 +226,11 @@ export function run({ fail }) {
   }
 
   // The piece's own cell stays a re-selection: an order to the cell the unit already stands on is
-  // nothing, so the click must keep the selection (and the prompt) rather than send it.
-  for (const scale of [4, 8]) {
+  // nothing, so the click must keep the selection (and the prompt) rather than send it. This is the
+  // other half of the room-5969 fix: the ring collapses to zero at scale 1, so the own-cell
+  // re-selection has to come from the pointer's cell, not from a radius. Scales 1 and 2 are in the
+  // list for exactly that reason.
+  for (const scale of [1, 2, 4, 8]) {
     const view = viewAt(scale);
     const at = cellToPixel(BLUE_INF.x, BLUE_INF.y, view);
     const got = clickIntent([BLUE_INF], view, at.x, at.y,

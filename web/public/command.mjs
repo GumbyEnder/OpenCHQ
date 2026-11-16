@@ -265,19 +265,23 @@ export function clickIntent(pieces, view, px, py, opts = {}) {
   // player read as "select this again" - its ack then cleared the selection and overwrote the clear
   // the player had just asked for.
   //
-  // The reserved radius is the badge's own half, capped at 0.6 of a cell (PM ruling, room 5765). The
-  // cap is what decides which way a sub-pixel miss resolves, and it answers differently at the fit
-  // and when zoomed in: forgiveness at zoom 2 and up, the one-cell move wins at the fit. At the fit
-  // a cell is 4.41 px, so the ring is 2.65 px: a 1-2 px miss on the badge is forgiven as a
-  // selection, and any miss past the ring is already in the neighbouring cell, where that click is a
-  // one-cell move and not a reselect. At zoom 2 and up a cell is 8 px or more, so the ring is 4.8 px
-  // or more and the 1-2 px forgiveness holds there too. The cap used to be `scale - 0.5`, which at
-  // the fit left half a pixel between the ring (3.91 px) and the neighbouring cell's icon centre
-  // (4.41 px); a pointer reports whole CSS pixels, so a click aimed at that centre floored to
-  // 3.66 px and reselected - the one-cell move was dead at the fit.
+  // The reserved radius is the badge's own half, capped at 0.6 of a cell (PM ruling, room 5765).
+  // The cap is what decides which way a sub-pixel miss resolves. It is also capped by `scale - 1`:
+  // a pointer reports whole CSS pixels, so a click aimed at the neighbouring cell's icon centre can
+  // land up to one pixel short of it, and a ring that reaches that close swallows the move. The
+  // earlier `Math.max(1, ...)` floor broke both at once - one whole pixel is more than 0.6 of a cell
+  // below scale 1.667, and with the pointer's own one-pixel error the one-cell move only survived
+  // from scale 2.5 up. Measured before the fix (room 5969): scale 1 ring 1.000 against a pointer
+  // 0.000 px out, scale 2 ring 1.200 against a pointer 1.000 px out - both reselected. Reachable
+  // scales 1 and 2 are exactly where a cell is what the player clicked, so the ring collapses there
+  // and the pointer's cell decides: at scale 1 the cap is 0 and any click on another cell is a move;
+  // at scale 2 it is 1 px, which the one-pixel error cannot get strictly inside. From scale 4.4124
+  // (the world fit) the 0.6 cap is the smaller one again, so the 2.65 px forgiveness there is
+  // unchanged.
   if (hasSelection) {
     const scale = Math.max(1, Number(view.scale) || 1);
-    const reserved = Math.min(badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2, Math.max(1, scale * 0.6));
+    const badgeHalf = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2;
+    const reserved = Math.min(badgeHalf, Math.max(0, Math.min(scale * 0.6, scale - 1)));
     const own = hits.find((hit) => String(hit.piece.id) === String(selectedId));
     // Another own piece's badge always wins: clicking a friend selects that friend (T-030 AC2,
     // PB-052), so the reserved ring only applies when the selected piece is the only thing the
