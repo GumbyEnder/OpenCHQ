@@ -250,6 +250,46 @@ export function paintFog(ctx, view, lit, seen) {
   return drawn;
 }
 
+// ---- the sight gate (PB-082) -----------------------------------------------------------------
+//
+// Every marker layer is painted AFTER paintFog: the wash is already on the canvas, so a capital
+// ring, a city tick or a name drawn on top of it reads at full brightness over ground the seat has
+// never seen. Era 9999 is the era that promises the opposite, so those three layers ask this table
+// first. Remembered ground still gets its marker, at the remembered level, which is the same rule
+// the ground under it follows.
+//
+// Coordinates follow paintFog's own convention, not a second one: X wraps at the seam via wrapX,
+// Y does not wrap, and a row outside 0..boardH-1 is not on the board and reads as unknown. The
+// gate and the wash therefore index the same cell for the same pixel; PB-074 (the sighted block
+// wrapping at the map edge) is a question about the sight table itself and is not re-encoded here.
+export const SIGHT_LIT = 2;
+export const SIGHT_REMEMBERED = 1;
+export const SIGHT_UNKNOWN = 0;
+
+// 0 = unknown, 1 = remembered, 2 = in sight. `null` when the frame carries no fog at all (every era
+// but 9999), so the callers stay exactly as they were: a null gate draws everything.
+export function sightGate(fog, view) {
+  if (!fog || !fog.lit || fog.lit.length === 0) return null;
+  const width = Math.max(1, Math.floor(Number(view && view.boardW) || BOARD_W));
+  const height = Math.max(0, Math.floor(Number(view && view.boardH) || BOARD_H));
+  const lit = fog.lit;
+  const seen = fog.seen && fog.seen.length === lit.length ? fog.seen : null;
+  return (x, y) => {
+    const fx = Number(x);
+    const fy = Number(y);
+    if (!Number.isFinite(fx) || !Number.isFinite(fy)) return SIGHT_LIT;
+    const py = Math.round(fy);
+    if (py < 0 || (height && py >= height)) return SIGHT_UNKNOWN;
+    const index = py * width + wrapX(Math.round(fx), width);
+    if (lit[index]) return SIGHT_LIT;
+    return seen && seen[index] ? SIGHT_REMEMBERED : SIGHT_UNKNOWN;
+  };
+}
+
+// How much of a remembered marker survives the fog. The ground under it is drawn at FOG_REMEMBERED
+// (0.28), so a marker that is a memory sits behind the same haze rather than in front of it.
+export const REMEMBERED_MARKER_ALPHA = 0.45;
+
 // The sight ring of the selected piece: the same Chebyshev box, drawn as an outline so the rule
 // is visible rather than implied.
 export function paintSightRing(ctx, cell, view, sight, color) {
@@ -861,6 +901,7 @@ export function badgeFootprint(group, view, opts = {}) {
 // never sit, and the silhouette keeps the centre.
 export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
   const list = Array.isArray(sites) ? sites : [];
+  const gate = opts.sight || null;
   const covered = Array.isArray(groups) ? groups.map((group) => badgeFootprint(group, view)) : [];
   const scale = Math.max(1, Number(view.scale) || 1);
   const everyVisible = opts.everyVisible === true;
@@ -870,6 +911,9 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
     const x = Number(site && site.x);
     const y = Number(site && site.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    // The city tick is painted after the fog, so it has to respect it (PB-082).
+    const level = gate ? gate(x, y) : SIGHT_LIT;
+    if (level === SIGHT_UNKNOWN) continue;
     // A capital keeps the capital ink, a city the city ink: the same two colours the terrain uses.
     const ink = (Number(site.type) === 1 || Number(site.type) === 2) ? PALETTE.capital : PALETTE.city;
     if (!ink) continue;
@@ -884,10 +928,12 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
       const side = Math.max(2, Math.round(span * 0.34));
       const nx = Math.round(topLeft.x) + 1;
       const ny = Math.round(bottomRight.y) - side - 1;
+      ctx.globalAlpha = level === SIGHT_REMEMBERED ? REMEMBERED_MARKER_ALPHA : 1;
       ctx.fillStyle = BADGE_INTERIOR.land;
       ctx.fillRect(nx - 1, ny - 1, side + 2, side + 2);
       ctx.fillStyle = ink;
       ctx.fillRect(nx, ny, side, side);
+      ctx.globalAlpha = 1;
       drawn++;
       continue;
     }
@@ -899,10 +945,12 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
     const at = cellToPixel(wrapX(x, view.boardW || BOARD_W), y, view);
     if (at.x < -scale || at.x > view.viewW + scale || at.y < -scale || at.y > view.viewH + scale) continue;
     const size = Math.max(2, Math.round(scale * 0.8));
+    ctx.globalAlpha = level === SIGHT_REMEMBERED ? REMEMBERED_MARKER_ALPHA : 1;
     ctx.fillStyle = "#0b0f14";
     ctx.fillRect(Math.round(at.x - size / 2) - 1, Math.round(at.y - size / 2) - 1, size + 2, size + 2);
     ctx.fillStyle = ink;
     ctx.fillRect(Math.round(at.x - size / 2), Math.round(at.y - size / 2), size, size);
+    ctx.globalAlpha = 1;
     drawn++;
   }
   return drawn;
@@ -1037,10 +1085,16 @@ export function paintLabels(ctx, atlas, labels, opts = {}) {
   const ink = opts.ink || "#ffffff";
   const shadow = opts.shadow || "#000000";
   const plate = opts.plate || null;
+  const gate = opts.sight || null;
   let drawn = 0;
   for (const label of labels) {
+    // A name is ink over the fog like any other marker: a city the seat cannot see has no name
+    // until it is remembered (PB-082).
+    const level = gate && label.cell ? gate(label.cell.x, label.cell.y) : SIGHT_LIT;
+    if (level === SIGHT_UNKNOWN) continue;
     const bitmap = textBitmap(atlas, label.text, label.scale);
     if (!bitmap.width || !bitmap.height) continue;
+    ctx.globalAlpha = level === SIGHT_REMEMBERED ? REMEMBERED_MARKER_ALPHA : 1;
     if (plate) {
       ctx.fillStyle = plate;
       ctx.fillRect(label.x - 1, label.y - 1, bitmap.width + 2, bitmap.height + 2);
@@ -1055,6 +1109,7 @@ export function paintLabels(ctx, atlas, labels, opts = {}) {
         ctx.fillRect(label.x + x, label.y + y, 1, 1);
       }
     }
+    ctx.globalAlpha = 1;
     drawn += 1;
   }
   return drawn;
@@ -1324,22 +1379,35 @@ function placeTextLabel(text, perChar, height, { x, y, r, spread = [] }, view, o
 
 export function paintCapitals(ctx, markers, view, opts = {}) {
   const list = Array.isArray(markers) ? markers : [];
+  const gate = opts.sight || null;
+  const level = (marker) => (gate ? gate(marker.x, marker.y) : SIGHT_LIT);
+  // A capital outside sight is not a capital the seat may see: the ring and the name are drawn
+  // after the fog, so they are the only ink on the board the wash cannot dim (PB-082).
+  const seen = list.filter((marker) => level(marker) !== SIGHT_UNKNOWN);
   const r = Math.max(3, view.scale * 2.4);
-  const labels = Array.isArray(opts.labels) ? opts.labels : capitalLabels(list, view, opts);
+  const labels = Array.isArray(opts.labels) ? opts.labels : capitalLabels(seen, view, opts);
   // No plate unless the caller asks for one: the schematic fallback is pinned to the palette's own
   // colours, and a plate would be a colour the palette never emits.
   const plate = opts.plate || null;
   const ink = opts.ink || PIECE_INK.own;
-  for (const marker of list) {
+  let drawn = 0;
+  for (const marker of seen) {
     const at = cellToPixel(marker.x, marker.y, view);
+    ctx.globalAlpha = level(marker) === SIGHT_REMEMBERED ? REMEMBERED_MARKER_ALPHA : 1;
     ctx.strokeStyle = marker.color;
     ctx.lineWidth = Math.max(1, view.scale);
     ctx.beginPath();
     ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.globalAlpha = 1;
+    drawn += 1;
   }
-  if (!labels.length) return list.length;
+  if (!labels.length) return drawn;
   for (const label of labels) {
+    const marker = label.marker;
+    const labelLevel = marker ? level(marker) : SIGHT_LIT;
+    if (labelLevel === SIGHT_UNKNOWN) continue;
+    ctx.globalAlpha = labelLevel === SIGHT_REMEMBERED ? REMEMBERED_MARKER_ALPHA : 1;
     ctx.font = label.fontPx + "px Palatino, Georgia, serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
@@ -1349,8 +1417,9 @@ export function paintCapitals(ctx, markers, view, opts = {}) {
     }
     ctx.fillStyle = ink;
     if (typeof ctx.fillText === "function") ctx.fillText(label.name, label.x, label.y);
+    ctx.globalAlpha = 1;
   }
-  return list.length;
+  return drawn;
 }
 
 // The route a hovered order would take, drawn from the server's plan. `preview` is
@@ -1654,6 +1723,9 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // presence of a call. `cells` and `fog` are in it: terrain and fog are layers a player can see,
   // and leaving them out let a re-order of the fill pass every pin (see the T-018 AC4 follow-up).
   const layers = [];
+  // One sight table for every marker layer painted after the fog: null in every era but the
+  // concealed one (9999), so the painter's behaviour elsewhere is untouched (PB-082).
+  const gate = sightGate(opts.fog, view);
   if (!schematic) {
     painted = paintCells(ctx, board, view, { theme });
     if (painted === 0) mode = "schematic";
@@ -1719,7 +1791,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // In Show Ownership the fill has taken the ground the terrain view drew its cities on, so every
   // site gets a mark of its own and not only the ones a badge happens to sit on (PB-068).
   const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view,
-    { everyVisible: opts.viewMode === "political" });
+    { everyVisible: opts.viewMode === "political", sight: gate });
   layers.push("siteTicks");
   // Names are placed, not stamped: a capital's name starts at the readable zoom and takes a free
   // spot around its ring (PB-026, PB-069), and city names then avoid both the badges and the
@@ -1727,13 +1799,13 @@ export function paintMatch(ctx, board, room, opts = {}) {
   const occupied = badgeBoxes(groups, view, opts);
   const capLabels = capitalLabels(capitalMarkers(board, room), view, { occupied });
   const capitals = paintCapitals(ctx, capitalMarkers(board, room), view,
-    { labels: capLabels, plate: theme.labelPlate, ink: theme.labelInk });
+    { labels: capLabels, plate: theme.labelPlate, ink: theme.labelInk, sight: gate });
   layers.push("capitals");
   const labels = visibleLabels(room && room.sites, view, {
     groups, occupied: [...occupied, ...capLabels.map((label) => ({ x: label.x, y: label.y, width: label.width, height: label.height }))],
   });
   const labelled = paintLabels(ctx, opts.atlas, labels,
-    { ink: theme.labelInk, plate: theme.labelPlate });
+    { ink: theme.labelInk, plate: theme.labelPlate, sight: gate });
   layers.push("labels");
   const selection = paintSelectionMark(ctx, groups, view, { ...opts, ink: theme.selectionInk });
   layers.push("selection");

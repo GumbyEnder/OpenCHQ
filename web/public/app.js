@@ -1,9 +1,10 @@
 import {
   capitalMarkers, cellToPixel, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch,
-  panBy, pixelToCell, paintPlacement, rememberSeen, routePolyline, routeSpan, sightTable, statusLine,
-  wrapX, zoomAt, zoomStepBy, badgeAt, renderBadgeSprite,
+  panBy, pixelToCell, paintPlacement, rememberSeen, routePolyline, routeSpan, sightGate, sightTable,
+  SIGHT_LIT, statusLine, wrapX, zoomAt, zoomStepBy, badgeAt, renderBadgeSprite,
 } from "./render.mjs";
 import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
+import { noteStep } from "./notes.mjs";
 import { THEMES, DEFAULT_THEME, isThemeId, nextThemeId, resolveTheme, themeById } from "./themes.mjs";
 import { unitLabel } from "./units.mjs";
 import {
@@ -673,6 +674,11 @@ function drawMatch() {
     political: result.political || 0,
     painted: result.painted || 0,
     tally: result.tally || null,
+    // What the marker layers actually drew, from the painter's own return: the count is the pin,
+    // a screenshot is the illustration (PB-082).
+    siteTicks: result.siteTicks || 0,
+    capitals: result.capitals || 0,
+    labels: result.labels || 0,
   };
   // While a unit is armed, the cells the server will accept are painted underneath everything else.
   if (placement) paintPlacement(ctx, placement, view);
@@ -1176,6 +1182,21 @@ function seatRow(label, seat, yours) {
   return row;
 }
 
+// The server tells a seat what it has NOT found ("Moscow has not been found."). The line has been
+// in the view since fog shipped and the page never printed it, so a concealed seat had no way to
+// tell a withheld capital from a missing one (PB-082 sayNotes). Said once per change, and cleared
+// when it goes, so it does not become a second permanent banner.
+let noteSaid = "";
+function sayNotes(room) {
+  // The rule lives in notes.mjs so a node test can drive it with two synthetic seat frames; this
+  // function is only the DOM half. `mine` keeps a clear from wiping a message the page did not say.
+  const step = noteStep(noteSaid, room);
+  const mine = flash.textContent === noteSaid;
+  noteSaid = step.said;
+  if (step.say) say(step.say);
+  else if (step.clear && mine) say("");
+}
+
 function renderRoom() {
   // The strip's numbers and the clock button follow every room frame, not only the frame that enters
   // or leaves a match: a purchase changes the purse, and a run/hold changes the button.
@@ -1188,6 +1209,7 @@ function renderRoom() {
     renderDebug();
   }
   if (room && room.over) sayResult(room);
+  else sayNotes(room);
   syncPauseBanner(room);
   roomBox.className = room ? "" : "room-empty";
   roomBox.textContent = "";
@@ -2332,6 +2354,27 @@ window.__chq = {
   // tally. T-019's shot leg asserts fog presence and the fill-under-fog order from this, not from
   // a screenshot.
   paintReport: () => lastPaint,
+  // What the fog layer actually got: how many cells are in sight, remembered, and unknown, and
+  // whether the era is concealed at all. A shot leg that asks "is the gate on" reads the table the
+  // painter read instead of guessing from a screenshot.
+  sight: () => {
+    const fog = fogFor(viewForCanvas());
+    if (!fog) return null;
+    let lit = 0;
+    let remembered = 0;
+    for (let i = 0; i < fog.lit.length; i++) {
+      if (fog.lit[i]) lit += 1;
+      else if (fog.seen && fog.seen[i]) remembered += 1;
+    }
+    return { lit, remembered, unknown: fog.lit.length - lit - remembered, cells: fog.lit.length };
+  },
+  // The gate's own answer for one cell, from the same table the painters read: 0 unknown, 1
+  // remembered, 2 in sight. A pin compares this with what the marker layers drew, so the two
+  // cannot disagree without going red (PB-082).
+  sightCell: (x, y) => {
+    const gate = sightGate(fogFor(viewForCanvas()), viewForCanvas());
+    return gate ? gate(x, y) : SIGHT_LIT;
+  },
   // The names the painter puts beside capitals, from the room's own era rows (PB-022). The canvas is
   // pixels, so a screenshot cannot be read back: this is the same call the frame makes.
   capitalLabels: () => capitalMarkers(boardPayload, room).map((c) => ({ name: c.name, x: c.x, y: c.y, side: c.side, color: c.color })),
