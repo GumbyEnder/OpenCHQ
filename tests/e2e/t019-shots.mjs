@@ -169,6 +169,31 @@ try {
       p1942 && p1942.layers && !p1942.layers.includes("fog") && !(p1942.fogged > 0),
       { layers: p1942 && p1942.layers, fogged: p1942 && p1942.fogged, file: file1942 });
 
+    // --- item 3 (PM 6093): the zoom floor is the world fit, and one press is one whole cell ---
+    if (theme.id === "C") {
+      await page.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+      await page.keyboard.press("0"); // refit: the floor is the fit (PB-066/067)
+      await sleep(500);
+      const fitCam = await page.evaluate(() => window.__chq.state().camera);
+      await page.keyboard.press("-");
+      await sleep(500);
+      const minusCam = await page.evaluate(() => window.__chq.state().camera);
+      const fileZoomFloor = await shot("t019-C-zoom-floor-at-fit.png");
+      mark("- at fit does not shrink the map (zoom floor = fit)",
+        Boolean(fitCam && minusCam) && minusCam.scale === fitCam.scale
+          && minusCam.left === fitCam.left && minusCam.top === fitCam.top,
+        { fit: fitCam, afterMinus: minusCam, file: fileZoomFloor });
+      await page.keyboard.press("+");
+      await sleep(500);
+      const plusCam = await page.evaluate(() => window.__chq.state().camera);
+      const fileZoomOne = await shot("t019-C-zoom-plus-one-step.png");
+      mark("+ from fit is one whole cell of zoom, not a clamp",
+        Boolean(fitCam && plusCam) && plusCam.scale === fitCam.scale + 1,
+        { fit: fitCam, afterPlus: plusCam, file: fileZoomOne });
+      await page.keyboard.press("0");
+      await sleep(300);
+    }
+
     // --- fog shots: Concealed 9999, blue, round 0, both views -----------------------------
     const rFog = await newGame("9999");
     mark("Concealed " + theme.id + " is the round 0 opening",
@@ -190,6 +215,35 @@ try {
     mark("Concealed " + theme.id + " keeps the fill UNDER the fog (PB-071)",
       layers.indexOf("ownership") >= 0 && layers.indexOf("fog") > layers.indexOf("ownership"),
       { layers });
+  }
+
+  // --- item 1 (PM 6093 / D-022): a fresh profile with no saved preference opens on C ---------
+  const freshContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const freshPage = await freshContext.newPage();
+  const freshErrors = [];
+  freshPage.on("pageerror", (err) => freshErrors.push(String(err && err.message ? err.message : err)));
+  freshPage.on("dialog", (dialog) => dialog.accept().catch(() => {}));
+  try {
+    await freshPage.goto(BASE, { waitUntil: "domcontentloaded" });
+    await freshPage.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 30000 });
+    const savedPreference = await freshPage.evaluate(() => localStorage.getItem("openchq.theme"));
+    if (!(await freshPage.evaluate(() => Boolean(window.__chq && window.__chq.me())))) {
+      const name = "t019f" + Date.now().toString(36).slice(-7);
+      await freshPage.fill("#register input[name=username]", name);
+      await freshPage.fill("#register input[name=password]", "pw-" + Math.random().toString(36).slice(2, 12));
+      await freshPage.click("#register button[type=submit]");
+      await freshPage.waitForSelector("#play:not(.hidden)", { timeout: 30000 });
+    }
+    // The label is painted from resolveTheme() at boot, so it is the page's own reading, not markup.
+    const freshLabel = await freshPage.evaluate(() => document.getElementById("themeToggle")?.textContent || "");
+    const fileFresh = path.join(OUT, "t019-fresh-profile-default.png");
+    await freshPage.screenshot({ path: fileFresh });
+    console.log("shot " + fileFresh);
+    mark("a fresh profile with no saved theme opens on C (D-022)",
+      savedPreference === null && freshLabel.includes("Dark tactical"),
+      { savedPreference, label: freshLabel, file: fileFresh, pageErrors: freshErrors });
+  } finally {
+    await freshContext.close();
   }
 
   mark("no page errors", pageErrors.length === 0, pageErrors);
