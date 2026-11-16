@@ -275,6 +275,30 @@ export async function run(ctx) {
   const labels = painted.texts.map((t) => t.text);
   eq(fail, "no third capital is labelled", labels.length, 2);
 
+  // --- PB-073: a withheld enemy capital is not drawn ---------------------------
+  // A rolled/concealed era has no type-1/2 capital rows, so the marker set comes from the
+  // capitals map. The page used to read the BOARD payload (unfiltered, both seats) and drew the
+  // enemy's ring and name over ground the seat had never seen. The seat's own view withholds it,
+  // and the marker paints after the fog, so nothing dimmed it. Same frame, same board, the only
+  // difference is whether the view named the enemy capital.
+  const concealedBoard = { ...board, capitals: { blue: { x: 79, y: 44 }, red: { x: 183, y: 25 } } };
+  const concealedRoom = { ...room, sites: [], capitals: { blue: { x: 79, y: 44 } } };
+  const withheld = recorder();
+  const withheldFrame = paintMatch(withheld.ctx, concealedBoard, concealedRoom, { view: full, own: "blue" });
+  eq(fail, "a withheld enemy capital is not marked", withheldFrame.capitals, 1);
+  eq(fail, "no red capital ring is stroked outside sight",
+    withheld.ops.filter((op) => op.op === "stroke" && op.color === SCHEMATIC.red).length, 0);
+  ok(fail, "the withheld capital\u2019s name never reaches the frame",
+    !withheld.texts.some((t) => t.text === "Moscow"));
+  // Control: the same frame with the capital SENT draws it, so the pin above is not vacuous.
+  const sent = recorder();
+  const sentFrame = paintMatch(sent.ctx, concealedBoard,
+    { ...concealedRoom, capitals: { blue: { x: 79, y: 44 }, red: { x: 183, y: 25 } } },
+    { view: full, own: "blue" });
+  eq(fail, "the control frame marks both capitals", sentFrame.capitals, 2);
+  ok(fail, "the control frame does stroke a red capital ring",
+    sent.ops.some((op) => op.op === "stroke" && op.color === SCHEMATIC.red));
+
   // distinct colors for ocean, shallows, city and capital, at their own cells
   const seen = [];
   for (const [terrain, id] of [["ocean", 0], ["shallows", 2], ["city", 6], ["capital", 4]]) {

@@ -359,16 +359,29 @@ export function capitalMarkers(board, room) {
       color: site.owner === "red" || site.owner === "blue" ? sideColor(site.owner) : CAPITAL_NEUTRAL,
     }));
   }
-  const source = (board && board.capitals) || {};
+  // Rolled and concealed eras carry no type-1/2 capital rows, so the set falls through to a
+  // capitals map. Which map matters: `room.capitals` is what forSeat sent, and it OMITS a
+  // capital the seat may not see (era 9999 hides the enemy's until it has been found), while
+  // `board.capitals` is the unfiltered board payload every seat gets. Reading the board here
+  // drew the enemy capital's ring and name outside sight (PB-073). A view that carries a
+  // capitals map is therefore authoritative - an absent side is withheld, not missing - and the
+  // board (then the fixed seats) is only for a page that has no view yet.
+  const seated = Boolean(room && room.capitals && typeof room.capitals === "object");
+  const source = seated ? room.capitals : ((board && board.capitals) || {});
   const out = [];
   for (const side of ["blue", "red"]) {
     const seat = CAPITAL_SEATS[side];
     const found = source[side] || {};
+    const x = Number(found.x);
+    const y = Number(found.y);
+    const known = Number.isFinite(x) && Number.isFinite(y);
+    // A seat view that does not name this capital has withheld it. Do not invent one.
+    if (seated && !known) continue;
     out.push({
       side,
       name: String(found.name || seat.name),
-      x: Number.isFinite(Number(found.x)) ? Number(found.x) : seat.x,
-      y: Number.isFinite(Number(found.y)) ? Number(found.y) : seat.y,
+      x: known ? x : seat.x,
+      y: known ? y : seat.y,
       color: sideColor(side),
     });
   }
