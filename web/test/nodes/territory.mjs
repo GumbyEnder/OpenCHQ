@@ -66,6 +66,35 @@ export async function run() {
   // would report 0 here.
   eq("1918 and 1942 assign 77 regions differently", differ, 77);
 
+  // ---- the gap arithmetic closes inside the artifact, and the nine sea-locked cells stay put ---
+  // docs/re/REGIONS.md used to claim every land gap cell got a region. It does not: the 4-neighbour
+  // fill cannot enter 9 of the 2412 candidates, so the doc and the numbers it quotes must agree with
+  // the bake. These pins are the measured truth (room 6179, re-measured 2026-11-16): quad 18725 +
+  // gap 2403 = 21128 filled; 2412 candidates - 2403 = 9 unreachable. An 8-neighbour rule would reach
+  // 2405, not 2412 - seven of the nine have no land neighbour at all - so the fill stays 4-neighbour
+  // until Q58 rules on what the original does with them.
+  const meta = TERRITORY.meta || {};
+  eq("quad cells", meta.quadCells, 18725);
+  eq("gap candidates", meta.gapCandidates, 2412);
+  eq("gap cells the fill reaches", meta.gapFilled, 2403);
+  eq("gap cells it cannot reach", meta.gapUnreachable, 9);
+  eq("quad + gap is the filled total", meta.quadCells + meta.gapFilled, meta.filledCells);
+  eq("filled total", meta.filledCells, 21128);
+  eq("candidates - filled is the unreachable count", meta.gapCandidates - meta.gapFilled,
+    meta.gapUnreachable);
+  eq("land cells", meta.landCells, 14612);
+  const SEA_LOCKED = [[319, 14], [319, 27], [153, 43], [81, 58], [223, 72],
+    [223, 73], [69, 81], [262, 87], [319, 87]];
+  eq("the sea-locked land cells, cell for cell", meta.gapUnreachableCells, SEA_LOCKED);
+  const WATER = new Set(["ocean", "shallows", "lake"]);
+  for (const [x, y] of SEA_LOCKED) {
+    const ground = board.terrain[board.cells[y * board.width + x]];
+    if (WATER.has(ground)) fail(`(${x},${y}) is pinned as sea-locked land but reads ${ground}`);
+    eq(`(${x},${y}) has no region`, regionAt(x, y), NO_REGION);
+    eq(`(${x},${y}) is not friendly to blue`, isFriendly(match, "blue", x, y), false);
+    eq(`(${x},${y}) is not friendly to red`, isFriendly(match, "red", x, y), false);
+  }
+
   // ---- 1942 opening, broad strokes ---------------------------------------------------------
   eq("1942 opening region tally", opening.tally, { blue: 146, red: 36, neutral: 2 });
   const owners = opening.owners;

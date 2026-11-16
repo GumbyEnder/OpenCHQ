@@ -8,6 +8,47 @@
   "regionCount": 184,
   "filledCells": 21128,
   "quadCells": 18725,
+  "gapCandidates": 2412,
+  "gapFilled": 2403,
+  "gapUnreachable": 9,
+  "gapUnreachableCells": [
+   [
+    319,
+    14
+   ],
+   [
+    319,
+    27
+   ],
+   [
+    153,
+    43
+   ],
+   [
+    81,
+    58
+   ],
+   [
+    223,
+    72
+   ],
+   [
+    223,
+    73
+   ],
+   [
+    69,
+    81
+   ],
+   [
+    262,
+    87
+   ],
+   [
+    319,
+    87
+   ]
+  ],
   "landCells": 14612
  },
  "width": 320,
