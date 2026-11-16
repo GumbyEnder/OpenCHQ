@@ -21,6 +21,7 @@ import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing } from "./late.mjs";
 import { ensureStrength } from "./combat.mjs";
 import { holderOf as capitalHolder } from "./capitals.mjs";
+import { ownershipOf } from "./territory.mjs";
 // The payday itself, so the economy dialog shows the figure the tick will pay rather than a page-side
 // copy of the rule.
 import { payoutFor } from "./economy.mjs";
@@ -207,6 +208,9 @@ export function forSeat(match, side) {
       seat: null,
       notes: [],
       unscreened: [],
+      // Territory is public: both sides see the same ground and the same owners. It is a view of
+      // the site table, so nothing here is a second source of truth (T-018).
+      ownership: ownershipOf(match),
       roundSeconds: roundLength(),
     };
   }
@@ -280,6 +284,9 @@ export function forSeat(match, side) {
   // keeps its own copy of the round length is a second source of truth for a tunable.
   return {
     pieces, routes, sites, capitals, capitalList, seat, notes, alarm, over, winner, result, unscreened,
+    // One entry per region (184 of them), in region id order: "blue", "red" or null. The page
+    // fills the ground from this and the geometry that came with the board.
+    ownership: ownershipOf(match),
     roundSeconds: roundLength(),
   };
 }

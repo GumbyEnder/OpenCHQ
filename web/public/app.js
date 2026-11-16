@@ -327,8 +327,9 @@ function viewForCanvas() {
 // selected, or because a placement is pending, is the camera fighting the player (T-007 AC10).
 let following = false;
 
-// Terrain is the original's map; political is the same map with each city coloured by whoever holds
-// it. The toggle only changes what is drawn on top, never the camera or the board.
+// Terrain is the original's map; ownership is the original's other view (manual printed p.32):
+// countries filled in the owner's colour over the same grid, units still on top. The toggle only
+// changes what is drawn under the units, never the camera or the board.
 let viewMode = "terrain";
 
 function setViewMode(next) {
@@ -336,7 +337,7 @@ function setViewMode(next) {
   const button = document.getElementById("viewToggle");
   if (button) {
     button.classList.toggle("armed", viewMode === "political");
-    button.textContent = viewMode === "political" ? "Terrain" : "Political";
+    button.textContent = viewMode === "political" ? "Terrain" : "Ownership";
   }
   drawMatch();
 }
@@ -611,9 +612,10 @@ function drawMatch() {
   const escortNote = unscreened.length === 0 ? ""
     : unscreened.length === 1 ? "A transport is crossing unscreened."
     : unscreened.length + " transports are crossing unscreened.";
-  // In the political view the note says what the colours mean, counted from the patches on screen.
+  // In Show Ownership the note says what the colours mean, counted from the same regions the map
+  // filled: regions held, not cells painted, so a zoom cannot change the numbers.
   const politicalNote = result.tally
-    ? "Political: blue holds " + result.tally.blue + ", red holds " + result.tally.red +
+    ? "Ownership: blue holds " + result.tally.blue + ", red holds " + result.tally.red +
       ", neutral " + result.tally.neutral + "."
     : "";
   // While a piece is selected, the note keeps naming it (T-030 AC8 item 4). A route hover or a
@@ -1319,6 +1321,9 @@ function applyDelta(delta) {
     unscreened: Array.isArray(delta.unscreened) ? delta.unscreened : (room.unscreened || []),
     capitals: delta.capitalsChanged ? delta.capitals : room.capitals,
     capitalList: delta.capitalList === undefined ? room.capitalList : delta.capitalList,
+    // Who holds each region rides whole when the site table moves, so a capture recolours the
+    // ground on the same frame the city changes hands (T-018 AC4).
+    ownership: delta.ownership === undefined ? room.ownership : delta.ownership,
     // The end of a match is a one-round fact, and the delta is the frame most seats see it in. The
     // page used to learn "over" only from a whole frame, so a seat on deltas kept playing past the
     // end - the harness watched one do it for ten minutes.
@@ -1710,7 +1715,7 @@ const DIALOG_PAINTERS = {
       act("Zoom in", "Bigger cells (+)", () => zoomStep(1.4)),
       act("Zoom out", "Smaller cells (-)", () => zoomStep(0.7)),
       act("Whole world", "Fit the planet (0)", () => refit()),
-      act(viewMode === "political" ? "Terrain" : "Political", "Who holds what (P)",
+      act(viewMode === "political" ? "Terrain" : "Ownership", "Who holds what (P)",
         () => setViewMode(viewMode === "political" ? "terrain" : "political")),
       act(following ? "Stop following" : "Follow piece", "Keep the selected piece centred (F)",
         () => setFollow(!following)),

@@ -219,6 +219,10 @@ export function createLobby() {
       // Cash, fuel and the rounds until the next payment. The page needs them to draw a
       // countdown; without them the clock is dead time and a player cannot plan a purchase.
       seat: seen ? seen.seat : null,
+      // Show Ownership reads who holds each of the 184 regions from here, not from the city cells
+      // (T-018 AC4/AC5). It rides the room like the capital list does: both seats see the same
+      // ground, and it is a view of the site table, never a second source of truth.
+      ownership: seen ? (seen.ownership || null) : null,
       // The round log travels with the room so a reload does not erase what happened. It is
       // already this seat's own lines, filtered when they were made.
       log: Array.isArray(room.log && room.log[you]) ? room.log[you] : [],
@@ -282,6 +286,7 @@ export function createLobby() {
       seat: signature(view.seat),
       capitals: signature(view.capitals),
       capitalList: signature(view.capitalList || null),
+      ownership: signature(view.ownership || null),
       pieces,
       routes,
       sites,
@@ -340,10 +345,15 @@ export function createLobby() {
       seatChanged: last.seat !== signature(view.seat),
       capitalsChanged: last.capitals !== signature(view.capitals),
       capitalListChanged: last.capitalList !== signature(view.capitalList || null),
+      // A capture changes who holds a region in the same tick the site changes hands, and the
+      // delta is the frame a seat usually sees it in (T-018 AC4). It rides whole, like the result,
+      // so a seat that missed a delta cannot keep a stale fill after a sync.
+      ownershipChanged: last.ownership !== signature(view.ownership || null),
     };
     if (delta.seatChanged) delta.seat = view.seat;
     if (delta.capitalsChanged) delta.capitals = view.capitals;
     if (delta.capitalListChanged) delta.capitalList = view.capitalList || null;
+    if (delta.ownershipChanged) delta.ownership = view.ownership || null;
     return delta;
   }
 

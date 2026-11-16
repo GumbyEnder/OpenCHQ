@@ -931,6 +931,130 @@ export function politicalSites(sites, view) {
   return out;
 }
 
+// ---- Show Ownership (T-018) -----------------------------------------------------------------
+//
+// The original's second view (manual printed p.32): countries filled in the owner's colour, units
+// still shown, friendly national borders outlined, toggled on and off. The geometry comes from the
+// 184 region quads in web/data/territory.json (docs/re/REGIONS.md); the owner per region comes from
+// the server, which reads it off the live site records. Nothing is coloured by guess.
+//
+// Colours measured off docs/captures/era-1942-blue-ownership.png (1942, blue side), counted over
+// the map viewport: fills #5555ff and #ff5555, sea #55ffff, and the outlined edge a dark shade of
+// the owner (#0000aa inside blue, #aa0000 inside red). The two unheld regions in that capture -
+// Spain and Greenland - are painted WHITE, not the #aaaaaa OMAP.PIC uses on the briefing picture.
+// A capture is a measurement of the live view, so white is what this palette carries; the theme
+// (T-019) passes its own through opts.palette and this stays the default.
+export const OWNERSHIP = Object.freeze({
+  blue: "#5555ff",
+  red: "#ff5555",
+  neutral: "#ffffff",
+  sea: "#55ffff",
+  edge: Object.freeze({ blue: "#0000aa", red: "#aa0000", neutral: "#555555" }),
+});
+
+const WATER_TERRAIN = new Set(["ocean", "lake"]);
+
+// cell -> region id, built once from the run-encoded grid the bake wrote. Cached on the geometry
+// object itself so a redraw does not rebuild 43520 entries.
+export function ownershipGrid(geometry) {
+  if (!geometry || !Array.isArray(geometry.regionRuns)) return null;
+  if (geometry.ownershipGrid && geometry.ownershipGrid.length === geometry.width * geometry.height) {
+    return geometry.ownershipGrid;
+  }
+  const grid = new Uint8Array(geometry.width * geometry.height).fill(geometry.noRegion ?? 255);
+  let at = 0;
+  for (const [id, count] of geometry.regionRuns) {
+    grid.fill(id, at, at + count);
+    at += count;
+  }
+  if (at !== grid.length) return null;
+  geometry.ownershipGrid = grid;
+  return grid;
+}
+
+export function ownershipInk(owner, palette = OWNERSHIP) {
+  if (owner === "blue") return palette.blue;
+  if (owner === "red") return palette.red;
+  return palette.neutral;
+}
+
+// The per-cell ink for a whole board: sea and ice from the terrain, land from the region's owner,
+// and the region's own edge shade on the cells that touch a different owner. Pure, so a node test
+// reads exactly what the page draws.
+export function ownershipRaster(geometry, owners, board, palette = OWNERSHIP) {
+  const grid = ownershipGrid(geometry);
+  if (!grid || !Array.isArray(owners) || !geometry) return null;
+  const width = geometry.width;
+  const height = geometry.height;
+  const cells = board && Array.isArray(board.cells) ? board.cells : null;
+  const terrain = board && Array.isArray(board.terrain) ? board.terrain : [];
+  const ink = new Array(width * height).fill(null);
+  const at = (x, y) => {
+    if (y < 0 || y >= height) return null;
+    const cx = ((x % width) + width) % width;
+    const rid = grid[y * width + cx];
+    if (rid === (geometry.noRegion ?? 255)) return null;
+    return owners[rid] || null;
+  };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      const name = cells ? terrain[cells[index]] : null;
+      if (name && WATER_TERRAIN.has(name)) {
+        ink[index] = palette.sea;
+        continue;
+      }
+      const owner = at(x, y);
+      if (owner === null) {
+        ink[index] = name ? palette.neutral : null;
+        continue;
+      }
+      const friendly = owner === "blue" || owner === "red";
+      const border = at(x - 1, y) !== owner || at(x + 1, y) !== owner
+        || at(x, y - 1) !== owner || at(x, y + 1) !== owner;
+      ink[index] = border ? (friendly ? palette.edge[owner] : palette.neutral) : ownershipInk(owner, palette);
+    }
+  }
+  return { width, height, ink };
+}
+
+// Draw it. Cells, not polygons: the board is a cell grid and a border follows the cells, which is
+// what the original's outline does too. Only the visible window is walked.
+export function paintOwnership(ctx, geometry, owners, board, view, opts = {}) {
+  const palette = opts.palette || OWNERSHIP;
+  const raster = ownershipRaster(geometry, owners, board, palette);
+  if (!raster) return 0;
+  const cols = visibleColumns(view);
+  const rows = visibleRows(view);
+  if (view.boardW * view.scale <= view.viewW) {
+    cols.first = 0;
+    cols.last = view.boardW - 1;
+  }
+  let painted = 0;
+  for (let y = rows.first; y <= rows.last; y++) {
+    const row = y * view.boardW;
+    for (let sx = cols.first; sx <= cols.last; sx++) {
+      const color = raster.ink[row + wrapX(sx, view.boardW)];
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(view.left + sx * view.scale, view.top + y * view.scale, view.scale, view.scale);
+      painted += 1;
+    }
+  }
+  return painted;
+}
+
+// Region counts for the legend. Regions, not cells: a zoom must not change the tally.
+export function ownershipTally(owners) {
+  const tally = { blue: 0, red: 0, neutral: 0 };
+  for (const owner of Array.isArray(owners) ? owners : []) {
+    if (owner === "blue") tally.blue += 1;
+    else if (owner === "red") tally.red += 1;
+    else tally.neutral += 1;
+  }
+  return tally;
+}
+
 export function paintPolitical(ctx, patches, view) {
   const list = Array.isArray(patches) ? patches : [];
   const size = Math.max(1, Math.ceil(view.scale));
@@ -1284,14 +1408,21 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // stay visible on the board even when a garrison is standing on it (PB-029, T-014 AC7).
   const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view);
   const capitals = paintCapitals(ctx, capitalMarkers(board, room), view);
-  // Political view: the same board with each city coloured by whoever holds it. The terrain under it
-  // is untouched, so switching back is switching back and nothing else.
+  // Show Ownership: the same board with whole countries filled by whoever holds them (T-018).
+  // It replaces the city-cell political fallback whenever the territory model is present; the
+  // fallback stays for a board without one, so the toggle never dies on a missing bake.
   let political = 0;
   let tally = null;
   if (opts.viewMode === "political") {
-    const patches = politicalSites(room && room.sites, view);
-    political = paintPolitical(ctx, patches, view);
-    tally = politicalTally(patches);
+    const ownership = room && room.ownership;
+    if (ownership && ownership.ready && board && board.territory && Array.isArray(ownership.owners)) {
+      political = paintOwnership(ctx, board.territory, ownership.owners, board, view, opts);
+      tally = ownershipTally(ownership.owners);
+    } else {
+      const patches = politicalSites(room && room.sites, view);
+      political = paintPolitical(ctx, patches, view);
+      tally = politicalTally(patches);
+    }
   }
   const labels = visibleLabels(room && room.sites, view);
   const labelled = paintLabels(ctx, opts.atlas, labels);

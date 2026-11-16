@@ -149,7 +149,10 @@ export async function run(ctx) {
   // result (who won, why, the decisive capital) and capitalList (the era's capitals with their
   // holders) are T-012: the end screen and the War panel draw the server's own answer, so both ride
   // every seat view. A seat that could not see them would have to rebuild them from its own pieces.
-  expect(fail, topKeys === "alarm,capitalList,capitals,notes,over,pieces,result,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
+  // ownership (T-018) is the per-region owner list the Show Ownership view fills from. It is
+  // public by design - both seats see the same ground - and it is a view of the site table, so it
+  // leaks nothing the sites do not already carry.
+  expect(fail, topKeys === "alarm,capitalList,capitals,notes,over,ownership,pieces,result,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
   for (const piece of reachView.pieces) {
     for (const key of ["hidden", "visible", "concealed", "seen"]) {
       expect(fail, !(key in piece), "a piece carries a '" + key + "' flag: " + JSON.stringify(piece));

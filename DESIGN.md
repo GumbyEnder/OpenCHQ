@@ -53,6 +53,11 @@ clicking faster than your opponent.
   the whole stack on hover. A badge never renders below 14 px, at any zoom, so the type is readable
   at the whole-world fit; a site a badge stands on keeps a corner notch of city ink so the city
   stays on the board. The Buy table and the Kit legend use the same badge.
+- Ownership (P, or the Map toggle): fills each region with its holder's colour over the same board,
+  keeps every unit on top, and counts regions rather than cells. The model is server-side: the board
+  carries the 184 region shapes and the room carries one owner per region, both derived from the
+  site table, so the fill cannot disagree with who the orders act on. A capture recolours exactly the
+  captured city's regions (measured on the original, Q44).
 - Strip controls: Play/Pause (the clock), Resign (concede: the other side wins, the room stays so the
   result can be read), New (abandon this game, start a fresh one in the same era and side), Quit
   (leave to the lobby). Each destructive one asks once.

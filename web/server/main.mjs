@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { changePassword, closeSession, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
 import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
 import { boardPayload, fontPayload } from "./board.mjs";
+import { territoryGeometry } from "./territory.mjs";
 import { handicapSpec, roundSeconds, startPool } from "./rules.mjs";
 import { createLobby } from "./lobby.mjs";
 import { acceptWebSocket } from "./ws.mjs";
@@ -196,7 +197,10 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/api/board") {
     try {
-      send(res, 200, boardPayload());
+      const payload = boardPayload();
+      // The territory geometry rides with the board: one fetch, and the page can draw Show
+      // Ownership without a second round trip (T-018).
+      send(res, 200, { ...payload, territory: territoryGeometry() });
     } catch (err) {
       send(res, 500, { error: String(err && err.message ? err.message : err) });
     }
