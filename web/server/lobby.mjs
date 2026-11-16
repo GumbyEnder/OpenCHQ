@@ -79,6 +79,72 @@ function roomSeconds(room) {
   return speedSeconds(speedOf(room));
 }
 
+// The difference between the last frame a seat got (its shadow) and the view now. Exported so a
+// node test can pin the ownership carry without standing up a socket: the shadow shape is the one
+// setSeatShadow writes below, and `signature` is the same JSON serialisation.
+export function deltaBetween(last, view) {
+  const signature = (value) => JSON.stringify(value);
+  if (!last) return null;
+  const pieces = [];
+  const routes = {};
+  const gone = [];
+  const pieceSigs = {};
+  for (const piece of view.pieces || []) {
+    const sig = signature(piece);
+    pieceSigs[piece.id] = sig;
+    if (last.pieces[piece.id] !== sig) pieces.push(piece);
+  }
+  for (const id of Object.keys(last.pieces)) {
+    if (!(id in pieceSigs)) gone.push(id);
+  }
+  for (const [id, steps] of Object.entries(view.routes || {})) {
+    const sig = signature(steps);
+    if (last.routes[id] !== sig) routes[id] = steps;
+  }
+  for (const id of Object.keys(last.routes)) {
+    if (!(id in (view.routes || {}))) routes[id] = [];
+  }
+  const sites = [];
+  for (const site of view.sites || []) {
+    if (last.sites[site.id] !== (site.owner ?? null)) {
+      sites.push({ id: site.id, owner: site.owner ?? null, name: site.name, kind: site.kind });
+    }
+  }
+  const delta = {
+    round: view.round,
+    // The alarm rides the delta too. It only ever appeared in a whole frame, and a whole frame
+    // may be twenty-five rounds away — long enough for the capital to fall first.
+    alarm: view.alarm || null,
+    roundSeconds: view.roundSeconds || null,
+    speed: view.speed,
+    over: Boolean(view.over),
+    winner: view.winner || null,
+    // The delta is the frame most seats see at the moment a match ends, so the result has to
+    // ride it. It rides whole (six rows), not as a change flag: a page that missed one delta
+    // and then syncs would otherwise hold a result from the round before.
+    result: view.result || null,
+    clock: view.clock,
+    note: view.note,
+    pieces,
+    gone,
+    routes,
+    sites,
+    unscreened: view.unscreened || [],
+    seatChanged: last.seat !== signature(view.seat),
+    capitalsChanged: last.capitals !== signature(view.capitals),
+    capitalListChanged: last.capitalList !== signature(view.capitalList || null),
+    // A capture changes who holds a region in the same tick the site changes hands, and the
+    // delta is the frame a seat usually sees it in (T-018 AC4). It rides whole, like the result,
+    // so a seat that missed a delta cannot keep a stale fill after a sync.
+    ownershipChanged: last.ownership !== signature(view.ownership || null),
+  };
+  if (delta.seatChanged) delta.seat = view.seat;
+  if (delta.capitalsChanged) delta.capitals = view.capitals;
+  if (delta.capitalListChanged) delta.capitalList = view.capitalList || null;
+  if (delta.ownershipChanged) delta.ownership = view.ownership || null;
+  return delta;
+}
+
 export function createLobby() {
   const sockets = new Map();
   const invites = new Map();
@@ -297,64 +363,7 @@ export function createLobby() {
   function deltaFor(room, side, view) {
     const last = seatShadow(room, side);
     if (!last) return null;
-    const pieces = [];
-    const routes = {};
-    const gone = [];
-    const pieceSigs = {};
-    for (const piece of view.pieces || []) {
-      const sig = signature(piece);
-      pieceSigs[piece.id] = sig;
-      if (last.pieces[piece.id] !== sig) pieces.push(piece);
-    }
-    for (const id of Object.keys(last.pieces)) {
-      if (!(id in pieceSigs)) gone.push(id);
-    }
-    for (const [id, steps] of Object.entries(view.routes || {})) {
-      const sig = signature(steps);
-      if (last.routes[id] !== sig) routes[id] = steps;
-    }
-    for (const id of Object.keys(last.routes)) {
-      if (!(id in (view.routes || {}))) routes[id] = [];
-    }
-    const sites = [];
-    for (const site of view.sites || []) {
-      if (last.sites[site.id] !== (site.owner ?? null)) {
-        sites.push({ id: site.id, owner: site.owner ?? null, name: site.name, kind: site.kind });
-      }
-    }
-    const delta = {
-      round: view.round,
-      // The alarm rides the delta too. It only ever appeared in a whole frame, and a whole frame
-      // may be twenty-five rounds away — long enough for the capital to fall first.
-      alarm: view.alarm || null,
-      roundSeconds: view.roundSeconds || null,
-      speed: view.speed,
-      over: Boolean(view.over),
-      winner: view.winner || null,
-      // The delta is the frame most seats see at the moment a match ends, so the result has to
-      // ride it. It rides whole (six rows), not as a change flag: a page that missed one delta
-      // and then syncs would otherwise hold a result from the round before.
-      result: view.result || null,
-      clock: view.clock,
-      note: view.note,
-      pieces,
-      gone,
-      routes,
-      sites,
-      unscreened: view.unscreened || [],
-      seatChanged: last.seat !== signature(view.seat),
-      capitalsChanged: last.capitals !== signature(view.capitals),
-      capitalListChanged: last.capitalList !== signature(view.capitalList || null),
-      // A capture changes who holds a region in the same tick the site changes hands, and the
-      // delta is the frame a seat usually sees it in (T-018 AC4). It rides whole, like the result,
-      // so a seat that missed a delta cannot keep a stale fill after a sync.
-      ownershipChanged: last.ownership !== signature(view.ownership || null),
-    };
-    if (delta.seatChanged) delta.seat = view.seat;
-    if (delta.capitalsChanged) delta.capitals = view.capitals;
-    if (delta.capitalListChanged) delta.capitalList = view.capitalList || null;
-    if (delta.ownershipChanged) delta.ownership = view.ownership || null;
-    return delta;
+    return deltaBetween(last, view);
   }
 
   function frameFor(room, side, view, username) {

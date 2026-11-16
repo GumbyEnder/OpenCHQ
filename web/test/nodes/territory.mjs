@@ -13,7 +13,8 @@ import { openMatch } from "../../server/match.mjs";
 import {
   NO_REGION, TERRITORY, isFriendly, ownershipOf, regionAt, regionSites, regionsHeldBy,
 } from "../../server/territory.mjs";
-import { OWNERSHIP, ownershipInk, ownershipRaster, ownershipTally } from "../../public/render.mjs";
+import { OWNERSHIP, ownershipGrid, ownershipInk, ownershipRaster, ownershipTally } from "../../public/render.mjs";
+import { deltaBetween } from "../../server/lobby.mjs";
 
 export const name = "territory";
 
@@ -129,12 +130,60 @@ export async function run() {
   if (berlinCell !== OWNERSHIP.red && berlinCell !== OWNERSHIP.edge.red) {
     fail("Berlin's ground is neither red nor its outlined edge: " + berlinCell);
   }
+
+  // GREENLAND RULING (T-018 AC4 follow-up). Not a paint bug: a data answer, settled off the
+  // capture, not off preference. docs/captures/era-1942-blue-ownership.png is a 1024x768 shot of the
+  // live ownership view at the world fit; the map is drawn at 2 px per cell from (192, 196), so
+  // region 125's 476 cells land on 476 pixels. Sampled there: 345 read #ffffff and 131 read #55ffff
+  // (sea inside the quad), ZERO read #5555ff / #0000aa / #ff5555 / #aa0000. Two regions in that
+  // shot are white - Spain and Greenland - and the served tally is neutral 2, so the white one is
+  // the answer. territory.json byEra["1942"] carries a null site for region 125 and only that one
+  // region, which is why its owner cannot be blue: an owner comes from a site record. This pin
+  // walks every cell region 125 covers and refuses any side ink; a cell outside the quad may read
+  // sea, it may never read blue or red.
+  const greenRid = 125;
+  const greenGrid = ownershipGrid(geometry);
+  if (!greenGrid) fail("the baked cell -> region grid did not build");
+  const greenCells = [];
+  for (let i = 0; i < board.width * board.height; i++) if (greenGrid[i] === greenRid) greenCells.push(i);
+  if (!greenCells.length) fail("region 125 covers no cell on the baked grid");
+  const greenInks = new Set(greenCells.map((i) => raster.ink[i]));
+  for (const ink of greenInks) {
+    if (ink !== OWNERSHIP.neutral && ink !== OWNERSHIP.sea) {
+      fail("Greenland is painted " + ink + ", the capture has white ground and sea only");
+    }
+  }
+
   // The reverse lookup the placement and aid work (T-023) will ask for.
   const held = regionsHeldBy(match, "red");
   eq("red holds the regions the legend counts", held.length, opening.tally.red);
 
   const tally = ownershipTally(opening.owners);
   eq("the legend counts the same regions the map fills", tally, opening.tally);
+
+  // ---- the delta frame carries the new owner list (rider 1 from the T-018 gate, room 5954) ----
+  // A seat usually sees a capture in a delta, not a whole frame, so a dropped ownership carry would
+  // leave a stale fill after a sync and nothing in the suite would go red. Two cases, both needed:
+  // unchanged ownership must not spend the payload, changed ownership must ride WHOLE.
+  const seatView = {
+    round: 3, clock: "held", note: "", seat: { blue: "a", red: "b" }, capitals: { blue: 1, red: 2 },
+    capitalList: [], pieces: [], routes: {}, sites: [], ownership: opening,
+  };
+  const shadow = seatShadowOf(seatView);
+  const quiet = deltaBetween(shadow, seatView);
+  if (quiet.ownershipChanged) fail("the delta claims ownership changed when it did not");
+  if ("ownership" in quiet) fail("the delta carried an owner list that did not change");
+
+  const nextOwners = opening.owners.slice();
+  nextOwners[heldRegions[0]] = "blue";
+  const nextOwnership = { ready: true, era: "1942", owners: nextOwners,
+    tally: ownershipTally(nextOwners) };
+  const moved = deltaBetween(shadow, { ...seatView, round: 4, ownership: nextOwnership });
+  if (!moved.ownershipChanged) fail("the delta missed a changed owner list");
+  if (!moved.ownership || !Array.isArray(moved.ownership.owners)) fail("the delta did not carry ownership");
+  eq("the delta rides the owner list whole", moved.ownership.owners.length, 184);
+  eq("the delta's list is the new one", moved.ownership.owners[heldRegions[0]], "blue");
+
 
   return "184 regions; 1942 blue 146 / red 36 / neutral 2; Washington, Moscow, London blue; "
     + "Berlin, Paris, Tokyo red; Spain and Greenland unheld; Cam Ranh recolours "
@@ -145,4 +194,28 @@ export async function run() {
 function territoryRuns() {
   if (!TERRITORY) fail("no territory.json");
   return TERRITORY.regionRuns;
+}
+
+// The shadow shape lobby.setSeatShadow writes for a seat, so deltaBetween is exercised on the
+// bytes it will actually see rather than on a hand-shaped object.
+function seatShadowOf(view) {
+  const signature = (value) => JSON.stringify(value);
+  const pieces = {};
+  const routes = {};
+  const sites = {};
+  for (const piece of view.pieces || []) pieces[piece.id] = signature(piece);
+  for (const [id, steps] of Object.entries(view.routes || {})) routes[id] = signature(steps);
+  for (const site of view.sites || []) sites[site.id] = site.owner ?? null;
+  return {
+    round: view.round,
+    clock: view.clock,
+    note: view.note,
+    seat: signature(view.seat),
+    capitals: signature(view.capitals),
+    capitalList: signature(view.capitalList || null),
+    ownership: signature(view.ownership || null),
+    pieces,
+    routes,
+    sites,
+  };
 }

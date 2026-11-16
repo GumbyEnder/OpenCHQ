@@ -8,6 +8,7 @@ import {
   PIECE_INK,
   PIECE_MARKER,
   CAPITAL_NEUTRAL,
+  OWNERSHIP,
   capitalMarkers,
   cellToPixel,
   fitViewport,
@@ -45,6 +46,9 @@ function recorder() {
   const fills = [];
   const texts = [];
   const ops = [];
+  // One ordered log across fillRect and path fills, so a test can assert that the ownership fill
+  // was drawn BEFORE a badge rather than merely that both were drawn somewhere.
+  const seq = [];
   const ctx = {
     _fill: "",
     _stroke: "",
@@ -64,6 +68,7 @@ function recorder() {
     },
     fillRect(x, y, w, h) {
       fills.push({ x, y, w, h, color: this._fill });
+      seq.push({ kind: "rect", x, y, w, h, color: this._fill });
     },
     clearRect() {},
     beginPath() {
@@ -86,6 +91,7 @@ function recorder() {
     },
     fill() {
       ops.push({ op: "fill", color: this._fill });
+      seq.push({ kind: "fill", color: this._fill });
     },
     stroke() {
       ops.push({ op: "stroke", color: this._stroke });
@@ -94,7 +100,7 @@ function recorder() {
       texts.push({ text, x, y, color: this._fill });
     },
   };
-  return { ctx, fills, texts, ops };
+  return { ctx, fills, texts, ops, seq };
 }
 
 function eq(fail, label, actual, expected) {
@@ -301,6 +307,49 @@ export async function run(ctx) {
   const oneSide = recorder();
   const fewer = paintMatch(oneSide.ctx, board, { ...room, pieces: room.pieces.filter((p) => p.side === "blue") }, { view: full, own: "blue" });
   eq(fail, "the painter draws exactly what the view sent", fewer.pieces, 2);
+
+  // --- Show Ownership is a BASE layer: the badge sits ON owned land (T-018 AC4, rider 2) -------
+  // The e2e pin this replaces sampled a piece standing on open sea and compared its cell with a
+  // neighbour's. On a blue owner's edge that neighbour reads #0000aa - the same ink as a blue
+  // badge's silhouette - so the check went green while the ownership fill covered every unit.
+  // This pin builds the hard case instead: one region owned blue under the whole board, the blue
+  // land piece on Washington (owned ground), and an ordered log of what the painter drew.
+  const oneRegion = { width: board.width, height: board.height, noRegion: 255,
+    regionRuns: [[0, board.width * board.height]] };
+  const ownedBoard = { ...board, territory: oneRegion };
+  const ownedRoom = { ...room, ownership: { ready: true, era: "1942", owners: ["blue"],
+    tally: { blue: 1, red: 0, neutral: 0 } } };
+  for (const scale of [1, 2, 8]) {
+    const ownedView = makeView({ scale, left: 0, top: 0 });
+    const rec = recorder();
+    const shown = paintMatch(rec.ctx, ownedBoard, ownedRoom,
+      { view: ownedView, own: "blue", viewMode: "political" });
+    if (!(shown.political > 0)) fail("scale " + scale + ": the ownership fill painted nothing");
+    if (!Array.isArray(shown.layers) || shown.layers.indexOf("ownership") < 0) {
+      fail("scale " + scale + ": ownership is not reported as a layer");
+    }
+    for (const after of ["pieces", "siteTicks", "capitals", "labels"]) {
+      const at = shown.layers.indexOf(after);
+      if (!(shown.layers.indexOf("ownership") < at)) {
+        fail("scale " + scale + ": " + after + " is not drawn over the ownership fill ("
+          + shown.layers.join(">") + ")");
+      }
+    }
+    const ground = rec.seq.findIndex((op) => op.kind === "rect" && op.color === OWNERSHIP.blue
+      && op.x === 79 * scale && op.y === 44 * scale);
+    const frame = rec.seq.findIndex((op) => op.kind === "fill" && op.color === BADGE_SIDE.blue.frame);
+    if (ground < 0) fail("scale " + scale + ": Washington's owned ground was not filled");
+    if (frame < 0) fail("scale " + scale + ": the badge's frame was not drawn");
+    if (!(ground < frame)) fail("scale " + scale + ": the badge was drawn under the ownership fill");
+    // The badge's own face, not an edge or a fill: the interior ink exists only on the badge.
+    const faceAt = rec.seq.findIndex((op, i) => i > frame && op.kind === "fill"
+      && op.color === BADGE_INTERIOR.land);
+    if (!(faceAt > frame)) fail("scale " + scale + ": the badge's interior is not painted over the fill");
+    if (rec.seq[faceAt].color === OWNERSHIP.blue || rec.seq[faceAt].color === OWNERSHIP.edge.blue) {
+      fail("scale " + scale + ": the badge face is the ownership ink");
+    }
+  }
+
 
   // --- the hosted fallback: schematic plus every piece still on the map ------
   const missing = { source: "missing", cells: null, width: BOARD_W, height: BOARD_H, capitals: null, terrain: [] };
