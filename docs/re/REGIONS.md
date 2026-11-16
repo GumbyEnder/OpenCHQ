@@ -39,9 +39,10 @@ them; **9** cannot be entered and keep "no region" — measured, not asserted, a
     2 412 gap candidates - 2 403 filled = 9 unreachable
 
 The 2 412 are a property of the board the app plays, not of `tmap.bin` alone. The raw terrain map
-carries **14 440** land cells; the board payload then paints **172** site cells over coastal water
-(150 docks + 22 city cells — the board's own counts are 150 docks / 407 cities / 2 capitals), for
-the 14 612 above. **29** of those 172 painted cells have no quad, so:
+carries **14 440** land cells; the board payload then paints **172** site cells over water
+(165 ocean / 5 lake / 2 shallows, and by board terrain 150 docks + 22 city cells — the board's own
+counts are 150 docks / 407 cities / 2 capitals), for the 14 612 above. **29** of those 172 painted
+cells have no quad, so:
 
     2 412 = 2 383 raw-terrain land cells with no quad + 29 painted site cells
 
