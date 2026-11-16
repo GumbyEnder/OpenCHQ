@@ -768,6 +768,12 @@ function askRoute(cell) {
 // Click a piece: it is selected and the next click is a destination. Click a cell with a
 // piece selected: the order goes to the server as {op:"order",piece,to:{x,y}}.
 board.addEventListener("click", (event) => {
+  // The click that ends a pan is not an order: the pointer travelled past PAN_SLOP, and the
+  // camera moved under it. Swallow exactly that one click.
+  if (suppressClick) {
+    suppressClick = false;
+    return;
+  }
   if (!room || !room.you) return;
   let cell = cellAtEvent(event, board, viewForCanvas());
   if (!cell) return;
@@ -872,6 +878,8 @@ function hoverBadge(event) {
 }
 
 board.addEventListener("mousemove", (event) => {
+  // A pan is not a hover: while the pointer is down the badge tip and the route preview stay put.
+  if (panFrom) return;
   hoverBadge(event);
   if (!room || !room.you || !selected) return;
   askRoute(cellAtEvent(event, board, viewForCanvas()));
@@ -904,31 +912,60 @@ board.addEventListener("wheel", (event) => {
   drawMatch();
 }, { passive: false });
 
+// A drag pans: primary, middle or right button. The primary button is the only one a trackpad
+// offers, which is why "right-drag" existed in code and no drag panned in a hand-check (PB-083).
+// A click is still a click - the pan only starts once the pointer has travelled PAN_SLOP device
+// pixels - and the click that follows a pan is swallowed, so aiming a unit is never also a pan.
+const PAN_SLOP = 4;
 let panFrom = null;
 let panTravel = 0;
+let panButton = -1;
+let suppressClick = false;
+
+// CSS pixels to canvas (device) pixels. The camera is in device pixels, so a drag measured in
+// client coordinates has to be scaled or the map lags the cursor by the device pixel ratio:
+// at dpr 2 a 120 px drag moved the camera 120 device px, i.e. 60 CSS px on screen.
+function canvasScale() {
+  const rect = board.getBoundingClientRect();
+  return board.width / Math.max(1, rect.width);
+}
+
 board.addEventListener("contextmenu", (event) => event.preventDefault());
 board.addEventListener("pointerdown", (event) => {
-  if (event.button !== 2) return;
-  event.preventDefault();
+  if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
   panFrom = { x: event.clientX, y: event.clientY };
   panTravel = 0;
+  panButton = event.button;
+  suppressClick = false;
+  if (event.button !== 0) event.preventDefault();
   board.setPointerCapture?.(event.pointerId);
 });
 board.addEventListener("pointermove", (event) => {
   if (!panFrom) return;
-  panTravel += Math.abs(event.clientX - panFrom.x) + Math.abs(event.clientY - panFrom.y);
+  const dx = event.clientX - panFrom.x;
+  const dy = event.clientY - panFrom.y;
+  panTravel += Math.abs(dx) + Math.abs(dy);
+  if (panTravel < PAN_SLOP) return;
   userCamera = true;
-  camera = panBy(viewForCanvas(), event.clientX - panFrom.x, event.clientY - panFrom.y);
+  const ratio = canvasScale();
+  camera = panBy(viewForCanvas(), dx * ratio, dy * ratio);
   panFrom = { x: event.clientX, y: event.clientY };
   drawMatch();
 });
 board.addEventListener("pointerup", (event) => {
   const travelled = panTravel;
+  const button = panButton;
   panFrom = null;
   panTravel = 0;
-  // A right-click that did not drag is a cancel, not a pan (T-030 AC3). The distance floor keeps
-  // the right-drag camera exactly as it was: only a click that stayed put clears the selection.
-  if (event && event.button === 2 && travelled < 4 && selected) {
+  panButton = -1;
+  // One travel test for every button: past the slop it was a pan (swallow the click that
+  // follows), under it, the primary button's click runs the normal select/order path and a
+  // right-click that stayed put clears the selection (T-030 AC3).
+  if (travelled >= PAN_SLOP) {
+    suppressClick = true;
+    return;
+  }
+  if (event && button === 2 && travelled < PAN_SLOP && selected) {
     clearCommand();
     say("Selection cleared.");
   }

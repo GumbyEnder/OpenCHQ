@@ -11,7 +11,7 @@
 //
 // This is its own camera pin: it does not depend on the theme layer and the theme gate does not
 // depend on it.
-import { MAX_ZOOM, clampZoom, zoomStepBy } from "../../public/render.mjs";
+import { MAX_ZOOM, clampZoom, zoomAt, zoomStepBy } from "../../public/render.mjs";
 
 export const name = "camera_zoom";
 
@@ -77,6 +77,27 @@ export async function run({ fail }) {
   }
   // clampZoom still owns the bounds; the step is only ever one inside them.
   expect(clampZoom(0, 1), 1, "clampZoom keeps the one-pixel floor");
+
+  // --- the wheel: the fifth entry point, proportional except where it would collapse --------------
+  // app.js:891 calls zoomAt with 1.25 / 0.8, off the keyboard's zoomStepBy. 0.8 off 2 px rounds back
+  // to 2, so without a step arm the press is silently lost at a 1 px floor while '-' still reaches 1.
+  const wheelOut = (scale, floor) => zoomAt(base({ scale, minScale: floor, left: 0, top: 0 }), 0.8, 320, 136);
+  const wheelIn = (scale, floor) => zoomAt(base({ scale, minScale: floor, left: 0, top: 0 }), 1.25, 320, 136);
+  expect(wheelOut(2, 1).scale, 1, "wheel-out 0.8 from 2 px at floor 1 steps to 1, it does not collapse");
+  expect(wheelOut(2, 2).scale, 2, "wheel-out at the floor holds");
+  expect(wheelOut(4, 4).scale, 4, "wheel-out at the world fit holds");
+  expect(wheelIn(1, 1).scale, 2, "wheel-in 1.25 from 1 px steps to 2");
+  expect(wheelIn(MAX_ZOOM, 1).scale, MAX_ZOOM, "wheel-in at the ceiling holds");
+  // The wheel's collapse arm re-anchors like any other step.
+  const wheelAnchored = zoomAt(base({ scale: 2, minScale: 1, left: 64, top: 32 }), 0.8, 400, 200);
+  expect(wheelAnchored.scale, 1, "wheel-out from 2 lands on 1");
+  const wBefore = (400 - 64) / 2;
+  const wAfter = (400 - wheelAnchored.left) / wheelAnchored.scale;
+  if (Math.abs(wBefore - wAfter) > 0.5) {
+    fail("the wheel moved the world point under the cursor: " + wBefore + " -> " + wAfter);
+  }
+  // A wheel press that would leave the range entirely is a hold, not a step past the bound.
+  expect(wheelOut(1, 1).scale, 1, "wheel-out at the floor is a hold");
 
   console.log("camera_zoom op log: " + JSON.stringify(log));
 }

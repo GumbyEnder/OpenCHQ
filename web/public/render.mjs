@@ -338,15 +338,16 @@ export function zoomAt(view, factor, screenX, screenY) {
   const f = Number(factor || 1);
   let next = clampZoom(view.scale * f, view.minScale);
   // A 1.4x step off a one-pixel cell rounds back to the same pixel, which is how '+' became a dead
-  // key at the minimum zoom (PB-066). A step that would not move the zoom moves it one whole pixel
-  // in the direction asked for, or stays put at the floor.
+  // key at the minimum zoom (PB-066). A step that would not move the zoom moves one whole cell in
+  // the direction asked for; the floor and the ceiling are holds.
   if (next === view.scale && f !== 1) {
     const floor = Math.max(MIN_ZOOM, Math.round(Number(view.minScale) || MIN_ZOOM));
-    // Only the zoom-IN step can round back onto the current scale: a 0.7 step from 2 px already
-    // rounds to 1, so a symmetric "minus one pixel" arm would be dead code (measured: mutating it
-    // changed no result). A step out at or below the fit falls through to `clampZoom`, which holds
-    // the floor.
-    if (f > 1) next = clampZoom(view.scale + 1, floor);
+    // Either sign can round back onto the current scale, and the two factors on the same wheel
+    // collapse at different scales: 1.25 off 1 px rounds to 1, 0.8 off 2 px rounds to 2. A
+    // collapsed proportional step moves one whole cell in the direction asked for, which is the
+    // zoomStepBy rule; the floor and the ceiling stay holds.
+    const dir = f > 1 ? 1 : -1;
+    next = clampZoom(view.scale + dir, floor);
   }
   if (next === view.scale) return view;
   return reanchor(view, next, screenX, screenY);
