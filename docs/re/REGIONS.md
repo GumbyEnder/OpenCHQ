@@ -73,10 +73,16 @@ below the nine. The nine and their regions, in `_meta.gapCrossWaterCells`:
 | (69, 81) | 57 | (153, 43) | 23 | (81, 58) | 42 |
 
 **Deliberate 2-cell deviation.** `(319,14)` and `(319,27)` come out as **region 64** under this
-rule; the original paints them with **region 4's** ink (white in 1918, blue in 1942, red in 1986,
-where region 64 is blue in all three). This is recorded as deliberate, not as drift: the tie-break
-that would move them is the one the ruling rejected on a 2.6-point margin over the whole gap set.
-Both cells are pinned in `web/test/nodes/territory.mjs` so a later "fix" cannot move them quietly.
+rule; the original paints them with **region 4's** ink. Count it the way the ruling counts it: **2
+cells, 4 cell-eras** — region 64 is blue/blue/blue where region 4 is white/blue/**red**, so the two
+arms differ in 1918 and 1986 and coincide in 1942. (In the served view the 1918 pair happens to
+agree with the capture as well, but only because the join defect below paints them neutral — that is
+coincidence, not the rule.) This is recorded as deliberate, not as drift: the tie-break that would
+move them is the one the ruling rejected on a 2.6-point margin over the whole gap set (98.18% vs
+95.57% of the 2 302 sampled gap cells — the probe skips the top and bottom three rows and any
+sample that is not blue/red/white, so the percentage is over 2 302, not 2 412). Both cells are
+pinned in `web/test/nodes/territory.mjs` to the colour the ruled fill paints, with the capture's ink
+on the row beside it, so a later "fix" cannot move them quietly.
 
 **Two cells are excluded from the colour AC.** `(153,43)` and `(81,58)` are *non-territory ink* in
 the captures: `(153,43)` is white in all six shots, `(81,58)` blue in five and white in one 2023

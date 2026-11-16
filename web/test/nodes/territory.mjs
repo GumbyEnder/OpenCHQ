@@ -143,10 +143,10 @@ export async function run() {
     [[319, 87], "1918", "white", "blue", "1918 join defect (b)"],
     [[319, 87], "1942", "blue", "blue", ""],
     [[319, 87], "1986", "blue", "blue", ""],
-    [[319, 14], "1918", "white", "white", ""],
+    [[319, 14], "1918", "white", "white", "deviation (a) coincides here only because the join (b) paints it neutral; region 4's ink is white too"],
     [[319, 14], "1942", "blue", "blue", ""],
     [[319, 14], "1986", "blue", "red", "deviation (a): region 64, not region 4"],
-    [[319, 27], "1918", "white", "white", ""],
+    [[319, 27], "1918", "white", "white", "deviation (a) coincides here only because the join (b) paints it neutral; region 4's ink is white too"],
     [[319, 27], "1942", "blue", "blue", ""],
     [[319, 27], "1986", "blue", "red", "deviation (a): region 64, not region 4"],
   ];
