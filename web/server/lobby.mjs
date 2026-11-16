@@ -298,6 +298,10 @@ export function createLobby() {
       // draws this instead of guessing a cause from the clock having stopped.
       result: room.match ? resultOf(room.match) : null,
       note: room.note,
+      // What the seat has NOT found, in the server's own words ("Moscow has not been found.").
+      // forSeat has built this list since fog shipped; roomView never carried it, so the page had
+      // the sentence on the wire in no frame at all and could not print it (PB-082 sayNotes).
+      notes: seen && Array.isArray(seen.notes) ? seen.notes.slice() : [],
       // The bot's last decisions, for the owner's review only. A normal seat never sees this,
       // so fog is untouched for players.
       ...(isOwner(username) ? { botActions: Array.isArray(room.botActions) ? room.botActions.slice(-10) : [] } : {}),
@@ -349,6 +353,7 @@ export function createLobby() {
       round: view.round,
       clock: view.clock,
       note: view.note,
+      notes: signature(view.notes || []),
       seat: signature(view.seat),
       capitals: signature(view.capitals),
       capitalList: signature(view.capitalList || null),
@@ -373,6 +378,9 @@ export function createLobby() {
     if (Number(view.round) % FULL_EVERY === 0) return { op: "room", room: view };
     const last = seatShadow(room, side);
     if (last.clock !== view.clock) return { op: "room", room: view };
+    // A changed note is a change the page must see even though no piece moved: a delta does not
+    // carry notes, so a lost capital would be announced one round late (PB-082 sayNotes).
+    if (last.notes !== signature(view.notes || [])) return { op: "room", room: view };
     if (Number(view.round) !== Number(last.round) + 1) return { op: "room", room: view };
     const delta = deltaFor(room, side, view);
     if (!delta) return { op: "room", room: view };
