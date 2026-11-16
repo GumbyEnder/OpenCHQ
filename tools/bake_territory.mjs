@@ -205,10 +205,15 @@ for (const row of ERA_ROWS) {
 // Deliberate political donor, not a recovered rule: the Concealed ("9999") campaign is played on the
 // 2023 territory map, so its region -> site row IS the 2023 row. Whether the 1990 original does the
 // same is UNVERIFIED (no CBR-REGN row for the hidden era has been dumped); this is a remake choice
-// recorded in the room. The row indexes the 84-site roster (world.json / sites.json), not the
-// 271-name table - the same ids the ERA_ROWS loop clamps with Number(v) >= 84 -> null. Do not grow a
-// fifth ERA_ROWS entry for it: there is no file row behind it, only the donor above.
-byEra["9999"] = byEra["2023"];
+// recorded in the room (PB-087, rooms 6295 / 6300 / 6312). The row indexes the 84-site prefix of the
+// era roster that matchSites() builds (world.json / sites.json ids 0..83, the same ids the ERA_ROWS
+// loop clamps with Number(v) >= 84 -> null) - never the 271-entry modern roster, whose last 187
+// entries are docks with string ids. Do not grow a fifth ERA_ROWS entry for it: there is no file row
+// behind it, only the donor below. The copy is explicit (.slice(), room 6312 item 4) so nothing later
+// in this bake can write through to the 2023 row.
+byEra["9999"] = byEra["2023"].slice();
+if (byEra["9999"] === byEra["2023"]) fail("the concealed row aliases 2023 instead of copying it");
+
 
 
 const sourceHash = createHash("sha256")

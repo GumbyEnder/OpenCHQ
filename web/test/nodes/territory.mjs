@@ -8,6 +8,7 @@
 //
 // Geometry source: web/data/territory.json, baked from REGIONS.DAT by tools/bake_territory.mjs.
 // Ownership source: the era's site table, joined through the region -> site row. No second copy.
+import { readFileSync } from "node:fs";
 import { boardPayload, matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import {
@@ -194,9 +195,32 @@ export async function run() {
   if (!Array.isArray(concealed)) fail("the concealed era has no region row: regionSites(\"9999\") is null");
   eq("the concealed era covers 184 regions", concealed.length, 184);
   eq("the concealed era's row is the 2023 row", concealed, regionSites("2023"));
-  const concealedOwnership = ownershipOf(openMatch("9999", matchSites("9999", board)));
+  const concealedMatch = openMatch("9999", matchSites("9999", board));
+  const concealedOwnership = ownershipOf(concealedMatch);
   if (!concealedOwnership.ready) fail("ownershipOf is not ready on the concealed era");
   eq("concealed ownership follows every region", concealedOwnership.owners.length, 184);
+
+  // The row indexes the roster the era actually builds, and that roster is NOT 84 long: the modern
+  // eras append dock records, so 2023 and Concealed carry 271 sites (62 city + 2 capital +
+  // 20 facility + 150 dock + 37 oilfield) while the era row's ids stop at 83. Pin the prefix, not
+  // the length, or a dock-heavy roster reads as a broken row (PB-087, frodo 6295 item 7b).
+  eq("the concealed roster is the modern 271-site roster", concealedMatch.sites.length, 271);
+  const prefix = (list) => list.slice(0, 84).map((s) => s.id + "|" + s.name).join(";");
+  eq("the first 84 of the concealed roster are the 2023 sites", prefix(concealedMatch.sites),
+    prefix(openMatch("2023", matchSites("2023", board)).sites));
+  const highestAssigned = Math.max(...concealed.filter((v) => v !== null));
+  if (!(highestAssigned < concealedMatch.sites.length)) {
+    fail("the concealed row assigns site " + highestAssigned + " of " + concealedMatch.sites.length);
+  }
+
+  // The donor is a COPY, not an alias (room 6312 item 4). JSON serialisation splits the two rows
+  // whatever the bake did, so the served artifact cannot tell a copy from an alias; the pin belongs
+  // on the bake source, which is what a re-run uses.
+  const bakeSrc = readFileSync(new URL("../../../tools/bake_territory.mjs", import.meta.url), "utf8");
+  if (!bakeSrc.includes('byEra["9999"] = byEra["2023"].slice();')) {
+    fail("the bake aliases the concealed row to 2023 instead of copying it");
+  }
+
   // Negative control: a label with no baked row must still answer null / not ready, or the pin above
   // is a fallback that answers for any year rather than a row the bake actually wrote.
   if (regionSites("8888") !== null) fail("an era with no baked row returned a region row");

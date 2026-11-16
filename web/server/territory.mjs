@@ -92,9 +92,21 @@ export function regionLabel(id) {
 }
 
 // era label -> region -> site id (null when the era's row leaves the region unassigned).
+//
+// The Concealed era ("9999") is named here on purpose (PB-087, room 6312 item 4). It has no CBR-REGN
+// row of its own; tools/bake_territory.mjs donates the 2023 row, and this arm makes the donation
+// legible at the reader instead of leaving it as a key that happens to be present. Deliberate remake
+// choice: whether the 1990 original plays the hidden year on the 2023 map is UNVERIFIED.
+export const CONCEALED_ERA = "9999";
+
 export function regionSites(era) {
   if (!TERRITORY) return null;
-  const row = TERRITORY.byEra[String(era)];
+  const label = String(era);
+  if (label === CONCEALED_ERA) {
+    const donated = TERRITORY.byEra[CONCEALED_ERA];
+    return Array.isArray(donated) ? donated : null;
+  }
+  const row = TERRITORY.byEra[label];
   return Array.isArray(row) ? row : null;
 }
 
