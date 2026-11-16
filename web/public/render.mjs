@@ -1376,10 +1376,37 @@ export function paintMatch(ctx, board, room, opts = {}) {
   let painted = 0;
 
   let fogged = 0;
+  let political = 0;
+  let tally = null;
+  // The layer list records the painter's own order, so a pin can hold the order rather than the
+  // presence of a call. `cells` and `fog` are in it: terrain and fog are layers a player can see,
+  // and leaving them out let a re-order of the fill pass every pin (see the T-018 AC4 follow-up).
+  const layers = [];
   if (!schematic) {
     painted = paintCells(ctx, board, view);
     if (painted === 0) mode = "schematic";
-    else if (opts.fog) fogged = paintFog(ctx, view, opts.fog.lit, opts.fog.seen);
+    else {
+      layers.push("cells");
+      // Show Ownership goes down on the ground and UNDER the fog: the fill is a base layer, but a
+      // cell the seat cannot see has to stay unreadable. Painted after the fog, the fill covered
+      // every unknown cell and the ownership view showed a fully lit world.
+      if (opts.viewMode === "political") {
+        const ownership = room && room.ownership;
+        if (ownership && ownership.ready && board && board.territory && Array.isArray(ownership.owners)) {
+          political = paintOwnership(ctx, board.territory, ownership.owners, board, view, opts);
+          tally = ownershipTally(ownership.owners);
+        } else {
+          const patches = politicalSites(room && room.sites, view);
+          political = paintPolitical(ctx, patches, view);
+          tally = politicalTally(patches);
+        }
+        layers.push("ownership");
+      }
+      if (opts.fog) {
+        fogged = paintFog(ctx, view, opts.fog.lit, opts.fog.seen);
+        layers.push("fog");
+      }
+    }
   } else {
     mode = "schematic";
   }
@@ -1399,30 +1426,6 @@ export function paintMatch(ctx, board, room, opts = {}) {
       message: EXTRACT_MISSING, view: flat };
   }
 
-  // Show Ownership: the same board with whole countries filled by whoever holds them (T-018).
-  // It replaces the city-cell political fallback whenever the territory model is present; the
-  // fallback stays for a board without one, so the toggle never dies on a missing bake.
-  //
-  // BASE LAYER (T-018 AC4). The fill used to be painted after the pieces, the site ticks and the
-  // capital markers, which covered all three: at f1268d1 the ownership view showed countries and
-  // nothing standing on them. The fill now goes down first, in terrain mode's own order
-  // (ground, preview, badges, city ticks, capitals, names), so a piece, a city mark, a capital and
-  // a place name all read over the colour.
-  let political = 0;
-  let tally = null;
-  const layers = [];
-  if (opts.viewMode === "political") {
-    const ownership = room && room.ownership;
-    if (ownership && ownership.ready && board && board.territory && Array.isArray(ownership.owners)) {
-      political = paintOwnership(ctx, board.territory, ownership.owners, board, view, opts);
-      tally = ownershipTally(ownership.owners);
-    } else {
-      const patches = politicalSites(room && room.sites, view);
-      political = paintPolitical(ctx, patches, view);
-      tally = politicalTally(patches);
-    }
-    layers.push("ownership");
-  }
   if (opts.sightAt && Number(opts.sight) > 0) {
     paintSightRing(ctx, opts.sightAt, view, opts.sight, opts.ringColor);
   }

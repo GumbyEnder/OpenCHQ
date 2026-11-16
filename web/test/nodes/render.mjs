@@ -351,6 +351,40 @@ export async function run(ctx) {
   }
 
 
+  // --- Show Ownership stays UNDER the fog (T-018 AC4 follow-up) --------------------------------
+  // A re-do of the AC4 commit painted the fill after the fog, so Show Ownership came back fully
+  // lit: half the board unlit gave 21,760 fog rects and 43,520 ownership rects drawn over them.
+  // Nothing failed, because no pin looked at fog and the returned layer list named neither cells
+  // nor fog. This pin holds both: the layer order, and the ink order in the recorded op log.
+  {
+    const fogView = makeView({ scale: 2, left: 0, top: 0 });
+    const lit = new Uint8Array(BOARD_W * BOARD_H);
+    for (let i = 0; i < lit.length; i += 2) lit[i] = 1;
+    const fogRec = recorder();
+    const fogged = paintMatch(fogRec.ctx, ownedBoard, ownedRoom,
+      { view: fogView, own: "blue", viewMode: "political", fog: { lit, seen: null } });
+    if (!(fogged.fogged > 0)) fail("a political view with fog painted no fog at all");
+    for (const layer of ["cells", "ownership", "fog"]) {
+      if (fogged.layers.indexOf(layer) < 0) {
+        fail("the layer list omits " + layer + " (" + fogged.layers.join(">") + ")");
+      }
+    }
+    if (!(fogged.layers.indexOf("ownership") < fogged.layers.indexOf("fog"))) {
+      fail("the fog is reported under the ownership fill (" + fogged.layers.join(">") + ")");
+    }
+    const fillOps = fogRec.seq.map((op, i) => ({ op, i }))
+      .filter(({ op }) => op.kind === "rect" && op.color === OWNERSHIP.blue);
+    const fogOps = fogRec.seq.map((op, i) => ({ op, i }))
+      .filter(({ op }) => typeof op.color === "string" && op.color.startsWith("rgba(6, 12, 22"));
+    if (fillOps.length === 0) fail("the ownership fill painted no rects");
+    if (fogOps.length === 0) fail("the fog painted no rects");
+    const lastFill = fillOps[fillOps.length - 1].i;
+    const firstFog = fogOps[0].i;
+    if (!(lastFill < firstFog)) {
+      fail("an ownership rect was painted over the fog (" + lastFill + " > " + firstFog + ")");
+    }
+  }
+
   // --- the hosted fallback: schematic plus every piece still on the map ------
   const missing = { source: "missing", cells: null, width: BOARD_W, height: BOARD_H, capitals: null, terrain: [] };
   const fallback = recorder();
