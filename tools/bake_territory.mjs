@@ -120,8 +120,12 @@ function raster(regions) {
 
 // The quads cover 12200 of the board's 14612 land cells; the rest are coasts and islands the 1990
 // file's four corners do not reach. Those cells still belong to the country around them, so every
-// land cell with no quad is handed to the nearest region that has one (multi-source BFS, 4-neigh,
-// X wrap). Ocean keeps NO_REGION: "is this cell friendly territory?" must answer false at sea.
+// land cell with no quad that the BFS can enter is handed to the nearest region that has one
+// (multi-source BFS, 4-neigh, X wrap). It cannot enter 9 of the 2412 candidates: single land cells
+// with no land neighbour in any direction (7 of them) plus one diagonal-only pair, so 2403 fill and
+// 9 stay NO_REGION. That is measured, not asserted - _meta.gapUnreachableCells lists them and
+// web/test/nodes/territory.mjs pins the list. Ocean keeps NO_REGION either way: "is this cell
+// friendly territory?" must answer false at sea.
 function fillLandGaps(grid, land, width, height) {
   const queue = new Int32Array(width * height);
   let head = 0;
@@ -185,7 +189,23 @@ for (let i = 0; i < W * H; i++) {
   land[i] = name && !WATER.has(name) ? 1 : 0;
 }
 const { grid, filled: quadCells } = raster(regions);
-const filled = quadCells + fillLandGaps(grid, land, W, H);
+
+// The gap numbers the docs and the pins quote, measured here rather than in prose: every land cell
+// no quad claimed is a candidate, every candidate the BFS reaches is filled, and whatever is left
+// could not be entered even diagonally (see fillLandGaps). Recorded in _meta so the artifact's own
+// arithmetic closes: quadCells + gapFilled === filledCells === 18725 + 2403.
+let gapCandidates = 0;
+for (let i = 0; i < grid.length; i++) if (land[i] && grid[i] === NO_REGION) gapCandidates += 1;
+const gapFilled = fillLandGaps(grid, land, W, H);
+const gapUnreachableCells = [];
+for (let i = 0; i < grid.length; i++) {
+  if (land[i] && grid[i] === NO_REGION) gapUnreachableCells.push([i % W, (i - (i % W)) / W]);
+}
+if (gapCandidates - gapFilled !== gapUnreachableCells.length) {
+  fail(`gap arithmetic does not close: ${gapCandidates} candidates - ${gapFilled} filled `
+    + `!= ${gapUnreachableCells.length} unreachable`);
+}
+const filled = quadCells + gapFilled;
 const byEraRaw = JSON.parse(readFileSync(eraFile, "utf8"));
 
 // Era labels in the order eras.json uses, with the file row each one reads.
@@ -218,6 +238,10 @@ const payload = {
     regionCount: REGION_COUNT,
     filledCells: filled,
     quadCells,
+    gapCandidates,
+    gapFilled,
+    gapUnreachable: gapUnreachableCells.length,
+    gapUnreachableCells,
     landCells: land.reduce((n, v) => n + v, 0),
   },
   width: W,

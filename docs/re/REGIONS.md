@@ -30,10 +30,30 @@ record layout is right - a wrong stride or a wrong corner order produces overlap
 ### Gaps
 
 2 412 of the board's 14 612 land cells fall outside every quad: coasts, islands, and the polar
-edges the 1990 four corners do not reach. `tools/bake_territory.mjs` hands each of those cells to
-the nearest region that has one (multi-source BFS, 4-neighbour, X wraps). Ocean cells keep
-"no region", so `isFriendly(x, y)` answers false at sea, which is what placement (p.31) and foreign
-aid (T-023) need. The gap fill is ours, not the file's, and it is the only invented geometry here.
+edges the 1990 four corners do not reach. `tools/bake_territory.mjs` hands those cells to the
+nearest region that has one (multi-source BFS, 4-neighbour, X wraps). The BFS reaches **2 403** of
+them; **9** cannot be entered and keep "no region" — measured, not asserted, and baked into
+`territory.json`'s `_meta` so the arithmetic closes inside the artifact:
+
+    18 725 quad cells + 2 403 gap cells = 21 128 filled
+    2 412 gap candidates - 2 403 filled = 9 unreachable
+
+The nine, as `(x, y)` on the 320×136 board (`_meta.gapUnreachableCells`):
+
+    (319, 14) (319, 27) (153, 43) (81, 58) (223, 72)
+    (223, 73) (69, 81) (262, 87) (319, 87)
+
+Seven of them are single land cells with no land neighbour in any of the eight directions; the pair
+(223, 72)/(223, 73) touches only itself. An 8-neighbour fill would therefore reach 2 405, not 2 412
+— the remaining seven are surrounded by water on every side, so no neighbour radius that refuses to
+cross water can claim them. What the 1990 release does with these nine is **Q58** (open): the fill
+rule here stays 4-neighbour until that is ruled on. `isFriendly()` answers false on their ground,
+which is a knowable consequence, not an accident.
+
+Ocean cells keep "no region" under either rule, so `isFriendly(x, y)` answers false at sea, which is
+what placement (p.31) and foreign aid (T-023) need. The gap fill is ours, not the file's, and it is
+the only invented geometry here. `web/test/nodes/territory.mjs` pins the three numbers and the nine
+cells, so a changed fill goes red instead of drifting.
 
 ## The era rows
 
