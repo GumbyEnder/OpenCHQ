@@ -185,6 +185,23 @@ export async function run() {
   eq("the delta's list is the new one", moved.ownership.owners[heldRegions[0]], "blue");
 
 
+  // ---- the concealed era rides the 2023 territory row (PB-087, room 6300) -----------------------
+  // Concealed ("9999") has no CBR-REGN row of its own, so the bake donates the 2023 row by name:
+  // byEra["9999"] = byEra["2023"] in tools/bake_territory.mjs. That is a deliberate remake choice
+  // (whether the 1990 original does the same is UNVERIFIED), not a recovered rule. Without the row
+  // the whole Concealed campaign's Show Ownership view answers ready:false and paints nothing.
+  const concealed = regionSites("9999");
+  if (!Array.isArray(concealed)) fail("the concealed era has no region row: regionSites(\"9999\") is null");
+  eq("the concealed era covers 184 regions", concealed.length, 184);
+  eq("the concealed era's row is the 2023 row", concealed, regionSites("2023"));
+  const concealedOwnership = ownershipOf(openMatch("9999", matchSites("9999", board)));
+  if (!concealedOwnership.ready) fail("ownershipOf is not ready on the concealed era");
+  eq("concealed ownership follows every region", concealedOwnership.owners.length, 184);
+  // Negative control: a label with no baked row must still answer null / not ready, or the pin above
+  // is a fallback that answers for any year rather than a row the bake actually wrote.
+  if (regionSites("8888") !== null) fail("an era with no baked row returned a region row");
+  if (ownershipOf({ era: "8888", sites: [] }).ready) fail("ownershipOf claims ready for an era with no row");
+
   return "184 regions; 1942 blue 146 / red 36 / neutral 2; Washington, Moscow, London blue; "
     + "Berlin, Paris, Tokyo red; Spain and Greenland unheld; Cam Ranh recolours "
     + heldRegions.length + " regions on capture; measured palette pinned";

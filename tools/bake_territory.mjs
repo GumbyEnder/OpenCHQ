@@ -202,6 +202,15 @@ for (const row of ERA_ROWS) {
   byEra[row.label] = list.map((v) => (Number(v) >= 84 ? null : Number(v)));
 }
 
+// Deliberate political donor, not a recovered rule: the Concealed ("9999") campaign is played on the
+// 2023 territory map, so its region -> site row IS the 2023 row. Whether the 1990 original does the
+// same is UNVERIFIED (no CBR-REGN row for the hidden era has been dumped); this is a remake choice
+// recorded in the room. The row indexes the 84-site roster (world.json / sites.json), not the
+// 271-name table - the same ids the ERA_ROWS loop clamps with Number(v) >= 84 -> null. Do not grow a
+// fifth ERA_ROWS entry for it: there is no file row behind it, only the donor above.
+byEra["9999"] = byEra["2023"];
+
+
 const sourceHash = createHash("sha256")
   .update(readFileSync(regionsPath))
   .update(readFileSync(eraFile))
