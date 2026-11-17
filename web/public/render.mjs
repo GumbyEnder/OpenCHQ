@@ -871,15 +871,20 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
     const x = Number(site && site.x);
     const y = Number(site && site.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    // A capital keeps the capital ink, a city the city ink: the same two colours the TERRAIN uses.
-    // Reading the constant PALETTE (Classic's black city, yellow capital) drew Classic's inks onto
-    // Dark tactical's ownership fills, so in C a city square was black-on-#2a2f36 and vanished from
-    // the one view whose objective it is (PB-098, PM hand-check at 0764ff9). The caller passes the
-    // active theme's terrain inks; the constant stays the fallback for callers with no theme.
+    // Two different grounds, two different inks.
+    //  - Over a badge the mark is a corner notch on a LIGHT rim (BADGE_INTERIOR), and the measured
+    //    solution is Classic's black with that rim (PB-029/T-014 AC7). Keep it: C's white city ink
+    //    on a #f2f5fb rim would be the same defect mirrored.
+    //  - Over the Show Ownership fill the mark sits on the owner's colour, and the module constant
+    //    PALETTE put Classic's black city on C's #2a2f36 / #1b3f66 ground, where it vanished from the
+    //    one view whose objective it is (PB-098, PM hand-check at 0764ff9). There the caller's
+    //    theme terrain inks are used; the constant stays the fallback for callers with no theme.
     const cityInk = (opts.inks && opts.inks.city) || PALETTE.city;
     const capitalInk = (opts.inks && opts.inks.capital) || PALETTE.capital;
-    const ink = (Number(site.type) === 1 || Number(site.type) === 2) ? capitalInk : cityInk;
-    if (!ink) continue;
+    const isCapital = Number(site.type) === 1 || Number(site.type) === 2;
+    const fillInk = isCapital ? capitalInk : cityInk;
+    const notchInk = isCapital ? PALETTE.capital : PALETTE.city;
+    if (!fillInk || !notchInk) continue;
     const box = covered.find((b) => x >= b.x0 - 0.5 && x <= b.x1 + 0.5 && y >= b.y0 - 0.5 && y <= b.y1 + 0.5);
     if (box) {
       const topLeft = cellToPixel(wrapX(box.x0, view.boardW || BOARD_W), box.y0, view);
@@ -893,7 +898,7 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
       const ny = Math.round(bottomRight.y) - side - 1;
       ctx.fillStyle = BADGE_INTERIOR.land;
       ctx.fillRect(nx - 1, ny - 1, side + 2, side + 2);
-      ctx.fillStyle = ink;
+      ctx.fillStyle = notchInk;
       ctx.fillRect(nx, ny, side, side);
       drawn++;
       continue;
@@ -908,7 +913,7 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
     const size = Math.max(2, Math.round(scale * 0.8));
     ctx.fillStyle = "#0b0f14";
     ctx.fillRect(Math.round(at.x - size / 2) - 1, Math.round(at.y - size / 2) - 1, size + 2, size + 2);
-    ctx.fillStyle = ink;
+    ctx.fillStyle = fillInk;
     ctx.fillRect(Math.round(at.x - size / 2), Math.round(at.y - size / 2), size, size);
     drawn++;
   }

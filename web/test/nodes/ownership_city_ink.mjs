@@ -119,6 +119,20 @@ export async function run() {
 
   if (seen.C.city === seen.D.city) fail("the two themes are supposed to draw different city inks");
 
+  // Over a badge the mark is a notch on the badge's LIGHT rim, and the measured solution there is
+  // Classic's black (PB-029/T-014 AC7). Theme C's white city would disappear on #f2f5fb, so the
+  // notch must NOT take the theme's fill ink.
+  const { ctx: nctx, fills: nfills } = recorder();
+  const notchDrawn = paintSiteTicks(nctx, [SITES[0]], [{ x: SITES[0].x, y: SITES[0].y }], view,
+    { everyVisible: false, inks: { city: themeById("C").terrain.city, capital: themeById("C").terrain.capital } });
+  if (notchDrawn !== 1) fail("a badge-covered site should still get its notch, drew " + notchDrawn);
+  if (!nfills.some((fill) => fill.color === PALETTE.city.toLowerCase())) {
+    fail("the badge notch is not in Classic's black (" + nfills.map((f) => f.color).join(",") + ")");
+  }
+  if (nfills.some((fill) => fill.color === themeById("C").terrain.city.toLowerCase())) {
+    fail("the badge notch took C's white city ink; it would vanish on the badge's light rim");
+  }
+
   // Why PB-098 existed: the old constant is legible on Classic's bright fills and not on C's.
   const cFills = fillSet(themeById("C"));
   const worst = Math.min(...cFills.map((behind) => legible(PALETTE.city, behind)));
