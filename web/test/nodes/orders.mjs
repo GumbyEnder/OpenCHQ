@@ -67,24 +67,16 @@ export async function run(ctx) {
   const negative = issueOrder(match, "blue", "blue:land", stepX, -1);
   if (!negative.error) fail("an order off the Y range (y=-1) was accepted");
 
-  // ---- an enemy-held cell is a target; a friendly-held cell is a refusal ---------------
+  // ---- an enemy-held cell is a target; a friendly-held cell is a plan-time refusal -----
   // Two player-like sides used to stand eight cells apart for a thousand rounds because the order
-  // to close was refused as if it were a collision. The order is now accepted; the walk still stops
-  // one short (advance reports `blocked`), which is where combat happens.
+  // to close was refused as if it were a collision. An ENEMY cell is now accepted; the walk stops
+  // one short (advance reports `blocked`), which is where combat happens. A FRIEND-held cell is
+  // still refused by planOrder at move.mjs:323 (PM 6416, Manual p.10): units pass through friends
+  // on the route but may not stop in the same space, so :323 keeps refusing the destination. That
+  // refusal is pinned once, in order_wire's planted-mate leg - not here.
   const held = issueOrder(match, "blue", "blue:land", 183, 25);
   if (held.error) fail("an order onto red:land's cell was refused: " + held.error);
   if (!Array.isArray(held.path) || !held.path.length) fail("an attack order returned no path");
-  const friendCell = (match.pieces || []).find((piece) => piece.side === "blue" && piece.id !== "blue:land" && !piece.path);
-  if (friendCell) {
-    // PB-097b: an occupied destination is accepted; the walk keeps its order and retries.
-    const friendly = issueOrder(match, "blue", "blue:land", friendCell.x, friendCell.y);
-    if (friendly.error) fail("an order onto a friendly piece's cell was refused: " + friendly.error);
-    if (!Array.isArray(friendly.path) || !friendly.path.length) fail("the order onto a friend returned no path");
-    const end = friendly.path[friendly.path.length - 1];
-    if (end.x !== friendCell.x || end.y !== friendCell.y) {
-      fail("the order onto a friend did not end on that cell: " + JSON.stringify(end));
-    }
-  }
   const blocked = blockedCells(match);
   if (!blocked.has("183,25") || !blocked.has(String(stepX) + "," + String(stepY))) {
     fail("blockedCells missed a held cell: " + JSON.stringify([...blocked]));

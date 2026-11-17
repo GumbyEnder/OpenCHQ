@@ -125,5 +125,5 @@ export async function run(ctx) {
   must(sawBlocked, "an enemy in the way must stop the walker (blocked), not be routed around");
   must(!sawDetour, "an enemy must never be treated as an obstacle to walk around");
 
-  console.log("detour: straight line " + expected.length + " steps; a friend blocks and is not routed around; an enemy is contact");
+  console.log("detour: straight line " + expected.length + " steps; a friend on the line is passed through and never routed around; an enemy is contact");
 }
