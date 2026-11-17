@@ -51,6 +51,9 @@ const THEME_INKS = {
     sea: "#05080f",
     neutral: "#2a2f36",
     side: ["#1b3f66", "#35d0ff", "#5a232a", "#ff5a5a"],
+    // The site marks paintSiteTicks restamps over the fill, from the theme's terrain table.
+    city: "#eef4ff",
+    capital: "#ffd166",
   },
   D: {
     label: "Classic",
@@ -59,6 +62,8 @@ const THEME_INKS = {
     sea: "#55ffff",
     neutral: "#ffffff",
     side: ["#5555ff", "#0000aa", "#ff5555", "#aa0000"],
+    city: "#000000",
+    capital: "#ffff55",
   },
 };
 const THEME_ORDER = ["C", "D"];
@@ -399,6 +404,23 @@ try {
     } else {
       mark(tag + ": a unit badge is drawn over the ownership fill (badge face ink, not an edge)", false,
         "no blue piece in the room view");
+    }
+
+    // --- a non-capital city is still findable in Show Ownership (PB-098) ------------------------
+    // The fill covers the ground the terrain view drew cities on, so the only thing that makes a
+    // town findable here is paintSiteTicks' restamp. At 0764ff9 that restamp used Classic's black
+    // whatever the theme, and in C a black square on #2a2f36 / #1b3f66 was invisible (PM hand-check
+    // at 0764ff9). Count the theme's OWN city ink around a named non-capital site.
+    const citySite = sites.find((site) => site && site.name && !(Number(site.type) === 1 || Number(site.type) === 2));
+    if (citySite) {
+      const cityCam = await page.evaluate(() => window.__chq.state().camera);
+      const span = Math.max(7, Math.round((Number(cityCam && cityCam.scale) || 1) * 2) + 3);
+      const cbox = await boxInks({ x: citySite.x, y: citySite.y }, span);
+      const cityInk = (cbox.hist || {})[inks.city] || 0;
+      mark(tag + ": a non-capital city is visible in Show Ownership (" + citySite.name + ")",
+        cityInk >= 2, { site: citySite.name, x: citySite.x, y: citySite.y, ink: inks.city, cityInk, box: cbox.box });
+    } else {
+      mark(tag + ": a non-capital city is visible in Show Ownership", false, "no named non-capital site in the room view");
     }
 
     // --- Greenland is the theme's unheld neutral, as the 1942 capture has it --------------------

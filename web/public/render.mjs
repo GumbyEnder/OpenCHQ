@@ -871,8 +871,14 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
     const x = Number(site && site.x);
     const y = Number(site && site.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    // A capital keeps the capital ink, a city the city ink: the same two colours the terrain uses.
-    const ink = (Number(site.type) === 1 || Number(site.type) === 2) ? PALETTE.capital : PALETTE.city;
+    // A capital keeps the capital ink, a city the city ink: the same two colours the TERRAIN uses.
+    // Reading the constant PALETTE (Classic's black city, yellow capital) drew Classic's inks onto
+    // Dark tactical's ownership fills, so in C a city square was black-on-#2a2f36 and vanished from
+    // the one view whose objective it is (PB-098, PM hand-check at 0764ff9). The caller passes the
+    // active theme's terrain inks; the constant stays the fallback for callers with no theme.
+    const cityInk = (opts.inks && opts.inks.city) || PALETTE.city;
+    const capitalInk = (opts.inks && opts.inks.capital) || PALETTE.capital;
+    const ink = (Number(site.type) === 1 || Number(site.type) === 2) ? capitalInk : cityInk;
     if (!ink) continue;
     const box = covered.find((b) => x >= b.x0 - 0.5 && x <= b.x1 + 0.5 && y >= b.y0 - 0.5 && y <= b.y1 + 0.5);
     if (box) {
@@ -1719,8 +1725,10 @@ export function paintMatch(ctx, board, room, opts = {}) {
   layers.push("pieces");
   // In Show Ownership the fill has taken the ground the terrain view drew its cities on, so every
   // site gets a mark of its own and not only the ones a badge happens to sit on (PB-068).
-  const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view,
-    { everyVisible: opts.viewMode === "political" });
+  const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view, {
+    everyVisible: opts.viewMode === "political",
+    inks: { city: theme.terrain.city, capital: theme.terrain.capital },
+  });
   layers.push("siteTicks");
   // Names are placed, not stamped: a capital's name starts at the readable zoom and takes a free
   // spot around its ring (PB-026, PB-069), and city names then avoid both the badges and the
