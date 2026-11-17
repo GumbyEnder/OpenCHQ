@@ -651,6 +651,27 @@ function noteHold(piece, occupant, x, y, events) {
   events.push({ type: "blocked", side: piece.side, pieceId: piece.id, by: occupant.id, x, y, retry: true });
 }
 
+// PB-122: a friendly cell may be CROSSED but never finished on (Manual p.9-10, R-UNT-06). A step
+// into a friend is legal only when the same round carries the walker off that cell again; otherwise
+// the walker would end the round co-located with the friend for good (the held destination freezes
+// it there). Predict the rest of this round from the credit left after the step, and refuse the
+// entry when the walk cannot leave. `blockedStep` mirrors the per-step rules used below.
+function canStepInto(piece, match, path, credit) {
+  if (!Array.isArray(path) || path.length === 0) return false;
+  const next = path[0];
+  const pace = Math.max(1, Number(next.pace) || 1);
+  if (credit < pace) return false;
+  const occupant = pieceAt(match, wrapX(next.x), Number(next.y), piece.id);
+  if (!occupant) return true;
+  if (occupant.side !== piece.side) return false; // an enemy stops the walk; a tank may overrun, but that outcome is not a pass-through
+  if (occupant.side === piece.side) {
+    // Another friend on the next cell: only a walk that can leave BOTH this round is a crossing.
+    if (path.length === 1) return false;
+    return canStepInto(piece, match, path.slice(1), credit - pace);
+  }
+  return false;
+}
+
 export function advance(match) {
   const events = [];
   if (!match || !Array.isArray(match.pieces) || match.over) return events;
@@ -705,7 +726,10 @@ export function advance(match) {
       // stood wherever the first of them arrived.
       const friendly = Boolean(occupant) && occupant.side === piece.side;
       const atDestination = piece.path.length === 1;
-      if (occupant && friendly && atDestination) {
+      // A friend on the destination holds the walker short. A friend mid-path may be crossed, but
+      // only when this round carries the walker off that cell again (PB-122): otherwise the step
+      // would end the round co-located with the friend and the order would freeze it there.
+      if (occupant && friendly && (atDestination || !canStepInto(piece, match, piece.path.slice(1), credit - pace))) {
         noteHold(piece, occupant, nx, ny, events);
         stopped = true;
         break;
@@ -827,6 +851,13 @@ export function advance(match) {
       piece.x = nx;
       piece.y = ny;
       piece.path.shift();
+      // A real step ends any hold: the piece has left the cell it was held at, so a later hold on
+      // that cell is a new fact and speaks again (PB-121). Clearing only here is what keeps a
+      // pace-2 round honest: those rounds attempt no step at all (credit < pace), so they are the
+      // SAME hold and must stay silent. The old `if (!stopped)` clear at the end of the pass ran on
+      // exactly those rounds and re-emitted the line on pace-2 ground (live e6f12ab r23, r25, r27).
+      piece.heldBy = null;
+      piece.heldCell = null;
       credit -= pace;
       spent += 1;
       piece.pace = piece.path.length > 0 ? Math.max(1, Number(piece.path[0].pace) || 1) : 1;
@@ -846,13 +877,8 @@ export function advance(match) {
       }
     }
     piece.credit = stopped ? 0 : Math.max(0, credit);
-    // A hold ends the moment the piece is not held: a step, an arrival or a cleared route is the
-    // block ending, so the memory must go with it and the next hold on the same cell speaks again
-    // (PB-121). Only an unbroken hold stays silent, which is the whole point of remembering it.
-    if (!stopped) {
-      piece.heldBy = null;
-      piece.heldCell = null;
-    }
+    // Nothing to clear here: the hold memory lives until a step is actually taken (above) or a new
+    // order replaces it (issueOrder). A round with no step attempted is not an end of the hold.
   }
   if (doomed.size > 0) {
     match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));

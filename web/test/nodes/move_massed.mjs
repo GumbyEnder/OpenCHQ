@@ -97,12 +97,15 @@ export async function run() {
     for (const id of ["blue:t1", "blue:t2", "blue:t3"]) {
       const plan = issueOrder(match, "blue", id, dest.x, dest.y);
       must(plan.ok && plan.path.length > 0, id + "'s order was refused: " + JSON.stringify(plan));
+      // Pin the run to open ground: terrain pace would make the race depend on the bundled map.
+      for (const step of match.pieces.find((p) => p.id === id).path) step.pace = 1;
       orders[id] = plan.path.length;
     }
     must(orders["blue:t1"] === 8 && orders["blue:t2"] === 6 && orders["blue:t3"] === 4,
       "the plans are not 8/6/4 steps: " + JSON.stringify(orders));
 
     const blockedByRound = {};
+    const blockedHolds = {};
     let occupier = null;
     for (let round = 1; round <= 30; round++) {
       match.round = round;
@@ -111,6 +114,8 @@ export async function run() {
         if (event.type === "blocked") {
           blockedByRound[event.pieceId] = blockedByRound[event.pieceId] || [];
           blockedByRound[event.pieceId].push(round);
+          blockedHolds[event.pieceId] = blockedHolds[event.pieceId] || [];
+          blockedHolds[event.pieceId].push({ round, by: event.by, cell: event.x + "," + event.y });
         }
       }
       const onDest = match.pieces.filter((p) => wrapX(p.x) === wrapX(dest.x) && p.y === dest.y);
@@ -130,19 +135,30 @@ export async function run() {
       must(Boolean(p), id + " was removed from the match");
     }
 
-    // The two that did not get in are ONE cell short and still hold their order - not four cells
-    // out with an empty path, which is what PB-093 measured before this fix.
+    // The two that did not get in hold their order on the last cell they can legally hold — one
+    // short of the destination, or two when the cell one short is itself taken by another waiter.
+    // PB-122: what they may never do is END a round on a friend's cell; the stack is what forced
+    // the second waiter out to two cells (the old "always exactly one short" reading).
+    const waitingCells = [];
     for (const id of ["blue:t1", "blue:t2", "blue:t3"]) {
       if (id === occupier) continue;
       const p = pieces[id];
       const d = Math.abs(wrapX(p.x) - wrapX(dest.x)) + Math.abs(p.y - dest.y);
-      must(d === 1, id + " ended " + d + " cells from the destination, not one short");
-      must(p.path.length === 1, id + " dropped its order: path is " + JSON.stringify(p.path));
-      // PB-121: the hold is ONE fact. The piece retries every round, but the Log hears about it
-      // once; a line per round buried the rest of the log (14 frames r6..r19 on live).
-      must((blockedByRound[id] || []).length === 1,
-        id + " did not emit blocked exactly once for one hold: " + JSON.stringify(blockedByRound[id]));
+      must(d >= 1, id + " ended on the destination cell while " + occupier + " held it");
+      must(d <= 2, id + " ended " + d + " cells from the destination, not on a held-short cell");
+      must(p.path.length >= 1, id + " dropped its order: path is " + JSON.stringify(p.path));
+      // PB-121: the hold is ONE fact. A piece presses at a new cell as the queue shuffles, and each
+      // hold speaks once; the same blocker at the same cell never speaks twice. (14 frames r6..r19
+      // on live was the repeat this pins against.)
+      const holds = blockedHolds[id] || [];
+      const keys = holds.map((hold) => hold.by + "@" + hold.cell);
+      must(new Set(keys).size === keys.length,
+        id + " repeated one hold instead of speaking once: " + JSON.stringify(holds));
+      must(holds.length >= 1, id + " never reported its hold: " + JSON.stringify(blockedByRound[id] || []));
+      waitingCells.push(wrapX(p.x) + "," + p.y);
     }
+    must(new Set(waitingCells).size === waitingCells.length,
+      "two waiting tanks ended on one cell: " + JSON.stringify(waitingCells));
 
     // And the retry is what eventually gets them in: clear the cell and the next round walks one
     // of them onto it, without a new order.
@@ -159,6 +175,6 @@ export async function run() {
       JSON.stringify(waiting.map((id) => ({ id, x: pieces[id].x, y: pieces[id].y, path: pieces[id].path.length }))));
 
     console.log("move_massed: three tanks kept their orders; " + occupier + " occupies the cell; the other two " +
-      "stand one short and emit blocked each round; one walks in the round the cell frees");
+      "hold on the last free cells they can legally stand on and speak once per hold; one walks in the round the cell frees");
   }
 }
