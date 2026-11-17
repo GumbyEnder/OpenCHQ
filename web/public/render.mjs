@@ -406,6 +406,23 @@ export function capitalMarkers(board, room) {
   // board (then the fixed seats) is only for a page that has no view yet.
   const seated = Boolean(room && room.capitals && typeof room.capitals === "object");
   const source = seated ? room.capitals : ((board && board.capitals) || {});
+  // PB-120: the name and the cell must come from the same record. A seat view whose site rows
+  // arrived without their type join (a resume after a deploy rebuilt them from the board statics)
+  // used to take the cell from the era and the NAME from the fixed pair, so 1918 read
+  // "Washington@148,30 / Moscow@161,30" over Britain and the Low Countries. The site row on the
+  // cell is the authority; a capitals entry that carries its own name is next; the fixed pair's
+  // name is only for a page that has neither a room nor a board (PB-073's pre-room frame).
+  const nameAt = (x, y) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return "";
+    for (const list of [room && room.sites, board && board.sites]) {
+      if (!Array.isArray(list)) continue;
+      for (const site of list) {
+        if (!site || !site.name) continue;
+        if (Number(site.x) === x && Number(site.y) === y) return String(site.name);
+      }
+    }
+    return "";
+  };
   const out = [];
   for (const side of ["blue", "red"]) {
     const seat = CAPITAL_SEATS[side];
@@ -415,11 +432,13 @@ export function capitalMarkers(board, room) {
     const known = Number.isFinite(x) && Number.isFinite(y);
     // A seat view that does not name this capital has withheld it. Do not invent one.
     if (seated && !known) continue;
+    const cellX = known ? x : seat.x;
+    const cellY = known ? y : seat.y;
     out.push({
       side,
-      name: String(found.name || seat.name),
-      x: known ? x : seat.x,
-      y: known ? y : seat.y,
+      name: nameAt(cellX, cellY) || (found.name ? String(found.name) : String(seat.name)),
+      x: cellX,
+      y: cellY,
       color: sideColor(side),
     });
   }

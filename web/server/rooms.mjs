@@ -16,6 +16,7 @@
 // time scan of one table, which is cheap at this size.
 
 import { boardPayload } from "./board.mjs";
+import { eraTable } from "./era.mjs";
 import { capitalSetFor } from "./match.mjs";
 import { db } from "./db.mjs";
 import { migrateMatch } from "./migrate.mjs";
@@ -56,21 +57,46 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-// The board's site table, once per process. A room row only stores the delta; the static
-// half (name, cell, kind, country) is the same for every room on this board.
+// The board's site table, once per process per era. A room row only stores the delta; the
+// static half (name, cell, kind, country, and the era's subtype `type`) is the same for every
+// room of that era on this board.
+//
+// The era matters for one field: `type` is not on the asset list, it is joined in by the baked
+// era table, and a rebuilt site that loses it is a site the page cannot classify. That is the
+// PB-120 resume path - a stored 1918 room came back with no `type` on any of its rows, so
+// capitalMarkers() fell through to the fixed-seat fallback and named the London/Berlin cells
+// "Washington"/"Moscow". Join the same table the room opened with.
+//
+// Only `type` is taken from the table here. applyEra() also DROPS sites the year does not have
+// and applies the file's opening owner; the row's own siteOwners already carry the live owners,
+// and changing which sites a resumed room holds is a separate (and unmeasured) move.
 let staticsCache = null;
-function siteStatics() {
-  if (staticsCache) return staticsCache;
+function siteStatics(era) {
+  const key = String(era === undefined || era === null ? "" : era);
+  if (!staticsCache) staticsCache = new Map();
+  if (staticsCache.has(key)) return staticsCache.get(key);
+  const types = new Map();
+  try {
+    const table = eraTable(key);
+    for (const row of (table && table.sites) || []) {
+      if (row && Number.isInteger(Number(row.id)) && Number(row.type) !== 0) types.set(String(row.id), Number(row.type));
+    }
+  } catch {
+    // No baked table: the rebuilt sites simply keep no subtype, as before.
+  }
   const map = new Map();
   try {
     for (const site of boardPayload().sites || []) {
       if (!site || site.id === undefined) continue;
-      map.set(String(site.id), {
+      const id = String(site.id);
+      const type = types.has(id) ? types.get(id) : site.type;
+      map.set(id, {
         id: site.id,
         name: site.name,
         x: site.x,
         y: site.y,
         kind: site.kind,
+        ...(type === undefined ? {} : { type }),
         ...(site.country_id === undefined ? {} : { country_id: site.country_id }),
         ...(site.region === undefined ? {} : { region: site.region }),
       });
@@ -78,7 +104,7 @@ function siteStatics() {
   } catch {
     // No extract on this host: rooms there open with no sites, so there is nothing to add.
   }
-  staticsCache = map;
+  staticsCache.set(key, map);
   return map;
 }
 
@@ -122,7 +148,7 @@ export function unpackMatch(packed) {
   const unready = new Set(((sitesUnready || [])).map((id) => String(id)));
   const readyRounds = packed.siteReadyRounds && typeof packed.siteReadyRounds === "object" ? packed.siteReadyRounds : {};
   const rebuilt = [];
-  for (const [key, base] of siteStatics()) {
+  for (const [key, base] of siteStatics(rest.era)) {
     const owner = owners.get(key) ?? null;
     // A row from before T-011 carries the boolean only, with no duration: the city comes back on
     // the next round rather than staying unready forever, so a loaded room can produce again.
