@@ -280,6 +280,9 @@ function landmarks(match, side) {
   const out = [];
   for (const site of match.sites || []) {
     if (!site || !site.name) continue;
+    // A baked dock/facility is named after its own cell ("Dock 174,41"). That is a map
+    // coordinate wearing a place's clothes, so it is not a landmark (PB-121).
+    if (/\d+\s*,\s*\d+/.test(site.name)) continue;
     out.push({ site, own: site.owner === side && (site.kind === "city" || site.kind === "capital") });
   }
   return out;

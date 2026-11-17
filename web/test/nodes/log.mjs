@@ -121,6 +121,10 @@ export async function run() {
   const pair = { id: "red:pair", side: "red", domain: "land", kind: "infantry", x: redPiece.x, y: redPiece.y,
     path: [], pace: 1, facing: null, fighting: null, strength: 100, maxStrength: 100 };
   match.pieces.push(pair);
+  // A dock's baked name is its own cell ("Dock 172,53"): a landmark must never be that, or the
+  // "no coordinates" rule leaks back in through a place name (PB-121).
+  match.sites.push({ id: "dock", name: "Dock " + redPiece.x + "," + redPiece.y, kind: "dock",
+    x: redPiece.x, y: redPiece.y, owner: "red" });
   const sighted = logLines(match, "blue", [], 37).filter((line) => /in sight/.test(line.text));
   const onPair = sighted.filter((line) => line.key === "sight:" + redPiece.x + "," + redPiece.y);
   must(onPair.length === 1, "two enemies on one cell must be one sighting line: " + JSON.stringify(sighted.map((line) => line.text)));
