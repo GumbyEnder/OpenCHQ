@@ -270,10 +270,50 @@ function planLandPath(piece, toX, toY) {
   };
 }
 
+// The round an order lands on, computed the way the walk spends its credit (PB-096).
+//
+// `rounds` used to be a sum of the path's paces, with no cell rate in it at all, and the sea arm
+// was `path.length`. Both were wrong in opposite directions: a tank walks 2 cells a round, so its
+// quote was double the walk, and a hull walks 3, so every ship quote was three times too long. An
+// infantry crossing water is worse than either — it walks 1 on land and 2 as cargo, so no single
+// divisor exists for the path.
+//
+// So run the same loop advance() runs, per step, at the rate in force on that step: rate cells of
+// walking are granted a round, a step costs its terrain pace, and unspent credit carries. That is
+// the only arithmetic that answers "when does it get there" — 26 quoted for a 22-round walk was
+// this bug, not a rounding difference.
+export function walkRounds(piece, path) {
+  if (!Array.isArray(path) || path.length === 0) return 0;
+  const kind = piece && piece.kind;
+  const domain = piece && piece.domain;
+  // A sea piece is never cargo (rules.cellsPerRound reads transport first, so a hull stamped as
+  // cargo would sail at the transport rate — the bug the syncTransport guard exists to prevent).
+  let transport = domain === "sea" ? false : Boolean(piece && piece.transport === true);
+  let credit = 0;
+  let rounds = 0;
+  let i = 0;
+  while (i < path.length) {
+    const rate = cellsPerRound({ kind, domain, transport });
+    credit += rate;
+    rounds += 1;
+    let spent = 0;
+    while (i < path.length && spent < rate) {
+      const pace = Math.max(1, Number(path[i].pace) || 1);
+      if (credit < pace) break;
+      credit -= pace;
+      spent += 1;
+      // The state follows the cell: entering water turns a land piece into cargo, and the NEXT
+      // round's rate is the transport's.
+      transport = domain !== "sea" && isWater(path[i].x, path[i].y);
+      i += 1;
+    }
+  }
+  return rounds;
+}
+
 // The route an order WOULD take, without touching the match. The page hovers with this, so
 // the preview a player sees is the walk the server will actually give them, not a straight
-// line drawn by the client. `rounds` is the walk's cost in rounds: every step costs its
-// terrain pace, so a slow cell is two rounds.
+// line drawn by the client. `rounds` is the round the order lands on, from walkRounds().
 export function planOrder(match, side, pieceId, toX, toY) {
   if (!match || !Array.isArray(match.pieces)) return { error: "No match is running." };
   if (match.over) return { error: "This match is over." };
@@ -310,7 +350,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
     }
     if (!route || !route.length) return { error: "No sea lane reaches that cell." };
     const path = route.map((step) => ({ x: step.x, y: step.y, pace: 1 }));
-    return { ok: true, path, rounds: path.length };
+    return { ok: true, path, rounds: walkRounds(piece, path) };
   }
 
   if (isRefused(terrainAt(x, y) ?? -1)) return { error: "Wasteland is refused." };
@@ -332,7 +372,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
   const planned = planLandPath(piece, x, y);
   if (planned.error) return { error: planned.error };
   const path = planned.path;
-  const rounds = path.reduce((sum, step) => sum + Math.max(1, Number(step.pace) || 1), 0);
+  const rounds = walkRounds(piece, path);
   return { ok: true, path, rounds };
 }
 

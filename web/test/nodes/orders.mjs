@@ -71,9 +71,11 @@ export async function run(ctx) {
   // Two player-like sides used to stand eight cells apart for a thousand rounds because the order
   // to close was refused as if it were a collision. An ENEMY cell is now accepted; the walk stops
   // one short (advance reports `blocked`), which is where combat happens. A FRIEND-held cell is
-  // still refused by planOrder at move.mjs:323 (PM 6416, Manual p.10): units pass through friends
-  // on the route but may not stop in the same space, so :323 keeps refusing the destination. That
-  // refusal is pinned once, in order_wire's planted-mate leg - not here.
+  // still refused by planOrder at its holder check (PM 6416, Manual p.10): units pass through
+  // friends on the route but may not stop in the same space, so that refusal keeps refusing the
+  // destination. It is pinned once, in order_wire's planted-mate leg - not here. (Named by symbol,
+  // not by line: the line number moved twice - 323 -> 328 -> past both - and a stale anchor reads
+  // as a different refusal.)
   const held = issueOrder(match, "blue", "blue:land", 183, 25);
   if (held.error) fail("an order onto red:land's cell was refused: " + held.error);
   if (!Array.isArray(held.path) || !held.path.length) fail("an attack order returned no path");

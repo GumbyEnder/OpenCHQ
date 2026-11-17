@@ -190,8 +190,8 @@ export async function run(ctx) {
   eq(fail, "a preview does not move the piece", JSON.stringify(match.pieces), before);
 
   // An enemy-held cell is a target, not an obstacle: you give the order and the walk closes until
-  // combat decides. A cell held by a FRIEND is still refused AT PLAN TIME (PM 6416: web/server/
-  // move.mjs:323 stays as it is until Q-new is answered against the DOSBox build). PB-097's half of
+  // combat decides. A cell held by a FRIEND is still refused AT PLAN TIME (PM 6416: planOrder's
+  // holder check stays as it is until Q-new is answered against the DOSBox build). PB-097's half of
   // the rule lives in advance(), not here - see move_massed for the keep-the-order-and-retry leg.
   const attack = planOrder(match, "blue", "blue:land", RED_CAPITAL.x, RED_CAPITAL.y);
   if (!attack || !attack.ok || !Array.isArray(attack.path) || attack.path.length === 0) {
@@ -205,7 +205,7 @@ export async function run(ctx) {
   pin.pieces.push(mate);
   const ontoFriend = planOrder(pin, "blue", "blue:land", mate.x, mate.y);
   if (!ontoFriend || !/holds that cell/.test(String(ontoFriend.error || ""))) {
-    fail("the planner did not refuse a cell a friendly piece holds (PM 6416 keeps :323): " +
+    fail("the planner did not refuse a cell a friendly piece holds (PM 6416 keeps the holder check): " +
       JSON.stringify(ontoFriend).slice(0, 200));
   }
   const refusedOffMap = planOrder(match, "blue", "blue:land", BLUE_CAPITAL.x, -1);
