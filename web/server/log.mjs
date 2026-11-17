@@ -240,18 +240,68 @@ export function logLines(match, side, events, round) {
   }
 
   // Contact is the line that teaches the sight rule: an enemy piece the seat may see is
-  // reported with its cell. The filter is not repeated here — the seat view already decided
-  // what this side can see, concealing era included, so a hidden enemy cannot leak through
-  // the log. It repeats while the enemy stays in sight, so the line carries a key and the
-  // page shows it once.
-  for (const unit of forSeat(match, side).pieces || []) {
+  // reported by PLACE, never by map coordinate (PB-121; PB-044 / T-021 AC8: player text names
+  // places, and a bare "at 1,64" is a map-internal fact a player cannot use). The filter is not
+  // repeated here — the seat view already decided what this side can see, concealing era
+  // included, so a hidden enemy cannot leak through the log.
+  //
+  // One line per held CELL, not per piece: two enemy units on one cell are one sighting, and the
+  // line says how many. The key is the cell, so the page says it once while the enemy stays
+  // there instead of repeating the same line every round.
+  const seenCells = new Set();
+  const visible = forSeat(match, side).pieces || [];
+  for (const unit of visible) {
     if (unit.side === side) continue;
-    lines.push({
-      round: turn,
-      key: "sight:" + unit.id + ":" + unit.x + "," + unit.y,
-      text: "an enemy is in sight at " + unit.x + "," + unit.y,
-    });
+    const cell = { x: wrapX(unit.x), y: Number(unit.y) };
+    const id = cell.x + "," + cell.y;
+    if (seenCells.has(id)) continue;
+    seenCells.add(id);
+    const count = visible.filter(
+      (other) => other.side !== side && wrapX(other.x) === cell.x && Number(other.y) === cell.y
+    ).length;
+    lines.push({ round: turn, key: "sight:" + id, text: sightText(match, side, cell, count) });
   }
 
   return lines;
+}
+
+// Compass words for the direction from a landmark to the sighting. Y grows south on this board.
+const COMPASS = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"];
+
+function wrapX(x) {
+  return ((Number(x) % CELL_W) + CELL_W) % CELL_W;
+}
+
+// The seat's own cities and capitals are the landmarks a player reads first. When the enemy is
+// nearer a named site the seat does not hold (the board draws every site's name), that site is the
+// better answer - "3 cells east of Moscow" says more than "90 cells east of Boston" - so all named
+// sites are candidates and an own city wins a tie. A board with no names gets a bare sighting.
+function landmarks(match, side) {
+  const out = [];
+  for (const site of match.sites || []) {
+    if (!site || !site.name) continue;
+    out.push({ site, own: site.owner === side && (site.kind === "city" || site.kind === "capital") });
+  }
+  return out;
+}
+
+function sightText(match, side, cell, count) {
+  const subject = count === 1 ? "an enemy is" : count + " enemy units are";
+  let best = null;
+  for (const { site, own } of landmarks(match, side)) {
+    const rawX = wrapX(cell.x) - wrapX(site.x);
+    const dx = rawX > CELL_W / 2 ? rawX - CELL_W : rawX < -CELL_W / 2 ? rawX + CELL_W : rawX;
+    const dy = Number(cell.y) - Number(site.y);
+    const distance = Math.max(Math.abs(dx), Math.abs(dy));
+    if (!best || distance < best.distance || (distance === best.distance && own && !best.own)) {
+      best = { site, dx, dy, distance, own };
+    }
+  }
+  if (!best || best.distance === 0) {
+    return best ? subject + " in sight at " + best.site.name : subject + " in sight";
+  }
+  const turn = ((Math.atan2(best.dy, best.dx) + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 4);
+  const direction = COMPASS[Math.round(turn) % 8];
+  return subject + " in sight " + best.distance + " cell" + (best.distance === 1 ? "" : "s") +
+    " " + direction + " of " + best.site.name;
 }

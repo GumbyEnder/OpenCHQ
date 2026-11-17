@@ -4,7 +4,7 @@
 // did not exist. Everything they print comes from the room the server sent: prices from the shop row,
 // the payday from the seat's own `income`, the purse from the seat. This asserts the row building,
 // the counts, the words, and that the payday the dialogue shows is the one the economy module counts.
-import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "../../public/dialogs.mjs";
+import { NAV, buyRows, economyModel, logWindow, navFor, reserveLine, untypedCount } from "../../public/dialogs.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { payoutFor, seedOwners } from "../../server/economy.mjs";
@@ -146,6 +146,29 @@ export async function run(ctx) {
   if (!/id="dialog"[^>]*class="dialog hidden"/.test(html)) fail("the dialogue does not ship closed");
   const app = await (await fetch(ctx.base + "/app.js")).text();
   if (!app.includes("./dialogs.mjs")) fail("app.js does not use the dialogue module");
+  // The panel itself must draw the window, not its own slice(-8): a pure helper the page never
+  // calls pins nothing (PB-121).
+  if (!/logWindow\(roundLog\)/.test(app)) fail("app.js paints the log without logWindow(roundLog)");
+  // --- "Last rounds" is a window of ROUNDS, not of lines (PB-121) -----------
+  // The panel used to draw roundLog.slice(-8): eight contact lines from one round filled it and
+  // every earlier round vanished. Ten lines a round for eight rounds must still show six rounds.
+  const chatty = [];
+  for (let round = 1; round <= 8; round++) {
+    for (let i = 0; i < 8; i++) chatty.push({ round, text: "line " + round + "." + i });
+  }
+  const drawn = logWindow(chatty);
+  const roundsOnScreen = new Set(drawn.map((line) => line.round));
+  eq("the log window must keep six rounds, not the newest one", [...roundsOnScreen], [3, 4, 5, 6, 7, 8]);
+  if (drawn.length > 48) fail("the log window drew more than its cap: " + drawn.length);
+  // One crowded round must not push the window past the cap either, and it must still be there.
+  const crowded = [];
+  for (let round = 1; round <= 3; round++) for (let i = 0; i < 40; i++) crowded.push({ round, text: "x" + round + "." + i });
+  const capped = logWindow(crowded);
+  if (capped.length !== 48) fail("the log window cap is not enforced: " + capped.length);
+  eq("the capped window ends on the newest round", capped[capped.length - 1].round, 3);
+  // And a quiet log is returned whole, in order.
+  eq("a short log is drawn whole", logWindow([{ round: 1, text: "a" }, { round: 2, text: "b" }]).length, 2);
+
   const served = await fetch(ctx.base + "/dialogs.mjs");
   if (!served.ok) fail("the dialogue module is not served: " + served.status);
 }

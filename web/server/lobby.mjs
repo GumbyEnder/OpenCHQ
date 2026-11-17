@@ -974,7 +974,10 @@ export function createLobby() {
           if (!room.log) room.log = { blue: [], red: [] };
           if (!Array.isArray(room.log[side])) room.log[side] = [];
           room.log[side].push(...lines);
-          if (room.log[side].length > 60) room.log[side] = room.log[side].slice(-60);
+          // The page draws a window of ROUNDS (dialogs.logWindow). A chatty round is a dozen
+          // contact lines, so a 60-line buffer held only the newest round; keep enough for six
+          // (PB-121) and keep this figure equal to the page's LOG_KEEP.
+          if (room.log[side].length > 240) room.log[side] = room.log[side].slice(-240);
           peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
         }
       }

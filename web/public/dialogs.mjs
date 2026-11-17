@@ -124,3 +124,23 @@ export function reserveLine(meter) {
   const original = meter.kind === "steel" ? " · non-original stand-in" : "";
   return meter.kind + ": " + held + " held · " + rate + (meter.dry ? " · dry" : "") + original;
 }
+
+// The "Last rounds" list. The Log panel used to draw the last 8 LINES, so a single chatty round
+// (contact lines are one per sighted cell) filled the whole panel and every earlier round vanished
+// (PB-121). The window is ROUNDS: walk back from the newest line until `rounds` distinct rounds are
+// in hand, then cap the total so one crowded round cannot push the panel past `cap` lines either.
+export function logWindow(lines, { rounds = 6, cap = 48 } = {}) {
+  const all = Array.isArray(lines) ? lines : [];
+  const kept = [];
+  const seen = new Set();
+  for (let i = all.length - 1; i >= 0; i--) {
+    const line = all[i];
+    if (!line || !line.text) continue;
+    const round = Number(line.round) || 0;
+    if (!seen.has(round) && seen.size >= rounds) break;
+    seen.add(round);
+    kept.push(line);
+  }
+  kept.reverse();
+  return kept.length > cap ? kept.slice(-cap) : kept;
+}

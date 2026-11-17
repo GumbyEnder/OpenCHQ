@@ -111,6 +111,25 @@ export async function run() {
   must(contact.length >= 1, "an enemy inside sight must be reported as contact");
   must(contact.every((line) => line.key), "a contact line must carry a key so the page says it once");
 
+  // PB-121: the contact line names the place. A map coordinate is not player text (PB-044 /
+  // T-021 AC8), and two enemies on one cell are ONE sighting, not two identical lines.
+  const homeCity = { id: "home", name: "Port Alpha", kind: "city", x: blueScout.x, y: blueScout.y, owner: "blue" };
+  // One controlled landmark, so the assertion names the rule and not the board's site table.
+  match.sites = [homeCity];
+  redPiece.x = (blueScout.x + 3) % 320;
+  redPiece.y = blueScout.y;
+  const pair = { id: "red:pair", side: "red", domain: "land", kind: "infantry", x: redPiece.x, y: redPiece.y,
+    path: [], pace: 1, facing: null, fighting: null, strength: 100, maxStrength: 100 };
+  match.pieces.push(pair);
+  const sighted = logLines(match, "blue", [], 37).filter((line) => /in sight/.test(line.text));
+  const onPair = sighted.filter((line) => line.key === "sight:" + redPiece.x + "," + redPiece.y);
+  must(onPair.length === 1, "two enemies on one cell must be one sighting line: " + JSON.stringify(sighted.map((line) => line.text)));
+  must(onPair[0].text.includes("Port Alpha"), "a sighting must name the nearest own city: " + onPair[0].text);
+  must(/\beast\b/.test(onPair[0].text), "a sighting east of the city must say east: " + onPair[0].text);
+  must(!/\d+\s*,\s*\d+/.test(onPair[0].text), "a sighting line must carry no map coordinates: " + onPair[0].text);
+  const again = logLines(match, "blue", [], 38).filter((line) => line.key === onPair[0].key);
+  must(again.length === 1, "the sighting key must be the cell, so the page says it once: " + JSON.stringify(again));
+
   // The concealed era withholds the enemy until its capital is seen: contact must not leak it.
   const concealed = openMatch("9999", boardPayload().sites || []);
   const leaked = logLines(concealed, "blue", [], 1).filter((line) => /in sight/.test(line.text));

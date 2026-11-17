@@ -31,7 +31,7 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
-import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
+import { NAV, buyRows, economyModel, logWindow, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
 // The buy table's icon is the board's own badge, drawn by the same badgeSvg as the legend, so a
 // player picks a unit by the shape they will see on the map. (T-014 gate, room 4035.)
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
@@ -726,8 +726,9 @@ let pendingMission = "strike";
 // The round log. A running clock is dead time unless it reports itself: every line here came
 // from the server already filtered to what this seat could see.
 let roundLog = [];
-const LOG_KEEP = 60;
-const LOG_SHOWN = 8;
+// Kept per ROOM on the server too (lobby.mjs trims the same figure): the panel draws a window of
+// ROUNDS, so the buffer has to hold several rounds of a chatty log, not the last 8 lines (PB-121).
+const LOG_KEEP = 240;
 
 let logKeys = new Set();
 
@@ -1394,7 +1395,8 @@ function toolRow(room) {
 
 function paintLog(list) {
   list.textContent = "";
-  for (const line of roundLog.slice(-LOG_SHOWN)) {
+  // Six rounds, capped at 48 lines: the newest round can no longer be the only round on screen.
+  for (const line of logWindow(roundLog)) {
     const item = document.createElement("li");
     item.textContent = "round " + line.round + " \u2014 " + line.text;
     list.append(item);
