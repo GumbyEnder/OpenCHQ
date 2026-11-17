@@ -350,6 +350,33 @@ try {
   const own = pieces.find((piece) => piece && piece.side === "blue");
   const badgeSize = (scale) => Math.max(14, Math.ceil(scale * 3)) + 6;
 
+  // PB-098 count, not a spot check: every non-capital city that is on screen and not crowded by a
+  // piece (a badge would sit on it), counted in Terrain and again in Show Ownership. A theme whose
+  // city ink equals the fill scores 0 in Ownership and the two counts stop matching.
+  const isCity = (site) => Boolean(site && site.name) && !(Number(site.type) === 1 || Number(site.type) === 2);
+  const nearPiece = (site) => pieces.some((piece) => Math.abs(Number(piece.x) - Number(site.x)) <= 2 &&
+    Math.abs(Number(piece.y) - Number(site.y)) <= 2);
+  const onScreen = (site) => page.evaluate(({ x, y }) => {
+    const point = window.__chq.cellToScreen(x + 0.5, y + 0.5);
+    const rect = document.querySelector("#board").getBoundingClientRect();
+    return point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom;
+  }, { x: site.x, y: site.y });
+  async function countCityMarks(list, ink) {
+    let found = 0;
+    const missed = [];
+    for (const site of list) {
+      const box = await boxInks({ x: site.x, y: site.y }, 7);
+      if ((box.hist || {})[ink]) found += 1;
+      else missed.push(site.name);
+    }
+    return { found, missed };
+  }
+  const probeCities = [];
+  for (const site of sites.filter(isCity).filter((site) => !nearPiece(site))) {
+    if (await onScreen(site)) probeCities.push(site);
+    if (probeCities.length >= 30) break;
+  }
+
   const measured = {};
   for (const themeId of THEME_ORDER) {
     const inks = THEME_INKS[themeId];
@@ -362,6 +389,7 @@ try {
     // --- terrain first, so the toggle has something to differ from -----------------------------
     const terrainBlue = await inkAt(blueGround);
     const terrainRed = await inkAt(redGround);
+    const terrainCities = await countCityMarks(probeCities, inks.city);
     await shot("t018-" + themeId + "-terrain-fit.png");
 
     // --- Show Ownership at the world fit --------------------------------------------------------
@@ -406,22 +434,18 @@ try {
         "no blue piece in the room view");
     }
 
-    // --- a non-capital city is still findable in Show Ownership (PB-098) ------------------------
-    // The fill covers the ground the terrain view drew cities on, so the only thing that makes a
-    // town findable here is paintSiteTicks' restamp. At 0764ff9 that restamp used Classic's black
-    // whatever the theme, and in C a black square on #2a2f36 / #1b3f66 was invisible (PM hand-check
-    // at 0764ff9). Count the theme's OWN city ink around a named non-capital site.
-    const citySite = sites.find((site) => site && site.name && !(Number(site.type) === 1 || Number(site.type) === 2));
-    if (citySite) {
-      const cityCam = await page.evaluate(() => window.__chq.state().camera);
-      const span = Math.max(7, Math.round((Number(cityCam && cityCam.scale) || 1) * 2) + 3);
-      const cbox = await boxInks({ x: citySite.x, y: citySite.y }, span);
-      const cityInk = (cbox.hist || {})[inks.city] || 0;
-      mark(tag + ": a non-capital city is visible in Show Ownership (" + citySite.name + ")",
-        cityInk >= 2, { site: citySite.name, x: citySite.x, y: citySite.y, ink: inks.city, cityInk, box: cbox.box });
-    } else {
-      mark(tag + ": a non-capital city is visible in Show Ownership", false, "no named non-capital site in the room view");
-    }
+    // --- every on-screen city is still visible in Show Ownership, and the count matches Terrain
+    // (PB-098 AC a+b). The fill covers the ground the terrain view drew cities on, so the only thing
+    // that makes a town findable here is paintSiteTicks' restamp. At 0764ff9 that restamp used
+    // Classic's black whatever the theme, and in C a black square on #2a2f36 / #1b3f66 was invisible.
+    const ownershipCities = await countCityMarks(probeCities, inks.city);
+    // The count that matters is ownership-vs-terrain, not probe count: a city under a badge or a
+    // name plate can be unreadable in BOTH views, and that is not an ownership regression. A city
+    // that Terrain shows and Ownership loses is.
+    mark(tag + ": Show Ownership keeps the city marks Terrain draws (count matches)",
+      probeCities.length > 0 && ownershipCities.found === terrainCities.found && ownershipCities.found > 0,
+      { terrain: terrainCities.found, ownership: ownershipCities.found, probed: probeCities.length,
+        ink: inks.city, missedOwnership: ownershipCities.missed, missedTerrain: terrainCities.missed });
 
     // --- Greenland is the theme's unheld neutral, as the 1942 capture has it --------------------
     // Region 125 is the Greenland quad; the capture paints it unheld. In D that is #ffffff with
@@ -456,6 +480,17 @@ try {
       mark(tag + ": zoomed, the unit badge is still drawn over the fill", zoomFace >= 20,
         { x: own.x, y: own.y, face: zoomFace, camera: zoomCam });
       await shot("t018-" + themeId + "-ownership-zoom-unit.png");
+    }
+
+    // --- zoomed: a city mark is still there at scale --------------------------------------------
+    if (probeCities.length) {
+      const zoomCity = probeCities[0];
+      await panToCell({ x: zoomCity.x, y: zoomCity.y });
+      await sleep(400);
+      const zoomCityBox = await boxInks({ x: zoomCity.x, y: zoomCity.y }, 9);
+      mark(tag + ": zoomed, a city mark is still visible over the fill (" + zoomCity.name + ")",
+        ((zoomCityBox.hist || {})[inks.city] || 0) > 0,
+        { site: zoomCity.name, ink: inks.city, count: (zoomCityBox.hist || {})[inks.city] || 0 });
     }
 
     // --- and back --------------------------------------------------------------------------------

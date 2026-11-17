@@ -877,10 +877,14 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
     //    on a #f2f5fb rim would be the same defect mirrored.
     //  - Over the Show Ownership fill the mark sits on the owner's colour, and the module constant
     //    PALETTE put Classic's black city on C's #2a2f36 / #1b3f66 ground, where it vanished from the
-    //    one view whose objective it is (PB-098, PM hand-check at 0764ff9). There the caller's
-    //    theme terrain inks are used; the constant stays the fallback for callers with no theme.
-    const cityInk = (opts.inks && opts.inks.city) || PALETTE.city;
-    const capitalInk = (opts.inks && opts.inks.capital) || PALETTE.capital;
+    //    one view whose objective it is (PB-098, PM hand-check at 0764ff9). There the ink comes from
+    //    the theme's own terrain table (terrainInk); PALETTE stays only the no-theme fallback.
+    const theme = opts.theme || null;
+    const cityInk = (theme && terrainInk(theme, "city")) || PALETTE.city;
+    const capitalInk = (theme && terrainInk(theme, "capital")) || PALETTE.capital;
+    // The casing under the mark is the theme's own plate ink; #0b0f14 stays the no-theme fallback
+    // web/test/nodes/unit_icons.mjs already depends on.
+    const casing = (theme && theme.labelPlate) || "#0b0f14";
     const isCapital = Number(site.type) === 1 || Number(site.type) === 2;
     const fillInk = isCapital ? capitalInk : cityInk;
     const notchInk = isCapital ? PALETTE.capital : PALETTE.city;
@@ -911,7 +915,7 @@ export function paintSiteTicks(ctx, sites, groups, view, opts = {}) {
     const at = cellToPixel(wrapX(x, view.boardW || BOARD_W), y, view);
     if (at.x < -scale || at.x > view.viewW + scale || at.y < -scale || at.y > view.viewH + scale) continue;
     const size = Math.max(2, Math.round(scale * 0.8));
-    ctx.fillStyle = "#0b0f14";
+    ctx.fillStyle = casing;
     ctx.fillRect(Math.round(at.x - size / 2) - 1, Math.round(at.y - size / 2) - 1, size + 2, size + 2);
     ctx.fillStyle = fillInk;
     ctx.fillRect(Math.round(at.x - size / 2), Math.round(at.y - size / 2), size, size);
@@ -1732,7 +1736,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // site gets a mark of its own and not only the ones a badge happens to sit on (PB-068).
   const siteTicks = paintSiteTicks(ctx, room && room.sites, groups, view, {
     everyVisible: opts.viewMode === "political",
-    inks: { city: theme.terrain.city, capital: theme.terrain.capital },
+    theme,
   });
   layers.push("siteTicks");
   // Names are placed, not stamped: a capital's name starts at the readable zoom and takes a free

@@ -3,16 +3,21 @@
 // Show Ownership paints the region's owner colour over the ground the terrain view drew its cities
 // on, so paintSiteTicks restamps every site over the fill (PB-068). It stamped them in the module
 // constant PALETTE — Classic's black city square and yellow capital — whatever theme was active.
-// On Classic that is fine (black on #5555ff). On Dark tactical the same black landed on #2a2f36
-// unheld ground and #1b3f66 blue ground and disappeared, so the PM's hand-check at 0764ff9 found
-// no non-capital cities in Show Ownership on the default theme (FB-098).
+// On Classic that is fine (black on #5555ff, or on #ffffff for unheld ground). On Dark tactical the
+// same black landed on #2a2f36 unheld ground and #1b3f66 blue ground with a #0b0f14 casing, so it
+// had neither interior nor rim contrast and disappeared: the PM's hand-check at 0764ff9 found no
+// non-capital cities in Show Ownership on the default theme (PB-098).
 //
-// The contract pinned here: paintSiteTicks draws each site in the ACTIVE THEME's terrain ink when
-// the caller passes one, and that ink has usable contrast against every fill the ownership view can
-// put behind it. The mutant is one line: drop `inks` from the call (or the fallback in the
-// function) and theme C's cities come back black-on-dark, which fails both assertions.
+// The contract pinned here: paintSiteTicks takes the ink for a mark over the ownership fill from the
+// THEME's terrain table (terrainInk), that ink is not any of the ownership fills, and it reads
+// against every one of them. The mutant is one argument: drop `theme` from the call and C's cities
+// come back #000000, which fails the first two assertions.
+//
+// A mark over a BADGE is a different ground: a corner notch on the badge's light interior, measured
+// in PB-029/T-014 AC7 as Classic's black with a light rim. That notch must NOT take C's white city
+// ink, or the same defect reappears mirrored on a light background.
 import { PALETTE, fitViewport, paintSiteTicks } from "../../public/render.mjs";
-import { themeById } from "../../public/themes.mjs";
+import { terrainInk, themeById } from "../../public/themes.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -31,11 +36,13 @@ function recorder() {
   return { ctx, fills };
 }
 
+const hex = (value) => String(value).toLowerCase();
+
 // WCAG relative luminance and contrast ratio: the question is "can a player see this mark on that
-// ground", not "are the bytes different". Distinct hex values can be equally dark.
-function luminance(hex) {
-  const m = /^#([0-9a-f]{6})$/.exec(String(hex).toLowerCase());
-  if (!m) fail("not a six-digit hex colour: " + hex);
+// ground", not "are the bytes different". Two distinct hex values can be equally dark.
+function luminance(value) {
+  const m = /^#([0-9a-f]{6})$/.exec(hex(value));
+  if (!m) fail("not a six-digit hex colour: " + value);
   const v = m[1];
   const channel = (i) => {
     const c = parseInt(v.slice(i, i + 2), 16) / 255;
@@ -50,22 +57,11 @@ function contrast(a, b) {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-// The ground a city actually stands on: the three fills and the sea. The per-side EDGE shades are
-// one-cell borders — a city mark on one is carried by its casing, and demanding full contrast there
-// would force Classic's black town square to change, which is the palette the original drew.
+// The ground a city actually stands on: the three ownership fills and the sea. The per-side EDGE
+// shades are one-cell borders, and a mark there is carried by its casing.
 function fillSet(theme) {
   const own = theme.ownership;
   return [own.blue, own.red, own.neutral, own.sea];
-}
-
-// A tick is a dark casing with the ink square inside it, so it is legible when EITHER the ink reads
-// against the ground OR the casing does (and the ink reads against the casing). That is what lets
-// C's white city hold on its bright #35d0ff coastal edge without giving up on the real defect:
-// black-on-dark fails all three legs at once.
-const CASING = "#0b0f14";
-
-function legible(ink, behind) {
-  return Math.max(contrast(ink, behind), Math.min(contrast(CASING, behind), contrast(ink, CASING)));
 }
 
 const SITES = [
@@ -81,40 +77,57 @@ export async function run() {
 
   for (const themeId of ["C", "D"]) {
     const theme = themeById(themeId);
+    const city = terrainInk(theme, "city");
+    const capital = terrainInk(theme, "capital");
+    if (!city || !capital) fail(themeId + ": the theme has no city/capital terrain ink");
+    if (city === capital) fail(themeId + ": a city and a capital cannot share one ink");
+
     const { ctx, fills } = recorder();
-    const drawn = paintSiteTicks(ctx, SITES, [], view, {
-      everyVisible: true,
-      inks: { city: theme.terrain.city, capital: theme.terrain.capital },
-    });
+    const drawn = paintSiteTicks(ctx, SITES, [], view, { everyVisible: true, theme });
     if (drawn !== SITES.length) fail(themeId + ": expected " + SITES.length + " site marks, drew " + drawn);
 
     const colours = fills.map((fill) => fill.color);
-    if (!colours.includes(theme.terrain.city.toLowerCase())) {
-      fail(themeId + ": the city mark is not in this theme's terrain city ink " +
-        theme.terrain.city + " (drawn: " + [...new Set(colours)].join(",") + ")");
+    if (!colours.includes(hex(city))) {
+      fail(themeId + ": the city mark is not in this theme's terrain city ink " + city +
+        " (drawn: " + [...new Set(colours)].join(",") + ")");
     }
-    if (!colours.includes(theme.terrain.capital.toLowerCase())) {
-      fail(themeId + ": the capital mark is not in this theme's terrain capital ink " + theme.terrain.capital);
+    if (!colours.includes(hex(capital))) {
+      fail(themeId + ": the capital mark is not in this theme's terrain capital ink " + capital);
     }
 
-    for (const ink of [theme.terrain.city, theme.terrain.capital]) {
+    // The PM's assertion, in node form: the ink the page puts on a city cell is NOT the ownership
+    // fill that cell already has. Equality here is the whole defect — a mark the colour of its
+    // ground is not a mark.
+    // A city has nothing but its square, so it needs the full 3:1 against every fill. A capital
+    // only has to differ: Classic's measured capital square is #ffff55, which sits at 1.07:1 on
+    // Classic's own white neutral ground, and the capital's identification rides on its ring and
+    // name (paintCapitals), not on the square's contrast. Grading the capital at 3:1 would demand
+    // changing the original's palette.
+    for (const ink of [city, capital]) {
       for (const behind of fillSet(theme)) {
-        const ratio = legible(ink, behind);
-        if (ratio < 3) {
-          fail(themeId + ": " + ink + " over ownership fill " + behind + " (casing " + CASING +
-            ") reads " + ratio.toFixed(2) + ":1, below the 3:1 a board mark needs");
+        if (hex(ink) === hex(behind)) {
+          fail(themeId + ": the site ink equals the ownership fill " + behind + " — the mark is invisible");
         }
       }
     }
+    for (const behind of fillSet(theme)) {
+      const ratio = contrast(city, behind);
+      if (ratio < 3) {
+        fail(themeId + ": the city ink " + city + " on ownership fill " + behind + " reads " +
+          ratio.toFixed(2) + ":1, below the 3:1 a board mark needs");
+      }
+    }
 
-    // The fill grammar of a tick: a dark casing, then the ink square.
-    const casing = fills.filter((fill) => fill.color === "#0b0f14");
-    if (casing.length !== SITES.length) fail(themeId + ": each site mark should carry its dark casing");
+    // The casing is the theme's plate ink, and every ink square is at least 2x2.
+    const theme_casing = hex(theme.labelPlate);
+    if (!colours.includes(theme_casing)) {
+      fail(themeId + ": the site casing is not the theme's labelPlate " + theme.labelPlate);
+    }
     for (const fill of fills) {
-      if (fill.color === "#0b0f14") continue;
+      if (fill.color === theme_casing) continue;
       if (fill.w < 2 || fill.h < 2) fail(themeId + ": a site ink square collapsed to " + fill.w + "x" + fill.h);
     }
-    seen[themeId] = { city: theme.terrain.city, capital: theme.terrain.capital, drawn };
+    seen[themeId] = { city, capital, drawn };
   }
 
   if (seen.C.city === seen.D.city) fail("the two themes are supposed to draw different city inks");
@@ -124,22 +137,22 @@ export async function run() {
   // notch must NOT take the theme's fill ink.
   const { ctx: nctx, fills: nfills } = recorder();
   const notchDrawn = paintSiteTicks(nctx, [SITES[0]], [{ x: SITES[0].x, y: SITES[0].y }], view,
-    { everyVisible: false, inks: { city: themeById("C").terrain.city, capital: themeById("C").terrain.capital } });
+    { everyVisible: false, theme: themeById("C") });
   if (notchDrawn !== 1) fail("a badge-covered site should still get its notch, drew " + notchDrawn);
-  if (!nfills.some((fill) => fill.color === PALETTE.city.toLowerCase())) {
+  if (!nfills.some((fill) => fill.color === hex(PALETTE.city))) {
     fail("the badge notch is not in Classic's black (" + nfills.map((f) => f.color).join(",") + ")");
   }
-  if (nfills.some((fill) => fill.color === themeById("C").terrain.city.toLowerCase())) {
+  if (nfills.some((fill) => fill.color === hex(terrainInk(themeById("C"), "city")))) {
     fail("the badge notch took C's white city ink; it would vanish on the badge's light rim");
   }
 
   // Why PB-098 existed: the old constant is legible on Classic's bright fills and not on C's.
   const cFills = fillSet(themeById("C"));
-  const worst = Math.min(...cFills.map((behind) => legible(PALETTE.city, behind)));
+  const worst = Math.min(...cFills.map((behind) => contrast(PALETTE.city, behind)));
   if (worst >= 3) {
     fail("PALETTE.city no longer disappears on theme C (" + worst.toFixed(2) +
       ":1) — re-measure before removing the per-theme ink");
   }
-  const classicWorst = Math.min(...fillSet(themeById("D")).map((behind) => legible(PALETTE.city, behind)));
+  const classicWorst = Math.min(...fillSet(themeById("D")).map((behind) => contrast(PALETTE.city, behind)));
   if (classicWorst < 3) fail("PALETTE.city is not legible on Classic either: " + classicWorst.toFixed(2) + ":1");
 }
