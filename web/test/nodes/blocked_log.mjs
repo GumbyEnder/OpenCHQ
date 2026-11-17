@@ -159,6 +159,46 @@ export async function run(ctx) {
   }
   if (spoke.side !== "blue") fail("PB-121: the fresh blocked event lost its owning side: " + JSON.stringify(spoke));
 
+  // ---- PB-121b: a pace-2 destination is the SAME hold on the rounds that attempt no step ---------
+  // A slow cell costs two rounds of an infantry's one credit, so every other round the while-loop
+  // breaks at `credit < pace` before any attempt. That is still one hold and must speak once
+  // (PM 6661: live e6f12ab printed "the way was held" at r23, r25 AND r27 for one hold).
+  const slow = openMatch("1986");
+  slow.clock = "running";
+  const slowOcc = piece("blue:slow-occ", "blue", 120, 100);
+  const slowMover = piece("blue:slow-mover", "blue", 97, 100);
+  slow.pieces = [slowOcc, slowMover, piece("red:slow-watch", "red", 200, 130)];
+  const slowOrder = issueOrder(slow, "blue", "blue:slow-mover", 101, 100);
+  if (!slowOrder || slowOrder.error) {
+    fail("PB-121b: the pace-2 order onto the free destination was refused: " + JSON.stringify(slowOrder));
+    return;
+  }
+  // The destination entry carries pace 2 (terrain in production; a fixture here so the leg does not
+  // depend on an extract). Everything before it stays fast ground.
+  const slowPath = slowMover.path;
+  for (const step of slowPath) step.pace = 1;
+  slowPath[slowPath.length - 1].pace = 2;
+  // The friend arrives on the destination AFTER the order was placed, which is the live race.
+  slowOcc.x = 101;
+  slowOcc.y = 100;
+  const slowEvents = [];
+  const slowLines = [];
+  for (let i = 0; i < 8; i++) {
+    const tick = tickMatch(slow);
+    const roundEvents = Array.isArray(tick.events) ? tick.events : [];
+    slowEvents.push(...roundEvents.filter((event) => event && event.type === "blocked" && event.pieceId === "blue:slow-mover"));
+    slowLines.push(...logLines(slow, "blue", roundEvents, slow.round).filter((line) => line.text.includes(SENTENCE)));
+  }
+  if (slowEvents.length !== 1) {
+    fail("PB-121b: a pace-2 hold spoke " + slowEvents.length + " time(s) over 8 rounds, wanted exactly 1 " +
+      "(the rounds with no step attempt are the same hold)");
+    return;
+  }
+  if (slowLines.length !== 1) {
+    fail("PB-121b: the Log carried " + slowLines.length + " line(s) of " + SENTENCE + " for one pace-2 hold, wanted 1");
+    return;
+  }
+
   if (problems.length) {
     fail(problems.join(" | "));
     return;

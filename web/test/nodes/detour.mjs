@@ -79,26 +79,65 @@ export async function run(ctx) {
     path: [],
   });
 
+  // A mid-path crossing is only observable at two or more cells a round: at one cell a round the
+  // round boundary always lands on the friend's cell, which PB-122 forbids ("walkers may cross a
+  // friend; they may not finish a round on one"). So the runner is a tank (rate 2) and crosses the
+  // friend inside one round. The infantry case is pinned by pb122_convergence instead.
+  const runner = {
+    id: "blue:runner",
+    side: "blue",
+    kind: "tank",
+    domain: "land",
+    x: run.x,
+    y: run.y,
+    path: [],
+    credit: 0,
+    pace: 1,
+    strength: 100,
+    maxStrength: 100,
+    transport: false,
+    entrenched: false,
+    pinned: false,
+    fighting: null,
+  };
+  match.pieces.push(runner);
+  // Keep the infantry walker out of the run while the tank crosses it (it is re-placed for the
+  // enemy leg below); two blues on run.x would be a stack before the test starts.
+  walker.x = run.x + 40;
+  walker.y = run.y + 40;
+  const runOrder = issueOrder(match, "blue", runner.id, run.x + 4, run.y);
+  must(runOrder.ok, "the runner's order must be accepted: " + JSON.stringify(runOrder));
+  // Pace is terrain's; pin it to open ground so the leg measures the crossing, not the map.
+  for (const step of runner.path) step.pace = 1;
+  runner.credit = 0;
+
   let detours = 0;
   let blocked = 0;
   let arrived = false;
+  let crossedMidPath = false;
   for (let round = 0; round < 24; round++) {
     for (const event of advance(match)) {
-      if (event.pieceId !== walker.id) continue;
+      if (event.pieceId !== runner.id) continue;
       if (event.type === "detour") detours += 1;
       if (event.type === "blocked") blocked += 1;
     }
-    if (wrapX(walker.x) === wrapX(run.x + 4) && walker.y === run.y) arrived = true;
+    if (wrapX(runner.x) > wrapX(run.x + 1) && runner.y === run.y) crossedMidPath = true;
+    if (wrapX(runner.x) === wrapX(run.x + 4) && runner.y === run.y) arrived = true;
     // A walk that has finished must not be sitting on the friend's cell.
-    must(walker.path.length > 0 || !(wrapX(walker.x) === wrapX(run.x + 1) && walker.y === run.y),
+    must(runner.path.length > 0 || !(wrapX(runner.x) === wrapX(run.x + 1) && runner.y === run.y),
       "the walker stopped on a friendly piece's cell");
+    // PB-122: no round may END with the runner on the friend's cell.
+    must(!(wrapX(runner.x) === wrapX(run.x + 1) && runner.y === run.y),
+      "round " + round + ": the runner ended on the friend's cell");
   }
   must(arrived, "a friend on the line stopped the walker: p.10 lets it pass through");
+  must(crossedMidPath, "the runner never passed the friend's cell: the crossing was not exercised");
   must(detours === 0, "a friend in the way was routed around: the walker is searching again");
   must(blocked === 0, "a friend on the line was reported as blocked: " + blocked + " times");
-  must(walker.path.length === 0, "the walker arrived with its path still on: " + JSON.stringify(walker.path));
+  must(runner.path.length === 0, "the walker arrived with its path still on: " + JSON.stringify(runner.path));
 
   // ---- an enemy in the way is contact, not an obstacle -------------------------------------
+  match.pieces = match.pieces.filter((piece) => piece.id !== runner.id);
   walker.x = run.x;
   walker.y = run.y;
   walker.path = [];
