@@ -287,48 +287,43 @@ export function badgeCells(scale, minPx = BADGE_MIN_PX) {
 
 // ---- stacking ------------------------------------------------------------------------------
 
-// One badge per footprint (PM ruling, room 3946): where two friendly badges would overlap, draw one
-// for the group, with the stack disc, and let hover name the whole stack. The group's face is the
-// piece with the highest strength, so the strongest unit on a contested dot is the one a player sees.
+// One badge per CELL and side (PB-108; PM ruling restated 2026-11-17): a badge stands for the cell
+// its pieces are on, never for a pixel radius. Two units a cell apart are two units at every zoom —
+// including the whole-world fit, where one badge is wider than a cell, so the icons overlap. A
+// crowded board is fine; a badge that lies about where units are is not. The group's face is the
+// piece with the highest strength, so the strongest unit on a cell is the one a player sees.
 //
 // Opposing sides never join: two sides in one cell is a fight, and the board has to show both.
 export function badgeGroups(pieces, scale, minPx = BADGE_MIN_PX) {
   const list = (Array.isArray(pieces) ? pieces : []).filter((piece) =>
     piece && Number.isFinite(Number(piece.x)) && Number.isFinite(Number(piece.y)));
-  const size = badgePx(scale, minPx);
-  const half = size / 2;
-  const cell = Math.max(1, Number(scale) || 1);
+  // Grouping is cell identity, not geometry: `scale` and `minPx` stay in the signature because the
+  // painters pass them, and neither may move a badge off its cell.
   const groups = [];
+  const byCell = new Map();
   for (const piece of list) {
-    const px = Number(piece.x) * cell;
-    const py = Number(piece.y) * cell;
-    let home = null;
-    for (const group of groups) {
-      if (group.side !== piece.side) continue;
-      // Boxes overlap when both centres are closer than one badge width on each axis. `half` twice
-      // is one badge width, which is exactly the point where the two bodies touch.
-      if (Math.abs(group.px - px) < size && Math.abs(group.py - py) < size) { home = group; break; }
-    }
+    const side = piece.side === "red" ? "red" : "blue";
+    const key = side + ":" + Number(piece.x) + "," + Number(piece.y);
     const strength = Number.isFinite(Number(piece.strength)) ? Number(piece.strength) : 0;
+    const home = byCell.get(key);
     if (home) {
       home.pieces.push(piece);
-      home.px = (home.px * (home.pieces.length - 1) + px) / home.pieces.length;
-      home.py = (home.py * (home.pieces.length - 1) + py) / home.pieces.length;
       if (strength > home.strength) {
         home.top = piece;
         home.strength = strength;
       }
     } else {
-      groups.push({ side: piece.side === "red" ? "red" : "blue", top: piece, strength,
-        pieces: [piece], px, py, half });
+      const group = { side, top: piece, strength, pieces: [piece] };
+      byCell.set(key, group);
+      groups.push(group);
     }
   }
   for (const group of groups) {
     group.count = group.pieces.length;
-    // The anchor stays on a real cell when the group has one piece, and the group's mean cell when
-    // it does not: a badge drifting off the units it stands for is worse than a crowded board.
-    group.x = group.count === 1 ? Number(group.top.x) : group.px / cell;
-    group.y = group.count === 1 ? Number(group.top.y) : group.py / cell;
+    // The anchor is the face piece's own cell. There is no mean cell: the mean of two adjacent
+    // pieces is x.5, a place no unit stands on (PB-108 AC3).
+    group.x = Number(group.top.x);
+    group.y = Number(group.top.y);
     group.kind = group.top.kind;
     group.transport = isTransportBadge(group.top);
   }

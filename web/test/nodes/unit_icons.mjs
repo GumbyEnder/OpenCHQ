@@ -148,20 +148,28 @@ export async function run() {
   eq("a retina floor is honoured", badgePx(4, 28), 28);
   eq("a nonsense scale does not go below one cell", badgePx(0, 0), 14);
 
-  // --- one badge per footprint, same side only, strongest face ------------------------
+  // --- one badge per CELL, same side only, strongest face (PB-108) --------------------
   const crowd = [
     piece({ id: "a", kind: "infantry", strength: 30 }),
     piece({ id: "b", kind: "tank", strength: 90, x: 100, y: 61 }),
     piece({ id: "c", kind: "infantry", strength: 60, x: 101, y: 60 }),
   ];
   const crowded = badgeGroups(crowd, 4);
-  eq("three friendly pieces on one footprint are one badge", crowded.length, 1);
-  eq("the disc counts all three", crowded[0].count, 3);
-  eq("the face is the strongest piece", crowded[0].top.id, "b");
-  eq("the badge reads as the face's kind", crowded[0].kind, "tank");
-  ok("the group's anchor sits on the footprint",
-    Math.abs(crowded[0].x - 100.33) < 0.5 && Math.abs(crowded[0].y - 60.33) < 0.5);
-  eq("only faces are painted as tops", [...badgeTops(crowded)], ["b"]);
+  eq("three friendly pieces on three cells are three badges", crowded.length, 3);
+  eq("each one-cell badge stands on its own cell",
+    crowded.map((g) => g.x + "," + g.y).sort().join(" "), "100,60 100,61 101,60");
+  const stackTrio = [
+    piece({ id: "sa", kind: "infantry", strength: 30 }),
+    piece({ id: "sb", kind: "tank", strength: 90 }),
+    piece({ id: "sc", kind: "infantry", strength: 60 }),
+  ];
+  const stacked = badgeGroups(stackTrio, 4);
+  eq("a true same-cell stack is one badge", stacked.length, 1);
+  eq("the disc counts all three", stacked[0].count, 3);
+  eq("the face is the strongest piece", stacked[0].top.id, "sb");
+  eq("the badge reads as the face's kind", stacked[0].kind, "tank");
+  eq("the group's anchor sits on the cell", [stacked[0].x, stacked[0].y], [100, 60]);
+  eq("only faces are painted as tops", [...badgeTops(stacked)], ["sb"]);
 
   const mixed = badgeGroups([piece({ id: "u" }), piece({ id: "e", side: "red" })], 4);
   eq("the two sides never join one badge", mixed.length, 2);
@@ -219,7 +227,7 @@ export async function run() {
   eq("hover on a transport names the state",
     badgeHoverText(badgeGroups([piece({ atSea: true, domain: "land" })], 4)[0]),
     "Transport (land unit at sea) · strength 100/100");
-  const stackText = badgeHoverText(crowded[0]);
+  const stackText = badgeHoverText(stacked[0]);
   ok("hover on a stack lists every piece strongest first", stackText ===
     "3 units: Tank 90/100, Infantry 60/100, Infantry 30/100");
   eq("hover on nothing says nothing", badgeHoverText(null), "");
@@ -265,17 +273,21 @@ export async function run() {
 
   const many = recorder();
   const groups = paintPieces(many.ctx, crowd, view, {});
-  eq("paintPieces paints one badge for the crowd", groups.length, 1);
-  ok("the crowd's badge is painted once", many.fills.filter((c) => c === BADGE_SIDE.blue.frame).length === 1);
+  eq("paintPieces paints one badge per cell for the crowd", groups.length, 3);
+  ok("the crowd's three badges are each painted", many.fills.filter((c) => c === BADGE_SIDE.blue.frame).length === 3);
+  const oneCell = recorder();
+  const stackGroups = paintPieces(oneCell.ctx, stackTrio, view, {});
+  eq("paintPieces paints one badge for a same-cell stack", stackGroups.length, 1);
+  ok("the stack's badge is painted once", oneCell.fills.filter((c) => c === BADGE_SIDE.blue.frame).length === 1);
 
   // --- hit testing: hover finds the badge the frame drew ------------------------------
   const centre = cellToPixel(100, 60, view);
   eq("a pointer on the badge hits it", badgeAt([piece({ id: "hit" })], view, centre.x, centre.y).top.id, "hit");
   eq("a pointer off the badge misses", badgeAt([piece({ id: "hit" })], view, centre.x + 12, centre.y), null);
-  const stack = badgeGroups(crowd, 4);
   eq("a pointer on a stack hits the whole group",
-    badgeAt(crowd, view, cellToPixel(stack[0].x, stack[0].y, view).x, cellToPixel(stack[0].x, stack[0].y, view).y,
-      { groups: stack }).count, 3);
+    badgeAt(stackTrio, view, cellToPixel(stacked[0].x, stacked[0].y, view).x,
+      cellToPixel(stacked[0].x, stacked[0].y, view).y,
+      { groups: stacked }).count, 3);
 
   // Two badges of OPPOSITE sides are never merged (badgeGroups only fuses same-side pieces), so a
   // pointer inside both boxes is a real ranking. The hover must rank by the same distance the click
@@ -332,8 +344,8 @@ export async function run() {
   ok("the seam notch is a full corner square, not the 3 px floor", seamInk && seamInk.w > 3 && seamInk.w === seamInk.h);
   ok("the seam notch is the same size as an off-seam notch", seamInk.w === inkRect.w);
   eq("the footprint covers the cells the badge body reaches",
-    JSON.stringify(badgeFootprint(stack[0], view)),
-    JSON.stringify({ x0: stack[0].x - 1.75, x1: stack[0].x + 1.75, y0: stack[0].y - 1.75, y1: stack[0].y + 1.75 }));
+    JSON.stringify(badgeFootprint(stacked[0], view)),
+    JSON.stringify({ x0: stacked[0].x - 1.75, x1: stacked[0].x + 1.75, y0: stacked[0].y - 1.75, y1: stacked[0].y + 1.75 }));
 
   // --- the footer says what the seat can see (PM change 2) ----------------------------
   const room = {
