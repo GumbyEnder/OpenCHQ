@@ -98,9 +98,14 @@ export function regionSites(era) {
   return Array.isArray(row) ? row : null;
 }
 
+// The era rows name sites BY ID, and the match roster is not id-ordered: 1918's 184-entry roster
+// carries ids like `dock:39:34` inside the first 84 slots, so `match.sites[Number(siteId)]` (the
+// pre-PB-092 form) answered with a different site for 170 of the 184 regions and painted 27/13/144
+// where the file names 14/9/2. Join on the site's own id. String comparison keeps a numeric row id
+// resolving against a string roster id (and vice versa) instead of depending on the bake's JSON types.
 function siteOf(match, siteId) {
   if (!match || !Array.isArray(match.sites) || siteId === null || siteId === undefined) return null;
-  return match.sites[Number(siteId)] || null;
+  return match.sites.find((site) => site && String(site.id) === String(siteId)) || null;
 }
 
 // The side that holds each region, in region id order. A region follows the site the era table
