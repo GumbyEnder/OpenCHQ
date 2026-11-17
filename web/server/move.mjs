@@ -691,7 +691,7 @@ export function advance(match) {
       const friendly = Boolean(occupant) && occupant.side === piece.side;
       const atDestination = piece.path.length === 1;
       if (occupant && friendly && atDestination) {
-        events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
+        events.push({ type: "blocked", side: piece.side, pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
         stopped = true;
         break;
       }
@@ -711,7 +711,7 @@ export function advance(match) {
           // where it happened to meet the enemy.
           piece.overrunBy = null;
           piece.overrunCell = null;
-          events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
+          events.push({ type: "blocked", side: piece.side, pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
           stopped = true;
           break;
         }
