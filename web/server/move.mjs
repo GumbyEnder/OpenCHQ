@@ -846,6 +846,13 @@ export function advance(match) {
       }
     }
     piece.credit = stopped ? 0 : Math.max(0, credit);
+    // A hold ends the moment the piece is not held: a step, an arrival or a cleared route is the
+    // block ending, so the memory must go with it and the next hold on the same cell speaks again
+    // (PB-121). Only an unbroken hold stays silent, which is the whole point of remembering it.
+    if (!stopped) {
+      piece.heldBy = null;
+      piece.heldCell = null;
+    }
   }
   if (doomed.size > 0) {
     match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));

@@ -113,6 +113,14 @@ export async function run(ctx) {
     fail("PB-121: the mover never stepped into the cell the friend had vacated");
     return;
   }
+  // The step that ended the hold must have cleared the memory. Without this assertion the leg below
+  // passes on issueOrder()'s clear instead, and a memory that outlives the block stays green.
+  const arrivedMover = match.pieces.find((p) => p.id === "blue:mover");
+  if (arrivedMover.heldBy != null || arrivedMover.heldCell != null) {
+    fail("PB-121: the hold memory survived the step that ended the block: " +
+      JSON.stringify({ heldBy: arrivedMover.heldBy, heldCell: arrivedMover.heldCell }));
+    return;
+  }
   // Walk the mover off the cell and back, so the SECOND hold lands on the SAME cell (100,100)
   // as the first: only the clear-on-step makes that a new fact. A different cell would speak
   // even with the memory left behind, and would pin nothing.
