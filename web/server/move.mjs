@@ -410,6 +410,8 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   piece.pace = Math.max(1, Number(plan.path[0].pace) || 1);
   piece.credit = 0;
   piece.detours = 0;
+  piece.heldBy = null;
+  piece.heldCell = null;
   return { ok: true, path: plan.path.map((step) => ({ ...step })), rounds: plan.rounds };
 }
 
@@ -638,6 +640,17 @@ export function attritionStep(match, lookup = null) {
   return events;
 }
 
+// A hold is one fact, not one per round. The piece remembers who is holding it out and where; the
+// same blocker at the same cell on the next round is the same hold and stays silent (PB-121). A new
+// order or a real step clears the memory, so a second hold speaks again.
+function noteHold(piece, occupant, x, y, events) {
+  const cell = wrapX(x) + "," + Number(y);
+  if (piece.heldBy === occupant.id && piece.heldCell === cell) return;
+  piece.heldBy = occupant.id;
+  piece.heldCell = cell;
+  events.push({ type: "blocked", side: piece.side, pieceId: piece.id, by: occupant.id, x, y, retry: true });
+}
+
 export function advance(match) {
   const events = [];
   if (!match || !Array.isArray(match.pieces) || match.over) return events;
@@ -685,13 +698,15 @@ export function advance(match) {
       // same space at the same time". So a FRIENDLY piece never blocks a route and never clears
       // the order (PB-097a): the walker passes through every friendly cell except the one it is
       // ordered TO. That destination is the only stopping place, and there the rule is (b): do not
-      // enter, keep the order, retry every round, and emit `blocked` on each of those rounds.
+      // enter, keep the order and retry every round. The attempt is a `blocked` event ONCE per hold
+      // (PB-121): the retry is the same fact every round, and a Log that repeats it for 14 rounds
+      // buries everything else. A different blocker or a different cell is a new hold and speaks.
       // Before PB-097 any occupant cleared the path, so a stack ordered at one cell scattered and
       // stood wherever the first of them arrived.
       const friendly = Boolean(occupant) && occupant.side === piece.side;
       const atDestination = piece.path.length === 1;
       if (occupant && friendly && atDestination) {
-        events.push({ type: "blocked", side: piece.side, pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
+        noteHold(piece, occupant, nx, ny, events);
         stopped = true;
         break;
       }
@@ -711,7 +726,7 @@ export function advance(match) {
           // where it happened to meet the enemy.
           piece.overrunBy = null;
           piece.overrunCell = null;
-          events.push({ type: "blocked", side: piece.side, pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
+          noteHold(piece, occupant, nx, ny, events);
           stopped = true;
           break;
         }

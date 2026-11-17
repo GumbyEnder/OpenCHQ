@@ -11,7 +11,7 @@
 // coordinates (the PB-106 class).
 
 import { openMatch } from "../../server/match.mjs";
-import { issueOrder } from "../../server/move.mjs";
+import { issueOrder, wrapX } from "../../server/move.mjs";
 import { logLines } from "../../server/log.mjs";
 import { tickMatch } from "../../server/tick.mjs";
 
@@ -85,6 +85,72 @@ export async function run(ctx) {
       problems.push("PB-104: the blocked line carries coordinates: " + JSON.stringify(line.text));
     }
   }
+  // ---- PB-121: a hold is one fact, and a real step forgets it -------------------------------
+  // Three more rounds of the SAME hold must add no event: the retry is the same sentence, and a
+  // Log that repeated it for 14 rounds (live r6..r19) is what buried every other line.
+  const repeats = [];
+  for (let i = 0; i < 3; i++) {
+    const tick = tickMatch(match);
+    for (const event of tick.events || []) {
+      if (event && event.type === "blocked" && event.pieceId === "blue:mover") repeats.push(event);
+    }
+  }
+  if (repeats.length) {
+    fail("PB-121: the same hold was re-emitted " + repeats.length + " time(s) on the waiting rounds");
+    return;
+  }
+
+  // The friend leaves; the mover takes the cell it was held out of, which must clear the memory.
+  occupant.x = 100;
+  occupant.y = 98;
+  let arrived = false;
+  for (let i = 0; i < 8; i++) {
+    tickMatch(match);
+    const mover = match.pieces.find((p) => p.id === "blue:mover");
+    if (mover.path.length === 0) { arrived = true; break; }
+  }
+  if (!arrived) {
+    fail("PB-121: the mover never stepped into the cell the friend had vacated");
+    return;
+  }
+  // Walk the mover off the cell and back, so the SECOND hold lands on the SAME cell (100,100)
+  // as the first: only the clear-on-step makes that a new fact. A different cell would speak
+  // even with the memory left behind, and would pin nothing.
+  const away = issueOrder(match, "blue", "blue:mover", 98, 100);
+  if (!away || away.error) {
+    fail("PB-121: the walk-away order was refused: " + JSON.stringify(away));
+    return;
+  }
+  let parked = false;
+  for (let i = 0; i < 8; i++) {
+    tickMatch(match);
+    const mover = match.pieces.find((p) => p.id === "blue:mover");
+    if (mover.path.length === 0 && wrapX(mover.x) === 98) { parked = true; break; }
+  }
+  if (!parked) {
+    fail("PB-121: the mover never reached the cell it walked away to");
+    return;
+  }
+  const back = issueOrder(match, "blue", "blue:mover", 100, 100);
+  if (!back || back.error) {
+    fail("PB-121: the order back onto the (free) destination was refused: " + JSON.stringify(back));
+    return;
+  }
+  // Put the friend back on 100,100 while the mover is one step out: the same cell as hold one.
+  let spoke = null;
+  for (let i = 0; i < 10 && !spoke; i++) {
+    const tick = tickMatch(match);
+    spoke = (tick.events || []).find((event) => event && event.type === "blocked" && event.pieceId === "blue:mover") || null;
+    if (spoke) break;
+    const mover = match.pieces.find((p) => p.id === "blue:mover");
+    if (mover.path.length <= 1) { occupant.x = 100; occupant.y = 100; }
+  }
+  if (!spoke) {
+    fail("PB-121: the same cell held a second time, after a real step, stayed silent - the hold memory never cleared");
+    return;
+  }
+  if (spoke.side !== "blue") fail("PB-121: the fresh blocked event lost its owning side: " + JSON.stringify(spoke));
+
   if (problems.length) {
     fail(problems.join(" | "));
     return;

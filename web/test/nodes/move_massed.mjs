@@ -138,8 +138,10 @@ export async function run() {
       const d = Math.abs(wrapX(p.x) - wrapX(dest.x)) + Math.abs(p.y - dest.y);
       must(d === 1, id + " ended " + d + " cells from the destination, not one short");
       must(p.path.length === 1, id + " dropped its order: path is " + JSON.stringify(p.path));
-      must((blockedByRound[id] || []).length >= 10,
-        id + " did not emit blocked on every waiting round: " + JSON.stringify(blockedByRound[id]));
+      // PB-121: the hold is ONE fact. The piece retries every round, but the Log hears about it
+      // once; a line per round buried the rest of the log (14 frames r6..r19 on live).
+      must((blockedByRound[id] || []).length === 1,
+        id + " did not emit blocked exactly once for one hold: " + JSON.stringify(blockedByRound[id]));
     }
 
     // And the retry is what eventually gets them in: clear the cell and the next round walks one
