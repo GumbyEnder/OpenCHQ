@@ -100,8 +100,12 @@ export function regionSites(era) {
 
 // The era rows name sites BY ID, and the match roster is not id-ordered: 1918's 184-entry roster
 // carries ids like `dock:39:34` inside the first 84 slots, so `match.sites[Number(siteId)]` (the
-// pre-PB-092 form) answered with a different site for 170 of the 184 regions and painted 27/13/144
-// where the file names 14/9/2. Join on the site's own id. String comparison keeps a numeric row id
+// pre-PB-092 form) answered with a different site for 183 of the 184 regions and served 50 blue /
+// 72 red / 62 neutral where the id join serves 52/24/108 (the era row leaves one slot empty and it
+// counts neutral on both readings). The row's 52 distinct ids name 25 distinct sites: 14 blue / 9
+// red / 2 neutral. Those numbers reproduce from openMatch(era, matchSites(era)) + seedOwners() +
+// regionSites(era) on the seeded 1918 fixture; web/test/nodes/site_join_1918.mjs is the pin.
+// Join on the site's own id. String comparison keeps a numeric row id
 // resolving against a string roster id (and vice versa) instead of depending on the bake's JSON types.
 function siteOf(match, siteId) {
   if (!match || !Array.isArray(match.sites) || siteId === null || siteId === undefined) return null;

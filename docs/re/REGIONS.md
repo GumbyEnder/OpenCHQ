@@ -93,10 +93,12 @@ colour. Excluded on purpose, with the reason, rather than tuned for.
 **One deviation is NOT this ticket's.** In 1918 the served ownership view paints `(223,72)`,
 `(223,73)` and `(319,87)` neutral where the original paints blue. That is a pre-existing defect in
 the era join, not in the fill: `ownersFor` reads `match.sites[Number(siteId)]` - an array **index**
-- and 1918's 184-entry roster is not id-ordered (`index 50` is `dock:39:34`), so any 1918 region
-whose site id collides with a dock index paints neutral. 1918's served tally is 27/13/144 where the
-file names 14/9/2 owners. Fixing the join moves the whole 1918 paint and needs its own ticket and
-gate; the three cells are recorded as that defect, not absorbed into PB-077.
+- and 1918's 184-entry roster is not id-ordered (`index 50` is `dock:39:34`), so an 1918 region
+whose site id sits at a dock's array position paints another site's ink. On the seeded 1918
+openMatch the served tally was 50 blue / 72 red / 62 neutral where the id join serves 52/24/108,
+and the row's 52 distinct ids name 25 distinct sites (14 blue / 9 red / 2 neutral). PB-092 fixed
+the join under its own ticket and gate; the three cells are recorded as that pre-existing defect,
+not absorbed into PB-077.
 
 Ocean cells keep "no region" under either rule, so `isFriendly(x, y)` answers false at sea, which is
 what placement (p.31) and foreign aid (T-023) need. The gap fill is ours, not the file's, and it is

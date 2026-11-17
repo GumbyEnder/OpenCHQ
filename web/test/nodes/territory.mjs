@@ -122,8 +122,8 @@ export async function run() {
   //       original paints region 4's ink (white 1918 / blue 1942 / red 1986). Deliberate, two cells.
   //   (b) CLOSED by PB-092. 223,72 / 223,73 / 319,87 in 1918 used to paint neutral because the join
   //       read match.sites[Number(siteId)] (an ARRAY INDEX) and 1918's 184-entry roster is not
-  //       id-ordered - index 50 is `dock:39:34` - so 170 of the 184 regions resolved to the wrong
-  //       site (served 27/13/144 where the file names 14/9/2 owners). Those three rows now serve the
+  //       id-ordered - index 50 is `dock:39:34` - so 183 of the 184 regions resolved to the wrong
+  //       site (served 50/72/62 where the id join serves 52/24/108). Those three rows now serve the
   //       capture's ink and carry no caveat. With the join fixed, region 64 in 1918 serves blue where
   //       the original paints white: that is deviation (a) showing in a second era, not a new class.
   const AC = [

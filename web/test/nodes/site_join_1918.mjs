@@ -3,9 +3,12 @@
 // The era rows (CBR-REGN.DT0..DT4, baked into web/data/territory.json) name the site that governs
 // each of the 184 regions by id. ownersFor() used to resolve that id with `match.sites[Number(id)]`,
 // which is an ARRAY INDEX, and the match roster is not id-ordered: 1918's 184 entries carry string
-// ids (`dock:39:34`) inside the first 84 slots, so 170 of the 184 regions answered with a different
-// site than the row named. The served tally was 27/13/144 where the file's own sites name 14/9/2
-// owners, and Show Ownership painted neutral over ground the original hands to a side. The same join
+// ids (`dock:39:34`) inside the first 84 slots, so 183 of the 184 regions resolved to a different
+// site record than the row named, 147 of them to a different owner. On the seeded 1918 openMatch
+// the served tally was 50 blue / 72 red / 62 neutral where the id join serves 52/24/108 (the row
+// leaves one slot empty; it counts neutral on both readings), and Show Ownership painted neutral
+// over ground the original hands to a side. The row's 52 distinct ids name 25 distinct sites, 14
+// blue / 9 red / 2 neutral. The same join
 // is what isFriendly() (peacetime placement, foreign aid) and regionsHeldBy() read, so the defect
 // reached two rules and not just the paint.
 //
