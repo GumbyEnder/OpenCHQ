@@ -190,21 +190,23 @@ export async function run(ctx) {
   eq(fail, "a preview does not move the piece", JSON.stringify(match.pieces), before);
 
   // An enemy-held cell is a target, not an obstacle: you give the order and the walk closes until
-  // combat decides. A cell held by a FRIEND is accepted too (PB-097b, PM 6415): the walk stops one
-  // cell short and retries, because a unit may not stop on the same space another holds (p.10).
+  // combat decides. A cell held by a FRIEND is still refused AT PLAN TIME (PM 6416: web/server/
+  // move.mjs:323 stays as it is until Q-new is answered against the DOSBox build). PB-097's half of
+  // the rule lives in advance(), not here - see move_massed for the keep-the-order-and-retry leg.
   const attack = planOrder(match, "blue", "blue:land", RED_CAPITAL.x, RED_CAPITAL.y);
   if (!attack || !attack.ok || !Array.isArray(attack.path) || attack.path.length === 0) {
     fail("the planner refused an order onto an enemy-held cell: " + JSON.stringify(attack).slice(0, 200));
   }
-  const blueFriend = (match.pieces || []).find((piece) => piece.side === "blue" && piece.id !== "blue:land" && !piece.path);
-  const friendCell = blueFriend ? { x: blueFriend.x, y: blueFriend.y } : null;
-  if (friendCell) {
-    const ontoFriend = planOrder(match, "blue", "blue:land", friendCell.x, friendCell.y);
-    if (!ontoFriend || !ontoFriend.ok || !Array.isArray(ontoFriend.path) || !ontoFriend.path.length) {
-      fail("the planner refused a cell a friendly piece holds: " + JSON.stringify(ontoFriend).slice(0, 200));
-    }
-    const end = ontoFriend.path[ontoFriend.path.length - 1];
-    eq(fail, "the plan onto a friendly-held cell ends there", { x: end.x, y: end.y }, friendCell);
+  // Deterministic, not "if the fixture happens to have a second blue piece": a pin that can skip
+  // itself is not a pin. The mate is planted on the step cell in a throwaway copy of the match.
+  const pin = structuredClone(match);
+  const mate = { id: "blue:mate", side: "blue", domain: "land", kind: null,
+    x: BLUE_STEP.x, y: BLUE_STEP.y, path: [] };
+  pin.pieces.push(mate);
+  const ontoFriend = planOrder(pin, "blue", "blue:land", mate.x, mate.y);
+  if (!ontoFriend || !/holds that cell/.test(String(ontoFriend.error || ""))) {
+    fail("the planner did not refuse a cell a friendly piece holds (PM 6416 keeps :323): " +
+      JSON.stringify(ontoFriend).slice(0, 200));
   }
   const refusedOffMap = planOrder(match, "blue", "blue:land", BLUE_CAPITAL.x, -1);
   if (!refusedOffMap || !/off the map/.test(String(refusedOffMap.error || ""))) {
