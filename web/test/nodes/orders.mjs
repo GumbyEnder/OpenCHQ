@@ -76,9 +76,14 @@ export async function run(ctx) {
   if (!Array.isArray(held.path) || !held.path.length) fail("an attack order returned no path");
   const friendCell = (match.pieces || []).find((piece) => piece.side === "blue" && piece.id !== "blue:land" && !piece.path);
   if (friendCell) {
+    // PB-097b: an occupied destination is accepted; the walk keeps its order and retries.
     const friendly = issueOrder(match, "blue", "blue:land", friendCell.x, friendCell.y);
-    if (!friendly.error) fail("an order onto a friendly piece's cell was accepted");
-    if (!String(friendly.error).includes("holds")) fail("held-cell refusal reads: " + friendly.error);
+    if (friendly.error) fail("an order onto a friendly piece's cell was refused: " + friendly.error);
+    if (!Array.isArray(friendly.path) || !friendly.path.length) fail("the order onto a friend returned no path");
+    const end = friendly.path[friendly.path.length - 1];
+    if (end.x !== friendCell.x || end.y !== friendCell.y) {
+      fail("the order onto a friend did not end on that cell: " + JSON.stringify(end));
+    }
   }
   const blocked = blockedCells(match);
   if (!blocked.has("183,25") || !blocked.has(String(stepX) + "," + String(stepY))) {
@@ -189,7 +194,8 @@ export async function run(ctx) {
   if (!stopped) fail("a walk into a held cell was not blocked: " + JSON.stringify(clashEvents));
   if (stopped.by !== "red:land") fail("blocked event names " + JSON.stringify(stopped.by));
   if (front.x !== 165 || front.y !== 8) fail("the walker shared the held cell: " + front.x + "," + front.y);
-  if (front.path.length !== 0) fail("the walker kept its path after being blocked");
+  // PB-097b: contact keeps the order. It retries next round instead of standing where it met.
+  if (front.path.length !== 1) fail("the walker dropped its path after being blocked: " + JSON.stringify(front.path));
 
   // ---- an empty roster is an error, not a crash --------------------------------------
   const empty = openMatch("2023");

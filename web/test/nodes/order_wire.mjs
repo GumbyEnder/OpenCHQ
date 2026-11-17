@@ -190,7 +190,8 @@ export async function run(ctx) {
   eq(fail, "a preview does not move the piece", JSON.stringify(match.pieces), before);
 
   // An enemy-held cell is a target, not an obstacle: you give the order and the walk closes until
-  // combat decides. A cell held by a friend is still refused - two pieces never share a cell.
+  // combat decides. A cell held by a FRIEND is accepted too (PB-097b, PM 6415): the walk stops one
+  // cell short and retries, because a unit may not stop on the same space another holds (p.10).
   const attack = planOrder(match, "blue", "blue:land", RED_CAPITAL.x, RED_CAPITAL.y);
   if (!attack || !attack.ok || !Array.isArray(attack.path) || attack.path.length === 0) {
     fail("the planner refused an order onto an enemy-held cell: " + JSON.stringify(attack).slice(0, 200));
@@ -198,10 +199,12 @@ export async function run(ctx) {
   const blueFriend = (match.pieces || []).find((piece) => piece.side === "blue" && piece.id !== "blue:land" && !piece.path);
   const friendCell = blueFriend ? { x: blueFriend.x, y: blueFriend.y } : null;
   if (friendCell) {
-    const refusedHeld = planOrder(match, "blue", "blue:land", friendCell.x, friendCell.y);
-    if (!refusedHeld || !/holds that cell/.test(String(refusedHeld.error || ""))) {
-      fail("the planner did not refuse a cell a friendly piece holds: " + JSON.stringify(refusedHeld).slice(0, 200));
+    const ontoFriend = planOrder(match, "blue", "blue:land", friendCell.x, friendCell.y);
+    if (!ontoFriend || !ontoFriend.ok || !Array.isArray(ontoFriend.path) || !ontoFriend.path.length) {
+      fail("the planner refused a cell a friendly piece holds: " + JSON.stringify(ontoFriend).slice(0, 200));
     }
+    const end = ontoFriend.path[ontoFriend.path.length - 1];
+    eq(fail, "the plan onto a friendly-held cell ends there", { x: end.x, y: end.y }, friendCell);
   }
   const refusedOffMap = planOrder(match, "blue", "blue:land", BLUE_CAPITAL.x, -1);
   if (!refusedOffMap || !/off the map/.test(String(refusedOffMap.error || ""))) {
@@ -275,12 +278,12 @@ export async function run(ctx) {
       "the piece moved after a round", mark);
     sock.send({ op: "hold" });
 
-    // A refusal arrives as the server's sentence and reads as one on the page. The cell is
-    // held by the seat's own other piece, so the answer cannot depend on where a bot is.
+    // A refusal arrives as the server's sentence and reads as one on the page. The destination is
+    // off the map, so the answer cannot depend on terrain, a bot, or a piece's position.
     mark = sock.box.length;
-    sock.send(orderMessage({ id: "blue:land" }, { x: 0, y: 15 }));
+    sock.send(orderMessage({ id: "blue:land" }, { x: 0, y: -1 }));
     const refused = await sock.wait((m) => m.op === "error", "refused order", mark);
-    if (!/holds that cell/.test(String(refused.error || ""))) {
+    if (!/off the map/.test(String(refused.error || ""))) {
       fail("the refusal reason is not the server's: " + JSON.stringify(refused));
     }
     eq(fail, "the page shows the refusal verbatim", refusalText(refused), String(refused.error));

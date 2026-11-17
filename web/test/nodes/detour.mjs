@@ -3,8 +3,8 @@
 // What fails if this is removed:
 //   - advance() re-routes a piece whose next cell is held by a friend   -> the walker would be an
 //     A* again, and a land route would bend around terrain, which is the game T-004 removed
-//   - a blocked piece stops one short and drops its order              -> it would walk through a
-//     friendly piece, i.e. two units on one cell
+//   - a friend on the line is passed through, with no `blocked`         -> it would become an
+//     obstacle again, which PB-097's ruling (Manual p.10) forbids
 //   - an ENEMY in the way is never a detour                             -> contact is combat's job
 //
 // T-004 replaced the A* the older version of this test pinned. The behaviour it asserted (a piece
@@ -62,7 +62,13 @@ export async function run(ctx) {
       "step " + i + " is " + ordered.path[i].x + "," + ordered.path[i].y + " not " + expected[i].x + "," + expected[i].y);
   }
 
-  // ---- a friend standing on the line stops the piece one short, and it stays stopped -------
+  // ---- a friend standing on the line is passed through, not blocked (PB-097a) --------------
+  // Manual p.10: "units may move through each other, though they may not stop to occupy the same
+  // space at the same time". This infantry walks one cell a round, so it spends one round sharing
+  // the friend's cell on its way past — the engine's round boundary is a discretisation of "passing
+  // through", not a stop. What it may not do is END there: when its path empties it is one cell
+  // past, at the destination. Before PB-097 any occupant cleared the path, which is how a stack
+  // ordered at one cell scattered.
   match.pieces.push({
     id: "blue:blocker",
     side: "blue",
@@ -83,14 +89,14 @@ export async function run(ctx) {
       if (event.type === "blocked") blocked += 1;
     }
     if (wrapX(walker.x) === wrapX(run.x + 4) && walker.y === run.y) arrived = true;
-    // It must never stand on the friend's cell, whatever happens.
-    must(!(wrapX(walker.x) === wrapX(run.x + 1) && walker.y === run.y),
-      "the walker stood on a friendly piece's cell");
+    // A walk that has finished must not be sitting on the friend's cell.
+    must(walker.path.length > 0 || !(wrapX(walker.x) === wrapX(run.x + 1) && walker.y === run.y),
+      "the walker stopped on a friendly piece's cell");
   }
-  must(!arrived, "a straight line has no way round a friend, so the piece cannot arrive");
+  must(arrived, "a friend on the line stopped the walker: p.10 lets it pass through");
   must(detours === 0, "a friend in the way was routed around: the walker is searching again");
-  must(blocked >= 1, "a friend in the way was not reported as blocked");
-  must(walker.path.length === 0, "a blocked piece kept its order: " + JSON.stringify(walker.path));
+  must(blocked === 0, "a friend on the line was reported as blocked: " + blocked + " times");
+  must(walker.path.length === 0, "the walker arrived with its path still on: " + JSON.stringify(walker.path));
 
   // ---- an enemy in the way is contact, not an obstacle -------------------------------------
   walker.x = run.x;

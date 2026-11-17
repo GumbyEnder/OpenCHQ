@@ -301,6 +301,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
     if (!isWater(x, y)) return { error: "A ship cannot end on land." };
     const holder = pieceAt(match, x, y, piece.id);
     if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
+
     let route = null;
     try {
       route = seaRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y });
@@ -318,6 +319,10 @@ export function planOrder(match, side, pieceId, toX, toY) {
   // a collision. Two player-like sides then stood eight cells apart for a thousand rounds: neither
   // could give the order to close, so combat never began. A friend in the cell is still a refusal -
   // two pieces do not share a cell - but an enemy is who you were marching toward.
+  //
+  // PM 6416: this plan-time refusal stays AS IS until Q-new is answered. PB-097's fix is in
+  // advance(), not here: an order already accepted keeps its stored path and retries; nothing
+  // re-plans through planOrder on a retry.
   const holder = pieceAt(match, x, y, piece.id);
   const attacking = Boolean(holder) && holder.side !== side;
   if (holder && !attacking) return { error: "Another piece holds that cell (" + holder.id + ")." };
@@ -622,25 +627,37 @@ export function advance(match) {
       const pace = Math.max(1, Number(next.pace) || 1);
       if (credit < pace) break;
       const occupant = pieceAt(match, nx, ny, piece.id);
-      if (occupant) {
+      // Manual p.10: "units may move through each other, though they may not stop to occupy the
+      // same space at the same time". So a FRIENDLY piece never blocks a route and never clears
+      // the order (PB-097a): the walker passes through every friendly cell except the one it is
+      // ordered TO. That destination is the only stopping place, and there the rule is (b): do not
+      // enter, keep the order, retry every round, and emit `blocked` on each of those rounds.
+      // Before PB-097 any occupant cleared the path, so a stack ordered at one cell scattered and
+      // stood wherever the first of them arrived.
+      const friendly = Boolean(occupant) && occupant.side === piece.side;
+      const atDestination = piece.path.length === 1;
+      if (occupant && friendly && atDestination) {
+        events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
+        stopped = true;
+        break;
+      }
+      if (occupant && !friendly) {
         // Overrun is the tank's (Manual p.9): a tank ordered into infantry fights through it,
         // taking losses, and carries on into the cell if the infantry is destroyed. The path is
         // never dropped here; a tank that is held keeps its order and tries again next round.
         const overrun =
-          occupant.side !== piece.side &&
           piece.kind === "tank" &&
           piece.domain === "land" &&
           occupant.domain === "land" &&
           occupant.kind === "infantry" &&
           occupant.transport !== true;
         if (!overrun) {
-          // Stop one short: the walker never shares a cell, and the clash is combat's job.
-          piece.path = [];
-          piece.pace = 1;
-          piece.detours = 0;
+          // Stop one short: the walker never shares a cell, and the clash is combat's job. The
+          // order is KEPT (PB-097b) so the unit presses again next round instead of standing
+          // where it happened to meet the enemy.
           piece.overrunBy = null;
           piece.overrunCell = null;
-          events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny });
+          events.push({ type: "blocked", pieceId: piece.id, by: occupant.id, x: nx, y: ny, retry: true });
           stopped = true;
           break;
         }
