@@ -16,7 +16,7 @@
 // A mark over a BADGE is a different ground: a corner notch on the badge's light interior, measured
 // in PB-029/T-014 AC7 as Classic's black with a light rim. That notch must NOT take C's white city
 // ink, or the same defect reappears mirrored on a light background.
-import { PALETTE, fitViewport, paintSiteTicks } from "../../public/render.mjs";
+import { PALETTE, fitViewport, paintMatch, paintSiteTicks } from "../../public/render.mjs";
 import { terrainInk, themeById } from "../../public/themes.mjs";
 
 function fail(message) {
@@ -145,6 +145,32 @@ export async function run() {
   if (nfills.some((fill) => fill.color === hex(terrainInk(themeById("C"), "city")))) {
     fail("the badge notch took C's white city ink; it would vanish on the badge's light rim");
   }
+
+  // --- the wiring, not only the painter: paintMatch has to pass the theme through ---------------
+  // The 0764ff9 defect lived in the CALL, not inside paintSiteTicks: the argument was absent, so
+  // the page fell back to PALETTE whatever theme was on screen. A node test that only ever calls
+  // paintSiteTicks WITH a theme cannot see that — delete `theme` from the paintMatch call and every
+  // assertion above still passes. So drive a whole frame and read its recorded fills.
+  const frameBoard = { source: "extract", width: 320, height: 136, terrain: ["ocean", "plain"],
+    cells: new Array(320 * 136).fill(1) };
+  const frameRoom = { sites: SITES, pieces: [], era: "1942", round: 1 };
+  const frameView = { ...fitViewport(640, 272), scale: 6, left: 0, top: 0, viewW: 3840, viewH: 1632 };
+  const frames = {};
+  for (const themeId of ["C", "D"]) {
+    const { ctx: fctx, fills: ffills } = recorder();
+    const painted = paintMatch(fctx, frameBoard, frameRoom,
+      { view: frameView, viewMode: "political", themeId });
+    if (painted.mode === "schematic") fail(themeId + ": the ownership frame fell back to " + painted.mode);
+    const want = hex(terrainInk(themeById(themeId), "city"));
+    const colours = ffills.map((fill) => fill.color);
+    if (!colours.includes(want)) {
+      fail(themeId + ": a whole Show Ownership frame does not paint the theme's city ink " + want +
+        " — paintMatch is not passing the theme to paintSiteTicks");
+    }
+    // No piece stands on a site here, so the only city marks on this frame are paintSiteTicks'.
+    frames[themeId] = { city: want, drawn: painted.siteTicks };
+  }
+  if (frames.C.city === frames.D.city) fail("paintMatch drew the same city ink on both themes");
 
   // Why PB-098 existed: the old constant is legible on Classic's bright fills and not on C's.
   const cFills = fillSet(themeById("C"));
