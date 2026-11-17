@@ -120,18 +120,18 @@ export async function run() {
   // TWO DEVIATION CLASSES, and they are not the same thing:
   //   (a) 319,14 / 319,27 in 1986 - as ruled: our cross-water fill gives region 64 (blue) where the
   //       original paints region 4's ink (white 1918 / blue 1942 / red 1986). Deliberate, two cells.
-  //   (b) 223,72 / 223,73 / 319,87 in 1918 - a PRE-EXISTING defect in the 1918 join, not in the
-  //       fill: ownersFor reads match.sites[Number(siteId)] (an ARRAY INDEX), and 1918's 184-entry
-  //       roster is not id-ordered - index 50 is `dock:39:34` - so every 1918 region whose site id
-  //       collides with a dock index paints neutral. 1918's served tally is 27/13/144 where the
-  //       file names 14/9/2 owners. Out of PB-077's scope and unfixed here: fixing the join moves
-  //       the whole 1918 paint, which is its own ticket and its own gate.
+  //   (b) CLOSED by PB-092. 223,72 / 223,73 / 319,87 in 1918 used to paint neutral because the join
+  //       read match.sites[Number(siteId)] (an ARRAY INDEX) and 1918's 184-entry roster is not
+  //       id-ordered - index 50 is `dock:39:34` - so 170 of the 184 regions resolved to the wrong
+  //       site (served 27/13/144 where the file names 14/9/2 owners). Those three rows now serve the
+  //       capture's ink and carry no caveat. With the join fixed, region 64 in 1918 serves blue where
+  //       the original paints white: that is deviation (a) showing in a second era, not a new class.
   const AC = [
     //  cell      era     PIN (served)  CAP (original)
-    [[223, 72], "1918", "white", "blue", "1918 join defect (b)"],
+    [[223, 72], "1918", "blue", "blue", ""],
     [[223, 72], "1942", "blue", "blue", ""],
     [[223, 72], "1986", "white", "white", ""],
-    [[223, 73], "1918", "white", "blue", "1918 join defect (b)"],
+    [[223, 73], "1918", "blue", "blue", ""],
     [[223, 73], "1942", "blue", "blue", ""],
     [[223, 73], "1986", "white", "white", ""],
     [[69, 81], "1918", "white", "white", ""],
@@ -140,13 +140,13 @@ export async function run() {
     [[262, 87], "1918", "white", "white", ""],
     [[262, 87], "1942", "red", "red", ""],
     [[262, 87], "1986", "white", "white", ""],
-    [[319, 87], "1918", "white", "blue", "1918 join defect (b)"],
+    [[319, 87], "1918", "blue", "blue", ""],
     [[319, 87], "1942", "blue", "blue", ""],
     [[319, 87], "1986", "blue", "blue", ""],
-    [[319, 14], "1918", "white", "white", "deviation (a) coincides here only because the join (b) paints it neutral; region 4's ink is white too"],
+    [[319, 14], "1918", "blue", "white", "deviation (a) in 1918: region 64, not region 4; 1918's region 4 ink is white"],
     [[319, 14], "1942", "blue", "blue", ""],
     [[319, 14], "1986", "blue", "red", "deviation (a): region 64, not region 4"],
-    [[319, 27], "1918", "white", "white", "deviation (a) coincides here only because the join (b) paints it neutral; region 4's ink is white too"],
+    [[319, 27], "1918", "blue", "white", "deviation (a) in 1918: region 64, not region 4; 1918's region 4 ink is white"],
     [[319, 27], "1942", "blue", "blue", ""],
     [[319, 27], "1986", "blue", "red", "deviation (a): region 64, not region 4"],
   ];
@@ -168,7 +168,7 @@ export async function run() {
     }
   }
   eq("the AC carries exactly 21 assertions", AC.length, 21);
-  eq("5 of the 21 are named deviations (2 x region 64, 3 x the 1918 join)", deviations, 5);
+  eq("4 of the 21 are named deviations (region 64 in 1918 twice and in 1986 twice); the 1918 join is fixed", deviations, 4);
   for (const [x, y, why] of [[153, 43, "white in all six captures"],
     [81, 58, "blue in five captures, white in one 2023 draw"]]) {
     // Excluded from the colour AC, but still land in the fill: a cell we stopped pinning is not a
