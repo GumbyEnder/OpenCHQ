@@ -311,6 +311,20 @@ export function walkRounds(piece, path) {
   return rounds;
 }
 
+// PB-113: an order stops where it arrives. A sea route walks legs between lane waypoints and the
+// destination is appended as the LAST anchor, so a leg toward an intermediate waypoint can cross
+// the destination cell first and then sail on for tens of cells before coming back to it (the
+// destroyer 58,66 -> 61,66 case planned 82 cells and quoted 28 rounds for a 3-cell order). A land
+// order whose line crosses water has the same shape through its sea hop. Cutting at the first cell
+// that is the destination keeps the arrival honest for every path shape, and because the quote is
+// computed from the path it is cut to, the printed rounds still equal the round the unit arrives.
+function stopAtDestination(path, to) {
+  if (!Array.isArray(path) || path.length < 3) return path;
+  const at = path.findIndex((step) => wrapX(step.x) === wrapX(to.x) && step.y === Number(to.y));
+  if (at < 0 || at === path.length - 1) return path;
+  return path.slice(0, at + 1);
+}
+
 // The route an order WOULD take, without touching the match. The page hovers with this, so
 // the preview a player sees is the walk the server will actually give them, not a straight
 // line drawn by the client. `rounds` is the round the order lands on, from walkRounds().
@@ -349,7 +363,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
       route = null;
     }
     if (!route || !route.length) return { error: "No sea lane reaches that cell." };
-    const path = route.map((step) => ({ x: step.x, y: step.y, pace: 1 }));
+    const path = stopAtDestination(route.map((step) => ({ x: step.x, y: step.y, pace: 1 })), { x, y });
     return { ok: true, path, rounds: walkRounds(piece, path) };
   }
 
@@ -371,7 +385,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
   // water, the walk becomes a crossing: land leg, sea leg on the lanes, land leg.
   const planned = planLandPath(piece, x, y);
   if (planned.error) return { error: planned.error };
-  const path = planned.path;
+  const path = stopAtDestination(planned.path, { x, y });
   const rounds = walkRounds(piece, path);
   return { ok: true, path, rounds };
 }
