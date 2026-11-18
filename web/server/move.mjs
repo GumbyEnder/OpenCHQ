@@ -641,8 +641,9 @@ export function attritionStep(match, lookup = null) {
 }
 
 // A hold is one fact, not one per round. The piece remembers who is holding it out and where; the
-// same blocker at the same cell on the next round is the same hold and stays silent (PB-121). A new
-// order or a real step clears the memory, so a second hold speaks again.
+// same blocker at the same cell on the next round is the same hold and stays silent (PB-121). Only
+// an order clears this memory (issueOrder, the heldBy/heldCell pair above): a held piece cannot
+// step, and a fresh order re-plans the route, so the next hold after one is a new fact and speaks.
 function noteHold(piece, occupant, x, y, events) {
   const cell = wrapX(x) + "," + Number(y);
   if (piece.heldBy === occupant.id && piece.heldCell === cell) return;
