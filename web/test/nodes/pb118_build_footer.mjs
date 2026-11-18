@@ -111,4 +111,78 @@ export async function run(ctx) {
   if (!/#buildCommit:empty\s*\{\s*display:\s*none;?\s*\}/.test(css)) {
     fail("#buildCommit:empty is no longer hidden — an empty footer row would flash on the way in");
   }
+
+  // 5. PB-140: one warn per outage, never overwrite a known sha, and the flag clears on success.
+  //    Structural pins only — the warn COUNT is the ship-time browser leg's job (A1/A2), never this file.
+  const decls = app.match(/^let versionOutageWarned = false;\s*(?:\/\/.*)?$/gm) || [];
+  if (decls.length !== 1) {
+    fail("expected exactly one column-0 module-scope `let versionOutageWarned = false;` (C2), found " + decls.length);
+  }
+  // The declaration has to sit outside loadVersion() — a `let` at the top of loadVersion() re-inits on
+  // every 250 ms retry, which is the ~4 warns/s this ticket exists to stop.
+  const declarationIndex = app.search(/^let versionOutageWarned = false;/m);
+  if (declarationIndex > app.indexOf("function loadVersion()")) {
+    fail("versionOutageWarned is declared inside or after loadVersion() — it must be module scope (C2)");
+  }
+  if (/\blet versionOutageWarned\b/.test(loadVersion)) {
+    fail("versionOutageWarned is re-declared inside loadVersion() — the throttle would be a no-op (C2)");
+  }
+
+  // The clear is the statement WITHOUT `let` — that is what separates it from the declaration. It is
+  // indented inside the success callback, so a column-0 anchor would red correct code (the same defect
+  // frodo 7121 §2 named); the discriminator is the absent `let` plus exactly-once plus its position.
+  const clears = loadVersion.match(/^\s*versionOutageWarned = false;\s*(?:\/\/.*)?$/gm) || [];
+  if (clears.length !== 1) {
+    fail("expected exactly one column-0 `versionOutageWarned = false;` (the clear) in loadVersion(), found " + clears.length);
+  }
+  const successGuardAt = loadVersion.indexOf("if (seq !== versionSeq) return;");
+  const clearAt = loadVersion.search(/^\s*versionOutageWarned = false;/m);
+  const deleteAt = loadVersion.indexOf("delete line.dataset.build;");
+  const successLookupAt = loadVersion.indexOf('const line = document.getElementById("buildCommit");');
+  if (successGuardAt < 0 || clearAt < successGuardAt) {
+    fail("the clear is not after the success arm's seq guard — a stale success could arm a second warn (C3)");
+  }
+  if (successLookupAt >= 0 && clearAt > successLookupAt) {
+    fail("the clear sits after the footer lookup — a page with no #buildCommit would never reset it (C3 symmetric, PM 7144)");
+  }
+  if (deleteAt < 0 || clearAt > deleteAt) {
+    fail("the clear is not before `delete line.dataset.build;` — it moved with the footer write (C3)");
+  }
+
+  const warns = loadVersion.match(/console\.warn\(/g) || [];
+  if (warns.length !== 1) {
+    fail("expected exactly one console.warn in loadVersion(), found " + warns.length);
+  }
+  const warnAt = loadVersion.indexOf("console.warn(");
+  const flagGuardAt = loadVersion.indexOf("if (!versionOutageWarned) {");
+  if (flagGuardAt < 0 || flagGuardAt > warnAt) {
+    fail("the console.warn is not under `if (!versionOutageWarned) {` — the flag alone must gate it (C1)");
+  }
+  const guardText = loadVersion.slice(flagGuardAt, flagGuardAt + "if (!versionOutageWarned) {".length);
+  if (/unknown\s*&&/.test(guardText)) {
+    fail("the warn guard is coupled to `unknown &&` — a tab holding a sha would stay silent (C1) and m2 could not red");
+  }
+
+  const unknownAt = loadVersion.indexOf("if (unknown) {");
+  if (unknownAt < 0) {
+    fail("the catch no longer gates its footer writes on `if (unknown) {` — a failed read would overwrite a known sha (C1/AC1)");
+  }
+  const unknownBlock = loadVersion.slice(unknownAt, loadVersion.indexOf("\n      }", unknownAt));
+  for (const write of ['line.textContent = "build unknown";', 'line.dataset.build = "error";']) {
+    if (!unknownBlock.includes(write)) {
+      fail("`" + write + "` is not inside `if (unknown) {` — a known sha would be overwritten on a failed read (C1/AC1)");
+    }
+    const at = loadVersion.indexOf(write);
+    if (at >= 0 && at < unknownAt) {
+      fail("`" + write + "` also appears outside the `unknown` guard (C1/AC1)");
+    }
+  }
+
+  const catchAt = loadVersion.indexOf(".catch((err) => {");
+  if (catchAt < 0) fail("loadVersion has no catch arm to grade");
+  const catchBody = loadVersion.slice(catchAt);
+  const catchCode = catchBody.replace(/^\s*\/\/.*$/gm, "").replace(/\s+/g, " ");
+  if (!/\.catch\(\(err\) => \{ if \(seq !== versionSeq\) return; /.test(catchCode)) {
+    fail("the catch's `if (seq !== versionSeq) return;` is not its first statement — a slow failure could land late");
+  }
 }

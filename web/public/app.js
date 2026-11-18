@@ -2362,6 +2362,9 @@ loadFontAtlas();
 // The sequence number is not decoration: a focus during a slow reconnect puts two reads in flight,
 // and without it the older answer could land last and put a dead build back in the footer.
 let versionSeq = 0;
+// PB-140: one warn per outage episode, not one per 250 ms reconnect retry (C1/C2 — module scope, so
+// a retry does not re-initialise it; cleared only by a successful read, so a second outage warns).
+let versionOutageWarned = false;
 function loadVersion() {
   const seq = ++versionSeq;
   fetch("/api/version", { cache: "no-store" })
@@ -2371,6 +2374,9 @@ function loadVersion() {
     })
     .then((data) => {
       if (seq !== versionSeq) return;
+      // C3 (PM 7144 symmetric variant): clear immediately after the success guard, BEFORE the footer
+      // lookup, so a page with no #buildCommit resets too — the SET/warn sits above that same lookup.
+      versionOutageWarned = false;
       const line = document.getElementById("buildCommit");
       if (!line) return;
       // Hidden while booting and empty until the answer: "build unknown" on the way in was the
@@ -2386,12 +2392,22 @@ function loadVersion() {
       // alone is not a signal (nobody hovers a footer), so the text changes too, and the console
       // keeps the reason for whoever is looking.
       if (seq !== versionSeq) return;
-      console.warn("PB-118: /api/version could not be read:", err && err.message ? err.message : err);
+      // C1/AC3: the flag ALONE gates the warn — not coupled to `unknown`, or a tab holding a sha
+      // would stay silent for the whole outage and m2 could not red.
+      if (!versionOutageWarned) {
+        versionOutageWarned = true;
+        console.warn("PB-118: /api/version could not be read:", err && err.message ? err.message : err);
+      }
       const line = document.getElementById("buildCommit");
       if (!line) return;
-      line.textContent = "build unknown";
-      line.title = "Could not read /api/version: " + (err && err.message ? err.message : String(err));
-      line.dataset.build = "error";
+      const unknown = line.textContent === "" || line.dataset.build === "error";
+      // C1: never overwrite a sha this page already has. A tab that outlives a deploy keeps naming
+      // the build it is talking to; only a footer that knows nothing gets the failure text.
+      if (unknown) {
+        line.textContent = "build unknown";
+        line.title = "Could not read /api/version: " + (err && err.message ? err.message : String(err));
+        line.dataset.build = "error";
+      }
     });
 }
 
