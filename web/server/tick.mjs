@@ -30,7 +30,21 @@ const ALARM_CELLS = 8;
 function capitalName(match, cell) {
   // Indexed, not searched: this ran a 84-row find twice per room per round inside the alarm.
   const site = siteAtCell(match.sites, cell.x, cell.y);
-  return site && site.kind === "capital" ? site.name : null;
+  if (!site) return null;
+  // PB-127: membership, not kind. 1918's Washington and Moscow are subtype 4 that year, so
+  // applyEra demotes them to city and `kind === "capital"` would stop naming the real capitals
+  // from the alarm. capitalSet is the same set the win check reads; the two seat cells are the
+  // fallback for a match built without sites (a fixture, or a room older than the set).
+  const set = match.capitalSet && Array.isArray(match.capitalSet.list) ? match.capitalSet.list : null;
+  if (set && set.length) {
+    return set.some((capital) => Number(capital && capital.siteId) === Number(site.id)) ? site.name : null;
+  }
+  const seats = match.capitals || {};
+  for (const side of ["blue", "red"]) {
+    const seat = seats[side];
+    if (seat && Number(seat.x) === Number(cell.x) && Number(seat.y) === Number(cell.y)) return site.name;
+  }
+  return null;
 }
 
 // The winner, or null. Read off the era's set alone: every capital owned by one side. A neutral

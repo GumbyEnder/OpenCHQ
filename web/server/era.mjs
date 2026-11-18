@@ -73,7 +73,22 @@ export function applyEra(sites, era) {
     if (row.type === 0) continue;
     // A rolled era ships no owners: leave the site's current owner exactly as it was found, which
     // is what B-3 then rolls.
-    out.push(rolled ? { ...site, type: row.type } : { ...site, type: row.type, owner: row.owner });
+    if (rolled) {
+      out.push({ ...site, type: row.type });
+      continue;
+    }
+    const next = { ...site, type: row.type, owner: row.owner };
+    // PB-127 row 1: DEMOTE-ONLY, and only from a file row. The asset list calls 62 Washington and
+    // 63 Moscow capitals; 1918's file row gives them subtype 4 (city), so they are cities that
+    // year and must be paid as cities (CITY_KINDS in economy.mjs). The rule is deliberately
+    // one-way: London (type 1 at 1918/1942) and Tokyo (type 2 at 1942, type 1 at 1986) are
+    // capitals by subtype while world.json calls them cities, and promoting them would stop three
+    // paying sites from paying and would hand `kind === "capital"` a set the era's win check does
+    // not use. Type 3 is unmapped and keeps the asset list's kind. A rolled era is skipped above
+    // on source: 2023's row carries subtype 4 for 62/63 but its capitals are rolled by
+    // capitals.rollCapitals(), not read off kind.
+    if (next.kind === "capital" && Number(row.type) === 4) next.kind = "city";
+    out.push(next);
   }
   return out;
 }
