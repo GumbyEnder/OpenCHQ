@@ -672,6 +672,115 @@ function canStepInto(piece, match, path, credit) {
   return false;
 }
 
+// PB-122 AC6 (PM 6699, 6740): a walker whose next step is held by a STATIONARY friend re-plans
+// around that cell when a free land route exists, keeps its order and arrives; it holds only when
+// no way round exists. The straight line is still the plan (T-004) — this is not a general A*: the
+// search runs only at the moment a stopped friend holds the next step, it walks cell-to-cell (no
+// diagonal shortcuts, so going round always costs at least the line it replaces), it never crosses
+// water, it cannot enter any cell a piece stands on, and it must end on the SAME destination. Where
+// the straight line is walkable nothing here runs at all.
+const DETOUR_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const DETOUR_MAX_EXPANSIONS = 6000;
+const DETOUR_MAX_STEPS = 96;
+
+function isStationary(unit) {
+  if (!unit) return false;
+  if (unit.pinned === true) return true;
+  return !Array.isArray(unit.path) || unit.path.length === 0;
+}
+
+function heapPush(heap, item) {
+  heap.push(item);
+  let i = heap.length - 1;
+  while (i > 0) {
+    const parent = (i - 1) >> 1;
+    if (heap[parent][0] <= heap[i][0]) break;
+    [heap[parent], heap[i]] = [heap[i], heap[parent]];
+    i = parent;
+  }
+}
+
+function heapPop(heap) {
+  const top = heap[0];
+  const last = heap.pop();
+  if (heap.length > 0) {
+    heap[0] = last;
+    let i = 0;
+    for (;;) {
+      const left = i * 2 + 1;
+      const right = left + 1;
+      let min = i;
+      if (left < heap.length && heap[left][0] < heap[min][0]) min = left;
+      if (right < heap.length && heap[right][0] < heap[min][0]) min = right;
+      if (min === i) break;
+      [heap[min], heap[i]] = [heap[i], heap[min]];
+      i = min;
+    }
+  }
+  return top;
+}
+
+// A bounded land route from where the piece stands to the order's destination, stepping around
+// every occupied cell (the stopped friend included). Returns null when there is no way round.
+function planDetour(piece, match, destX, destY) {
+  if (!Array.isArray(piece.path) || piece.path.length === 0) return null;
+  if (!cells()) return null;
+  // A path with a sea leg is a crossing; its route belongs to the lane graph, not to this search.
+  for (const step of piece.path) if (isWater(step.x, step.y)) return null;
+
+  const goalX = wrapX(destX);
+  const goalY = Number(destY);
+  const goalKey = goalX + "," + goalY;
+  const startKey = wrapX(piece.x) + "," + Number(piece.y);
+  if (startKey === goalKey) return null;
+
+  const solid = blockedCells(match);
+  solid.delete(startKey); // the walker is not an obstacle to itself
+  if (solid.has(goalKey)) return null; // the destination itself is held: there is nowhere to go
+
+  const best = new Map([[startKey, 0]]);
+  const prev = new Map();
+  const heap = [[0, 0, startKey]];
+  let opened = 0;
+  while (heap.length > 0 && opened < DETOUR_MAX_EXPANSIONS) {
+    const [cost, len, key] = heapPop(heap);
+    if (cost > (best.get(key) ?? Infinity)) continue;
+    opened += 1;
+    if (key === goalKey) {
+      const out = [];
+      let cursor = goalKey;
+      while (cursor !== startKey) {
+        const [x, y] = cursor.split(",").map(Number);
+        out.push(landStep({ x, y }));
+        cursor = prev.get(cursor);
+        if (cursor === undefined) return null;
+      }
+      out.reverse();
+      return out.length > 0 ? out : null;
+    }
+    const [cx, cy] = key.split(",").map(Number);
+    for (const [dx, dy] of DETOUR_DIRS) {
+      const nx = wrapX(cx + dx);
+      const ny = cy + dy;
+      if (ny < 0 || ny >= CELL_H) continue;
+      const nextKey = nx + "," + ny;
+      if (solid.has(nextKey)) continue;
+      const id = terrainAt(nx, ny);
+      if (id === null) continue; // no board data: the search has nothing to route on
+      if (isWater(nx, ny) || isRefused(id)) continue;
+      if (!walkClassAllows(3, id)) continue;
+      const nextLen = len + 1;
+      if (nextLen > DETOUR_MAX_STEPS) continue;
+      const nextCost = cost + Math.max(1, Number(paceAt(nx, ny)) || 1);
+      if (nextCost >= (best.get(nextKey) ?? Infinity)) continue;
+      best.set(nextKey, nextCost);
+      prev.set(nextKey, key);
+      heapPush(heap, [nextCost, nextLen, nextKey]);
+    }
+  }
+  return null;
+}
+
 export function advance(match) {
   const events = [];
   if (!match || !Array.isArray(match.pieces) || match.over) return events;
@@ -730,6 +839,28 @@ export function advance(match) {
       // only when this round carries the walker off that cell again (PB-122): otherwise the step
       // would end the round co-located with the friend and the order would freeze it there.
       if (occupant && friendly && (atDestination || !canStepInto(piece, match, piece.path.slice(1), credit - pace))) {
+        // AC6: a stopped friend holding the next cell is a cell to walk AROUND when the ground
+        // allows it. The detour re-plans from where the piece stands onto the same destination and
+        // is capped, so a piece that keeps meeting friends cannot search every round forever.
+        if (!atDestination && isStationary(occupant) && Number(piece.detours || 0) < 8) {
+          const last = piece.path[piece.path.length - 1];
+          const detour = planDetour(piece, match, last.x, last.y);
+          if (detour) {
+            piece.path = detour;
+            piece.pace = Math.max(1, Number(detour[0].pace) || 1);
+            piece.detours = Number(piece.detours || 0) + 1;
+            events.push({
+              type: "detour",
+              side: piece.side,
+              pieceId: piece.id,
+              by: occupant.id,
+              x: nx,
+              y: ny,
+              steps: detour.length,
+            });
+            continue; // walk the new path with the credit still in hand
+          }
+        }
         noteHold(piece, occupant, nx, ny, events);
         stopped = true;
         break;

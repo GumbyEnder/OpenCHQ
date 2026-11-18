@@ -2,7 +2,8 @@
 //
 // What fails if this is removed:
 //   - a move is a Bresenham line with the binary's class test     -> a route bends around terrain,
-//     which is the A* this task replaced (move.mjs no longer contains one)
+//     which is the A* this task replaced (the order planner still holds no search; AC6's bounded
+//     detour around a STOPPED friend is the one exception, and it is pinned below)
 //   - the X gap over 160 takes the short way round the cylinder   -> an order across the seam
 //     walks 305 cells the wrong way instead of 15 the right way
 //   - class 3 refuses wasteland and fails at a path-cost sum of 100 -> the archive's own route
@@ -148,16 +149,33 @@ export async function run(ctx) {
     }
   }
 
-  // ---- AC7: no A* (or any other search) is left in move.mjs ---------------------------------
+  // ---- AC7: no A* in the ORDER planner; AC6's one bounded detour is the only search ---------
+  // T-004 removed the order pathfinder: planOrder is exactly Bresenham (asserted above). AC6
+  // (PM 6699) adds ONE search, and only for the case the PM ruled on: a STOPPED friend holding
+  // the next step with open ground around. It must stay bounded and have exactly one call site,
+  // inside advance()'s friendly-hold branch, so an order can never be planned by searching.
   if (!existsSync(moveFile)) fail("move.mjs is not where this test expects it");
   const source = readFileSync(moveFile, "utf8");
+  const ac6Start = source.indexOf("// PB-122 AC6");
+  const ac6End = source.indexOf("export function advance(");
+  if (ac6Start < 0 || ac6End <= ac6Start) fail("the AC6 detour block is not where this test expects it");
+  const detourBlock = source.slice(ac6Start, ac6End);
+  const outside = source.slice(0, ac6Start) + source.slice(ac6End);
   const banned = /A\*|dijkstra|heuristic|openSet|closedSet|priorityQueue|min-heap|\bheap\b/i;
-  const hits = source.split("\n")
+  const hits = outside.split("\n")
     .map((line, index) => ({ line, index: index + 1 }))
     .filter((entry) => banned.test(entry.line))
     .map((entry) => entry.index + ": " + entry.line.trim());
-  if (hits.length) fail("move.mjs still carries a search: " + hits.join(" | "));
+  if (hits.length) fail("move.mjs carries a search outside the AC6 detour block: " + hits.join(" | "));
+  if (!/DETOUR_MAX_EXPANSIONS\s*=\s*\d+/.test(detourBlock) || !/DETOUR_MAX_STEPS\s*=\s*\d+/.test(detourBlock)) {
+    fail("the AC6 detour is unbounded: no expansion/step cap in its block");
+  }
+  const callSites = source.split("planDetour(").length - 1;
+  if (callSites !== 2) fail("planDetour has " + (callSites - 1) + " call sites, wanted exactly 1");
+  const callAt = source.indexOf("planDetour(piece, match, last.x, last.y)");
+  if (callAt < ac6End) fail("planDetour is called outside advance(): the order planner must never search");
 
   console.log("walker: class table 0-5, cost sum 100 at desert 3/jungle 9/polar 13/wasteland 77, " +
-    "seam " + east.steps + " steps, straight order " + order.path.length + " steps, no search left");
+    "seam " + east.steps + " steps, straight order " + order.path.length + " steps, " +
+    "no search outside AC6's bounded detour");
 }
