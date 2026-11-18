@@ -11,7 +11,8 @@
 //      camera, where the whole board is on screen - so the scan cannot miss an off-screen cell;
 //   3. CONTROL: 2023, whose capitals ARE the two fixed seats, carries capital ink, and labels
 //      Washington and Moscow - so the zero above is not a dead sampler or a missing layer.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -31,12 +32,25 @@ const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Resolve Playwright without a hard-coded checkout path: the env var wins, then this leg's own
+// node_modules, then any ~/agents/agent-relay*/node_modules (the agent-relay checkouts are renamed
+// per lane, so a single hard-coded path rots the moment one is retired). node's own resolution is
+// the last try, which is what a machine with playwright installed normally hits.
+function playwrightCandidates() {
+  const out = [process.env.PLAYWRIGHT_MODULE, path.join(here, "node_modules", "playwright", "index.mjs")];
+  const agents = path.join(homedir(), "agents");
+  let names = [];
+  try {
+    names = readdirSync(agents, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith("agent-relay")).map((d) => d.name);
+  } catch {
+    names = [];
+  }
+  for (const name of names.sort()) out.push(path.join(agents, name, "node_modules", "playwright", "index.mjs"));
+  return out.filter(Boolean);
+}
+
 async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    path.join(here, "node_modules", "playwright", "index.mjs"),
-    "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
-  ].filter(Boolean);
+  const candidates = playwrightCandidates();
   for (const candidate of candidates) {
     if (candidate !== "playwright" && !existsSync(candidate)) continue;
     try {
