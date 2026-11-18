@@ -312,6 +312,34 @@ button.ghost {
   text-align: center;
 }
 
+/* An emptied flash must take no space: the element always exists, so without this an empty pill
+   would sit at the bottom of the lobby. */
+.flash:empty {
+  display: none;
+}
+
+/* PB-137: the match-over line. Same ink family as the flash, its own row above it, and never on a
+   timer — it stays until the player leaves the match. */
+.result {
+  position: fixed;
+  left: 50%;
+  bottom: 58px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #1a2438;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  z-index: 71;
+  max-width: min(720px, calc(100% - 32px));
+  text-align: center;
+}
+
+.result:empty {
+  display: none;
+}
+
 /* ID rules like `#gate { display: grid }` outrank a bare class, so the gate
    stayed visible after sign-in without this. */
 .hidden { display: none !important; }
@@ -802,6 +830,7 @@ body.in-match .cam button { padding: 1px 8px; }
 body.in-match .alarm { margin: 4px 0 0; padding: 3px 8px; font-size: 12px; }
 
 body.in-match .flash { bottom: 10px; }
+body.in-match .result { bottom: 50px; }
 
 @media (max-width: 800px) {
   #gate, .play { grid-template-columns: 1fr; }

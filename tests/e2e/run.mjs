@@ -326,6 +326,33 @@ async function moveOrder(page) {
   return accepted;
 }
 
+async function flashExpiry(page) {
+  // PB-137 AC5, in a real page: the acknowledgement the move order just wrote clears on its own
+  // timer with no input, and the match-over line is a separate element the flash cannot touch.
+  await page.waitForFunction(() => window.__chq.toast() !== "", null, { timeout: 5000 }).catch(() => {});
+  const said = await toast(page);
+  check(said.length > 0, "an acknowledgement is on the flash after the order", said);
+  const shape = await page.evaluate(() => {
+    const flash = document.getElementById("flash");
+    const result = document.getElementById("result");
+    return {
+      flash: Boolean(flash),
+      result: Boolean(result),
+      separate: Boolean(flash && result && flash !== result),
+      resultText: result ? result.textContent : null,
+    };
+  });
+  check(shape.flash && shape.result && shape.separate, "#result is its own element, not #flash", JSON.stringify(shape));
+  check(shape.resultText === "", "the result line is empty during a live match", JSON.stringify(shape.resultText));
+  // No clicks, no keys, no hovers: wait out the ceiling and demand an empty flash.
+  const cleared = await page.waitForFunction(() => window.__chq.toast() === "", null, { timeout: 9000 })
+    .then(() => true).catch(() => false);
+  const after = await toast(page);
+  check(cleared && after === "", "the flash clears on its own within the ceiling, with no input", JSON.stringify(after));
+  const resultAfter = await page.evaluate(() => window.__chq.result());
+  check(resultAfter === "", "an expiring flash leaves the result line alone", JSON.stringify(resultAfter));
+}
+
 async function shipOntoLand(page) {
   const room = await roomOf(page);
   const ship = (room.pieces || []).find((p) => p.side === room.you && (p.domain === "sea" || /:sea$/.test(p.id)));
@@ -454,6 +481,7 @@ const main = async () => {
     await buyInfantry(page);
     const target = await moveOrder(page);
     check(Boolean(target), "a destination was ordered");
+    await flashExpiry(page);
     await shipOntoLand(page);
     const played = await runRounds(page, ROUNDS);
     await reloadAndResume(page, played);

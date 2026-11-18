@@ -5,6 +5,7 @@ import {
 } from "./render.mjs";
 import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
 import { THEMES, DEFAULT_THEME, isThemeId, nextThemeId, resolveTheme, themeById } from "./themes.mjs";
+import { createFlashLine } from "./flash.mjs";
 import { unitLabel } from "./units.mjs";
 import {
   PICK_HINT,
@@ -52,6 +53,10 @@ const people = document.querySelector("#people");
 const invites = document.querySelector("#invites");
 const roomBox = document.querySelector("#room");
 const flash = document.querySelector("#flash");
+// PB-137: the match result has its own line. It is not a flash and never expires under the player,
+// so `say()` writes only #flash and `sayResult()` writes only #result.
+const resultLine = document.querySelector("#result");
+const flashLine = createFlashLine({ element: flash, resultElement: resultLine });
 const board = document.querySelector("#board");
 const boardNote = document.querySelector("#boardNote");
 const alarmStrip = document.querySelector("#alarm");
@@ -156,7 +161,7 @@ let boardPayload = {
 };
 
 function say(text) {
-  flash.textContent = text || "";
+  flashLine.say(text);
 }
 
 // The end of a match said once, in the player's own terms.
@@ -173,19 +178,21 @@ function sayResult(room) {
   const list = caps.length
     ? " Capitals: " + caps.map((row) => row.name + " " + (row.owner || "neutral")).join(", ") + "."
     : "";
+  // PB-137 AC4: the result is written to its own line, not to the flash. It stays there until the
+  // player leaves the match; a later `say()` cannot overwrite or clear it.
   if (result && result.reason === "capitals" && result.lastCapital && result.lastCapital.name) {
     const who = result.winner === mine
       ? "You win"
       : result.winner === "blue" ? "Blue wins" : result.winner === "red" ? "Red wins" : "The match is over";
-    say(who + ": " + result.lastCapital.name + " fell at round " + result.lastCapital.round + "." + list);
+    flashLine.result(who + ": " + result.lastCapital.name + " fell at round " + result.lastCapital.round + "." + list);
     return;
   }
   const note = typeof room.note === "string" ? room.note.trim() : "";
   if (note) {
-    say(note + list);
+    flashLine.result(note + list);
     return;
   }
-  say(room.winner && mine ? (room.winner === mine ? "You have won." : "You lost.") : "The match is over.");
+  flashLine.result(room.winner && mine ? (room.winner === mine ? "You have won." : "You lost.") : "The match is over.");
 }
 
 function eraName(era) {
@@ -1248,6 +1255,8 @@ function renderRoom() {
   roomBox.className = room ? "" : "room-empty";
   roomBox.textContent = "";
   if (!room) {
+    // PB-137 AC4: the result line lives as long as the match does. Leaving is what ends it.
+    flashLine.clearResult();
     roomBox.textContent = "Start a bot match, or invite someone who is online.";
     return;
   }
@@ -2254,6 +2263,7 @@ async function signOut() {
   showPlay(false);
   drawMatch();
   say("");
+  flashLine.clearResult();
 }
 
 document.querySelector("#login").addEventListener("submit", async (event) => {
@@ -2454,6 +2464,8 @@ window.__chq = {
   room: () => room,
   socketState: () => socketState,
   toast: () => flash.textContent || "",
+  // PB-137: the match-over line, which is not a flash and must outlive the flash timer.
+  result: () => (resultLine && resultLine.textContent) || "",
   // The board's own one-liner. It sits under the canvas and used to disagree with the toast
   // (PB-053), so the e2e reads both (T-030 AC4).
   note: () => (boardNote && boardNote.textContent) || "",

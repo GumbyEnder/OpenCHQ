@@ -161,7 +161,11 @@
   <div id="boot" class="boot" role="status" aria-live="polite">
     <p class="bootline">Checking your session…</p>
   </div>
+  <!-- PB-137: a flash is an acknowledgement and expires on its own timer. A finished match is not:
+       the result line sits in its own element, outlives every flash, and is cleared only by leaving
+       the match (`say()` cannot reach it). -->
   <p id="flash" class="flash" role="status"></p>
+  <p id="result" class="result" role="status"></p>
   <footer id="buildFooter" class="buildfooter">
     <span id="buildCommit"></span>
   </footer>
