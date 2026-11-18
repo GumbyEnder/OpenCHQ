@@ -95,12 +95,17 @@ export async function run(ctx) {
   if (revisits > 0) problems.push(revisits + " sea orders reach their destination and keep walking (PB-113 regression)");
   if (wrongQuote > 0) problems.push(wrongQuote + " sea quotes are not the walk's own rounds");
 
-  // 3. CONTROL: a long crossing is still a lane voyage, not a straight line. 3,3 -> 10,3 is a
-  // seven-cell order the lane graph answered in 38 cells before this ticket; if the short-hop
-  // branch leaked into it the path would be the seven-cell line.
-  const long = plan("destroyer", "sea", 3, 3, 10, 3);
-  if (!long || !long.ok) problems.push("the long crossing 3,3->10,3 was refused");
+  // 3. CONTROL: a real crossing is still a lane voyage, not a straight line. PB-133 moved this
+  // control: 3,3 -> 10,3 is a seven-cell open-water hop whose direct water walk is seven cells, so
+  // under the span bound it is correctly a straight walk now (measured: 7 cells / 3 rounds at
+  // 4560dbd+PB-133; it was the 17-cell lane plan before). The control is now a crossing whose
+  // straight line is land: 2,2 -> 22,22, span 20, 14 land cells on the line, water walk 39 cells
+  // (over span+3) and lane plan 52. If the span bound leaked into a real crossing the path would
+  // be the 39-cell water walk.
+  const long = plan("destroyer", "sea", 2, 2, 22, 22);
+  if (!long || !long.ok) problems.push("the long crossing 2,2->22,22 was refused");
   else if (long.path.length < 8) problems.push("the long crossing is a straight line (" + long.path.length + " cells)");
+  else if (long.path.length <= 23) problems.push("the long crossing is the water walk, not the lane plan (" + long.path.length + " cells)");
 
   if (problems.length) fail(problems.join("; "));
   return "58,66->59,66 is 1 cell / 1 round; sea sweep " + accepted + " accepted, " + adjacent +
