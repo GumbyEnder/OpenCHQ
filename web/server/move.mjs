@@ -362,37 +362,42 @@ export function planOrder(match, side, pieceId, toX, toY) {
     // is PB-117's defect - a one-cell order quoted 28 rounds and sailed 84 cells - and it is not
     // PB-113: 59,66 is never on that path. Longer crossings still follow the lanes (Manual p.21-22).
     //
-    // Both plans are built for a short hop and the cheaper one wins: a 3-cell order whose straight
-    // line crosses a headland can still be shorter by water-walking around it than by the lanes
-    // (measured at 295,16 -> 297,19: 25 cells around the bay), and a hop whose water walk fails
-    // outright has the lane plan to fall back on. Only the short-hop branch pays for the second
-    // plan; a long crossing is the lane plan alone.
-    const hop = Math.max(Math.abs(wrapDelta(piece.x, x)), Math.abs(Number(y) - Number(piece.y)));
-    const candidates = [];
-    const planSea = (build) => {
+    // PB-133: the direct water walk is built for EVERY hop, not only a short one, and the bound is
+    // the straight-line span plus PB-117's slack - a walk within SHORT_HOP_CELLS of the straight
+    // line is a hop, anything longer is a voyage (PM 7001 item 3, "SPAN BOUND, not a bigger
+    // constant"). The lane plan is built for every hop too, because a walk over the bound still
+    // needs a voyage plan to fall back to, and because a lane plan that is genuinely shorter than
+    // the walk must win (a lane route can pass through the destination early; stopAtDestination
+    // cuts it there). Where the straight line is land the water walk detours, so a real headland
+    // lands over the bound and the lane plan is the only plan - the AC2 control.
+    const span = Math.max(Math.abs(wrapDelta(piece.x, x)), Math.abs(Number(y) - Number(piece.y)));
+    const build = (fn) => {
       try {
-        const cells = build();
-        if (Array.isArray(cells) && cells.length) candidates.push(cells);
+        const cells = fn();
+        return Array.isArray(cells) && cells.length ? cells : null;
       } catch {
-        // a route builder that cannot walk this water contributes no candidate
+        // a route builder that cannot walk this water contributes no plan
+        return null;
       }
     };
-    if (hop <= SHORT_HOP_CELLS) {
-      planSea(() => waterStepRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y }));
-    }
-    planSea(() => seaRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y }));
     // Neither route builder hands back steps; both start with the cell the hull already stands on.
     // Keeping it costs the hull a credit on its own cell - a 3-step hop then costs 4 spent moves and
     // quotes 2 rounds instead of 1 - so the origin is dropped exactly as the land path drops it
     // (planLandPath returns cells.slice(1)). The remaining list is cells to walk INTO.
-    const trimmed = candidates.map((cells) => (wrapX(cells[0].x) === wrapX(piece.x) &&
-      Number(cells[0].y) === Number(piece.y) ? cells.slice(1) : cells)).filter((cells) => cells.length);
-    if (!trimmed.length) return { error: "No sea lane reaches that cell." };
+    const trimOrigin = (cells) => {
+      if (!cells) return null;
+      const out = wrapX(cells[0].x) === wrapX(piece.x) && Number(cells[0].y) === Number(piece.y)
+        ? cells.slice(1) : cells;
+      return out.length ? out : null;
+    };
+    const walk = trimOrigin(build(() => waterStepRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y })));
+    const lane = trimOrigin(build(() => seaRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y })));
+    if (!walk && !lane) return { error: "No sea lane reaches that cell." };
     const cost = (cells) => walkRounds(piece, cells);
-    let route = trimmed[0];
-    for (const cells of trimmed) {
-      if (cost(cells) < cost(route) || (cost(cells) === cost(route) && cells.length < route.length)) route = cells;
-    }
+    const withinBound = Boolean(walk) && walk.length <= span + SHORT_HOP_CELLS;
+    let route;
+    if (withinBound && (!lane || cost(walk) <= cost(lane))) route = walk;
+    else route = lane || walk;
     const path = stopAtDestination(route.map((step) => ({ x: step.x, y: step.y, pace: 1 })), { x, y });
     return { ok: true, path, rounds: walkRounds(piece, path) };
   }
