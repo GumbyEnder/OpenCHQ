@@ -103,10 +103,9 @@ export async function run(ctx) {
       fail("a resumed 1918 row carries " + typed.length + " typed capital rows, expected 3 " +
         "(the resume rebuild dropped the era's type join)");
     }
-    // Per-id parity with the room's own opening for every id the row and the opening share. The
-    // row rebuilds from the 84-row asset list, so it also carries ids the year's own opening
-    // dropped (a separate, unmeasured resume gap), and it carries no dock/well rows; neither is
-    // this ticket's subject. What must match, id by id, is the era's `type` join.
+    // Per-id parity with the room's own opening for every id the row and the opening share. This
+    // ticket's subject is the era's `type` join, not membership: which sites the row holds was
+    // still the 84-row asset list here, and PB-124 (siteIds) closed that. Both are asserted now.
     const live = openMatch("1918", matchSites("1918", board));
     const liveById = new Map(live.sites.map((s) => [String(s.id), s]));
     let shared = 0;

@@ -7,16 +7,15 @@
 // neither shrinks the match:
 //
 //  - The row does not repeat the board's static site table. Sites are rebuilt from
-//    board.mjs on load; the row carries only which side owns which site and which site is
-//    unready. A running room keeps the full site list in memory either way.
+//    board.mjs on load; the row carries which sites the room HAS, which side owns each, and
+//    which site is unready. A running room keeps the full site list in memory either way.
 //  - created_at is remembered per room, so a round does not SELECT before every upsert.
 //
 // There is deliberately no index on saved_at: every running room rewrites saved_at every
 // round, and maintaining that index cost a third of the snapshot. The 24 h prune is a boot
 // time scan of one table, which is cheap at this size.
 
-import { boardPayload } from "./board.mjs";
-import { eraTable } from "./era.mjs";
+import { boardPayload, matchSites } from "./board.mjs";
 import { capitalSetFor } from "./match.mjs";
 import { db } from "./db.mjs";
 import { migrateMatch } from "./migrate.mjs";
@@ -57,46 +56,41 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-// The board's site table, once per process per era. A room row only stores the delta; the
-// static half (name, cell, kind, country, and the era's subtype `type`) is the same for every
-// room of that era on this board.
+// The board's site table, once per process per era. A room row stores its own MEMBERSHIP now
+// (PB-124, `siteIds` below) and the static half (name, cell, kind, country, the era's subtype
+// `type`) is the same for every room of that era on this board.
 //
-// The era matters for one field: `type` is not on the asset list, it is joined in by the baked
-// era table, and a rebuilt site that loses it is a site the page cannot classify. That is the
-// PB-120 resume path - a stored 1918 room came back with no `type` on any of its rows, so
-// capitalMarkers() fell through to the fixed-seat fallback and named the London/Berlin cells
-// "Washington"/"Moscow". Join the same table the room opened with.
+// Two things live here, and they are different questions:
+//  - the era roster is what matchSites(era) hands openMatch at the bell: the year's live rows with
+//    their `type`, then the docks and oil wells the asset list does not carry at all. A rebuild
+//    from boardPayload().sites alone answered the 84-row picture list, so every resumed room lost
+//    its 150 docks and its wells and gained the rows the year drops (PB-124).
+//  - `type` is not on the asset list; it is joined in by the baked era table. A rebuilt site that
+//    loses it is a site the page cannot classify, which is PB-120's resume path - a stored 1918
+//    room came back with no `type` on any row, so capitalMarkers() fell through to the fixed-seat
+//    fallback and named the London/Berlin cells "Washington"/"Moscow".
 //
-// Only `type` is taken from the table here. applyEra() also DROPS sites the year does not have
-// and applies the file's opening owner; the row's own siteOwners already carry the live owners,
-// and changing which sites a resumed room holds is a separate (and unmeasured) move.
+// The owner byte applyEra() copies is NOT taken here: the row's own siteOwners carry the live
+// owners, and the static half never writes an owner.
 let staticsCache = null;
 function siteStatics(era) {
   const key = String(era === undefined || era === null ? "" : era);
   if (!staticsCache) staticsCache = new Map();
   if (staticsCache.has(key)) return staticsCache.get(key);
-  const types = new Map();
-  try {
-    const table = eraTable(key);
-    for (const row of (table && table.sites) || []) {
-      if (row && Number.isInteger(Number(row.id)) && Number(row.type) !== 0) types.set(String(row.id), Number(row.type));
-    }
-  } catch {
-    // No baked table: the rebuilt sites simply keep no subtype, as before.
-  }
   const map = new Map();
   try {
-    for (const site of boardPayload().sites || []) {
+    // No era (a row from before eras, or the raw-list fallback lookup): the bare asset list.
+    const roster = key === "" ? (boardPayload().sites || []) : matchSites(key, boardPayload());
+    for (const site of roster || []) {
       if (!site || site.id === undefined) continue;
       const id = String(site.id);
-      const type = types.has(id) ? types.get(id) : site.type;
       map.set(id, {
         id: site.id,
         name: site.name,
         x: site.x,
         y: site.y,
         kind: site.kind,
-        ...(type === undefined ? {} : { type }),
+        ...(site.type === undefined ? {} : { type: site.type }),
         ...(site.country_id === undefined ? {} : { country_id: site.country_id }),
         ...(site.region === undefined ? {} : { region: site.region }),
       });
@@ -117,8 +111,14 @@ function packMatch(match) {
   const siteOwners = { blue: [], red: [] };
   const sitesUnready = [];
   const siteReadyRounds = {};
+  // PB-124: which sites the room HAS is part of the delta, not a property of the board. Without
+  // it the restore asked the era and every room came back as that era's whole roster - 1918 lost
+  // all 150 docks and 9 wells and gained 59 cities the year does not hold, which is a refused hull
+  // for every side whose berths were docks and an income scan over the wrong ground.
+  const siteIds = [];
   for (const site of sites || []) {
     if (!site) continue;
+    siteIds.push(site.id);
     if (SIDES.includes(site.owner)) siteOwners[site.owner].push(site.id);
     // T-011 replaced the boolean with the round a site comes back. The boolean is still written
     // for a row read by an older build, and the round is what a current build reads back.
@@ -128,7 +128,7 @@ function packMatch(match) {
       sitesUnready.push(site.id);
     }
   }
-  return { ...rest, siteOwners, sitesUnready, siteReadyRounds, moneyUnit: "millions" };
+  return { ...rest, siteIds, siteOwners, sitesUnready, siteReadyRounds, moneyUnit: "millions" };
 }
 
 // Rows written before T-001 stored cash in whole billions and could carry the generic "ship"
@@ -140,7 +140,7 @@ function packMatch(match) {
 export function unpackMatch(packed) {
   if (!packed || typeof packed !== "object") return null;
   if (!packed.siteOwners && Array.isArray(packed.sites)) return withCapitalSet(migrateMatch({ ...packed }));
-  const { siteOwners, sitesUnready, sites, ...rest } = packed;
+  const { siteOwners, sitesUnready, siteIds, sites, ...rest } = packed;
   const owners = new Map();
   for (const side of SIDES) {
     for (const id of (siteOwners && siteOwners[side]) || []) owners.set(String(id), side);
@@ -148,7 +148,19 @@ export function unpackMatch(packed) {
   const unready = new Set(((sitesUnready || [])).map((id) => String(id)));
   const readyRounds = packed.siteReadyRounds && typeof packed.siteReadyRounds === "object" ? packed.siteReadyRounds : {};
   const rebuilt = [];
-  for (const [key, base] of siteStatics(rest.era)) {
+  // PB-124: a row that recorded its membership rebuilds exactly that list, in that order, with the
+  // era's static half (including `type`) on every id the era roster names. Ids the era roster does
+  // not carry at all - a dock or a well is not in the 84-row asset list - fall back to the bare
+  // board list so a row is never rebuilt thinner than it was saved.
+  // A row written before PB-124 recorded no membership; the era's whole roster is the best answer
+  // it admits, which is what it got before, minus the rows the year drops.
+  const eraMap = siteStatics(rest.era);
+  const rawMap = siteStatics();
+  const entries = Array.isArray(siteIds) && siteIds.length
+    ? siteIds.map((id) => [String(id), eraMap.get(String(id)) || rawMap.get(String(id))])
+    : [...eraMap];
+  for (const [key, base] of entries) {
+    if (!base) continue;
     const owner = owners.get(key) ?? null;
     // A row from before T-011 carries the boolean only, with no duration: the city comes back on
     // the next round rather than staying unready forever, so a loaded room can produce again.
