@@ -1035,6 +1035,9 @@ async function loadBoard() {
       const payload = await res.json();
       if (payload && typeof payload === "object") {
         boardPayload = payload;
+        // PB-125: the pre-room frame draws the lobby's SELECTED era's capitals, so the payload
+        // carries the year on show. render.mjs prefers room.era once a match exists.
+        boardPayload.era = eraSelect ? String(eraSelect.value || "") : "";
         if (payload.source !== "missing") break;
       }
     } catch (err) {
@@ -2277,6 +2280,15 @@ function applyHandicap() {
 }
 
 if (eraSelect) eraSelect.addEventListener("change", applyHandicap);
+// PB-125: the lobby preview is era-aware, so changing the era redraws the pre-room frame with that
+// year's own capitals. Purely local: no room exists yet, and the payload already carries every
+// file era's rows.
+if (eraSelect) {
+  eraSelect.addEventListener("change", () => {
+    boardPayload.era = String(eraSelect.value || "");
+    drawMatch();
+  });
+}
 fetch("/api/setup")
   .then((res) => res.json())
   .then((data) => {

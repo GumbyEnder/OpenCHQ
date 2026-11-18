@@ -385,11 +385,11 @@ export const CAPITAL_NEUTRAL = "#cfcfcf";
 // era's own capital rows (type 1/2, with the owner the win check reads), so 1918 labels London,
 // Berlin and Paris - never the two fixed seats. The board payload's capitals are fixed seats with
 // no era in them, so they are the fallback for a page with no room yet (PB-022).
-export function capitalMarkers(board, room) {
+export function capitalMarkers(board, room, era) {
   const sites = Array.isArray(room && room.sites) ? room.sites : [];
-  const era = sites.filter((site) => site && (Number(site.type) === 1 || Number(site.type) === 2));
-  if (era.length) {
-    return era.map((site) => ({
+  const eraRows = sites.filter((site) => site && (Number(site.type) === 1 || Number(site.type) === 2));
+  if (eraRows.length) {
+    return eraRows.map((site) => ({
       side: site.owner === "red" ? "red" : site.owner === "blue" ? "blue" : null,
       name: String(site.name),
       x: Number(site.x),
@@ -405,6 +405,23 @@ export function capitalMarkers(board, room) {
   // capitals map is therefore authoritative - an absent side is withheld, not missing - and the
   // board (then the fixed seats) is only for a page that has no view yet.
   const seated = Boolean(room && room.capitals && typeof room.capitals === "object");
+  // PB-125: a pre-room frame with an era selected draws THAT era's capitals. The board payload
+  // carries them per year (eraCapitals() on the server, the same era table a match uses), so the
+  // lobby preview and the in-match frame name the same cells with the same owner ink. The room's
+  // own era wins once a match exists; the lobby's selected year reaches us on the payload.
+  const year = String(era || (room && room.era) || (board && board.era) || "");
+  const byEra = board && board.capitalsByEra && typeof board.capitalsByEra === "object"
+    ? board.capitalsByEra[year]
+    : null;
+  if (!seated && Array.isArray(byEra)) {
+    return byEra.map((cap) => ({
+      side: cap.side === "red" || cap.side === "blue" ? cap.side : null,
+      name: String(cap.name),
+      x: Number(cap.x),
+      y: Number(cap.y),
+      color: cap.side === "red" || cap.side === "blue" ? sideColor(cap.side) : CAPITAL_NEUTRAL,
+    }));
+  }
   const source = seated ? room.capitals : ((board && board.capitals) || {});
   // PB-120: the name and the cell must come from the same record. A seat view whose site rows
   // arrived without their type join (a resume after a deploy rebuilt them from the board statics)
@@ -439,7 +456,10 @@ export function capitalMarkers(board, room) {
       name: nameAt(cellX, cellY) || (found.name ? String(found.name) : String(seat.name)),
       x: cellX,
       y: cellY,
-      color: sideColor(side),
+      // PB-125 AC3: with no era and no view there is no owner byte to read, so the fixed pair keeps
+      // its cells and names but paints NEUTRAL. A ring in a side's colour on a capital that side may
+      // not own is a false claim of ownership, which is the defect this ticket is about.
+      color: seated ? sideColor(side) : CAPITAL_NEUTRAL,
     });
   }
   return out;

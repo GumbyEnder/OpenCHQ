@@ -361,6 +361,40 @@ export function bundledBoard() {
 // Everything the page needs to draw the board. No image bytes, no stills, and no
 // path to the extract: those stay on this machine.
 export function boardPayload(env = process.env) {
+  return withEraCapitals(boardPayloadRaw(env));
+}
+
+// PB-125: the pre-room preview needs the era's OWN capitals, not the archive's fixed pair. The era
+// table is the authority on both the set and the owner byte - `applyEra` is the same join a match
+// uses - so this is a projection of one rule, not a second source. A year the table has no capital
+// rows for (2023/????) answers an empty list on purpose: those eras roll their capitals at launch
+// and a preview must not invent one.
+export const CAPITAL_ERA_YEARS = Object.freeze(["1918", "1942", "1986", "2023", "9999"]);
+
+export function eraCapitals(sites, era) {
+  const rows = applyEra(Array.isArray(sites) ? sites : [], String(era));
+  return rows
+    .filter((site) => Number(site.type) === 1 || Number(site.type) === 2)
+    .map((site) => ({
+      side: site.owner === "red" ? "red" : site.owner === "blue" ? "blue" : null,
+      name: String(site.name),
+      x: Number(site.x),
+      y: Number(site.y),
+      siteId: site.id === undefined || site.id === null ? null : site.id,
+    }));
+}
+
+function withEraCapitals(payload) {
+  if (payload && !payload.capitalsByEra) {
+    const sites = Array.isArray(payload.sites) ? payload.sites : [];
+    const byEra = {};
+    for (const era of CAPITAL_ERA_YEARS) byEra[era] = eraCapitals(sites, era);
+    payload.capitalsByEra = byEra;
+  }
+  return payload;
+}
+
+function boardPayloadRaw(env = process.env) {
   if (cached) return cached;
   const root = resolveDataRoot(env);
   if (!root) {

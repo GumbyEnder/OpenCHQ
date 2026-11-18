@@ -194,7 +194,10 @@ export async function run(ctx) {
   // --- capitals --------------------------------------------------------------
   const fallbackCaps = capitalMarkers(null);
   eq(fail, "fallback capitals", fallbackCaps.map((c) => [c.name, c.x, c.y]), [["Washington", 79, 44], ["Moscow", 183, 25]]);
-  eq(fail, "capital colors", fallbackCaps.map((c) => c.color), [SCHEMATIC.blue, SCHEMATIC.red]);
+  // PB-125 AC3: a frame with no era and no view has no owner byte to read, so the fixed pair keeps
+  // its cells and names but paints neutral - a side-coloured ring there claims an ownership nobody
+  // measured. (Was [SCHEMATIC.blue, SCHEMATIC.red] before PB-125; the change is the AC, not drift.)
+  eq(fail, "capital colors", fallbackCaps.map((c) => c.color), [CAPITAL_NEUTRAL, CAPITAL_NEUTRAL]);
   const renamed = capitalMarkers({ capitals: { blue: { name: "Washington", x: 79, y: 44 }, red: { name: "Moscow", x: 183, y: 25 } } });
   eq(fail, "capital names survive the payload", renamed.map((c) => c.name), ["Washington", "Moscow"]);
   // PB-022: a room labels the era's own capital rows, not the board's fixed seats. 1918 carries
@@ -269,11 +272,16 @@ export async function run(ctx) {
   eq(fail, "real board paints as cells", result.mode, "cells");
   ok(fail, "real board paints most of its cells", result.painted > BOARD_W * BOARD_H * 0.5);
   eq(fail, "all four opening pieces are drawn", result.pieces, 4);
-  eq(fail, "both capitals are marked", result.capitals, 2);
+  // PB-125: this fixture is a 1986 ROOM with no site rows, so the era table is the only source of
+  // capitals it has - and 1986 carries four (London, Tokyo, Washington, Moscow), which is what the
+  // match itself draws. It used to fall back to the archive's fixed pair and draw two.
+  eq(fail, "the era's capitals are marked", result.capitals, 4);
   ok(fail, "Washington is labelled", painted.texts.some((t) => t.text === "Washington"));
   ok(fail, "Moscow is labelled", painted.texts.some((t) => t.text === "Moscow"));
-  const labels = painted.texts.map((t) => t.text);
-  eq(fail, "no third capital is labelled", labels.length, 2);
+  const labels = painted.texts.map((t) => t.text).sort();
+  // Same reason as the count above: 1986's own capital set is four names. The pin is the SET, so a
+  // fifth label (a city promoted to a capital, the old fixed-pair remap) still reds here.
+  eq(fail, "only the era's capitals are labelled", labels, ["London", "Moscow", "Tokyo", "Washington"]);
 
   // --- PB-073: a withheld enemy capital is not drawn ---------------------------
   // A rolled/concealed era has no type-1/2 capital rows, so the marker set comes from the
