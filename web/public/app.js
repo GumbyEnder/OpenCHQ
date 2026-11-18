@@ -2149,6 +2149,13 @@ function connect() {
       // An order is the player's own act, so it belongs in the log beside what the round did.
       noteLog([{ round: room && room.round ? room.round : 0, text: ackText(message).replace(/\.$/, "") }]);
       clearCommand();
+    } else if (message.op === "speed") {
+      // The server's own speed frame is the authority for the readout and both guards. Before this
+      // the header moved only because a room frame happened to follow, and a step the server treated
+      // as a no-op (the top of the range) could leave the header and the room disagreeing about the
+      // same number (PB-129).
+      if (room) room.speed = Number(message.speed);
+      syncSpeed();
     } else if (message.op === "error") {
       // The server's sentence is what the player reads. It is never swallowed, and a queued
       // order that was refused says which one.

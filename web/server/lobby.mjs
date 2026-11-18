@@ -867,16 +867,31 @@ export function createLobby() {
     if (!room) return { error: "You are not in a match." };
     if (!seatUsername(room, username)) return { error: "You do not hold a seat in this match." };
     const current = speedOf(room);
+    const sentence = "The speed must be a whole number from " + SPEED_MIN + " to " + SPEED_MAX + ".";
     let wanted = message && message.speed !== undefined ? clampSpeed(message.speed) : null;
     if (wanted === null && message && message.delta !== undefined) {
       const delta = Number(message.delta);
       if (!Number.isFinite(delta) || delta === 0) {
-        return { error: "The speed must be a whole number from " + SPEED_MIN + " to " + SPEED_MAX + "." };
+        return { error: sentence };
       }
-      wanted = clampSpeed(current + Math.sign(delta));
+      const next = current + Math.sign(delta);
+      if (next < SPEED_MIN || next > SPEED_MAX) {
+        // A step past the end of the range is a no-op, not a refusal (PB-129). The page disables
+        // the button at the top and the bottom, but a script-dispatched click, a tab a deploy
+        // behind, or the other seat moving the end at the same instant can still send it — and
+        // "The speed must be a whole number from 0 to 6." is not something the player did. The
+        // seat that asked still hears the room's real number, so a readout that drifted (the other
+        // seat changed the speed) catches up without a room frame being owed to it.
+        const peer = sockets.get(username);
+        if (peer) {
+          peer.send({ op: "speed", speed: room.speed, roundSeconds: roomSeconds(room), clock: room.clock, unchanged: true });
+        }
+        return { ok: true, speed: room.speed, unchanged: true };
+      }
+      wanted = clampSpeed(next);
     }
     if (wanted === null) {
-      return { error: "The speed must be a whole number from " + SPEED_MIN + " to " + SPEED_MAX + "." };
+      return { error: sentence };
     }
     room.speed = wanted;
     // A change of speed restarts the room's round clock, so a slow round already half spent does
