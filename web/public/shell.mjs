@@ -79,6 +79,12 @@ export function debugRows(state = {}) {
   rows.push(["camera", camera
     ? String(camera.scale) + " px/cell" + (camera.follow ? " · following" : " · free")
     : "—"]);
+  // Where the pointer is and where the selection stands, both in board cells. A hand check that
+  // cannot say which cell it is pointing at argues "the badge is on the wrong cell" from a
+  // screenshot; these two rows make it a number both sides read off the same panel (PB-130).
+  rows.push(["pointer", cellText(state.pointer) || "—"]);
+  const picked = state.selected || null;
+  rows.push(["selected", picked ? String(picked.id || "?") + " @ " + (cellText(picked) || "?") : "none"]);
   // Owner-only: the server attaches these to the room for the review account and for nobody
   // else, so a normal player's debug window stays fog-safe.
   const actions = room && Array.isArray(room.botActions) ? room.botActions.slice(-10) : [];
@@ -94,4 +100,13 @@ export function debugRows(state = {}) {
     }
   }
   return rows;
+}
+
+// A cell as "x,y". Whole numbers only: a pointer outside the board and a piece with no stored
+// position both read as unknown rather than as a plausible 0,0.
+function cellText(target) {
+  if (!target) return "";
+  const x = Number(target.x);
+  const y = Number(target.y);
+  return Number.isInteger(x) && Number.isInteger(y) ? x + "," + y : "";
 }

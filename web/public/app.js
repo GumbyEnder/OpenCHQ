@@ -140,6 +140,10 @@ function startSelectionPulse() {
 }
 let preview = null;
 let hoverKey = "";
+// The cell under the pointer, in board coordinates, or null when the pointer is off the map. Only
+// the debug window reads it (PB-130): a hand check needs to say "cell 118,64" rather than argue
+// about which pixel a badge sat on.
+let pointerCell = null;
 // The last /api/board payload. A missing extract is a normal state here: the
 // hosted build never has one, and the page draws the schematic instead.
 let boardPayload = {
@@ -627,11 +631,9 @@ function tickChrome() {
     roundStartedAt = Date.now();
   }
   paintChrome(camera);
-  // The debug window follows the clock at a readable rate rather than on every frame.
-  if (debugOpen && Date.now() - debugPaintedAt > 250) {
-    debugPaintedAt = Date.now();
-    renderDebug();
-  }
+  // The debug window repaints whenever its rows would change; the camera is one of those rows, so
+  // a zoom shows up in the panel the frame it lands rather than on a clock.
+  if (debugOpen) renderDebug();
 }
 
 setInterval(tickChrome, 100);
@@ -682,6 +684,9 @@ function drawMatch() {
     camNote.textContent = "cell " + (view.scale / dpr()).toFixed(0) + " px · " +
       (following ? "following" : "free") + " · " + currentTheme().label;
   }
+  // A zoom or a pan is a debug row changing with no message on the wire, so the panel is offered
+  // the new camera here as well as on the tick.
+  if (debugOpen) renderDebug();
   // A crossing nobody screens is said out loud, in the seat's own words, before the loss.
   const unscreened = Array.isArray(room && room.unscreened) ? room.unscreened : [];
   const escortNote = unscreened.length === 0 ? ""
@@ -882,12 +887,24 @@ board.addEventListener("mousemove", (event) => {
   // A pan is not a hover: while the pointer is down the badge tip and the route preview stay put.
   if (panFrom) return;
   hoverBadge(event);
-  if (!room || !room.you || !selected) return;
-  askRoute(cellAtEvent(event, board, viewForCanvas()));
+  const cell = room ? cellAtEvent(event, board, viewForCanvas()) : null;
+  const moved = cell
+    ? !pointerCell || pointerCell.x !== cell.x || pointerCell.y !== cell.y
+    : Boolean(pointerCell);
+  if (moved) {
+    pointerCell = cell ? { x: cell.x, y: cell.y } : null;
+    renderDebug();
+  }
+  if (!room || !room.you || !selected || !cell) return;
+  askRoute(cell);
 });
 
 board.addEventListener("mouseleave", () => {
   hideBadgeTip();
+  if (pointerCell) {
+    pointerCell = null;
+    renderDebug();
+  }
   if (!preview) return;
   preview = null;
   hoverKey = "";
@@ -1496,7 +1513,8 @@ const WIRE_KEEP = 40;
 const wireLog = [];
 let socketState = "closed";
 let debugOpen = false;
-let debugPaintedAt = 0;
+// The last painted rows, so a repaint that would change nothing is skipped.
+let debugSignature = "";
 try {
   debugOpen = localStorage.getItem("openchq.debug") === "1";
 } catch {
@@ -1546,7 +1564,15 @@ function renderDebug() {
     },
     room,
     camera: camera ? { scale: Math.max(1, Math.round(camera.scale / dpr())), follow: following } : null,
+    pointer: pointerCell,
+    selected,
   });
+  // The panel is repainted whenever its text would actually change, not on a 250 ms clock: the
+  // pointer cell and the camera move between ticks, and a row that trails the map is the row a
+  // hand check ends up quoting (PB-130).
+  const signature = rows.map((row) => row[0] + "=" + row[1]).join("\u0001");
+  if (signature === debugSignature) return;
+  debugSignature = signature;
   const list = document.getElementById("debugRows");
   list.textContent = "";
   for (const [label, value] of rows) {
@@ -1556,6 +1582,8 @@ function renderDebug() {
     dd.textContent = value;
     list.append(dt, dd);
   }
+  // The pointer and the selection move under the clock-less parts of the page (a hover, a zoom),
+  // so the panel is painted from the events that move them, not only from the clock's tick.
   paintWire();
 }
 

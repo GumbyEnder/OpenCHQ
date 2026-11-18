@@ -74,6 +74,25 @@ export async function run(ctx) {
   eq("the piece count is reported", live.pieces, "3");
   eq("the camera is reported in cells, not backing pixels", live.camera, "4 px/cell · following");
 
+  // --- the pointer and the selection, as cells (PB-130) ----------------------
+  // A hand check that cannot name the cell under the pointer argues "the badge is on the wrong
+  // cell" from a screenshot. These two rows are the shared number: board cells, not pixels.
+  eq("an empty map has no pointer cell", idle.pointer, "—");
+  eq("nothing selected reads as none", idle.selected, "none");
+  const aimed = Object.fromEntries(debugRows({
+    pointer: { x: 118, y: 64 },
+    selected: { id: "blue-tank-2", x: 117, y: 65 },
+  }));
+  eq("the hovered cell is reported", aimed.pointer, "118,64");
+  eq("the selected unit's cell is reported", aimed.selected, "blue-tank-2 @ 117,65");
+  // A position that is not a whole cell is unknown, not a plausible-looking 0,0.
+  const unplaced = Object.fromEntries(debugRows({
+    pointer: { x: 12.5, y: 4 },
+    selected: { id: "blue-inf-1" },
+  }));
+  eq("a fractional pointer is unknown", unplaced.pointer, "—");
+  eq("a unit with no cell reads as unknown", unplaced.selected, "blue-inf-1 @ ?");
+
   // --- what the page actually ships -----------------------------------------
   const html = await (await fetch(ctx.base + "/")).text();
   for (const id of ["strip", "stripInfo", "debugToggle", "debugPanel", "debugRows", "debugWire", "mapStage", "lobby"]) {
@@ -96,4 +115,7 @@ export async function run(ctx) {
   const app = await (await fetch(ctx.base + "/app.js")).text();
   if (!app.includes("./shell.mjs")) fail("app.js does not use the shell module");
   if (!app.includes('classList.toggle("in-match"')) fail("app.js never switches the match shell on");
+  // PB-130: the rows have to be fed from the live page, not only exist in the module.
+  if (!app.includes("pointer: pointerCell")) fail("app.js never feeds the hovered cell to the debug window");
+  if (!/pointerCell\s*=\s*cell \?/.test(app)) fail("app.js never tracks the pointer's cell");
 }
