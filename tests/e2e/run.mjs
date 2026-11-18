@@ -391,6 +391,26 @@ async function reloadAndResume(page, before) {
   await assertNoEmail(page, "after a reload");
 }
 
+// PB-118: the footer names the served build, and it names it on the same source `/api/version`
+// does. This is resolution A's assertion kept beside contract B's client change: a page loaded
+// after the deploy must read the live short sha and the full commit, not a string baked at build
+// time. The stale-tab half (a deploy under an open tab, no reload) is not a thing this file can
+// stage against live; it is measured on a server swap by the version-leg harness, and the node
+// pin pb118_build_footer holds the three call sites that make it work.
+async function assertBuildFooter(page, where) {
+  const live = await fetch(BASE + "/api/version").then((res) => res.json()).catch(() => null);
+  const shown = await page.evaluate(() => {
+    const el = document.querySelector("#buildCommit");
+    return el ? { text: el.textContent, title: el.title } : null;
+  });
+  check(Boolean(live && live.short) && Boolean(shown) && shown.text === "build " + live.short,
+    "the footer names the live build " + where,
+    "footer " + JSON.stringify(shown) + " vs live " + JSON.stringify(live));
+  check(Boolean(live && live.commit) && Boolean(shown) && shown.title === live.commit,
+    "the footer's title carries the full live commit " + where,
+    "title " + JSON.stringify(shown && shown.title) + " vs live " + JSON.stringify(live && live.commit));
+}
+
 // ---------------------------------------------------------------- main
 
 const main = async () => {
@@ -418,6 +438,7 @@ const main = async () => {
 
     await signIn(page, context);
     await assertNoEmail(page, "in the lobby");
+    await assertBuildFooter(page, "on the lobby after the load");
 
     await eachEra(page, setup);
     await offlinePlay(page, context);
@@ -436,6 +457,7 @@ const main = async () => {
     await shipOntoLand(page);
     const played = await runRounds(page, ROUNDS);
     await reloadAndResume(page, played);
+    await assertBuildFooter(page, "after a reload into a live match");
 
     // The lobby list, after a reload, is names only.
     check(
@@ -444,6 +466,7 @@ const main = async () => {
     );
 
     await quitMatch(page);
+    await assertBuildFooter(page, "back in the lobby after a match");
   } catch (err) {
     check(false, "the run finished", String((err && err.stack) || err).split("\n")[0]);
   } finally {

@@ -1994,6 +1994,9 @@ function scheduleReconnect() {
 }
 
 function connect() {
+  // Every reconnect is also an opportunity to be told what build is answering now: a deploy is
+  // exactly a socket that closed and a welcome that came back from a new container (PB-118).
+  loadVersion();
   // A deliberate connect (sign-in, or a reconnect this page decided on) clears the take-down
   // state: the only way back into a replaced tab is a reload or a new sign-in.
   replaced = false;
@@ -2315,17 +2318,53 @@ renderLegend();
 loadBoard();
 loadFontAtlas();
 
-fetch("/api/version")
-  .then((res) => res.json())
-  .then((data) => {
-    const line = document.getElementById("buildCommit");
-    if (!line) return;
-    // Hidden while booting and empty until the answer: "build unknown" on the way in was the
-    // second half of the reload flash (T-007 AC5).
-    line.textContent = data && data.short ? "build " + data.short : "";
-    line.title = String((data && data.commit) || "");
-  })
-  .catch(() => {});
+// The footer names the build this page is talking to. It is a fetch, not a baked string, so a tab
+// that outlives a deploy can be told what it is served now instead of naming the build it loaded
+// (PB-118). One function, three call sites: startup, the top of connect() (the single funnel a
+// first connect and every reconnect pass through — scheduleReconnect() only schedules a connect()),
+// and a window focus, which is the cheapest way to notice a deploy on a tab that never dropped.
+//
+// The sequence number is not decoration: a focus during a slow reconnect puts two reads in flight,
+// and without it the older answer could land last and put a dead build back in the footer.
+let versionSeq = 0;
+function loadVersion() {
+  const seq = ++versionSeq;
+  fetch("/api/version", { cache: "no-store" })
+    .then((res) => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then((data) => {
+      if (seq !== versionSeq) return;
+      const line = document.getElementById("buildCommit");
+      if (!line) return;
+      // Hidden while booting and empty until the answer: "build unknown" on the way in was the
+      // second half of the reload flash (T-007 AC5). A FAILED read is not that case — it is said
+      // out loud below, and it never flashes because it replaces a footer that was already blank.
+      line.textContent = data && data.short ? "build " + data.short : "";
+      line.title = String((data && data.commit) || "");
+      delete line.dataset.build;
+    })
+    .catch((err) => {
+      // A footer that silently keeps naming a build the server no longer serves is exactly the
+      // defect this exists to end, so a failed read says so where a player can see it. A tooltip
+      // alone is not a signal (nobody hovers a footer), so the text changes too, and the console
+      // keeps the reason for whoever is looking.
+      if (seq !== versionSeq) return;
+      console.warn("PB-118: /api/version could not be read:", err && err.message ? err.message : err);
+      const line = document.getElementById("buildCommit");
+      if (!line) return;
+      line.textContent = "build unknown";
+      line.title = "Could not read /api/version: " + (err && err.message ? err.message : String(err));
+      line.dataset.build = "error";
+    });
+}
+
+loadVersion();
+
+// A deploy does not have to drop the socket to be noticed: coming back to a tab is the moment a
+// player asks what they are looking at, so the stamp is re-read then too.
+window.addEventListener("focus", () => loadVersion());
 
 // The session check decides what the page is: a signed-in lobby or the sign-in form. Until it
 // answers the page stays in its "checking" state, so neither flashes (T-007 AC5).
