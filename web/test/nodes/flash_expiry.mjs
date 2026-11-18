@@ -14,7 +14,7 @@ export const name = "flash_expiry";
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { FLASH_MS, createFlashLine } from "../../public/flash.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -137,4 +137,17 @@ export function run(ctx) {
   const css = readFileSync(path.join(root, "public", "app.css"), "utf8");
   if (!/\.flash:empty\s*\{\s*display:\s*none;/.test(css)) fail("an emptied flash still paints a pill (.flash:empty missing)");
   if (!/\.result\s*\{[\s\S]*?\}/.test(css)) fail("app.css has no .result rule");
+}
+
+// Self-run guard: this module is imported by web/test/run.mjs, so without a guard a bare
+// `node web/test/nodes/flash_expiry.mjs` exits 0 having run nothing — a silent green on the
+// obvious command. Direct invocation now runs the same assertions and exits non-zero on failure.
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  try {
+    run({ fail: (message) => { throw new Error(message); } });
+    console.log("node test ok: " + name + " (direct)");
+  } catch (err) {
+    console.error("node test failed: " + name + ": " + (err && err.message ? err.message : err));
+    process.exitCode = 1;
+  }
 }
