@@ -1396,6 +1396,33 @@ export function capitalRingBoxes(markers, view, lineWidth) {
   return out;
 }
 
+// PB-144: the square an ordinary city paints on the board, as a screen rect. The terrain view fills
+// exactly one cell for a city, and Show Ownership draws `max(2, 0.8 * scale)` inside it, so the cell
+// rect is the square in both views - reserving more than that pushes a capital's name off its own
+// ring for a square the player cannot see under the plate. A site that is ALSO one of this era's
+// capitals is skipped: its own ring box already owns that cell, and reserving it a second time would
+// push the capital's own name away from its own ring.
+export function citySquareBoxes(sites, view, markers) {
+  const out = [];
+  if (!view) return out;
+  const list = Array.isArray(sites) ? sites : [];
+  const own = new Set((Array.isArray(markers) ? markers : [])
+    .filter((marker) => marker && Number.isFinite(Number(marker.x)) && Number.isFinite(Number(marker.y)))
+    .map((marker) => Number(marker.x) + ":" + Number(marker.y)));
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const side = Math.max(2, Math.round(scale));
+  for (const site of list) {
+    if (!site || site.kind !== "city") continue;
+    const x = Number(site.x);
+    const y = Number(site.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (own.has(x + ":" + y)) continue;
+    const at = cellToPixel(wrapX(x, view.boardW || BOARD_W), y, view);
+    out.push({ x: at.x - side / 2, y: at.y - side / 2, width: side, height: side, city: true });
+  }
+  return out;
+}
+
 export function capitalLabels(markers, view, opts = {}) {
   const out = [];
   if (!view) return out;
@@ -1404,34 +1431,53 @@ export function capitalLabels(markers, view, opts = {}) {
   // Every ring in the set is reserved before the first name is tried (PB-138), so a plate never
   // lands on a capital ring - this one's or a neighbour's.
   occupied.push(...capitalRingBoxes(list, view));
+  // PB-144: ordinary city squares are reserved too. Before this the capital name pass knew nothing
+  // about city markers, so a plate sat on a city's square and read as a renamed city.
+  occupied.push(...citySquareBoxes(opts.sites, view, list));
   const fontPx = Math.max(9, Math.round(view.scale * 0.75));
   // A badge standing on the capital covers its ring and several cells around it, so the name is
   // tried close to the ring first and then further out, past the badge (PB-069). Without this the
   // only free spot on an opening capital - the one with a garrison on it - is nowhere near the city.
   const badge = Number(opts.badgePx) || BADGE_MIN_PX;
   const perChar = Math.max(6, Math.round(fontPx * 0.62));
+  // Every capital's ring centre, so a candidate can be scored against the whole set (PB-144).
+  const rings = list.map((marker) => cellToPixel(marker.x, marker.y, view));
+  const r = Math.max(3, view.scale * 2.4);
+  const spread = [r + 3, r + 3 + badge * 0.7, r + 3 + badge * 1.4];
+  // PB-144: the most constrained capital is placed first. Order in the payload is not a plan - 1942
+  // Berlin has Warsaw's square east of it, Bonn's and Birmingham's west, and Moscow's ring close
+  // enough that its only near-side cardinal spot is spoken for, while London three cells away had
+  // three free spots; placing London first took the one plate Berlin could reach and pushed Berlin's
+  // name 27 px down its own ring. Counting each capital's free candidates against the bare
+  // reservation and placing the fewest first lets the crowded capital keep its near spot and makes
+  // the roomier neighbour move instead.
+  const pending = [];
   for (const marker of list) {
     const name = String(marker.name || "");
     if (!name) continue;
     const at = cellToPixel(marker.x, marker.y, view);
     if (at.x < -8 || at.x > view.viewW + 8 || at.y < -8 || at.y > view.viewH + 8) continue;
-    const r = Math.max(3, view.scale * 2.4);
-    const spread = [r + 3, r + 3 + badge * 0.7, r + 3 + badge * 1.4];
-    const box = placeTextLabel(name, perChar, fontPx, { x: at.x, y: at.y, r, spread }, view, occupied);
+    const candidates = labelCandidates(name, perChar, fontPx, at.x, at.y, r, spread);
+    const free = candidates.filter((box) => !outside(box, view) && !occupied.some((other) => collides(box, other)));
+    pending.push({ marker, name, at, free: free.length });
+  }
+  pending.sort((a, b) => a.free - b.free);
+  for (const entry of pending) {
+    const box = placeTextLabel(entry.name, perChar, fontPx, { x: entry.at.x, y: entry.at.y, r, spread }, view, occupied, rings);
     if (!box) continue;
     occupied.push(box);
-    out.push({ ...box, name, x: box.x, y: box.y, fontPx, at, ring: r, marker });
+    out.push({ ...box, name: entry.name, x: box.x, y: box.y, fontPx, at: entry.at, ring: r, marker: entry.marker });
   }
   return out;
 }
 
-// Same four candidate spots as the atlas labels, measured in text pixels instead of atlas cells.
-function placeTextLabel(text, perChar, height, { x, y, r, spread = [] }, view, occupied) {
+// Every spot the placer will try for a name, in preference order, as screen rects. Each distance is
+// tried right, left, above, below, then the four diagonals, before the next distance: of two spots
+// the same distance from the city the first is kept, so the layout stays stable and keeps as much of
+// the original's "name to the right" habit as the free space allows.
+function labelCandidates(text, perChar, height, x, y, r, spread = []) {
   const width = String(text).length * perChar;
   const boxH = Math.round(height * 1.15);
-  if (width + 4 > view.viewW) return null;
-  // Each distance is tried right, left, above, below, in that order, before the next one: the
-  // nearest free spot wins, so a name only travels as far from its city as it has to.
   const candidates = [];
   for (const d of (spread.length ? spread : [r + 3])) {
     candidates.push(
@@ -1439,16 +1485,82 @@ function placeTextLabel(text, perChar, height, { x, y, r, spread = [] }, view, o
       { x: x - d - width, y: y - boxH / 2 },
       { x: x - width / 2, y: y - d - boxH },
       { x: x - width / 2, y: y + d },
+      // PB-144: the four diagonals come after the cardinals at the same distance. A capital packed
+      // between two city squares (1942 Berlin: Warsaw east, Bonn and Birmingham west) had no free
+      // cardinal spot nearer than the farthest rung, so its name drifted 27 px down its ring; the
+      // diagonals are the same distance from the city and keep a plate on the near side of it.
+      { x: x + d, y: y - d - boxH },
+      { x: x + d, y: y + d },
+      { x: x - d - width, y: y - d - boxH },
+      { x: x - d - width, y: y + d },
     );
   }
-  for (const spot of candidates) {
-    const box = { x: Math.round(spot.x), y: Math.round(spot.y), width, height: boxH };
-    if (box.x < 2 || box.y < 2) continue;
-    if (box.x + box.width > view.viewW - 2 || box.y + box.height > view.viewH - 2) continue;
-    if (occupied.some((other) => collides(box, other))) continue;
-    return box;
-  }
-  return null;
+  return candidates.map((spot) => ({
+    x: Math.round(spot.x), y: Math.round(spot.y), width, height: boxH,
+  }));
+}
+
+// A plate that leaves the canvas is not a plate: the page never clips a name, so the candidate is
+// rejected and the next one tried (PB-138's AC3 ruling: no clamp path).
+function outside(box, view) {
+  return box.x < 2 || box.y < 2
+    || box.x + box.width > view.viewW - 2 || box.y + box.height > view.viewH - 2;
+}
+
+// Distance from a rect to a point, the same metric the ticket's measurement uses: zero when the
+// point is inside the rect, otherwise the straight-line gap to the nearest edge or corner.
+function rectPointGap(box, px, py) {
+  const dx = Math.max(box.x - px, 0, px - (box.x + box.width));
+  const dy = Math.max(box.y - py, 0, py - (box.y + box.height));
+  return Math.hypot(dx, dy);
+}
+
+// PB-144: order-first placement picked the first free spot and never asked how far the chosen spot
+// was from the city it names, so in 1942 "Berlin" sat 18 px from Berlin's ring and 10.8 px from
+// Paris's - the nearest ring on screen to the word was the wrong capital's. Free candidates are now
+// SCORED: one whose gap to its own ring is no larger than its gap to any other capital's ring wins
+// the nearest of those; when no free spot can meet that (a dense neighbour set), the free spot
+// nearest its own ring is used and carries a leader line back to it.
+function placeTextLabel(text, perChar, height, { x, y, r, spread = [] }, view, occupied, rings = []) {
+  const width = String(text).length * perChar;
+  if (width + 4 > view.viewW) return null;
+  const candidates = labelCandidates(text, perChar, height, x, y, r, spread);
+  const free = [];
+  candidates.forEach((box, order) => {
+    if (outside(box, view)) return;
+    if (occupied.some((other) => collides(box, other))) return;
+    free.push({ box, order });
+  });
+  if (!free.length) return null;
+  const scored = free.map((entry) => {
+    const own = rectPointGap(entry.box, x, y);
+    let other = Infinity;
+    for (const ring of rings) {
+      // The city's own ring is not "another capital": compare cells, not distance, or a neighbour
+      // whose centre somehow fell inside the box would be filtered out of the guard below.
+      if (ring.x === x && ring.y === y) continue;
+      const d = rectPointGap(entry.box, ring.x, ring.y);
+      if (d < other) other = d;
+    }
+    return { ...entry, own, other };
+  });
+  const nearestOwnFirst = (a, b) => a.own - b.own || a.order - b.order;
+  const qualifying = scored.filter((entry) => entry.own <= entry.other);
+  const pick = (qualifying.length ? qualifying : scored).slice().sort(nearestOwnFirst)[0];
+  return {
+    ...pick.box,
+    leader: qualifying.length === 0,
+    ownGap: Math.round(pick.own * 100) / 100,
+    otherGap: Number.isFinite(pick.other) ? Math.round(pick.other * 100) / 100 : null,
+  };
+}
+
+// Closest point on a rect to a point, for a leader line's plate-side end.
+function nearestPointOnRect(box, px, py) {
+  return {
+    x: Math.min(Math.max(px, box.x), box.x + box.width),
+    y: Math.min(Math.max(py, box.y), box.y + box.height),
+  };
 }
 
 export function paintCapitals(ctx, markers, view, opts = {}) {
@@ -1468,6 +1580,25 @@ export function paintCapitals(ctx, markers, view, opts = {}) {
     ctx.stroke();
   }
   if (!labels.length) return list.length;
+  // PB-144: a plate that could not sit nearer its own ring than any other capital's carries a
+  // leader line back to that ring, stroked in the capital's own ink, so the association is on
+  // screen instead of inferred from proximity. Drawn before the plates so plate ink covers its end.
+  const leaders = labels.filter((label) => label && label.leader && label.at && label.marker);
+  if (leaders.length && typeof ctx.beginPath === "function") {
+    ctx.lineWidth = Math.max(1, Math.round(view.scale * 0.5));
+    for (const label of leaders) {
+      const at = label.at;
+      const from = nearestPointOnRect(label, at.x, at.y);
+      const dx = from.x - at.x;
+      const dy = from.y - at.y;
+      const d = Math.hypot(dx, dy) || 1;
+      ctx.strokeStyle = label.marker.color || ink;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(at.x + (dx / d) * r, at.y + (dy / d) * r);
+      ctx.stroke();
+    }
+  }
   for (const label of labels) {
     ctx.font = label.fontPx + "px Palatino, Georgia, serif";
     ctx.textAlign = "left";
@@ -1857,7 +1988,9 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // capital names.
   const occupied = badgeBoxes(groups, view, opts);
   const capitalMarks = capitalMarkers(board, room);
-  const capLabels = capitalLabels(capitalMarks, view, { occupied });
+  // PB-144: the capital name pass reserves ordinary city squares as well as the rings, so a plate
+  // cannot read as a renamed city. `board.sites` is the payload's own site list (kind: "city").
+  const capLabels = capitalLabels(capitalMarks, view, { occupied, sites: board && board.sites });
   const capitals = paintCapitals(ctx, capitalMarks, view,
     { labels: capLabels, plate: theme.labelPlate, ink: theme.labelInk });
   layers.push("capitals");
