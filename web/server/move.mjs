@@ -356,13 +356,43 @@ export function planOrder(match, side, pieceId, toX, toY) {
     const holder = pieceAt(match, x, y, piece.id);
     if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
 
-    let route = null;
-    try {
-      route = seaRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y });
-    } catch {
-      route = null;
+    // A short hop is the straight water line, exactly as a land order's sea leg treats one
+    // (seaLeg's SHORT_HOP_CELLS above): stepping a few cells offshore is not a voyage, and the
+    // lane graph answers it by walking the hull to the nearest waypoint and back out again. That
+    // is PB-117's defect - a one-cell order quoted 28 rounds and sailed 84 cells - and it is not
+    // PB-113: 59,66 is never on that path. Longer crossings still follow the lanes (Manual p.21-22).
+    //
+    // Both plans are built for a short hop and the cheaper one wins: a 3-cell order whose straight
+    // line crosses a headland can still be shorter by water-walking around it than by the lanes
+    // (measured at 295,16 -> 297,19: 25 cells around the bay), and a hop whose water walk fails
+    // outright has the lane plan to fall back on. Only the short-hop branch pays for the second
+    // plan; a long crossing is the lane plan alone.
+    const hop = Math.max(Math.abs(wrapDelta(piece.x, x)), Math.abs(Number(y) - Number(piece.y)));
+    const candidates = [];
+    const planSea = (build) => {
+      try {
+        const cells = build();
+        if (Array.isArray(cells) && cells.length) candidates.push(cells);
+      } catch {
+        // a route builder that cannot walk this water contributes no candidate
+      }
+    };
+    if (hop <= SHORT_HOP_CELLS) {
+      planSea(() => waterStepRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y }));
     }
-    if (!route || !route.length) return { error: "No sea lane reaches that cell." };
+    planSea(() => seaRoute(resolveDataRoot() || "", { x: piece.x, y: piece.y }, { x, y }));
+    // Neither route builder hands back steps; both start with the cell the hull already stands on.
+    // Keeping it costs the hull a credit on its own cell - a 3-step hop then costs 4 spent moves and
+    // quotes 2 rounds instead of 1 - so the origin is dropped exactly as the land path drops it
+    // (planLandPath returns cells.slice(1)). The remaining list is cells to walk INTO.
+    const trimmed = candidates.map((cells) => (wrapX(cells[0].x) === wrapX(piece.x) &&
+      Number(cells[0].y) === Number(piece.y) ? cells.slice(1) : cells)).filter((cells) => cells.length);
+    if (!trimmed.length) return { error: "No sea lane reaches that cell." };
+    const cost = (cells) => walkRounds(piece, cells);
+    let route = trimmed[0];
+    for (const cells of trimmed) {
+      if (cost(cells) < cost(route) || (cost(cells) === cost(route) && cells.length < route.length)) route = cells;
+    }
     const path = stopAtDestination(route.map((step) => ({ x: step.x, y: step.y, pace: 1 })), { x, y });
     return { ok: true, path, rounds: walkRounds(piece, path) };
   }
