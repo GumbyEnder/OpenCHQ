@@ -26,6 +26,17 @@ function cellOf(event) {
   return null;
 }
 
+// PB-123: the identity of an overrun for grouping - side plus ROUND plus cell, so two seats losing
+// a unit on one cell are two lines, two losses on one cell for one seat in one round are one line
+// with a count, and a future caller that hands logLines a multi-round events array cannot aggregate
+// two rounds into one count. The production caller (lobby.mjs:970) passes one tick's events, so the
+// round term is inert today and pins the contract for tomorrow.
+function overrunKey(event) {
+  const cell = cellOf(event);
+  const round = Number.isFinite(Number(event.round)) ? Number(event.round) : "?";
+  return String((event && event.side) || "?") + ":" + round + ":" + (cell ? cell.x + "," + cell.y : "-");
+}
+
 // Chebyshev with the board's X wrap, the same arithmetic the sight filter uses.
 function near(a, b) {
   const rawX = Math.abs(a.x - b.x);
@@ -82,6 +93,19 @@ export function logLines(match, side, events, round) {
     if (text) lines.push({ round: turn, text });
   };
 
+  // PB-123: overrun events are grouped per cell per side before the loop, so two units lost on one
+  // cell in one round read as ONE line with a count (the sighting shape), and the count cannot
+  // drift if this log is rebuilt for the same round.
+  const overruns = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    if (!event || event.type !== "overrun") continue;
+    const key = overrunKey(event);
+    const row = overruns.get(key) || { count: 0 };
+    row.count += 1;
+    overruns.set(key, row);
+  }
+  const overrunDone = new Set();
+
   for (const event of Array.isArray(events) ? events : []) {
     if (!event || !event.type) continue;
     const mine = event.side === side;
@@ -113,33 +137,61 @@ export function logLines(match, side, events, round) {
         if (mine) push("no pay this round: the pool is short");
         break;
       case "capture": {
+        // A baked dock/facility is named after its own cell ("Dock 260,46"): that is a coordinate
+        // wearing a place's clothes, so it is not a name a player can use (PB-123, same filter
+        // landmarks() already applies to sightings). When the only name is coordinate-shaped the
+        // line names the kind and puts the place in a trailing clause: "a dock changed hands 3
+        // cells west of Tobruk".
         const site = siteOf(match, event.site);
-        const name = event.name || (site && site.name) || "a site";
-        const visible = legible(match, side, site || cellOf(event));
+        const realName = usableName(event.name) || usableName(site && site.name);
+        const cell = site || cellOf(event);
+        const place = placeOf(match, cell, side);
+        const name = realName || "a " + String((site && site.kind) || "site");
+        const where = realName || !place ? "" : " " + place;
+        const visible = legible(match, side, cell);
         if (event.side === side || (event.from === side && event.side !== side)) {
           // You always know a site you took or lost, even off the map's lit part.
-          push(event.side === side ? "took " + name : name + " was lost");
+          push(event.side === side ? "took " + name + where : name + " was lost" + where);
         } else if (visible) {
-          push(name + " changed hands");
+          push(name + " changed hands" + where);
         }
         break;
       }
       case "destroyed": {
-        const cell = cellOf(event);
         // A destroy event that names its site says why in the same line: an aircraft lost because its
         // air strip was taken reads as that, not as a bare "lost an aircraft at 80,99" (Manual p.10 is
         // the rule; economy.occupy emits the event inside the capture pass).
-        const named = event.name ? " at " + event.name : "";
-        const where = named || (cell ? " at " + cell.x + "," + cell.y : "");
+        // PB-123: the fallback is a PLACE, never the cell. A named event keeps its name; anything
+        // else - no name, or a coordinate-shaped one - resolves through placeOf, and a board with
+        // no usable landmark falls back to the bare vague sentence (D-028), which carries no digits.
+        const named = usableName(event.name);
+        const place = named ? null : placeOf(match, event, side);
+        const where = named ? " at " + named : place ? " " + place : "";
         const why = event.cause === "capture" ? "; the air strip was captured" : "";
         if (mine) push("lost " + (event.kind ? unitPhrase(event.kind) : "a unit") + where + why);
         else if (legible(match, side, event)) push("an enemy unit was destroyed" + where + why);
         break;
       }
-      case "overrun":
-        if (mine) push("overrun: a unit was lost at " + (cellOf(event) ? cellOf(event).x + "," + cellOf(event).y : "the front"));
-        else if (legible(match, side, event)) push("an enemy unit was overrun");
+      case "overrun": {
+        // Two overrun events on one cell in one round are ONE line with the count and the place,
+        // the same shape the sighting line uses (PM answer, frodo 6701). The count is taken from
+        // the round's own events, not incremented per push, so the line cannot drift if the log is
+        // rebuilt twice for the same round.
+        const key = overrunKey(event);
+        if (overrunDone.has(key)) break;
+        overrunDone.add(key);
+        const group = overruns.get(key);
+        const count = group ? group.count : 1;
+        const place = placeOf(match, event, side);
+        const where = place ? " " + place : "";
+        // The own-side branch used to print the raw cell unconditionally; the enemy branch printed
+        // no place at all, so "no digits" passed there while the line was just as unusable.
+        if (mine) push("overrun: " + (count === 1 ? "a unit was lost" : count + " units were lost") + where);
+        else if (legible(match, side, event)) {
+          push((count === 1 ? "an enemy unit was overrun" : count + " enemy units were overrun") + where);
+        }
         break;
+      }
       case "shot":
         // A shot is noise on its own: a fight is worth a line only when the seat can see it,
         // and the fight's result arrives as destroyed/overrun.
@@ -253,6 +305,10 @@ export function logLines(match, side, events, round) {
   for (const unit of visible) {
     if (unit.side === side) continue;
     const cell = { x: wrapX(unit.x), y: Number(unit.y) };
+    // Deliberately a coordinate-shaped string: this is the SIGHT-DEDUPE KEY (one line per held
+    // cell), never player text, and it is not folded into placeOf. Classified here so it is not an
+    // unclassified coordinate producer (PB-123 / frodo 6969 item 4); the line a player reads comes
+    // from sightText(), which resolves a place through placeOf.
     const id = cell.x + "," + cell.y;
     if (seenCells.has(id)) continue;
     seenCells.add(id);
@@ -270,6 +326,17 @@ const COMPASS = ["east", "south-east", "south", "south-west", "west", "north-wes
 
 function wrapX(x) {
   return ((Number(x) % CELL_W) + CELL_W) % CELL_W;
+}
+
+// A baked dock/facility is named after its own cell ("Dock 260,46"): a map coordinate wearing a
+// place's clothes. PB-121 rejected those for sightings; PB-123 rejects them for every emitter.
+const COORDINATE_SHAPED = /\d+\s*,\s*\d+/;
+
+function usableName(name) {
+  if (name === null || name === undefined) return null;
+  const text = String(name).trim();
+  if (!text || COORDINATE_SHAPED.test(text)) return null;
+  return text;
 }
 
 // The seat's own cities and capitals are the landmarks a player reads first. When the enemy is
@@ -290,6 +357,17 @@ function landmarks(match, side) {
 
 function sightText(match, side, cell, count) {
   const subject = count === 1 ? "an enemy is" : count + " enemy units are";
+  const place = placeOf(match, cell, side);
+  return place ? subject + " in sight " + place : subject + " in sight";
+}
+
+// PB-123: ONE place predicate, called where a name is produced rather than where it is printed, so
+// a fourth emitter inherits the rule instead of repeating the defect. It returns a digit-free
+// locative phrase ("at Smolensk", "3 cells east of Tobruk") or null when the board has no usable
+// landmark - never a cell, never "the front". Callers that need a bare name strip the "at ".
+export function placeOf(match, target, side) {
+  const cell = cellOf(target);
+  if (!cell) return null;
   let best = null;
   for (const { site, own } of landmarks(match, side)) {
     const rawX = wrapX(cell.x) - wrapX(site.x);
@@ -300,11 +378,10 @@ function sightText(match, side, cell, count) {
       best = { site, dx, dy, distance, own };
     }
   }
-  if (!best || best.distance === 0) {
-    return best ? subject + " in sight at " + best.site.name : subject + " in sight";
-  }
+  if (!best) return null;
+  if (best.distance === 0) return "at " + usableName(best.site.name);
   const turn = ((Math.atan2(best.dy, best.dx) + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 4);
   const direction = COMPASS[Math.round(turn) % 8];
-  return subject + " in sight " + best.distance + " cell" + (best.distance === 1 ? "" : "s") +
-    " " + direction + " of " + best.site.name;
+  return best.distance + " cell" + (best.distance === 1 ? "" : "s") + " " + direction + " of " +
+    usableName(best.site.name);
 }
