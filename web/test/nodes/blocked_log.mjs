@@ -161,8 +161,15 @@ export async function run(ctx) {
 
   // ---- PB-121b: a pace-2 destination is the SAME hold on the rounds that attempt no step ---------
   // A slow cell costs two rounds of an infantry's one credit, so every other round the while-loop
-  // breaks at `credit < pace` before any attempt. That is still one hold and must speak once
-  // (PM 6661: live e6f12ab printed "the way was held" at r23, r25 AND r27 for one hold).
+  // breaks at `credit < pace` before any attempt. That is still one hold and must speak once, and
+  // only in the round that made the attempt (PM 6661: live e6f12ab printed "the way was held" at
+  // r23, r25 AND r27 for one hold).
+  //
+  // Independent repro this leg replaces, kept on disk so the history survives it being deleted
+  // (frodo 6764 item 5): /home/gumbyender/.hermes/profiles/game/cache/scratch/pb121-pace2-probe.mjs,
+  // run `node pb121-pace2-probe.mjs <repo-root>`. At e6f12ab (clear at the end of the pass) the one
+  // hold spoke at r2/r4/r6/r8 and heldBy was null on every round between; at 2470eac (clear in the
+  // step) it spoke once and the memory survived the no-step rounds.
   const slow = openMatch("1986");
   slow.clock = "running";
   const slowOcc = piece("blue:slow-occ", "blue", 120, 100);
@@ -183,19 +190,66 @@ export async function run(ctx) {
   slowOcc.y = 100;
   const slowEvents = [];
   const slowLines = [];
+  // One row per round, because "spoke once" is also what a leg that never reaches the slow ground
+  // would print. The fixture must show BOTH kinds of round: attempts that are blocked, and rounds
+  // that break on `credit < pace` before any attempt. A round with no attempt is the same hold.
+  const slowRounds = [];
   for (let i = 0; i < 8; i++) {
+    const before = slow.pieces.find((p) => p.id === "blue:slow-mover");
+    // Infantry walks 1 cell of credit a round (cellsPerRound); the loop's own test is credit < pace.
+    const credit = (Number(before.credit) || 0) + 1;
+    const pathLen = before.path.length;
+    const pace = pathLen ? Math.max(1, Number(before.path[0].pace) || 1) : null;
+    // "Attempts no step" means the piece is already on its last entry (the held destination) and the
+    // while-loop breaks at `credit < pace` before touching it. Earlier entries are ordinary walking
+    // rounds and say nothing about the hold.
+    const atHold = pathLen === 1;
+    const attempted = atHold && credit >= pace;
     const tick = tickMatch(slow);
     const roundEvents = Array.isArray(tick.events) ? tick.events : [];
-    slowEvents.push(...roundEvents.filter((event) => event && event.type === "blocked" && event.pieceId === "blue:slow-mover"));
-    slowLines.push(...logLines(slow, "blue", roundEvents, slow.round).filter((line) => line.text.includes(SENTENCE)));
+    const blockedHere = roundEvents.filter((event) => event && event.type === "blocked" && event.pieceId === "blue:slow-mover");
+    const lines = logLines(slow, "blue", roundEvents, slow.round).filter((line) => line.text.includes(SENTENCE));
+    slowRounds.push({ round: slow.round, credit, pace, atHold, attempted, blocked: blockedHere.length, lines: lines.length });
+    slowEvents.push(...blockedHere);
+    slowLines.push(...lines);
+  }
+  const noStep = slowRounds.filter((r) => r.atHold && !r.attempted);
+  const spokeRounds = slowRounds.filter((r) => r.blocked > 0);
+  const firstAttempt = slowRounds.find((r) => r.attempted);
+  const walked = slowRounds.filter((r) => !r.atHold);
+  const leakedWalk = walked.filter((r) => r.blocked > 0 || r.lines > 0);
+  if (noStep.length < 2 || !firstAttempt) {
+    fail("PB-121b: the fixture did not reach slow ground: " + noStep.length + " round(s) attempted no step, " +
+      "wanted at least 2 (rounds: " + JSON.stringify(slowRounds) + ")");
+    return;
   }
   if (slowEvents.length !== 1) {
     fail("PB-121b: a pace-2 hold spoke " + slowEvents.length + " time(s) over 8 rounds, wanted exactly 1 " +
-      "(the rounds with no step attempt are the same hold)");
+      "(spoke on r" + spokeRounds.map((r) => r.round).join(", r") + "; the rounds with no step attempt are the same hold)");
+    return;
+  }
+  if (spokeRounds.length !== 1 || spokeRounds[0].round !== firstAttempt.round) {
+    fail("PB-121b: the hold spoke in the wrong round: spoke on r" + spokeRounds.map((r) => r.round).join(", r") +
+      ", first step attempt was r" + firstAttempt.round);
+    return;
+  }
+  if (leakedWalk.length) {
+    fail("PB-121b: a hold line fired on a round that was still walking to the held cell: " +
+      JSON.stringify(leakedWalk));
+    return;
+  }
+  const leaked = noStep.filter((r) => r.blocked > 0 || r.lines > 0);
+  if (leaked.length) {
+    fail("PB-121b: a round that attempted no step still spoke: " + JSON.stringify(leaked));
     return;
   }
   if (slowLines.length !== 1) {
     fail("PB-121b: the Log carried " + slowLines.length + " line(s) of " + SENTENCE + " for one pace-2 hold, wanted 1");
+    return;
+  }
+  const lineRounds = slowRounds.filter((r) => r.lines > 0).map((r) => r.round);
+  if (lineRounds.length !== 1 || lineRounds[0] !== spokeRounds[0].round) {
+    fail("PB-121b: the Log line landed in round(s) r" + lineRounds.join(", r") + ", wanted only r" + spokeRounds[0].round);
     return;
   }
 
