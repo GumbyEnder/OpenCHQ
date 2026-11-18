@@ -785,7 +785,10 @@ board.addEventListener("click", (event) => {
     suppressClick = false;
     return;
   }
-  if (!room || !room.you) return;
+  // PB-145: a finished match takes no orders. room.you survives the result, so the seat guard alone
+  // left the order branch and the build cursor live after the end: each click put a frame on the wire
+  // for the server to refuse. This is the same click path both arms share, so one guard closes both.
+  if (!room || !room.you || room.over) return;
   let cell = cellAtEvent(event, board, viewForCanvas());
   if (!cell) return;
 
@@ -944,6 +947,8 @@ let panFrom = null;
 let panTravel = 0;
 let panButton = -1;
 let suppressClick = false;
+// PB-145: the over frame clears the command state once, not on every frame the result re-renders.
+let overCleared = false;
 
 // CSS pixels to canvas (device) pixels. The camera is in device pixels, so a drag measured in
 // client coordinates has to be scaled or the map lags the cursor by the device pixel ratio:
@@ -1250,7 +1255,19 @@ function renderRoom() {
     if (info) info.textContent = stripInfo(room);
     renderDebug();
   }
-  if (room && room.over) sayResult(room);
+  if (room && room.over) {
+    sayResult(room);
+    // PB-145: a finished match has no order to give. The selection, the route preview and the build
+    // cursor die on the frame the result lands, so the board stops offering "Click to send the
+    // order". clearCommand() only nulls page-local command state and writes no element text, which is
+    // what keeps #result (PB-137 AC4) out of this clear's reach.
+    if (!overCleared) {
+      overCleared = true;
+      clearCommand();
+    }
+  } else {
+    overCleared = false;
+  }
   syncPauseBanner(room);
   roomBox.className = room ? "" : "room-empty";
   roomBox.textContent = "";
