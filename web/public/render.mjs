@@ -1366,11 +1366,44 @@ export function politicalTally(patches) {
 // they named (PB-026). A capital is found by its ring; its name is a label like every other place
 // name, so it starts at LABEL_ZOOM, is placed by the same collision test, and sits on a plate in the
 // theme's ink.
+// A capital's ring is ink on the ground, not decoration: a neighbouring capital's name plate used
+// to paint straight over it, because the label placer only ever reserved other labels' boxes and
+// never a ring (PB-138 - London's plate covered Berlin's ring at the lobby fit). Reserved before any
+// name is placed, so the rule is general: every capital reserves its own ring for everyone.
+//
+// The box is the ring's bounding box grown by half the stroke width on each side (the stroke is
+// centred on the arc), plus the plate's bleed, because a plate is filled at (x-2, y-1, w+4, h+2) -
+// a text box one pixel clear of the ring can still leave plate ink inside the band.
+const PLATE_BLEED_X = 2;
+const PLATE_BLEED_Y = 1;
+
+export function capitalRingBoxes(markers, view, lineWidth) {
+  const out = [];
+  if (!view) return out;
+  const list = Array.isArray(markers) ? markers : [];
+  const r = Math.max(3, view.scale * 2.4);
+  const lw = Number.isFinite(Number(lineWidth)) ? Number(lineWidth) : Math.max(1, view.scale);
+  const growX = r + lw / 2 + PLATE_BLEED_X;
+  const growY = r + lw / 2 + PLATE_BLEED_Y;
+  for (const marker of list) {
+    const at = cellToPixel(marker.x, marker.y, view);
+    // A ring partly off the canvas still owns the ink that is on it: the box is not clipped.
+    out.push({
+      x: at.x - growX, y: at.y - growY, width: growX * 2, height: growY * 2,
+      ring: true, ringX: at.x, ringY: at.y, ringR: r,
+    });
+  }
+  return out;
+}
+
 export function capitalLabels(markers, view, opts = {}) {
   const out = [];
   if (!view) return out;
   const list = Array.isArray(markers) ? markers : [];
   const occupied = Array.isArray(opts.occupied) ? opts.occupied.slice() : [];
+  // Every ring in the set is reserved before the first name is tried (PB-138), so a plate never
+  // lands on a capital ring - this one's or a neighbour's.
+  occupied.push(...capitalRingBoxes(list, view));
   const fontPx = Math.max(9, Math.round(view.scale * 0.75));
   // A badge standing on the capital covers its ring and several cells around it, so the name is
   // tried close to the ring first and then further out, past the badge (PB-069). Without this the
@@ -1823,12 +1856,20 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // spot around its ring (PB-026, PB-069), and city names then avoid both the badges and the
   // capital names.
   const occupied = badgeBoxes(groups, view, opts);
-  const capLabels = capitalLabels(capitalMarkers(board, room), view, { occupied });
-  const capitals = paintCapitals(ctx, capitalMarkers(board, room), view,
+  const capitalMarks = capitalMarkers(board, room);
+  const capLabels = capitalLabels(capitalMarks, view, { occupied });
+  const capitals = paintCapitals(ctx, capitalMarks, view,
     { labels: capLabels, plate: theme.labelPlate, ink: theme.labelInk });
   layers.push("capitals");
+  // City names avoid the badges, the capital names and every capital ring (PB-138): a ring is the
+  // only ownership cue a capital has at the fit zoom, so no plate may cover one.
   const labels = visibleLabels(room && room.sites, view, {
-    groups, occupied: [...occupied, ...capLabels.map((label) => ({ x: label.x, y: label.y, width: label.width, height: label.height }))],
+    groups,
+    occupied: [
+      ...occupied,
+      ...capitalRingBoxes(capitalMarks, view),
+      ...capLabels.map((label) => ({ x: label.x, y: label.y, width: label.width, height: label.height })),
+    ],
   });
   const labelled = paintLabels(ctx, opts.atlas, labels,
     { ink: theme.labelInk, plate: theme.labelPlate });
