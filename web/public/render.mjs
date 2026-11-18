@@ -547,6 +547,47 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
 // A theme that sets `coast` gets a bright edge on the land side of every land/water boundary. It is
 // drawn per visible cell, after that cell's fill, so it costs nothing on an ocean row and cannot
 // move a cell: the edge is painted inside a cell that was already being painted.
+// The ground for one era.
+//
+// The terrain grid is a single map for every year: buildGrid paints a capital-kind site's own cell
+// as capital ink once, from world.json, with no era in it. The era table is what says whether that
+// site is a capital this year, and capitalMarkers already answers which cells are this era's
+// capitals. So a capital cell with no marker standing on it is what the era calls it - a plain
+// city - and painting it yellow drew two unlabelled capital squares (Washington and Moscow, 1918)
+// with no ring and no name: PB-126.
+//
+// The reverse case is deliberately not done: London and Tokyo are type-1/2 capitals in 1986 on
+// city-kind cells, and repainting a city-kind cell in capital ink would rewrite the original's own
+// terrain. This function only ever downgrades a cell whose era capital set excludes it.
+//
+// Memoised per board object: the page fetches the board once, the era's marker set is stable, and
+// copying 43,520 cells on every frame is a per-frame allocation nothing asked for.
+const eraGroundCache = new WeakMap();
+
+export function eraGround(board, room) {
+  if (!board || !Array.isArray(board.cells) || !Array.isArray(board.terrain)) return board;
+  const width = Number(board.width) || BOARD_W;
+  const markers = capitalMarkers(board, room);
+  const key = markers.map((m) => `${m.x}:${m.y}`).join("|");
+  const cached = eraGroundCache.get(board);
+  if (cached && cached.key === key) return cached.board;
+  const capitalId = board.terrain.indexOf("capital");
+  const cityId = board.terrain.indexOf("city");
+  if (capitalId < 0 || cityId < 0) return board;
+  const wrap = (x) => ((Number(x) % width) + width) % width;
+  const keep = new Set(markers.map((m) => Number(m.y) * width + wrap(m.x)));
+  const cells = board.cells.slice();
+  let corrected = 0;
+  for (let i = 0; i < cells.length; i++) {
+    if (cells[i] !== capitalId || keep.has(i)) continue;
+    cells[i] = cityId;
+    corrected += 1;
+  }
+  const next = corrected ? { ...board, cells, eraCorrected: corrected } : board;
+  eraGroundCache.set(board, { key, board: next });
+  return next;
+}
+
 export function paintCells(ctx, board, view, opts = {}) {
   const cells = board && Array.isArray(board.cells) ? board.cells : null;
   if (!cells) return 0;
@@ -1690,7 +1731,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // and leaving them out let a re-order of the fill pass every pin (see the T-018 AC4 follow-up).
   const layers = [];
   if (!schematic) {
-    painted = paintCells(ctx, board, view, { theme });
+    painted = paintCells(ctx, eraGround(board, room), view, { theme });
     if (painted === 0) mode = "schematic";
     else {
       layers.push("cells");
