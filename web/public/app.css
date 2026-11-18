@@ -356,6 +356,13 @@ body.booting .buildfooter {
   border-radius: 3px;
 }
 
+/* PB-136: in a match the banner's row stays in the flow whether or not a pause is on screen. It is a
+   flex item in .match, so `display: none` on Play shrank the stage by its height and pulled the map up
+   under a resting pointer. The sentence is always in the element, so the box is the same height in
+   both states; visibility hides the words, not the row. */
+body.in-match .pausebanner { visibility: hidden; }
+body.in-match .pausebanner.paused { visibility: visible; }
+
 /* ---- the debug window, top right, closed by default ---------------------- */
 
 .debugtoggle {
@@ -769,8 +776,11 @@ body.in-match .mapstage {
 }
 
 /* The band is a fixed-height strip of the original's screen; it must never be squeezed by the
-   canvas sitting above it in the same flex column. */
+   canvas sitting above it in the same flex column. PB-136: in a match its 56 px are reserved from the
+   first frame, before the first round paints it - `.bandwait` keeps the box and hides the ink - so the
+   band arriving is a paint and never a layout change under the pointer. */
 body.in-match .chrome { flex: 0 0 auto; }
+body.in-match .chrome.bandwait { visibility: hidden; }
 
 body.in-match #board { border-radius: 6px; }
 

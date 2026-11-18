@@ -254,11 +254,10 @@ const SCREEN_H = BOARD_H;
 function mapBox() {
   const stage = document.getElementById("mapStage");
   const band = document.getElementById("chrome");
-  // A hidden band takes no room: reserving its height anyway is how the map ends up smaller than the
-  // window for a reason nobody can see on the page.
-  const bandH = band && !band.classList.contains("hidden")
-    ? Math.round(band.getBoundingClientRect().height)
-    : 0;
+  // PB-136: in a match the band's box is reserved from the first frame of the match (visibility, not
+  // display), so the measured height IS the reserved height and the band arriving is a paint, never a
+  // layout change. Out of a match the band is display:none and measures 0.
+  const bandH = band ? Math.round(band.getBoundingClientRect().height) : 0;
   if (document.body.classList.contains("in-match") && stage) {
     const rect = stage.getBoundingClientRect();
     return {
@@ -598,15 +597,14 @@ function paintChrome(view) {
   const text = document.getElementById("timeText");
   const chrome = document.getElementById("chrome");
   if (!box || !bar || !text || !chrome) return;
-  const wasHidden = chrome.classList.contains("hidden");
-  if (!room || !room.round) {
-    chrome.classList.add("hidden");
-    if (!wasHidden) applyCanvasCss();
-    return;
-  }
-  chrome.classList.remove("hidden");
-  // The band arriving takes room from the map, and this runs after the canvas was sized.
-  if (wasHidden) applyCanvasCss();
+  // PB-136: the band's 56 px are the stage's from the first frame of a match. Out of a match the band
+  // is display:none; in a match it keeps its box and only its ink waits for the first round
+  // (`.bandwait`), so the band arriving never resizes the stage or re-fits the camera under a pointer.
+  const inMatch = document.body.classList.contains("in-match");
+  const hasRound = Boolean(room && room.round);
+  chrome.classList.toggle("hidden", !inMatch);
+  chrome.classList.toggle("bandwait", inMatch && !hasRound);
+  if (!hasRound) return;
   // The map's width on screen, not its width in the backing store: the canvas is a whole number of
   // device pixels per cell and the browser scales it to the container, so 320*scale would put the
   // band short of the map's right edge.
@@ -1497,12 +1495,18 @@ function bootDone() {
 
 // A match whose clock is not running is paused, and a reloaded page must say so rather than look
 // frozen (T-007 AC11). The banner follows every room frame: Play hides it, Pause brings it back.
+//
+// PB-136: "hides it" is visibility in a match, not display. The banner is a flex item in .match, so
+// taking its row out of the flow when the clock starts shrank the stage by its height and pulled the
+// map up under a resting pointer. The sentence stays in the element (same font, same padding) and the
+// stylesheet hides the ink, so the row's height is identical before and after Play.
 function syncPauseBanner(room) {
   const banner = document.getElementById("pauseBanner");
   if (!banner) return;
   const paused = Boolean(room) && !room.over && String(room.clock || "") !== "running";
-  banner.textContent = paused ? "Paused - press Play to resume" : "";
-  banner.classList.toggle("hidden", !paused);
+  banner.textContent = "Paused - press Play to resume";
+  banner.classList.toggle("paused", paused);
+  banner.classList.toggle("hidden", !room);
 }
 
 // ---- the debug window ----------------------------------------------------
