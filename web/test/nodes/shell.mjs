@@ -93,6 +93,34 @@ export async function run(ctx) {
   eq("a fractional pointer is unknown", unplaced.pointer, "—");
   eq("a unit with no cell reads as unknown", unplaced.selected, "blue-inf-1 @ ?");
 
+  // --- the last wheel notch, exactly as the page hit-tested it (PB-148) -------
+  // A hand check that sees the camera move needs to know whether the notch that moved it was
+  // targeted at the canvas or at a panel: a wheel event is hit-tested per notch, so a notch whose
+  // target is the panel cannot reach the camera handler. The row is the discriminator between a
+  // code defect and an input-frame offset, so it reports the target, the page's own client point
+  // and the surface the gesture latched to - in that order, on one line.
+  eq("no notch yet, no wheel row", idle.wheel, undefined);
+  const panelNotch = Object.fromEntries(debugRows({
+    wheel: { target: "LI", x: 957, y: 300, surface: "panel" },
+  }));
+  eq("a panel notch reports target, point and the latched surface", panelNotch.wheel, "LI 957,300 panel");
+  const titleNotch = Object.fromEntries(debugRows({
+    wheel: { target: "dialogTitle", x: 739, y: 64, surface: "panel" },
+  }));
+  eq("a target id is reported by id", titleNotch.wheel, "dialogTitle 739,64 panel");
+  const boardNotch = Object.fromEntries(debugRows({
+    wheel: { target: "board", x: 640, y: 300, surface: "board" },
+  }));
+  eq("a board notch reports the board surface", boardNotch.wheel, "board 640,300 board");
+  const unlatched = Object.fromEntries(debugRows({
+    wheel: { target: "body", x: 1, y: 2, surface: "" },
+  }));
+  eq("a notch with no latched surface reads as unknown", unlatched.wheel, "body 1,2 —");
+  const noPoint = Object.fromEntries(debugRows({
+    wheel: { target: "LI", surface: "panel" },
+  }));
+  eq("a notch with no point does not invent 0,0", noPoint.wheel, "LI ?,? panel");
+
   // --- what the page actually ships -----------------------------------------
   const html = await (await fetch(ctx.base + "/")).text();
   for (const id of ["strip", "stripInfo", "debugToggle", "debugPanel", "debugRows", "debugWire", "mapStage", "lobby"]) {
