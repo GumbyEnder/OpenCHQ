@@ -143,6 +143,21 @@ export async function run() {
     "once the pass is over, the scan's units are hidden again");
   ok(after.includes("seen"), "and the sighted red unit stays");
 
+  // The server's reveal is per round; the pass lasts 15.85 s and spans rounds, so the room can stop
+  // carrying the scanned enemy before the bar reaches it. The pass keeps its own snapshot of what
+  // the scan revealed and still draws it bar-locally (T-022, room 7650).
+  const carried = [{ id: "scanned-near", side: "red", x: 160, y: 40 }];
+  const snapIds = (scanStateNow) => scanVisiblePieces([pieces[0], pieces[1]], {
+    own: "blue",
+    scan: { state: scanStateNow, intelIds: new Set(["scanned-near"]), pieces: carried },
+  }).map((piece) => piece.id);
+  ok(snapIds(state).includes("scanned-near"),
+    "a scanned unit the room no longer carries is still drawn while the bar covers it");
+  ok(!snapIds(scanState(0, 1000, 320)).includes("scanned-near"),
+    "and it is not drawn before the bar reaches its column");
+  ok(!snapIds(scanState(0, 20000, 320)).includes("scanned-near"),
+    "and it is dropped once the pass is over, snapshot or not");
+
   // --- the painter: shade under the pieces, bar on top --------------------------------------
   const view = { ...fitViewport(640, 272), scale: 2, left: 0, top: 0, viewW: 640, viewH: 272 };
   const rec = recorder();

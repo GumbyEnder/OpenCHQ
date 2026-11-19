@@ -1964,13 +1964,26 @@ export function scanVisiblePieces(pieces, opts = {}) {
   const own = opts.own;
   const ids = scan.intelIds;
   const has = typeof ids.has === "function" ? (id) => ids.has(id) : (id) => ids.includes(id);
-  return list.filter((piece) => {
+  const drawn = list.filter((piece) => {
     if (!piece) return false;
     if (own && piece.side === own) return true;
     if (!has(piece.id)) return true;
     if (scan.state.done) return false;
     return scanReveals(piece, scan.state, scan.state.spec.boardW);
   });
+  // The server's reveal is per round, but the measured pass is 15.85 s and a round is shorter
+  // than that, so the room stops carrying the scanned enemy before the bar has crossed the map.
+  // The pass holds its own snapshot of what the scan revealed (`scan.pieces`) and draws those,
+  // still bar-locally, until it is over (T-022, room 7650).
+  const snapshot = Array.isArray(scan.pieces) ? scan.pieces : [];
+  if (scan.state.done || !snapshot.length) return drawn;
+  const present = new Set(list.filter(Boolean).map((piece) => piece.id));
+  for (const piece of snapshot) {
+    if (!piece || present.has(piece.id)) continue;
+    if (own && piece.side === own) continue;
+    if (scanReveals(piece, scan.state, scan.state.spec.boardW)) drawn.push(piece);
+  }
+  return drawn;
 }
 
 // Draws the whole match onto a 2d context: grid (or schematic), capitals, then

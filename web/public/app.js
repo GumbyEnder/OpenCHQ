@@ -187,12 +187,19 @@ function startIntelScan() {
   if (!room || !room.you) return;
   if (boardPayload && (boardPayload.source === "missing" || !Array.isArray(boardPayload.cells))) return;
   const boardW = Number(boardPayload.width) || BOARD_W;
+  const intelIds = intelOnlyIds();
   scan = {
     startedAt: Date.now(),
     boardW,
     round: Number(room.round) || 0,
     side: room.you,
-    intelIds: intelOnlyIds(),
+    intelIds,
+    // The server's intel reveal lasts one round, but the pass lasts 15.85 s and spans rounds.
+    // Keep the enemy list the reveal put on the board at the ack, so the bar still has units to
+    // draw after the next round message drops them (T-022, room 7650).
+    intelPieces: (room.pieces || [])
+      .filter((piece) => piece && piece.side !== room.you && intelIds.has(piece.id))
+      .map((piece) => ({ ...piece })),
   };
   // A pass with nothing to reveal still greys the map: the original charges for the scan and shows
   // the sweep whether or not a unit is under it, and the opponent is told either way.
@@ -738,7 +745,7 @@ function drawMatch() {
     // scan put on the board stay gated by the bar for as long as this scan state is armed.
     scan: scan ? (() => {
       const state = scanState(scan.startedAt, Date.now(), scan.boardW);
-      return { state, active: !state.done, intelIds: scan.intelIds };
+      return { state, active: !state.done, intelIds: scan.intelIds, pieces: scan.intelPieces };
     })() : null,
   });
   lastPaint = {
