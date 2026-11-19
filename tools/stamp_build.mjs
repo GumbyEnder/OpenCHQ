@@ -1,8 +1,10 @@
 // Stamp web/data/build.json with the commit being shipped.
 //
-// Railway's builder does not reliably carry .git, so /api/version cannot always ask git. This
-// runs after the commit and before the upload: the number on the page is the commit the user
-// pushed, not a guess. Run it by hand when deploying without tools/fire.sh.
+// Only the `railway up` fallback needs this: an upload carries no .git, so /api/version
+// cannot ask Railway for the commit. A push-triggered build reports
+// RAILWAY_GIT_COMMIT_SHA instead and must NOT be stamped - a committed stamp goes stale
+// the moment the next commit lands. tools/fire.sh stamps only when it uploads and
+// restores the file afterwards.
 import { execSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
