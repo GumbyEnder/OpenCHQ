@@ -398,6 +398,10 @@ export function createLobby() {
 
   // A disconnect pauses the game; it does not destroy it. The seat stays reserved for the
   // account, the room stays in the store, and the clock stops so nothing runs unwatched.
+  //
+  // PB-134: this stop is the ROOM's, not a seat's. `holdRoom` marks it so `setClock` refuses a run
+  // with words about the disconnect instead of naming a seat that cannot answer, and a rejoin is
+  // what clears it.
   function holdRoom(room, note) {
     // A deploy is not the player's pause. While the process is draining, a disconnect is ours,
     // so the room is marked to resume instead of being stopped and saved as stopped.
@@ -407,10 +411,29 @@ export function createLobby() {
       return;
     }
     room.clock = "held";
+    room.holdRoom = true;
+    room.resumeOnRejoin = null;
     if (room.match) room.match.clock = "held";
     room.note = note;
     saveRoom(room);
     tellRoom(room);
+  }
+
+  // A rejoin clears the room hold. A resume the present seat asked for while the other side was
+  // gone is honoured here - the absent seat was never asked for consent, because a socket that is
+  // not there cannot answer - but only once no seat is still holding the clock itself.
+  function wakeRoomHold(room) {
+    if (!room || room.holdRoom !== true) return;
+    room.holdRoom = false;
+    const wanted = room.resumeOnRejoin;
+    room.resumeOnRejoin = null;
+    if (wanted && !anySeatHolds(room) && !(room.match && room.match.over)) {
+      room.clock = "running";
+      room.tickedAt = Date.now();
+      if (room.match) room.match.clock = "running";
+      room.note = "Clock running. Pieces move one cell a round.";
+    }
+    saveRoom(room);
   }
 
   function endRoom(room, reason) {
@@ -441,7 +464,8 @@ export function createLobby() {
     if (!room) return null;
     // The seat is occupied again, so the note the drop left behind is stale.
     if (/disconnected/.test(String(room.note || ""))) {
-      room.note = "Both seats are present. The clock is still held.";
+      // A rejoin may also have resumed the clock (PB-134); the note then belongs to the run.
+      if (room.clock === "held") room.note = "Both seats are present. The clock is still held.";
       saveRoom(room);
     }
     return roomView(room, username);
@@ -479,6 +503,8 @@ export function createLobby() {
     };
     const roomId = seatOf.get(username);
     const room = roomId ? rooms.get(roomId) : null;
+    // PB-134: a rejoin is the one thing that clears a disconnect's room hold.
+    wakeRoomHold(room);
     const view = seatView(room, username);
     // Whatever this seat was sent before it disconnected is not in its browser any more: the
     // welcome is a full frame, so the next one must be too.
@@ -513,6 +539,9 @@ export function createLobby() {
     room.match.over = true;
     room.match.winner = other;
     room.clock = "held";
+    // PB-134: this stop belongs to the result, not to a seat. A seat hold left over from before the
+    // resignation would make the next `run` read as "held by <seat>" over a finished match.
+    room.holds = { blue: false, red: false };
     room.match.clock = "held";
     room.note = nameOf(username) + " resigned. " + other + " wins.";
     saveRoom(room);
@@ -561,6 +590,9 @@ export function createLobby() {
       mode: "bot",
       era: year,
       clock: "held",
+      // The bot never sends a clock op, so its seat never holds: human+bot stays as it was (AC2).
+      holds: { blue: false, red: false },
+      holdRoom: false,
       // T-004: a room carries its own clock speed (0-6). 1 is the old single 5 s round.
       speed: 1,
       note: "Clock held. The board is waiting for orders.",
@@ -635,6 +667,9 @@ export function createLobby() {
       mode: "human",
       era: inviteRow.era,
       clock: "held",
+      // PB-134: a fresh room has no seat holding it, and no disconnect stopping it.
+      holds: { blue: false, red: false },
+      holdRoom: false,
       speed: 1,
       note: "Clock held. The board is waiting for orders.",
       seats: { blue: null, red: null },
@@ -843,20 +878,75 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // PB-134: the clock is held PER SEAT, and `run` releases only the sender's own hold.
+  //
+  // A hold from either seat takes effect at once: the clock is held while any seat holds, and the
+  // other seat cannot lift it. If both seats hold, a run releases the sender's own hold and is then
+  // refused naming the seat that still holds - so the clock starts when the last holder runs, and
+  // never because one seat asked twice.
+  //
+  // A dropped socket is not a seat's hold. `holdRoom` marks the room itself as held, and its refusal
+  // names the disconnect, never a seat: the seat that is gone cannot answer, and blaming it would
+  // make a dead socket look like a player's decision.
+  //
+  // The refusal text is owned by the ticket and is quoted there verbatim; frodo's AC4 arm 2 diffs
+  // the served string against that line, so do not reword it here alone.
+  const SEAT_HOLD_REFUSAL = (seat) => "The clock is held by " + seat + ". Only " + seat + " can resume it.";
+  const ROOM_HOLD_REFUSAL = "The clock is held by a disconnect. Only a rejoin can resume it.";
+
+  // A room written before PB-134 carries no hold table: an empty one is the same clock it had.
+  function holdsOf(room) {
+    if (!room.holds || typeof room.holds !== "object") room.holds = { blue: false, red: false };
+    return room.holds;
+  }
+
+  function anySeatHolds(room) {
+    const holds = holdsOf(room);
+    return holds.blue === true || holds.red === true;
+  }
+
   function setClock(username, running) {
     const roomId = seatOf.get(username);
     const room = roomId ? rooms.get(roomId) : null;
     if (!room) return { error: "You are not in a match." };
-    room.clock = running ? "running" : "held";
+    // The same seat test every other seat-scoped op uses: the side is never read from the message.
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const holds = holdsOf(room);
+    if (!running) {
+      // A hold is never refused, and both seats see it on the next frame.
+      holds[mine] = true;
+      room.clock = "held";
+      if (room.match) room.match.clock = "held";
+      room.note = "Clock held. The board is waiting for orders.";
+      saveRoom(room);
+      tellRoom(room);
+      return { ok: true, clock: room.clock };
+    }
+    // A run releases the sender's own hold first, then looks at what is left.
+    holds[mine] = false;
+    if (room.holdRoom === true) {
+      // Not a seat's hold: the room is stopped by a disconnect. Remember the ask so the rejoin
+      // resumes the clock the present seat already asked for, and refuse in words about the drop.
+      room.resumeOnRejoin = username;
+      saveRoom(room);
+      return { error: ROOM_HOLD_REFUSAL };
+    }
+    const other = mine === "blue" ? "red" : "blue";
+    if (holds[other] === true) {
+      // The sender's own hold is now cleared; the other seat's is not theirs to clear.
+      saveRoom(room);
+      const seat = nameOf(room.seats[other] && room.seats[other].username);
+      return { error: SEAT_HOLD_REFUSAL(seat) };
+    }
+    room.clock = "running";
     // A started clock begins its own round now, not at whatever the last held room left behind.
-    if (running) room.tickedAt = Date.now();
+    room.tickedAt = Date.now();
     if (room.match) room.match.clock = room.clock;
-    room.note = running
-      ? "Clock running. Pieces move one cell a round."
-      : "Clock held. The board is waiting for orders.";
+    room.note = "Clock running. Pieces move one cell a round.";
     saveRoom(room);
     tellRoom(room);
-    return { ok: true };
+    return { ok: true, clock: room.clock };
   }
 
   // Manual p.34-35: the game speed is 0 through 6, and speed 0 still accepts orders and air
