@@ -146,9 +146,14 @@ export async function run(ctx) {
   if (!/id="dialog"[^>]*class="dialog hidden"/.test(html)) fail("the dialogue does not ship closed");
   const app = await (await fetch(ctx.base + "/app.js")).text();
   if (!app.includes("./dialogs.mjs")) fail("app.js does not use the dialogue module");
-  // The panel itself must draw the window, not its own slice(-8): a pure helper the page never
-  // calls pins nothing (PB-121).
-  if (!/logWindow\(roundLog\)/.test(app)) fail("app.js paints the log without logWindow(roundLog)");
+  // The panel must draw from the module, not its own slice(-8): a pure helper the page never calls
+  // pins nothing (PB-121). PB-135 moved the window into the VIEWPORT: the panel paints the whole
+  // retained buffer and opens at the newest line, so the six newest rounds are still what a fresh
+  // reader lands on while the older rounds are now scrollable above them. The page-level pin is
+  // therefore paintedLines(log) here, and pb135_log_scroll holds it to at least the six-round window.
+  if (!/paintedLines\(log\)/.test(app)) fail("app.js paints the log without paintedLines(log)");
+  if (/roundLog\.slice\(-8\)/.test(app)) fail("app.js still slices the last eight lines");
+  if (!/from "\.\/logview\.mjs"/.test(app)) fail("app.js does not use the log buffer module");
   // --- "Last rounds" is a window of ROUNDS, not of lines (PB-121) -----------
   // The panel used to draw roundLog.slice(-8): eight contact lines from one round filled it and
   // every earlier round vanished. Ten lines a round for eight rounds must still show six rounds.

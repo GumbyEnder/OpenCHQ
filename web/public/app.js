@@ -32,7 +32,18 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
-import { NAV, buyRows, economyModel, logWindow, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
+import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
+// The Log panel's buffer and scroll policy (PB-135): the panel paints every line the page retains
+// and a mid-match resync merges instead of being dropped.
+import {
+  affordanceText,
+  appendLog,
+  emptyLog,
+  isAtBottom,
+  paintedLines,
+  pendingAfterPaint,
+  scrollAfterPaint,
+} from "./logview.mjs";
 // The buy table's icon is the board's own badge, drawn by the same badgeSvg as the legend, so a
 // player picks a unit by the shape they will see on the map. (T-014 gate, room 4035.)
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
@@ -734,25 +745,18 @@ let placement = null;
 let pendingMission = "strike";
 
 // The round log. A running clock is dead time unless it reports itself: every line here came
-// from the server already filtered to what this seat could see.
-let roundLog = [];
-// Kept per ROOM on the server too (lobby.mjs trims the same figure): the panel draws a window of
-// ROUNDS, so the buffer has to hold several rounds of a chatty log, not the last 8 lines (PB-121).
-const LOG_KEEP = 240;
-
-let logKeys = new Set();
+// from the server already filtered to what this seat could see. LOG_KEEP matches the room's own
+// server-side cap (lobby.mjs trims the same figure); the panel is a scroll container over all of
+// it, so the retained rounds are reachable and not just the newest six (PB-135).
+let log = emptyLog();
+// Where the reader is in the panel. Pinned means "at the bottom, follow new lines"; a reader who
+// scrolled up keeps their place and gets a jump affordance instead (PB-135 AC2).
+const logView = { pinned: true, scrollTop: 0, pending: 0 };
 
 function noteLog(lines) {
-  for (const line of Array.isArray(lines) ? lines : []) {
-    if (!line || !line.text) continue;
-    // A sighting repeats every round the enemy stays visible. Say it once.
-    if (line.key) {
-      if (logKeys.has(line.key)) continue;
-      logKeys.add(line.key);
-    }
-    roundLog.push({ round: Number(line.round) || 0, text: String(line.text) });
-  }
-  if (roundLog.length > LOG_KEEP) roundLog = roundLog.slice(-LOG_KEEP);
+  const added = appendLog(log, lines);
+  if (!added) return;
+  logView.pending = pendingAfterPaint(logView, added);
   const list = document.getElementById("roundLog");
   if (list) paintLog(list);
 }
@@ -1450,14 +1454,50 @@ function toolRow(room) {
   return row;
 }
 
+function syncLogJump(list) {
+  const text = affordanceText(logView.pending);
+  const parent = list && list.parentNode;
+  if (!parent) return;
+  let jump = document.getElementById("logJump");
+  if (!text) {
+    if (jump) jump.classList.add("hidden");
+    return;
+  }
+  if (!jump) {
+    jump = document.createElement("button");
+    jump.type = "button";
+    jump.id = "logJump";
+    jump.className = "ghost logjump";
+    jump.addEventListener("click", () => {
+      logView.pinned = true;
+      logView.pending = 0;
+      const now = document.getElementById("roundLog");
+      if (now) {
+        now.scrollTop = now.scrollHeight;
+        logView.scrollTop = now.scrollTop;
+        syncLogJump(now);
+      }
+    });
+    parent.insertBefore(jump, list.nextSibling);
+  }
+  jump.textContent = text;
+  jump.classList.remove("hidden");
+}
+
+// Paint every line the page retains, oldest first, and keep the reader's place. A reader at the
+// bottom follows the newest line; a reader scrolled up stays put and is told how many lines arrived
+// under a visible jump control (PB-135 AC1, AC2).
 function paintLog(list) {
+  const lines = paintedLines(log);
   list.textContent = "";
-  // Six rounds, capped at 48 lines: the newest round can no longer be the only round on screen.
-  for (const line of logWindow(roundLog)) {
+  for (const line of lines) {
     const item = document.createElement("li");
     item.textContent = "round " + line.round + " \u2014 " + line.text;
     list.append(item);
   }
+  list.scrollTop = scrollAfterPaint(logView, { clientHeight: list.clientHeight, scrollHeight: list.scrollHeight });
+  logView.scrollTop = list.scrollTop;
+  syncLogJump(list);
 }
 
 // A delta is the difference since the frame this page already has. If the round does not follow
@@ -1981,12 +2021,20 @@ const DIALOG_PAINTERS = {
   },
 
   log(body) {
-    if (!roundLog.length) {
+    if (!log.lines.length) {
       body.append(note("Nothing has happened yet. The clock reports itself here once it runs."));
       return;
     }
     const list = document.createElement("ol");
     list.className = "roundLog";
+    list.id = "roundLog";
+    // The reader's own scrolling is the only thing that unpins the view: arriving state never does.
+    list.addEventListener("scroll", () => {
+      logView.scrollTop = list.scrollTop;
+      logView.pinned = isAtBottom({ scrollTop: list.scrollTop, clientHeight: list.clientHeight, scrollHeight: list.scrollHeight });
+      if (logView.pinned) logView.pending = 0;
+      syncLogJump(list);
+    });
     body.append(list);
     paintLog(list);
   },
@@ -2125,8 +2173,9 @@ function connect() {
         wasReconnecting = false;
         say("Reconnected. The match is where you left it.");
       }
-      // A returning seat gets its room in the welcome, and the room carries its own log.
-      if (message.room && Array.isArray(message.room.log) && !roundLog.length) noteLog(message.room.log);
+      // A returning seat gets its room in the welcome, and the room carries its own log. It MERGES
+      // into what this page already holds: a reconnect must not drop rounds already on screen.
+      if (message.room && Array.isArray(message.room.log)) noteLog(message.room.log);
       me = message.username;
       users = message.users || [];
       room = message.room;
@@ -2160,8 +2209,9 @@ function connect() {
       say(message.by + " declined.");
     } else if (message.op === "room") {
       if (!room || !message.room || room.id !== message.room.id) {
-        roundLog = [];
-        logKeys = new Set();
+        log = emptyLog();
+        logView.pinned = true;
+        logView.pending = 0;
       }
       room = message.room;
       if (message.reason) say(message.reason);
@@ -2170,8 +2220,10 @@ function connect() {
         preview = null;
         hoverKey = "";
       }
-      // A reload shows the match that has been happening: the room carries its own log.
-      if (!roundLog.length && room && Array.isArray(room.log)) noteLog(room.log);
+      // A reload shows the match that has been happening: the room carries its own log. This is also
+      // the `sync` frame (15 lines per side): it MERGES into the buffer, deduped, instead of replacing
+      // it, so a mid-match resync never shrinks what the reader already has (PB-135 AC3).
+      if (room && Array.isArray(room.log)) noteLog(room.log);
       pending = [];
       renderInvites();
       renderPeople();
@@ -2533,7 +2585,7 @@ window.__chq = {
   // The names the painter puts beside capitals, from the room's own era rows (PB-022). The canvas is
   // pixels, so a screenshot cannot be read back: this is the same call the frame makes.
   capitalLabels: () => capitalMarkers(boardPayload, room).map((c) => ({ name: c.name, x: c.x, y: c.y, side: c.side, color: c.color })),
-  log: () => roundLog.slice(),
+  log: () => log.lines.slice(),
   state: () => ({
     buying,
     selected: selected ? selected.id : null,
