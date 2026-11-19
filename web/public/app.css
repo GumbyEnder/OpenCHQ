@@ -144,8 +144,10 @@ button.ghost {
 .passwordBox label { font-size: 11px; }
 .passwordBox input { width: 130px; }
 .logHeading { margin: 14px 0 4px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #8fa6b3; }
-.roundLog { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: #cfe3d8; }
+.roundLog { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: #cfe3d8; max-height: 46vh; overflow-y: auto; }
 .roundLog li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logjump { display: block; width: 100%; margin: 6px 0; font-size: 12px; }
+.logjump.hidden { display: none; }
 
 .cam {
   display: flex;
