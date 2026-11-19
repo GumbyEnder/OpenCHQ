@@ -2003,6 +2003,8 @@ export function paintMatch(ctx, board, room, opts = {}) {
   let fogged = 0;
   let political = 0;
   let tally = null;
+  // The scan bar's rect count, reported in the frame (painted under the pieces, above the shade).
+  let scanBar = 0;
   // The layer list records the painter's own order, so a pin can hold the order rather than the
   // presence of a call. `cells` and `fog` are in it: terrain and fog are layers a player can see,
   // and leaving them out let a re-order of the fill pass every pin (see the T-018 AC4 follow-up).
@@ -2037,6 +2039,10 @@ export function paintMatch(ctx, board, room, opts = {}) {
       if (opts.scan && opts.scan.state && opts.scan.active !== false) {
         paintScanShade(ctx, view);
         layers.push("scanShade");
+        // The bar is light on the grey ground, UNDER the pieces: a unit the scan reveals has to be
+        // visible inside the band, and an opaque bar painted last hid exactly that (T-022, 7650).
+        scanBar = paintScanBar(ctx, opts.scan.state, view);
+        layers.push("scanBar");
       }
     }
   } else {
@@ -2108,12 +2114,6 @@ export function paintMatch(ctx, board, room, opts = {}) {
   layers.push("labels");
   const selection = paintSelectionMark(ctx, groups, view, { ...opts, ink: theme.selectionInk });
   layers.push("selection");
-  // Last, so the bar is light on top of the shaded board and every piece the pass has revealed.
-  let scanBar = 0;
-  if (opts.scan && opts.scan.state && opts.scan.active !== false) {
-    scanBar = paintScanBar(ctx, opts.scan.state, view);
-    layers.push("scanBar");
-  }
   return { mode, painted, fogged, pieces, groups: groups.length, scanBar,
     siteTicks, capitals, labels: labelled,
     political, tally, preview, pending, selection, layers, theme: theme.id, message: "", view };

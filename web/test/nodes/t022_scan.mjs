@@ -203,7 +203,11 @@ export async function run() {
     scan: { state, active: true, intelIds: new Set(["scanned-near", "scanned-far"]) },
   });
   ok(result.layers.includes("scanShade"), "the frame lists the shade layer");
-  ok(result.layers[result.layers.length - 1] === "scanBar", "the bar is the last thing painted");
+  ok(result.layers.includes("scanBar"), "the frame lists the bar layer");
+  ok(result.layers.indexOf("scanBar") < result.layers.indexOf("pieces"),
+    "the bar is painted under the pieces, so a scanned unit is visible inside the band");
+  ok(result.layers.indexOf("scanShade") < result.layers.indexOf("scanBar"),
+    "the shade is under the bar");
   ok(result.layers.indexOf("scanShade") < result.layers.indexOf("pieces"), "the shade is under the pieces");
   ok(result.groups === 2, "one own badge and one scanned unit under the bar are drawn (" + result.groups + ")");
   ok(result.scanBar >= 1, "the frame reports the bar it painted");
