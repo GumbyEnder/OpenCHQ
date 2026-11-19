@@ -46,6 +46,17 @@ export async function run(ctx) {
     "Concealed · red · round 1 · held");
   eq("a finished match says who won", stripInfo({ era: 1918, you: "blue", round: 259, clock: "held", over: true, winner: "red" }),
     "1918 · blue · round 259 · held · red won");
+  // PB-142: speed 0 stops time without holding the clock, so the clock word alone is not the whole
+  // answer. The strip has to read the speed the room is at, or it argues with the readout two
+  // pixels away. The held clock is a different pause and keeps its own word.
+  eq("speed 0 reads as paused while the clock still runs",
+    stripInfo({ era: 1942, you: "blue", round: 5, clock: "running", speed: 0 }),
+    "1942 · blue · round 5 · paused");
+  eq("a held clock stays held at speed 0", stripInfo({ era: 1942, you: "blue", round: 5, clock: "held", speed: 0 }),
+    "1942 · blue · round 5 · held");
+  eq("speed 1 keeps reading running at the same clock",
+    stripInfo({ era: 1942, you: "blue", round: 5, clock: "running", speed: 1 }),
+    "1942 · blue · round 5 · running");
 
   // --- what the debug window reports ----------------------------------------
   const empty = debugRows({});
