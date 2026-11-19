@@ -74,6 +74,17 @@ export function scanCovers(x, state, boardW) {
   return d <= span;
 }
 
+// A remake round ticks in real time while the pass is still running. The original's scan is
+// continuous, so a pass that has STARTED finishes even across a round boundary (PM ruling on
+// room 7630); only a pass whose trailing edge has already left the board is dropped with the
+// round. Returns true = keep the armed pass.
+export function scanKeepsAcrossRound(scan, round, now, boardW) {
+  if (!scan) return false;
+  const width = Math.max(1, Math.floor(Number(boardW) || Number(scan.boardW) || SCAN.boardW));
+  if (Number(round) === Number(scan.round)) return true;
+  return !scanState(scan.startedAt, now, width).done;
+}
+
 // A unit is drawn when the bar covers its column. Enemy units a seat can already see by sight are
 // not this gate's business: the caller keeps those out of `intelIds`.
 export function scanReveals(piece, state, boardW) {

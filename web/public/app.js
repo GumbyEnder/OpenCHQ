@@ -28,7 +28,7 @@ import {
   snapPlacementCell,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
-import { scanSpec, scanState } from "./scan.mjs";
+import { scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
@@ -2339,9 +2339,13 @@ function connect() {
         logView.pending = 0;
       }
       room = message.room;
-      // A new round drops the previous scan: the server's reveal is a per-round mark, and a sweep
-      // armed in round N must not keep hiding round N+1's pieces.
-      if (scan && Number(room.round) !== scan.round) { stopIntelScan(); scan = null; }
+      // A new round normally drops the previous scan -- the server's reveal is a per-round mark.
+      // But the original is continuous real time: a pass that has STARTED must finish even if a
+      // remake round ticks under it, so only a finished pass is cleared here (T-022, room 7630).
+      if (scan && !scanKeepsAcrossRound(scan, room.round, Date.now(), scan.boardW)) {
+        stopIntelScan();
+        scan = null;
+      }
       if (message.reason) say(message.reason);
       if (selected && (!room || !(room.pieces || []).some((piece) => piece.id === selected.id))) {
         selected = null;

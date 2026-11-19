@@ -7,7 +7,7 @@
 import {
   fitViewport, paintMatch, paintScanBar, paintScanShade, scanVisiblePieces,
 } from "../../public/render.mjs";
-import { SCAN, scanCovers, scanSpec, scanState } from "../../public/scan.mjs";
+import { SCAN, scanCovers, scanKeepsAcrossRound, scanSpec, scanState } from "../../public/scan.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -99,6 +99,24 @@ export async function run() {
   const straddle = scanState(0, 16000, 320); // lead ~323, trail ~303
   ok(scanCovers(320 % 320, straddle, 320) || scanCovers(2, straddle, 320),
     "a bar past the right edge wraps onto the left of the board");
+
+  // --- a remake round must not cut a started pass short (T-022, room 7630) -------------------
+  // `room.round` ticks while the sweep is in flight: the original is continuous real time, so a
+  // pass that has started finishes. Only a pass whose trailing edge is already off the board is
+  // dropped, or round N+1's pieces would stay hidden by a sweep that ended in round N.
+  const armed = { startedAt: 0, round: 4, boardW: 320 };
+  ok(scanKeepsAcrossRound(armed, 4, 15600, 320), "the same round keeps the pass while it runs");
+  ok(scanKeepsAcrossRound(armed, 4, 20000, 320), "the same round keeps it even after it is done");
+  ok(scanKeepsAcrossRound(armed, 5, 2000, 320),
+    "a round tick 2 s into a 15.85 s pass does not cut the pass short");
+  ok(scanKeepsAcrossRound(armed, 5, 15600, 320),
+    "a tick near the end of the round still keeps the pass (trail is on the board)");
+  ok(!scanState(0, 15600, 320).done, "and the pass genuinely is unfinished at that instant");
+  ok(!scanKeepsAcrossRound(armed, 5, 16850, 320),
+    "a finished pass is dropped by the round tick, so round N+1 is not hidden");
+  ok(scanKeepsAcrossRound({ ...armed, startedAt: 900000 }, 5, 900010, 320),
+    "the guard reads the pass's own clock, not the round's");
+  ok(!scanKeepsAcrossRound(null, 5, 0, 320), "no armed pass means nothing to keep");
 
   // --- the gate: own and sight-visible pieces are never hidden ------------------------------
   const state = scanState(0, 7925, 320); // bar over the middle of the board
