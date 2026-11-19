@@ -113,14 +113,22 @@ async function serveFile(res, urlPath) {
   }
 }
 
-// The commit the page is actually running. Railway's builder does not always keep .git, so
-// tools/fire.sh writes web/data/build.json before upload; git is the fallback on a dev machine
-// and OPENCHQ_COMMIT lets a host name the build explicitly.
+// The commit the page is actually running. Precedence, strongest first:
+//   OPENCHQ_COMMIT        explicit override for a host or a hand-built bundle
+//   RAILWAY_GIT_COMMIT_SHA  what Railway itself built, on a repo-connected service
+//   web/data/build.json   the stamp tools/fire.sh writes before a `railway up` upload
+//   git rev-parse HEAD    a dev machine with a real checkout
+// The build.json stamp is a committed file, so on a git-triggered deploy it describes the
+// last upload, not this build — checking Railway first is what keeps the footer honest.
 let versionCache = null;
 function versionInfo() {
   if (versionCache) return versionCache;
   let commit = String(process.env.OPENCHQ_COMMIT || "").trim();
   let source = commit ? "env" : "";
+  if (!commit) {
+    commit = String(process.env.RAILWAY_GIT_COMMIT_SHA || "").trim();
+    source = commit ? "railway" : "";
+  }
   if (!commit) {
     const buildFile = path.resolve(publicDir, "..", "data", "build.json");
     if (existsSync(buildFile)) {
