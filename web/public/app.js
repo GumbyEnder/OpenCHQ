@@ -934,13 +934,63 @@ function screenPoint(event) {
   };
 }
 
-board.addEventListener("wheel", (event) => {
-  event.preventDefault();
+// PB-148: a wheel GESTURE belongs to the surface it began on. The browser hit-tests every notch
+// separately, so a reader who scrolls the round-log list and lets the pointer drift a few pixels
+// past the panel's border was scrolling the panel and zooming the camera in one continuous gesture
+// (PB-135 AC6). Latch the surface at the first notch and hold it until the notches stop: a gesture
+// that starts on a panel stays with that panel, a gesture that starts on the map keeps zooming, and
+// neither one also drives the other when the pointer wanders across the border mid-gesture.
+const WHEEL_GESTURE_GAP = 250; // ms without a notch that ends a gesture
+let wheelGesture = { surface: "", at: -Infinity, scroller: null };
+
+function wheelScroller(node) {
+  let el = node instanceof Element ? node : null;
+  while (el && el !== document.documentElement) {
+    const overflowY = getComputedStyle(el).overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight + 1) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+// The panel keeps its own scroll when the pointer has drifted onto the map: the event no longer
+// targets the panel, so the browser will not scroll it for us and the page must do it here.
+function scrollLatchedPanel(event) {
+  const scroller = wheelGesture.scroller;
+  if (!scroller) return;
+  const perUnit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1;
+  scroller.scrollTop += event.deltaY * perUnit;
+}
+
+function zoomAtCursor(event) {
   const at = screenPoint(event);
   userCamera = true;
   camera = zoomAt(viewForCanvas(), event.deltaY < 0 ? 1.25 : 0.8, at.x, at.y);
   drawMatch();
-}, { passive: false });
+}
+
+window.addEventListener("wheel", (event) => {
+  if (!room) return; // the lobby has no camera to zoom and no panel to latch
+  const onBoard = event.target instanceof Element && Boolean(event.target.closest("#board"));
+  const now = event.timeStamp;
+  if (!(now - wheelGesture.at < WHEEL_GESTURE_GAP)) {
+    wheelGesture = onBoard
+      ? { surface: "board", at: now, scroller: null }
+      : { surface: "panel", at: now, scroller: wheelScroller(event.target) };
+  }
+  wheelGesture.at = now;
+  if (wheelGesture.surface === "board") {
+    event.preventDefault(); // a map gesture never scrolls a panel it drifts over
+    zoomAtCursor(event);
+    return;
+  }
+  if (onBoard) {
+    // Latched to the panel. The notch is still the panel's scroll, not a zoom, even though the
+    // pointer is over the canvas now.
+    event.preventDefault();
+    scrollLatchedPanel(event);
+  }
+}, { passive: false, capture: true });
 
 // A drag pans: primary, middle or right button. The primary button is the only one a trackpad
 // offers, which is why "right-drag" existed in code and no drag panned in a hand-check (PB-083).
