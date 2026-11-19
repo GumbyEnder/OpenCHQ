@@ -8,6 +8,9 @@ import {
   fitViewport, paintMatch, paintScanBar, paintScanShade, scanVisiblePieces,
 } from "../../public/render.mjs";
 import { SCAN, scanCovers, scanKeepsAcrossRound, scanSpec, scanState } from "../../public/scan.mjs";
+import { openMatch } from "../../server/match.mjs";
+import { toolsForEra, useTool } from "../../server/late.mjs";
+import { millionsPerBillion, priceOf, rules } from "../../server/rules.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -181,4 +184,40 @@ export async function run() {
   const plain = paintMatch(recorder().ctx, board, room, { view, own: "blue" });
   ok(plain.groups === 3, "without a scan every piece is drawn (" + plain.groups + ")");
   ok(!plain.layers.includes("scanShade"), "and no shade is painted");
+
+  // --- AC4: the tool is offered only where the manual puts it, at the recovered price, and it
+  // --- touches neither a unit's position nor an owner (T-022 card AC4; room 7639).
+  for (const era of ["1918", "1942"]) {
+    ok(!toolsForEra(era).includes("intel"), era + " offers the intel scan");
+  }
+  for (const era of ["1986", "2023"]) {
+    ok(toolsForEra(era).includes("intel"), era + " does not offer the intel scan");
+  }
+  ok(rules().prices.intelScan === 10, "the config price is not the manual's 10 (" + rules().prices.intelScan + ")");
+  ok(priceOf("intelScan") === 10 * millionsPerBillion(),
+    "the charged price is not 10 billion (" + priceOf("intelScan") + " million)");
+
+  const tool = openMatch("1986", []);
+  tool.clock = "running";
+  tool.round = 4;
+  tool.sides.blue.cash = 50000;
+  tool.sides.red.cash = 50000;
+  tool.sites = [
+    { id: 10, name: "New York", x: 80, y: 40, kind: "city", owner: "blue" },
+    { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", owner: "red" },
+  ];
+  tool.pieces = [
+    { id: "blue:land", side: "blue", domain: "land", kind: "infantry", x: 79, y: 44, path: [], pace: 1, facing: null, fighting: null, shots: 0, movedRound: -1 },
+    { id: "red:sea", side: "red", domain: "sea", kind: "submarine", x: 200, y: 100, path: [], pace: 1, facing: null, fighting: null, shots: 0, movedRound: -1 },
+  ];
+  const unitBoard = () => JSON.stringify(tool.pieces.map((p) => [p.id, p.side, p.kind, p.x, p.y]));
+  const owners = () => JSON.stringify(tool.sites.map((s) => [s.id, s.owner]));
+  const unitsBefore = unitBoard();
+  const ownersBefore = owners();
+  const scanUse = useTool(tool, "blue", "intel");
+  ok(!scanUse.error, "intel was refused in 1986: " + scanUse.error);
+  ok(unitBoard() === unitsBefore, "the intel scan moved a unit");
+  ok(owners() === ownersBefore, "the intel scan changed an owner");
+  ok(tool.pieces.filter((p) => p.side === "red").every((p) => p.revealedRound === tool.round),
+    "the intel scan did not mark the enemy pieces for its own round");
 }
