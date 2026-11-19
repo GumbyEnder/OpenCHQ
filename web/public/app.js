@@ -28,6 +28,7 @@ import {
   snapPlacementCell,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
+import { scanSpec, scanState } from "./scan.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
@@ -155,6 +156,56 @@ function startSelectionPulse() {
   }, 90);
 }
 let preview = null;
+// The intel scan's sweep (T-022, Q51). `intelIds` are the enemy pieces that are on the board only
+// because the scan revealed them: those are bar-local, everything else is untouched. The pass runs
+// once per use, at the original's measured speed, and the round's server-side reveal is hidden
+// again once the bar has left the board -- the capture shows no persistence past the bar.
+let scan = null;
+let scanTimer = null;
+
+function intelOnlyIds() {
+  if (!room || !room.you || !Array.isArray(room.pieces)) return new Set();
+  const width = Number(boardPayload.width) || BOARD_W;
+  const sight = Number(boardPayload.sightCells || 8);
+  const lit = sightTable(boardPayload, room.pieces.filter((piece) => piece.side === room.you), sight);
+  const ids = new Set();
+  for (const piece of room.pieces) {
+    if (!piece || piece.side === room.you) continue;
+    const cell = Math.trunc(Number(piece.y) || 0) * width + wrapX(piece.x, width);
+    if (!lit[cell]) ids.add(piece.id);
+  }
+  return ids;
+}
+
+function stopIntelScan() {
+  if (scanTimer) clearInterval(scanTimer);
+  scanTimer = null;
+}
+
+function startIntelScan() {
+  stopIntelScan();
+  if (!room || !room.you) return;
+  if (boardPayload && (boardPayload.source === "missing" || !Array.isArray(boardPayload.cells))) return;
+  const boardW = Number(boardPayload.width) || BOARD_W;
+  scan = {
+    startedAt: Date.now(),
+    boardW,
+    round: Number(room.round) || 0,
+    side: room.you,
+    intelIds: intelOnlyIds(),
+  };
+  // A pass with nothing to reveal still greys the map: the original charges for the scan and shows
+  // the sweep whether or not a unit is under it, and the opponent is told either way.
+  const spec = scanSpec(boardW);
+  const durationMs = ((spec.boardW + spec.barCells) / spec.cellsPerSecond) * 1000;
+  drawMatch();
+  scanTimer = setInterval(() => {
+    if (!scan) return stopIntelScan();
+    const state = scanState(scan.startedAt, Date.now(), scan.boardW);
+    drawMatch();
+    if (state.done && Date.now() - scan.startedAt >= durationMs) stopIntelScan();
+  }, 50);
+}
 let hoverKey = "";
 // The cell under the pointer, in board coordinates, or null when the pointer is off the map. Only
 // the debug window reads it (PB-130): a hand check needs to say "cell 118,64" rather than argue
@@ -683,6 +734,12 @@ function drawMatch() {
     theme: currentTheme(),
     // The original's lettering for city names, once the camera is close enough to read them.
     atlas: fontAtlas,
+    // The intel sweep (T-022): the bar and the shade live while the pass runs; the ids that the
+    // scan put on the board stay gated by the bar for as long as this scan state is armed.
+    scan: scan ? (() => {
+      const state = scanState(scan.startedAt, Date.now(), scan.boardW);
+      return { state, active: !state.done, intelIds: scan.intelIds };
+    })() : null,
   });
   lastPaint = {
     mode: result.mode,
@@ -2282,6 +2339,9 @@ function connect() {
         logView.pending = 0;
       }
       room = message.room;
+      // A new round drops the previous scan: the server's reveal is a per-round mark, and a sweep
+      // armed in round N must not keep hiding round N+1's pieces.
+      if (scan && Number(room.round) !== scan.round) { stopIntelScan(); scan = null; }
       if (message.reason) say(message.reason);
       if (selected && (!room || !(room.pieces || []).some((piece) => piece.id === selected.id))) {
         selected = null;
@@ -2303,6 +2363,9 @@ function connect() {
       for (const event of message.events || []) {
         if (event.note) say(String(event.note));
         if (event.type && event.reveals !== undefined) noteLog([{ round: event.round, text: String(event.note || event.type) }]);
+        // My own intel scan: run the measured sweep (Q51). The satellite pass keeps the quiet,
+        // instant reveal it already had -- the original's satellite did not shade the map.
+        if (event.type === "intel" && room && event.side === room.you) startIntelScan();
       }
     } else if (message.op === "delta") {
       applyDelta(message.delta);

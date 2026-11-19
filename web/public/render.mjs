@@ -9,6 +9,7 @@
 import { colorForTerrain, paintBoard, PALETTE, SCHEMATIC, EXTRACT_MISSING } from "./paint.mjs";
 import { DEFAULT_THEME, terrainInk, themeById } from "./themes.mjs";
 import { textBitmap } from "./font.mjs";
+import { SCAN, scanReveals } from "./scan.mjs";
 import {
   BADGE_INTERIOR, BADGE_MIN_PX, BADGE_SIDE, BADGE_UNIT, badgeForPiece, badgeGroups,
   badgePx, badgeState, framePolygon, rimPolygon, selectedRing, showsEntrench, strengthBand,
@@ -1896,6 +1897,82 @@ export function statusLine(board, room, result = {}) {
   return `Cell grid from the map extract · ${seen} · ${counts.own} yours · ${counts.enemy} the other side · ${era ? era + " · " : ""}${tail}`;
 }
 
+// ---- intel scan (T-022, Q51) -----------------------------------------------------------
+//
+// The measured pass (scan.mjs): the ground greys out, one bar sweeps left to right in 15.85 s,
+// and an enemy unit is on screen only while the bar covers its column. `opts.scan` carries the
+// state computed from the wall clock plus the ids that are on the board *because of the scan* --
+// units the seat can already see by sight are left alone, or the sweep would hide its own army.
+
+// The board as a rect in view pixels, clamped to the viewport: shade and bar are drawn over the
+// ground that is actually on screen, not over the whole canvas.
+function boardRect(view) {
+  const a = cellToPixel(0, 0, view);
+  const b = cellToPixel(view.boardW || BOARD_W, view.boardH || BOARD_H, view);
+  const x0 = Math.max(0, Math.min(a.x, b.x));
+  const x1 = Math.min(view.viewW, Math.max(a.x, b.x));
+  const y0 = Math.max(0, Math.min(a.y, b.y));
+  const y1 = Math.min(view.viewH, Math.max(a.y, b.y));
+  return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+}
+
+export function paintScanShade(ctx, view) {
+  const rect = boardRect(view);
+  if (rect.width <= 0 || rect.height <= 0) return 0;
+  ctx.save();
+  ctx.fillStyle = SCAN.shade;
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  ctx.restore();
+  return 1;
+}
+
+// The bar is not clamped to the board: it enters from off the left edge and leaves past the right,
+// so the first and last columns get the same dwell as the middle. It is blitted at -width, 0 and
+// +width like the route polyline, because the board's X wraps.
+export function paintScanBar(ctx, state, view) {
+  if (!state || !state.spec) return 0;
+  const rect = boardRect(view);
+  if (rect.width <= 0 || rect.height <= 0) return 0;
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const barPx = state.spec.barCells * scale;
+  const boardPx = state.spec.boardW * scale;
+  const originX = cellToPixel(0, 0, view).x;
+  let drawn = 0;
+  ctx.save();
+  for (const shift of [-boardPx, 0, boardPx]) {
+    const x = originX + state.trail * scale + shift;
+    if (x + barPx <= 0 || x >= view.viewW) continue;
+    ctx.fillStyle = SCAN.barInk;
+    ctx.fillRect(x, rect.y, barPx, rect.height);
+    // A soft edge each side, so the bar reads as light on the map rather than a pasted rectangle.
+    ctx.fillStyle = SCAN.barEdge;
+    ctx.fillRect(x - Math.max(1, scale), rect.y, Math.max(1, scale), rect.height);
+    ctx.fillRect(x + barPx, rect.y, Math.max(1, scale), rect.height);
+    drawn += 1;
+  }
+  ctx.restore();
+  return drawn;
+}
+
+// Which pieces the board draws while a scan is armed. Own pieces and anything the seat can see by
+// sight always pass; a unit that is on the board only because of the scan passes while the bar
+// covers its column and is gone again once the bar has left it.
+export function scanVisiblePieces(pieces, opts = {}) {
+  const list = Array.isArray(pieces) ? pieces : [];
+  const scan = opts.scan;
+  if (!scan || !scan.state || !scan.intelIds) return list;
+  const own = opts.own;
+  const ids = scan.intelIds;
+  const has = typeof ids.has === "function" ? (id) => ids.has(id) : (id) => ids.includes(id);
+  return list.filter((piece) => {
+    if (!piece) return false;
+    if (own && piece.side === own) return true;
+    if (!has(piece.id)) return true;
+    if (scan.state.done) return false;
+    return scanReveals(piece, scan.state, scan.state.spec.boardW);
+  });
+}
+
 // Draws the whole match onto a 2d context: grid (or schematic), capitals, then
 // the pieces the room view sent. Returns what it did so the page and the test
 // can tell a real grid from the fallback.
@@ -1942,6 +2019,12 @@ export function paintMatch(ctx, board, room, opts = {}) {
         fogged = paintFog(ctx, view, opts.fog.lit, opts.fog.seen);
         layers.push("fog");
       }
+      // The scan's shade goes over ground and fog and under every piece, so a unit the bar is
+      // revealing reads as light on a grey map (Q51: the original greys the whole viewport).
+      if (opts.scan && opts.scan.state && opts.scan.active !== false) {
+        paintScanShade(ctx, view);
+        layers.push("scanShade");
+      }
     }
   } else {
     mode = "schematic";
@@ -1973,7 +2056,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   layers.push("pending");
   const preview = paintPreview(ctx, opts.preview, view, { ...opts, ink: theme.routeInk, casing: theme.routeCasing });
   layers.push("preview");
-  const groups = paintPieces(ctx, room && room.pieces, view, opts);
+  const groups = paintPieces(ctx, scanVisiblePieces(room && room.pieces, opts), view, opts);
   const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
   // A badge is never smaller than its floor, so one can cover the city square it stands on. The
   // sites under badges get their own cell tick back after the pieces are painted: the city has to
@@ -2012,7 +2095,14 @@ export function paintMatch(ctx, board, room, opts = {}) {
   layers.push("labels");
   const selection = paintSelectionMark(ctx, groups, view, { ...opts, ink: theme.selectionInk });
   layers.push("selection");
-  return { mode, painted, fogged, pieces, groups: groups.length, siteTicks, capitals, labels: labelled,
+  // Last, so the bar is light on top of the shaded board and every piece the pass has revealed.
+  let scanBar = 0;
+  if (opts.scan && opts.scan.state && opts.scan.active !== false) {
+    scanBar = paintScanBar(ctx, opts.scan.state, view);
+    layers.push("scanBar");
+  }
+  return { mode, painted, fogged, pieces, groups: groups.length, scanBar,
+    siteTicks, capitals, labels: labelled,
     political, tally, preview, pending, selection, layers, theme: theme.id, message: "", view };
 }
 
