@@ -283,11 +283,19 @@ export function clickIntent(pieces, view, px, py, opts = {}) {
     const badgeHalf = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2;
     const reserved = Math.min(badgeHalf, Math.max(0, Math.min(scale * 0.6, scale - 1)));
     const own = hits.find((hit) => String(hit.piece.id) === String(selectedId));
+    // PB-146: the ring is a selection surface INSIDE the selected piece's own cell. The badge box
+    // is wider than its cell at every zoom past the fit, so a radius alone reaches over the cell
+    // boundary (0.6 of a 4.41 css cell = 2.65, half a cell is 2.21) and the near band of the
+    // adjacent cell re-selected instead of ordering: the page said "Click to send the order" and
+    // the click kept the unit. A pointer whose cell is another cell is a destination, whatever its
+    // distance to this icon - the ring must never cross the cell edge.
+    const ownCell = Boolean(own) && wrapX(Number(own.piece.x), boardW) === cell.x
+      && Number(own.piece.y) === cell.y;
     // Another own piece's badge always wins: clicking a friend selects that friend (T-030 AC2,
     // PB-052), so the reserved ring only applies when the selected piece is the only thing the
     // pointer could mean.
     const others = hits.filter((hit) => String(hit.piece.id) !== String(selectedId));
-    if (own && others.length === 0 && own.distance < reserved - 1e-9) {
+    if (own && others.length === 0 && ownCell && own.distance < reserved - 1e-9) {
       // On its own cell or in the ring around it: a selection gesture, and a stack cycles the way a
       // second click on the same cell does.
       return { kind: "piece", piece: pieceFromHits(hits, selectedId) };
