@@ -41,7 +41,14 @@ export function stripInfo(room) {
   if (era) parts.push(era);
   if (side) parts.push(side);
   if (room.round !== undefined && room.round !== null) parts.push("round " + room.round);
-  if (room.clock) parts.push(room.clock);
+  if (room.clock) {
+    // PB-142: speed 0 accepts orders and lets no time pass, and the server keeps the clock at
+    // "running" for exactly that reason (lobby.mjs tickRooms skips the tick when speed is 0). So the
+    // clock word alone is not the whole answer and the strip argued with the readout two pixels
+    // away. Read the speed the room is at; a held clock is a different pause and keeps its word.
+    const paused = room.clock === "running" && Number(room.speed) === 0;
+    parts.push(paused ? "paused" : room.clock);
+  }
   if (room.over) {
     // The reason belongs in the strip too: the round bar stops for a resignation and for a capital
     // win alike, and "blue won" alone is the same sentence for both.
