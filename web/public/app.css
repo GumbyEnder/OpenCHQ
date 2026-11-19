@@ -675,7 +675,11 @@ body.in-match .speedctl { display: flex; }
   font-size: 12px;
   color: #9fb0c6;
   white-space: nowrap;
-  min-width: 74px;
+  /* A fixed slot, sized to the longest string (`Speed 0 · paused` measures 94.75 px at 12 px).
+     `min-width` is a floor, not a cap: content-driven width pushed #speedUp 20.75 px sideways when
+     the readout grew, so a repeated tap on `+` missed it (PB-143). */
+  flex: 0 0 auto;
+  width: 96px;
   text-align: center;
 }
 
