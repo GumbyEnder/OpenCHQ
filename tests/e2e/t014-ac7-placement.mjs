@@ -231,14 +231,12 @@ async function main() {
     return { cell: c, offered: Boolean(hit), maskValue: hit ? (hit.unready ? 2 : 1) : 0, offeredCount: legal.length };
   }, target);
 
-  // Disarm without moving the camera: buy one more unit on a different legal cell.
-  const second = legal.find((c) => !(placed && c.x === target.x && c.y === target.y)) || null;
+  // Disarm without moving the camera. Escape is the player's own way out of an armed purchase
+  // (PB-047, app.js:1087); buying a second unit was the old path and it silently failed when the
+  // server refused the chosen cell, leaving the arm up and the diff timing out (T-020 run).
   let disarmed = null;
-  if (second) {
-    await page.evaluate(() => document.getElementById("camFit").click());
-    await sleep(250);
-    const at2 = await page.evaluate((c) => window.__chq.cellToScreen(c.x, c.y), second);
-    await page.mouse.click(Math.round(at2.x), Math.round(at2.y));
+  {
+    await page.keyboard.press("Escape");
     await page.waitForFunction(() => window.__chq.state().placement === false, null, { timeout: 20000, polling: 100 });
     await sleep(350);
     await frameCell(target);
