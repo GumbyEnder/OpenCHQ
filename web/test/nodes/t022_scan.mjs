@@ -7,7 +7,7 @@
 import {
   fitViewport, paintMatch, paintScanBar, paintScanShade, scanVisiblePieces,
 } from "../../public/render.mjs";
-import { SCAN, scanCovers, scanKeepsAcrossRound, scanSpec, scanState } from "../../public/scan.mjs";
+import { SCAN, scanAddPieces, scanCovers, scanKeepsAcrossRound, scanSpec, scanState } from "../../public/scan.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { toolsForEra, useTool } from "../../server/late.mjs";
 import { millionsPerBillion, priceOf, rules } from "../../server/rules.mjs";
@@ -157,6 +157,19 @@ export async function run() {
     "and it is not drawn before the bar reaches its column");
   ok(!snapIds(scanState(0, 20000, 320)).includes("scanned-near"),
     "and it is dropped once the pass is over, snapshot or not");
+
+  // The snapshot itself: only ids the scan owns, once each, and the first position is kept.
+  const merge = scanAddPieces({ intelIds: new Set(), intelPieces: [], round: 1 }, [
+    { id: "red:far", side: "red", x: 50, y: 10 },
+    { id: "blue:own", side: "blue", x: 1, y: 1 },
+  ], "blue");
+  ok(merge.intelPieces.length === 0, "an id the scan does not own is not snapshotted");
+  merge.intelIds.add("red:far");
+  scanAddPieces(merge, [{ id: "red:far", side: "red", x: 50, y: 10 }], "blue");
+  scanAddPieces(merge, [{ id: "red:far", side: "red", x: 99, y: 10 }], "blue");
+  ok(merge.intelPieces.length === 1 && merge.intelPieces[0].id === "red:far",
+    "the reveal is snapshotted once, not once per room message (" + merge.intelPieces.length + ")");
+  ok(merge.intelPieces[0].x === 50, "a repeat does not re-point the snapshot (" + merge.intelPieces[0].x + ")");
 
   // --- the painter: shade under the pieces, bar on top --------------------------------------
   const view = { ...fitViewport(640, 272), scale: 2, left: 0, top: 0, viewW: 640, viewH: 272 };

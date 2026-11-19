@@ -85,6 +85,24 @@ export function scanKeepsAcrossRound(scan, round, now, boardW) {
   return !scanState(scan.startedAt, now, width).done;
 }
 
+// The server's intel reveal is per round and the measured pass is 15.85 s, so the room can stop
+// carrying the scanned enemy before the bar has crossed the map. The pass keeps its own snapshot of
+// what the reveal put on the board: merged at the ack and on every room message while it runs, and
+// drawn bar-locally by render.mjs until the pass is over (T-022, room 7650).
+export function scanAddPieces(scan, pieces, own) {
+  if (!scan || !Array.isArray(pieces)) return scan;
+  scan.intelPieces = Array.isArray(scan.intelPieces) ? scan.intelPieces : [];
+  const have = new Set(scan.intelPieces.map((piece) => piece && piece.id));
+  const ids = scan.intelIds;
+  const has = !ids ? () => false : typeof ids.has === "function" ? (id) => ids.has(id) : (id) => ids.includes(id);
+  for (const piece of pieces) {
+    if (!piece || piece.side === own || have.has(piece.id) || !has(piece.id)) continue;
+    have.add(piece.id);
+    scan.intelPieces.push({ ...piece });
+  }
+  return scan;
+}
+
 // A unit is drawn when the bar covers its column. Enemy units a seat can already see by sight are
 // not this gate's business: the caller keeps those out of `intelIds`.
 export function scanReveals(piece, state, boardW) {

@@ -28,7 +28,7 @@ import {
   snapPlacementCell,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
-import { scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
+import { scanAddPieces, scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
@@ -195,12 +195,12 @@ function startIntelScan() {
     side: room.you,
     intelIds,
     // The server's intel reveal lasts one round, but the pass lasts 15.85 s and spans rounds.
-    // Keep the enemy list the reveal put on the board at the ack, so the bar still has units to
-    // draw after the next round message drops them (T-022, room 7650).
-    intelPieces: (room.pieces || [])
-      .filter((piece) => piece && piece.side !== room.you && intelIds.has(piece.id))
-      .map((piece) => ({ ...piece })),
+    // Keep the enemy list the reveal puts on the board, so the bar still has units to draw after
+    // the next round message drops them (T-022, room 7650). The ack usually arrives before the
+    // room that carries the reveal, so this is re-merged on every room message below.
+    intelPieces: [],
   };
+  scanAddPieces(scan, room.pieces, room.you);
   // A pass with nothing to reveal still greys the map: the original charges for the scan and shows
   // the sweep whether or not a unit is under it, and the opponent is told either way.
   const spec = scanSpec(boardW);
@@ -2352,6 +2352,12 @@ function connect() {
       if (scan && !scanKeepsAcrossRound(scan, room.round, Date.now(), scan.boardW)) {
         stopIntelScan();
         scan = null;
+      }
+      // The reveal usually lands in the room message AFTER the ack, so the pass learns its ids and
+      // its unit snapshot here as well, and keeps both when a later round drops the reveal.
+      if (scan) {
+        for (const id of intelOnlyIds()) scan.intelIds.add(id);
+        scanAddPieces(scan, room.pieces, room.you);
       }
       if (message.reason) say(message.reason);
       if (selected && (!room || !(room.pieces || []).some((piece) => piece.id === selected.id))) {
