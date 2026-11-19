@@ -1,0 +1,78 @@
+{
+  "base": "http://127.0.0.1:8161",
+  "era": "1942",
+  "viewport": "1440x900",
+  "speed1": {
+    "text": "Speed 1",
+    "down": {
+      "left": 464.69,
+      "right": 488.28,
+      "width": 23.59
+    },
+    "readout": {
+      "left": 492.28,
+      "right": 566.28,
+      "width": 74
+    },
+    "up": {
+      "left": 570.28,
+      "right": 593.88,
+      "width": 23.59
+    }
+  },
+  "speed0": {
+    "text": "Speed 0 · paused",
+    "down": {
+      "left": 464.69,
+      "right": 488.28,
+      "width": 23.59
+    },
+    "readout": {
+      "left": 492.28,
+      "right": 587.03,
+      "width": 94.75
+    },
+    "up": {
+      "left": 591.03,
+      "right": 614.63,
+      "width": 23.59
+    }
+  },
+  "delta": {
+    "down": 0,
+    "up": 20.75,
+    "readoutWidth": 20.75
+  },
+  "checks": [
+    {
+      "ok": true,
+      "label": "speed 1 reads `Speed 1`",
+      "detail": "Speed 1"
+    },
+    {
+      "ok": true,
+      "label": "speed 0 reads the paused text",
+      "detail": "Speed 0 · paused"
+    },
+    {
+      "ok": true,
+      "label": "`-` does not move between speed 1 and speed 0",
+      "detail": "delta 0"
+    },
+    {
+      "ok": false,
+      "label": "`+` does not move between speed 1 and speed 0",
+      "detail": "delta 20.75"
+    },
+    {
+      "ok": false,
+      "label": "the readout slot is the same width at both speeds",
+      "detail": "delta 20.75"
+    },
+    {
+      "ok": true,
+      "label": "no page error during the run",
+      "detail": ""
+    }
+  ]
+}
