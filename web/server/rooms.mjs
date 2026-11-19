@@ -202,6 +202,14 @@ export function saveRoom(room) {
     // The room's own clock speed (T-004, Manual p.34-35). It lives in the row's state JSON because
     // the table's columns are the room's identity, not its settings.
     speed: Number.isInteger(room.speed) ? room.speed : 1,
+    // PB-134: which seat is holding the clock, and whether the room itself is stopped by a
+    // disconnect. A restart must not hand a held clock back with no holds: either seat's `run`
+    // would then lift a pause the other seat still owns.
+    holds: {
+      blue: Boolean(room.holds && room.holds.blue === true),
+      red: Boolean(room.holds && room.holds.red === true),
+    },
+    roomHold: room.holdRoom === true,
   });
   let created = createdById.get(room.id);
   if (!created) {
@@ -304,6 +312,13 @@ export function loadRooms() {
       // A row written before T-004 carries no speed: it plays at the old single clock, which is
       // speed 1.
       speed: Number.isInteger(state.speed) ? Math.min(6, Math.max(0, state.speed)) : 1,
+      // PB-134: a restored held room has nobody connected, so it is stopped by the room until a
+      // seat rejoins; the holds each seat left are kept, because those are that seat's, not ours.
+      holds: {
+        blue: Boolean(state.holds && state.holds.blue === true),
+        red: Boolean(state.holds && state.holds.red === true),
+      },
+      holdRoom: resuming ? false : state.roomHold === true || row.clock !== "running",
       savedAt: row.saved_at,
     };
   });
