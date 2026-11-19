@@ -4,14 +4,16 @@
 // seat's `pause` is undone by the other seat's next `run` in one assignment. Measured RED at the
 // base control (0f7aade): A hold -> clock held, B run -> {"ok":true}, clock running.
 //
-// The rule this leg pins, as ruled in openchq-pm 7431 and written into the ticket verbatim:
+// The rule this leg pins, as ruled in openchq-pm 7439 (which takes frodo's 4a/4b/4c over the
+// earlier 7431 wording):
 //   - a hold from either seat takes effect at once, and both seats see the room held;
 //   - `run` releases only the SENDER's own hold, and is refused while the other seat's hold stands,
 //     with the holder named to the sender in the ticket's sentence, byte for byte;
 //   - if both seats hold, each run clears that seat's own hold, so the last one to run starts the
 //     clock and the first is refused naming the other;
-//   - a dropped socket is a ROOM hold: the refusal names the disconnect and never a seat, and a
-//     rejoin resumes a run the present seat already asked for (the absent seat cannot be asked);
+//   - a dropped socket CLEARS that seat's hold and holds the room, and the present seat's run is
+//     ACCEPTED with no refusal frame - an absent seat can never gate the clock (4a/4b);
+//   - a rejoin restores the seat and leaves the clock held until someone runs (4c);
 //   - human + bot is unchanged (AC2): the bot never sends a clock op, so hold then run still works.
 //
 // The lobby writes rooms to SQLite, so this node points OPENCHQ_WEB_DATA at a throwaway directory
@@ -23,12 +25,10 @@ import path from "node:path";
 
 export const name = "pb134_clock_seat";
 
-// The ticket's own sentence, with the seat substituted. openchq-pm 7431 ruled this text verbatim;
-// frodo's AC4 arm 2 diffs the served string against the ticket line, so this literal is the pin.
+// The ticket's own sentence, with the seat substituted. openchq-pm 7439 ruled this the ONLY refusal
+// string, verbatim and trimmed; frodo's AC4 arm 2 diffs the served string against the ticket line.
 const SEAT_REFUSAL = "The clock is held by pb134_alice. Only pb134_alice can resume it.";
 const SEAT_REFUSAL_B = "The clock is held by pb134_bob. Only pb134_bob can resume it.";
-// The room/disconnect refusal: it names the drop, never a seat.
-const ROOM_REFUSAL = "The clock is held by a disconnect. Only a rejoin can resume it.";
 
 function fakePeer() {
   const box = [];
@@ -125,24 +125,44 @@ export async function run(ctx) {
       if (!room || room.clock !== "running") fail(who + " does not see the clock running after both holds cleared");
     }
 
-    // ---- 5. a dropped seat is a ROOM hold: the refusal names the drop, never a seat ---------
+    // ---- 5. a dropped seat clears its hold and holds the ROOM, and never gates a run ----------
+    // (4a) A holds, then A's socket closes: the clock is held, and A's seat hold does not survive.
+    const dropHold = gate.handle("pb134_alice", { op: "hold" });
+    if (!dropHold || dropHold.error) fail("A's hold before the drop was refused: " + JSON.stringify(dropHold));
     alice.closed = true;
     alice.onclose();
-    const afterDrop = gate.handle("pb134_bob", { op: "run" });
-    refused(afterDrop, fail, "B's run after A dropped", ROOM_REFUSAL);
-    if (/pb134_alice|pb134_bob|alice|bob/.test(String(afterDrop.error))) {
-      fail("the disconnect refusal names a seat: " + JSON.stringify(afterDrop.error));
-    }
     if (lastRoom(bob).clock !== "held") fail("a dropped seat left the clock running");
-    // A rejoin clears the room hold and honours the run B already asked for - the seat that left
-    // is never asked to press anything, because it was not there to be asked.
+
+    // (4b) B's run is ACCEPTED with no refusal frame. If A's dropped hold had survived, this would
+    // be refused naming A - so this single assertion is also 4a's "no seat hold survives" proof.
+    const afterDrop = gate.handle("pb134_bob", { op: "run" });
+    if (!afterDrop || afterDrop.error) {
+      fail("B's run after A dropped was refused - the absent seat gated the clock: " + JSON.stringify(afterDrop));
+    }
+    if (lastRoom(bob).clock !== "running") fail("B's run after A dropped did not start the clock");
+
+    // (4c) A rejoin restores the seat and leaves the clock held until someone runs.
     const aliceBack = fakePeer();
     gate.join("pb134_alice", aliceBack);
-    const backRoom = lastRoom(aliceBack);
-    if (!backRoom || backRoom.clock !== "running") {
-      fail("A's rejoin did not resume the clock B asked for: " + (backRoom ? backRoom.clock : "no frame"));
+    if (!lastRoom(aliceBack)) fail("A's rejoin carried no room frame");
+    if (lastRoom(aliceBack).clock !== "running") fail("A's rejoin changed a clock B had started");
+    // A holds, takes the clock down, then drops: nobody runs while the seat is away.
+    gate.handle("pb134_alice", { op: "hold" });
+    aliceBack.closed = true;
+    aliceBack.onclose();
+    const syncB = gate.handle("pb134_bob", { op: "sync" });
+    if (!syncB || syncB.error) fail("B's sync after A's second drop failed: " + JSON.stringify(syncB));
+    if (lastRoom(bob).clock !== "held") fail("A's second drop left the clock running");
+    const aliceBack2 = fakePeer();
+    gate.join("pb134_alice", aliceBack2);
+    const backRoom = lastRoom(aliceBack2);
+    if (!backRoom) fail("A's rejoin carried no room frame");
+    if (backRoom.clock !== "held") {
+      fail("A's rejoin started the clock on its own: " + backRoom.clock);
     }
-    if (lastRoom(bob).clock !== "running") fail("B does not see the resumed clock after A rejoined");
+    const afterRejoinRun = gate.handle("pb134_alice", { op: "run" });
+    if (!afterRejoinRun || afterRejoinRun.error) fail("A's run after rejoining was refused: " + JSON.stringify(afterRejoinRun));
+    if (lastRoom(bob).clock !== "running") fail("B does not see the clock running after A rejoined and ran");
 
     // ---- 6. AC2 control: human + bot is exactly as it was -----------------------------------
     const solo = fakePeer();
@@ -161,7 +181,7 @@ export async function run(ctx) {
     gate.join("pb134_stranger", stranger);
     const foreign = gate.handle("pb134_stranger", { op: "run" });
     if (!foreign || !foreign.error) fail("a sender with no seat in the room moved the clock: " + JSON.stringify(foreign));
-    if (lastRoom(aliceBack).clock !== "running") fail("a sender with no seat changed the room's clock");
+    if (lastRoom(aliceBack2).clock !== "running") fail("a sender with no seat changed the room's clock");
   } finally {
     if (saved === undefined) delete process.env.OPENCHQ_WEB_DATA;
     else process.env.OPENCHQ_WEB_DATA = saved;

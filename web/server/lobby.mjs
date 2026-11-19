@@ -399,10 +399,11 @@ export function createLobby() {
   // A disconnect pauses the game; it does not destroy it. The seat stays reserved for the
   // account, the room stays in the store, and the clock stops so nothing runs unwatched.
   //
-  // PB-134: this stop is the ROOM's, not a seat's. `holdRoom` marks it so `setClock` refuses a run
-  // with words about the disconnect instead of naming a seat that cannot answer, and a rejoin is
-  // what clears it.
-  function holdRoom(room, note) {
+  // PB-134 (openchq-pm 7439): this stop is the ROOM's, and it CLEARS the dropped seat's hold. A
+  // room hold is never a refusal: the present seat's `run` is accepted, so an absent seat can never
+  // gate the clock. The hold's only job is to say why the clock is stopped and to keep a rejoin from
+  // starting it on its own.
+  function holdRoom(room, note, seat) {
     // A deploy is not the player's pause. While the process is draining, a disconnect is ours,
     // so the room is marked to resume instead of being stopped and saved as stopped.
     if (room.resume) {
@@ -410,29 +411,21 @@ export function createLobby() {
       saveRoom(room);
       return;
     }
+    if (seat) holdsOf(room)[seat] = false;
     room.clock = "held";
     room.holdRoom = true;
-    room.resumeOnRejoin = null;
     if (room.match) room.match.clock = "held";
     room.note = note;
     saveRoom(room);
     tellRoom(room);
   }
 
-  // A rejoin clears the room hold. A resume the present seat asked for while the other side was
-  // gone is honoured here - the absent seat was never asked for consent, because a socket that is
-  // not there cannot answer - but only once no seat is still holding the clock itself.
+  // A rejoin restores the seat and clears the room hold, but it does NOT start the clock: a game
+  // resumes on an explicit `run`, never on a connect (seatView). If the present seat never ran while
+  // the other side was gone, the clock is still held when that seat comes back.
   function wakeRoomHold(room) {
     if (!room || room.holdRoom !== true) return;
     room.holdRoom = false;
-    const wanted = room.resumeOnRejoin;
-    room.resumeOnRejoin = null;
-    if (wanted && !anySeatHolds(room) && !(room.match && room.match.over)) {
-      room.clock = "running";
-      room.tickedAt = Date.now();
-      if (room.match) room.match.clock = "running";
-      room.note = "Clock running. Pieces move one cell a round.";
-    }
     saveRoom(room);
   }
 
@@ -464,7 +457,8 @@ export function createLobby() {
     if (!room) return null;
     // The seat is occupied again, so the note the drop left behind is stale.
     if (/disconnected/.test(String(room.note || ""))) {
-      // A rejoin may also have resumed the clock (PB-134); the note then belongs to the run.
+      // A rejoin never starts the clock (wakeRoomHold): the note is replaced with the state both
+      // seats are actually in.
       if (room.clock === "held") room.note = "Both seats are present. The clock is still held.";
       saveRoom(room);
     }
@@ -492,7 +486,9 @@ export function createLobby() {
       sockets.delete(username);
       const roomId = seatOf.get(username);
       if (roomId && rooms.has(roomId)) {
-        holdRoom(rooms.get(roomId), nameOf(username) + " disconnected. The match is paused and still yours.");
+        const room = rooms.get(roomId);
+        const seat = seatUsername(room, username);
+        holdRoom(room, nameOf(username) + " disconnected. The match is paused and still yours.", seat);
       }
       for (const [id, invite] of invites) {
         if (invite.from === username || invite.to === username) invites.delete(id);
@@ -885,24 +881,18 @@ export function createLobby() {
   // refused naming the seat that still holds - so the clock starts when the last holder runs, and
   // never because one seat asked twice.
   //
-  // A dropped socket is not a seat's hold. `holdRoom` marks the room itself as held, and its refusal
-  // names the disconnect, never a seat: the seat that is gone cannot answer, and blaming it would
-  // make a dead socket look like a player's decision.
+  // A dropped socket is not a seat's hold and is never a REFUSAL (openchq-pm 7439): the drop clears
+  // that seat's hold and marks the room held, and the present seat's `run` is then accepted, so an
+  // absent seat can never gate the clock. There is only one refusal string - the seat-hold one.
   //
   // The refusal text is owned by the ticket and is quoted there verbatim; frodo's AC4 arm 2 diffs
   // the served string against that line, so do not reword it here alone.
   const SEAT_HOLD_REFUSAL = (seat) => "The clock is held by " + seat + ". Only " + seat + " can resume it.";
-  const ROOM_HOLD_REFUSAL = "The clock is held by a disconnect. Only a rejoin can resume it.";
 
   // A room written before PB-134 carries no hold table: an empty one is the same clock it had.
   function holdsOf(room) {
     if (!room.holds || typeof room.holds !== "object") room.holds = { blue: false, red: false };
     return room.holds;
-  }
-
-  function anySeatHolds(room) {
-    const holds = holdsOf(room);
-    return holds.blue === true || holds.red === true;
   }
 
   function setClock(username, running) {
@@ -925,13 +915,9 @@ export function createLobby() {
     }
     // A run releases the sender's own hold first, then looks at what is left.
     holds[mine] = false;
-    if (room.holdRoom === true) {
-      // Not a seat's hold: the room is stopped by a disconnect. Remember the ask so the rejoin
-      // resumes the clock the present seat already asked for, and refuse in words about the drop.
-      room.resumeOnRejoin = username;
-      saveRoom(room);
-      return { error: ROOM_HOLD_REFUSAL };
-    }
+    // A room hold left by a dropped seat is cleared by a present seat's run, never refused: the
+    // absent seat cannot be asked, and a dead socket must not gate the clock (openchq-pm 7439).
+    if (room.holdRoom === true) room.holdRoom = false;
     const other = mine === "blue" ? "red" : "blue";
     if (holds[other] === true) {
       // The sender's own hold is now cleared; the other seat's is not theirs to clear.

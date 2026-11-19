@@ -210,7 +210,6 @@ export function saveRoom(room) {
       red: Boolean(room.holds && room.holds.red === true),
     },
     roomHold: room.holdRoom === true,
-    resumeOnRejoin: typeof room.resumeOnRejoin === "string" ? room.resumeOnRejoin : null,
   });
   let created = createdById.get(room.id);
   if (!created) {
@@ -320,7 +319,6 @@ export function loadRooms() {
         red: Boolean(state.holds && state.holds.red === true),
       },
       holdRoom: resuming ? false : state.roomHold === true || row.clock !== "running",
-      resumeOnRejoin: resuming ? null : (typeof state.resumeOnRejoin === "string" ? state.resumeOnRejoin : null),
       savedAt: row.saved_at,
     };
   });
