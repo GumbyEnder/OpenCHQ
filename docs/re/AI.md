@@ -188,7 +188,7 @@ It also corrects one global that earlier docs got wrong, because the port would 
   `COL. BUCK ZEAL`, `GEN. WIN MOORE`, `MARS GOD OF WAR`, `(RESTART)`. `if (bVar5 < 6)` and
   `bVar5 != 0` stores it at **`0x1a0`** (`:13415`); `0x1a0 == 0` is "another human / none".
   Confirmed on the running game under DOSBox: the OPPONENT OPTIONS list renders exactly that
-  seven-entry order (screenshot `/tmp/chq-opp/opp1.png`, 2026-11-19), so level **1..5 = STAN,
+  seven-entry order (screenshot `docs/re/evidence/t032/opponent-options.png`, md5 `7a7b99f9…`, captured 2026-11-19), so level **1..5 = STAN,
   LUKE, ZEAL, MOORE, MARS** — five computer opponents, not four. `SGT. STAN STIL` is level 1 and
   `MARS GOD OF WAR` is level 5.
 
