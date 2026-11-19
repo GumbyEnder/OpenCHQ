@@ -3,9 +3,9 @@
 // Evidence: DOSBox capture of the 1990 original, 450 frames at 10 fps, purchase of "Intel Scan"
 // at 1986/BLUE vs computer. Measured from the frames (harness: agents/game/harness/q51-final.py,
 // result local/q51/q51-result.json):
-//   - one bar, 40 window px wide on a 640 px map = 20 of the board's 320 columns;
-//   - leading edge 39.36 px/s = 39.36 / 2 = 19.7 cells/s on a 320-cell board, i.e. one crossing
-//     in 15.85 s (fixture fit, RMSE 2.08 px over 161 frames);
+//   - one bar, 40 capture px wide on the 624 px capture map = 20 of the board's 320 columns;
+//   - leading edge 39.36 px/s on the 624 px capture map (X0..X1 = 200..824) = 20.2 cells/s on the
+//     board's 320 columns, i.e. one crossing in 15.85 s (fixture fit, RMSE 2.08 px over 161 frames);
 //   - 29 single-run red units tracked: visible 1.00-1.10 s each (median 1.00), and every one went
 //     out between 0.21 s before and 0.03 s after the trailing edge cleared its cells -- no
 //     measurable persistence past the bar at 10 fps granularity. The ~1 s an earlier note saw
