@@ -358,11 +358,37 @@ export function refusalText(message) {
 // shop payload, and the player's own pool comes from the seat. No figure is invented here and
 // none is formatted as money - the archive's currency was never recovered.
 
-export function purseText(seat) {
+// The oil budget in the original's own words: "In" is what the wells produce, "Out" what the
+// cities and bases consume, and the reserve is what is left (Manual p.27). `foe` labels the row
+// the Alternate Function shows, so two rows on screen can never be mistaken for each other.
+export function oilText(oil, foe = false) {
+  if (!oil || !Number.isFinite(oil.held)) return "";
+  const label = foe ? "foe oil" : "oil";
+  const parts = [label + " in " + (Number.isFinite(oil.in) ? oil.in : "?") +
+    " / out " + (Number.isFinite(oil.out) ? oil.out : "?") +
+    " / reserve " + oil.held];
+  if (oil.cap !== null && Number.isFinite(oil.cap)) parts.push("of " + oil.cap);
+  if (oil.short === true) parts.push("OIL SHORT");
+  return parts.join(" ");
+}
+
+// The one sentence the red warning is allowed to say. It names the three effects in the order
+// the original applies them (income first, then movement, then aircraft).
+export const OIL_WARNING = "OIL: consumption is more than the reserve plus production - cities stop paying income and units stop moving.";
+
+export function oilWarning(oil) {
+  return oil && oil.short === true ? OIL_WARNING : "";
+}
+
+// purseText draws the seat's own budget; when the Alternate Function is on, the same chip draws
+// the OPPONENT's numbers instead (Manual p.27), because the original's monitor swaps sides.
+export function purseText(seat, showFoe = false) {
   if (!seat || (seat.cash === null && seat.fuel === null && seat.payIn === null)) return "";
   const parts = [];
   if (Number.isFinite(seat.cash)) parts.push("pool " + formatBillions(seat.cash) + "b");
   if (Number.isFinite(seat.fuel)) parts.push("fuel " + seat.fuel);
+  const budget = showFoe ? seat.foeOil : seat.oil;
+  if (budget) parts.push(oilText(budget, showFoe === true));
   // Every other resource kind the scenario carries, drawn from the same list the server builds.
   // Fuel is above already; a kind with no held number is left out rather than shown as zero.
   for (const meter of Array.isArray(seat.reserves) ? seat.reserves : []) {

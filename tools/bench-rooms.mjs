@@ -39,6 +39,7 @@ process.env.OPENCHQ_WEB_DATA = dir;
 
 const { boardPayload } = await import("../web/server/board.mjs");
 const { openMatch } = await import("../web/server/match.mjs");
+const { resourceSpec } = await import("../web/server/resources.mjs");
 const { tickMatch } = await import("../web/server/tick.mjs");
 const { flushRooms, flushWindow, loadRooms, saveRoom } = await import("../web/server/rooms.mjs");
 const { db } = await import("../web/server/db.mjs");
@@ -115,6 +116,19 @@ function addPiece(match, room, k) {
 function makeRoom(i) {
   const match = openMatch("1986", sites);
   match.clock = "running";
+  // T-033: this fixture marches 8 pieces down 60-cell lanes, i.e. 8 x 60 cells of infantry at the
+  // recovered per-cell rate = 8,160 oil, against a 3,000 setup reserve. An unfunded room correctly
+  // runs dry, stops moving and keeps its 60-step routes in the stored state (11.2 KB per room
+  // against 3.0 KB, and a 2x snapshot cost) - which measures the oil rule, not the round pass this
+  // probe exists to time. So the rooms carry a funded tank; every step is still charged.
+  for (const side of ["blue", "red"]) {
+    const seat = match.sides && match.sides[side];
+    if (!seat) continue;
+    const cap = Number(resourceSpec("fuel").reserveCap);
+    seat.resources = { ...(seat.resources || {}), fuel: { held: cap, dry: false } };
+    seat.fuel = cap;
+    seat.dry = false;
+  }
   for (const piece of match.pieces) {
     if (piece.domain === "land") piece.path = lane(piece.x, piece.y);
   }

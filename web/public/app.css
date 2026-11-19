@@ -535,6 +535,14 @@ body.in-match .stripinfo {
   text-overflow: ellipsis;
 }
 
+/* T-033: the red OIL warning. The chip turns red only when the server's own `short` flag says
+   production cannot cover consumption; a dry reserve with the wells paying it back stays green. */
+.pursechip.oilshort,
+body.in-match .pursechip.oilshort {
+  color: #ff6b5e;
+  font-weight: 700;
+}
+
 body.in-match .pursechip {
   display: inline;
   font-size: 12px;

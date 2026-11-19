@@ -229,7 +229,277 @@ export function movementBlocked(match, side) {
   return null;
 }
 
+// --- the oil budget (T-033) ----------------------------------------------------------------
+//
+// The 1990 game's oil is a SIDE-WIDE BUDGET, not per-unit fuel: owned oilfields produce ("In"),
+// cities and bases consume ("Out"), and the reserve is what is left. The numbers and their
+// addresses are in docs/re/ECONOMY.md and config/game.json's `resources.fuel`; this section only
+// applies them. `upkeepResources` below settles the budget once a round, `chargeOil` takes the
+// per-unit spend as pieces move, and `oilReadout` is what the page draws.
+//
+// Oil only bites from 1986 on: for scenario index < 2 the original rewrites the reserve to the
+// 10,000 cap at the top of every recompute (FUN_15f4_0664 4699-4701), which is why 1918 and 1942
+// list their budget but never run short.
+
+const OIL = "fuel";
+
+// Site kinds the budget counts. A city consumes oil; a well produces it. Kept here rather than
+// imported from economy.mjs, which imports this module (a cycle), and both are the board's own
+// kind names, not a second rule.
+const WELL_KINDS = new Set(["oilfield", "well"]);
+const CITY_KINDS = new Set(["city"]);
+
+export function oilSpec() {
+  const spec = resourceSpec(OIL);
+  if (!spec) return null;
+  return Number.isFinite(Number(spec.inPerWell)) ? spec : null;
+}
+
+function oilEra(match) {
+  return String(eraOf(match && match.era) || "");
+}
+
+// The free-era list is a Set built once per loaded tunables file: this runs per side per round,
+// and rebuilding an array from config on every call showed up in the round bench.
+let freeEraSpec = null;
+let freeEraSet = new Set();
+
+export function oilUsesReserve(era) {
+  const spec = oilSpec();
+  if (!spec) return false;
+  if (spec !== freeEraSpec) {
+    freeEraSpec = spec;
+    freeEraSet = new Set((Array.isArray(spec.freeEras) ? spec.freeEras : []).map(String));
+  }
+  return !freeEraSet.has(String(era || ""));
+}
+
+// Owned wells and cities, counted once per room per round into `match.oilSummary` (the tick's
+// order is advance, ..., occupy, air, upkeep, pay, so the counts are post-capture for both the
+// settlement and the payday). A room asked outside a tick - a test, a direct pay() - falls back
+// to counting its own sites, because a stale summary is worse than a scan.
+function countSites(match, side) {
+  let wells = 0;
+  let cities = 0;
+  for (const site of match.sites) {
+    if (!site || site.owner !== side) continue;
+    const kind = String(site.kind || "");
+    if (WELL_KINDS.has(kind)) wells += 1;
+    else if (CITY_KINDS.has(kind)) cities += 1;
+  }
+  return { wells, cities };
+}
+
+// A WeakMap, never a field on the match: adding a key to the match object mid-match pushes it
+// into dictionary mode and tripled JSON.stringify in the store bench (19 ms -> 40 ms for 1,000
+// rooms). Nothing here may change the shape of a serialized room.
+const summaryByMatch = new WeakMap();
+
+function oilCounts(match, side) {
+  const cache = match && summaryByMatch.get(match);
+  const round = Number(match && match.round) || 0;
+  if (cache && cache.round === round && cache[side]) return cache[side];
+  return countSites(match, side);
+}
+
+// One pass over the board for both sides, stored under the round it measured.
+export function buildOilSummary(match) {
+  const summary = { round: Number(match && match.round) || 0, blue: { wells: 0, cities: 0 }, red: { wells: 0, cities: 0 } };
+  for (const site of (match && match.sites) || []) {
+    if (!site) continue;
+    const row = summary[site.owner];
+    if (!row) continue;
+    const kind = String(site.kind || "");
+    if (WELL_KINDS.has(kind)) row.wells += 1;
+    else if (CITY_KINDS.has(kind)) row.cities += 1;
+  }
+  return summary;
+}
+
+// In and Out for one side, from what it owns. Counts are of owned sites, the same list the rest
+// of the economy uses; a well held by nobody produces for nobody.
+export function oilFlow(match, side) {
+  const spec = oilSpec();
+  if (!spec || !match || !Array.isArray(match.sites)) return null;
+  const counted = oilCounts(match, side);
+  const wells = counted.wells;
+  const cities = counted.cities;
+  const minWells = Number.isFinite(Number(spec.inMinWells)) ? Number(spec.inMinWells) : 0;
+  const inRate = Number(spec.inPerWell);
+  const outRate = Number(spec.outPerCity);
+  const base = Number.isFinite(Number(spec.outBase)) ? Number(spec.outBase) : 0;
+  const countedWells = Math.max(minWells, wells);
+  const inAmount = Number.isFinite(inRate) ? countedWells * inRate : null;
+  const outAmount = Number.isFinite(outRate) ? cities * outRate + base : null;
+  return { wells, cities, in: inAmount, out: outAmount };
+}
+
+// What the page draws for one side. `in`/`out` are the per-round flow, `held` the reserve, and
+// `short` the one condition the red OIL warning is allowed to mean: consumption above what the
+// reserve plus production can pay.
+export function oilReadout(match, side) {
+  const spec = oilSpec();
+  if (!spec) return null;
+  const flow = oilFlow(match, side);
+  const meter = meterOf(match, side, OIL);
+  if (!flow || !meter) return null;
+  const cap = Number.isFinite(Number(spec.reserveCap)) ? Number(spec.reserveCap) : Number(spec.reserve);
+  const uses = oilUsesReserve(oilEra(match));
+  const held = Number(meter.held);
+  const short = uses && (meter.dry === true || (Number.isFinite(flow.out) && Number.isFinite(held) && held + flow.in < flow.out));
+  return {
+    side,
+    held: Number.isFinite(held) ? held : null,
+    cap: Number.isFinite(cap) ? cap : null,
+    in: flow.in,
+    out: flow.out,
+    wells: flow.wells,
+    cities: flow.cities,
+    uses,
+    dry: meter.dry === true,
+    short,
+    divisor: Number.isFinite(Number(spec.displayDivisor)) ? Number(spec.displayDivisor) : null,
+  };
+}
+
+// The per-cell price for a kind, as a plain number: 0 for a ship (Manual p.36 "ships use none";
+// the disassembly's 5-per-pass base charge on a sea move order is UNVERIFIED against a live sea
+// leg - see ECONOMY.md) and 0 in the two free scenarios. Called once per piece per round, never
+// per cell: the bench's round leg is the hot path here.
+const costCache = new Map();
+let costCacheSpec = null;
+
+export function oilCostPerCell(match, kind) {
+  const spec = oilSpec();
+  if (!spec) return 0;
+  if (spec !== costCacheSpec) { costCacheSpec = spec; costCache.clear(); }
+  const key = oilEra(match) + "|" + String(kind || "");
+  const hit = costCache.get(key);
+  if (hit !== undefined) return hit;
+  const name = String(kind || "");
+  let value;
+  if (!oilUsesReserve(oilEra(match))) value = 0;
+  else if (Array.isArray(spec.shipKinds) && spec.shipKinds.map(String).includes(name)) value = 0;
+  else {
+    const table = spec.moveCostByKind && typeof spec.moveCostByKind === "object" ? spec.moveCostByKind : {};
+    value = Number.isFinite(Number(table[name]))
+      ? Number(table[name])
+      : Number.isFinite(Number(spec.moveCostPerCell)) ? Number(spec.moveCostPerCell) : 0;
+  }
+  costCache.set(key, value);
+  return value;
+}
+
+// The meter a walker debits, resolved once per piece per round. `syncOilSeat` writes the old
+// seat fields back after a piece's walk, so the view and the older tests still read one value.
+export function oilMeterFor(match, side) {
+  return oilSpec() ? meterOf(match, side, OIL) : null;
+}
+
+export function syncOilSeat(match, side, meter) {
+  if (meter) syncFuel(match, side, meter);
+}
+
+// The per-unit charge as a call: one cell entered costs `moveCostPerCell` for the kind.
+// move.mjs uses the split form above (price once, arithmetic per step) for speed; tests and
+// one-off callers use this.
+export function chargeOil(match, side, kind, cells = 1) {
+  const perCell = oilCostPerCell(match, kind);
+  const count = Number.isFinite(Number(cells)) ? Math.max(0, Number(cells)) : 0;
+  const cost = perCell * count;
+  if (cost <= 0) return { ok: true, cost: 0 };
+  const meter = oilMeterFor(match, side);
+  if (!meter) return { ok: true, cost: 0 };
+  const held = Number(meter.held);
+  if (!Number.isFinite(held)) return { ok: true, cost: 0 };
+  if (held < cost) {
+    meter.held = 0;
+    meter.dry = true;
+    syncFuel(match, side, meter);
+    return { ok: false, cost, held: 0, dry: true };
+  }
+  meter.held = held - cost;
+  meter.dry = meter.held <= 0;
+  syncFuel(match, side, meter);
+  return { ok: true, cost, held: meter.held, dry: meter.dry };
+}
+
+// A flat charge out of the budget (an air mission buys 20 oil before it leaves). Unlike
+// `consume`, a short reserve refuses rather than flagging the kind for the whole round: the
+// plane simply does not fly.
+export function spendOil(match, side, amount) {
+  const spec = oilSpec();
+  const meter = spec ? meterOf(match, side, OIL) : null;
+  const want = Number(amount);
+  if (!meter || !Number.isFinite(want) || want <= 0) return { ok: true, cost: 0 };
+  const held = Number(meter.held);
+  if (!Number.isFinite(held) || held < want) return { ok: false, cost: want, held: Number.isFinite(held) ? held : 0 };
+  meter.held = held - want;
+  meter.dry = meter.held <= 0;
+  syncFuel(match, side, meter);
+  return { ok: true, cost: want, held: meter.held, dry: meter.dry };
+}
+
+function syncFuel(match, side, meter) {
+  const seat = seatOf(match, side);
+  if (!seat) return;
+  seat.fuel = meter.held;
+  seat.dry = meter.dry;
+}
+
+// One round of the budget for one side: production in, consumption out, clamped to the cap.
+// The return is an event only when the side crosses into or out of "dry", so a quiet round adds
+// no log line. For 1918/1942 the original rewrites the reserve to the cap every round, so the
+// budget is listed but never runs short (FUN_15f4_0664 4699-4701).
+function settleOil(match, side, spec) {
+  const meter = meterOf(match, side, OIL);
+  if (!meter) return null;
+  const cap = Number.isFinite(Number(spec.reserveCap)) ? Number(spec.reserveCap) : Number(spec.reserve);
+  if (!oilUsesReserve(oilEra(match))) {
+    if (Number.isFinite(cap)) meter.held = cap;
+    meter.dry = false;
+    syncFuel(match, side, meter);
+    return null;
+  }
+  const flow = oilFlow(match, side) || { in: 0, out: 0 };
+  const held = Number.isFinite(Number(meter.held)) ? Number(meter.held) : 0;
+  let next = held + Number(flow.in || 0) - Number(flow.out || 0);
+  if (next < 0) next = 0;
+  if (Number.isFinite(cap) && next > cap) next = cap;
+  const wasDry = meter.dry === true;
+  meter.held = next;
+  meter.dry = next <= 0;
+  syncFuel(match, side, meter);
+  if (meter.dry && !wasDry) return { type: "dry", side, kind: OIL };
+  if (!meter.dry && wasDry) return { type: "refuel", side, kind: OIL, held: meter.held };
+  return null;
+}
+
+// How many cities still pay when the budget cannot cover consumption. The original takes the
+// unpaid share off the city count before the payday (FUN_15f4_0664 4727-4762, 2023 scaled 3/2),
+// so a short side does not lose all income at once - it loses the cities the oil did not cover.
+// Returns {cities, penalty} where penalty is 0 for a side that is not short.
+export function oilIncome(match, side, cities) {
+  const spec = oilSpec();
+  const count = Number(cities) || 0;
+  if (!spec || !oilUsesReserve(oilEra(match))) return { cities: count, penalty: 0 };
+  const readout = oilReadout(match, side);
+  if (!readout || !readout.short) return { cities: count, penalty: 0 };
+  const out = Number(readout.out);
+  const available = (Number(readout.held) || 0) + (Number(readout.in) || 0);
+  if (!Number.isFinite(out) || out <= 0) return { cities: count, penalty: 0 };
+  let unpaid = (out - available) / out;
+  if (!Number.isFinite(unpaid) || unpaid <= 0) return { cities: count, penalty: 0 };
+  if (unpaid > 1) unpaid = 1;
+  const scaleRaw = spec.incomePenaltyEraScale && spec.incomePenaltyEraScale[oilEra(match)];
+  const scale = Number.isFinite(Number(scaleRaw)) ? Number(scaleRaw) : 1;
+  let lost = count * unpaid * scale;
+  if (lost > count) lost = count;
+  return { cities: Math.max(0, count - lost), penalty: unpaid };
+}
+
 // --- one running round ---------------------------------------------------------------------
+
 
 function refillKinds(spec) {
   const raw = spec && spec.refillAt;
@@ -255,6 +525,9 @@ export function upkeepResources(match) {
   if (!match || !match.sides) return [];
   const kinds = resourceKinds(match.era);
   if (kinds.length === 0) return [];
+  // The oil budget's site counts, one pass per room per round, shared by the settlement and the
+  // payday that follows it.
+  if (Array.isArray(match.sites) && oilSpec()) summaryByMatch.set(match, buildOilSummary(match));
 
   const plan = [];
   for (const kind of kinds) {
@@ -280,6 +553,13 @@ export function upkeepResources(match) {
     for (const { kind, spec, cells } of plan) {
       const meter = meterOf(match, side, kind);
       if (!meter) continue;
+      // Oil is a budget, not a burn: it settles as production minus consumption once a round,
+      // and its per-unit spend was already charged as the pieces moved (chargeOil).
+      if (kind === OIL && oilSpec()) {
+        const settled = settleOil(match, side, spec);
+        if (settled) events.push(settled);
+        continue;
+      }
       const reserve = Number(spec.reserve);
       const burn = Number(spec.burn);
       let standing = false;

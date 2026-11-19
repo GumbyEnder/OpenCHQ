@@ -544,7 +544,7 @@ async function main() {
   const appText = readFileSync(path.join(root, "web", "public", "app.js"), "utf8");
   const dialogText = readFileSync(path.join(root, "web", "public", "dialogs.mjs"), "utf8");
   const pageText = appText + "\n" + dialogText;
-  for (const call of ["purseText(room.seat)", "shopLabel(entry)", "shopDisabled(entry, cash)", "buyMessage(buying, cell)"]) {
+  for (const call of ["paintPurse(purse", "shopLabel(entry)", "shopDisabled(entry, cash)", "buyMessage(buying, cell)"]) {
     if (!pageText.includes(call)) fail("the page does not use " + call);
   }
   const after2023 = adaBox.length;

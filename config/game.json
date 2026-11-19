@@ -265,13 +265,38 @@
   },
   "resources": {
     "fuel": {
-      "reserve": 10000,
-      "burn": 1,
+      "_comment": "T-033: the recovered oil budget (docs/re/ECONOMY.md). A side-wide pool per side, not per-unit fuel. Setup writes reserve 3000, In = wells*200, Out = (cities+bases)*50+100 (FUN_20b1_01b6 @ 20b1:0b46, decompiled.c 13140-13145). The per-round recompute writes In = max(1,wells)*200, Out = cities*50+200 and clamps the reserve to 0..10000 (FUN_15f4_0664 @ 15f4:0664, 4704-4723, 4876-4883). Per-unit spend is charged through FUN_15f4_0d7e @ 15f4:0d7e (4989-5016): 5 per moving piece per pass plus the per-kind allowance at DS:0x19a6, and 20 per air mission. DEVIATION: the remake has no pass cursor, so one cell entered costs one pass's charge instead of allowance/20 cells. See docs/re/ECONOMY.md for the era gating and the shortage order.",
+      "reserve": 3000,
+      "reserveCap": 10000,
+      "inPerWell": 200,
+      "inMinWells": 1,
+      "outPerCity": 50,
+      "outBase": 200,
+      "outBaseSetup": 100,
+      "setupCountsBases": true,
+      "moveCostPerCell": 5,
+      "moveCostByKind": {
+        "infantry": 17,
+        "tank": 29,
+        "transport": 5
+      },
+      "airMission": 20,
+      "shipKinds": [
+        "submarine",
+        "cruiser",
+        "carrier"
+      ],
+      "freeEras": [
+        "1918",
+        "1942"
+      ],
+      "incomePenaltyEraScale": {
+        "_comment": "FUN_15f4_0664 4737: for scenario index > 3 (2023) the unpaid share is scaled 3/2 before it is taken off the city count.",
+        "2023": 1.5
+      },
+      "displayDivisor": 125,
       "blocksMovement": true,
-      "refillAt": [
-        "oilfield",
-        "well"
-      ]
+      "source": "disassembly: docs/re/ECONOMY.md, FUN_15f4_0664 / FUN_15f4_0d7e / FUN_20b1_01b6 / FUN_3711_031a"
     },
     "steel": {
       "reserve": 40,

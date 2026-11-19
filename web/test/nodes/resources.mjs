@@ -148,6 +148,7 @@ export async function run(ctx) {
   const fuelMatch = openMatch("1986", []);
   upkeepResources(fuelMatch);
   const fuelSpec = resourceSpec("fuel");
-  eq(fuelMatch.sides.blue.fuel, Number(fuelSpec.reserve) - Number(fuelSpec.burn), "fuel's old seat field");
+  // T-033: the budget settles In - Out (both 200 on an empty board), so the reserve is unchanged.
+  eq(fuelMatch.sides.blue.fuel, Number(fuelSpec.reserve), "fuel's old seat field");
   eq(fuelMatch.sides.blue.resources.fuel.held, fuelMatch.sides.blue.fuel, "the fuel meter and the old field disagree");
 }

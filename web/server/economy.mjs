@@ -10,7 +10,7 @@
 // because no duration was recovered.
 
 import { payEvery, priceOf, cityIncome, capitalPays, combatRules, missionedSurvivesCapture } from "./rules.mjs";
-import { upkeepResources } from "./resources.mjs";
+import { upkeepResources, oilIncome } from "./resources.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace, siteLabel, layerOf } from "./placement.mjs";
 import { markUnready } from "./readiness.mjs";
@@ -490,11 +490,21 @@ export function pay(match) {
       continue;
     }
     const row = tally[side];
-    const cities = row.cities + (paysCapital ? row.capitals : 0);
+    const counted = row.cities + (paysCapital ? row.capitals : 0);
     const wells = row.wells;
+    // Oil short? The original takes the unpaid share off the city count before the payday, so a
+    // side out of oil stops producing income (Manual p.27; FUN_15f4_0664 4727-4762).
+    const oil = oilIncome(match, side, counted);
+    const cities = oil.cities;
     const amount = cities * perCity;
     seat.cash += amount;
-    events.push({ type: "income", side, round, cities, wells, cashWells: 0, amount });
+    const event = { type: "income", side, round, cities, wells, cashWells: 0, amount };
+    if (oil.penalty > 0) {
+      event.oilShort = true;
+      event.oilPenalty = Number(oil.penalty.toFixed(4));
+      event.citiesBeforeOil = counted;
+    }
+    events.push(event);
   }
   return events;
 }

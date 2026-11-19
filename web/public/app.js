@@ -20,6 +20,7 @@ import {
   orderMessage,
   ownPieceAt,
   previewLine,
+  oilWarning,
   purseText,
   refusalText,
   routeRequest,
@@ -1131,6 +1132,13 @@ window.addEventListener("keydown", (event) => {
   // fields.
   const tag = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : "";
   if (tag === "input" || tag === "select" || tag === "textarea") return;
+  // Ctrl+V is the original's Alternate Function for the oil columns (Monitor Four, manual p.27):
+  // it swaps the readout to the other side. Resist the browser's paste gesture here.
+  if (event.ctrlKey && !event.altKey && !event.metaKey && (event.key === "v" || event.key === "V")) {
+    event.preventDefault();
+    toggleOilAlternate();
+    return;
+  }
   const view = viewForCanvas();
   const step = 8 * view.scale;
   const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
@@ -1366,10 +1374,36 @@ function syncShell() {
   // The purse at a glance: the economy dialogue explains it, this is the number a player wants to
   // see without opening anything.
   const purse = document.getElementById("purseChip");
-  if (purse) purse.textContent = room && room.seat ? purseText(room.seat) : "";
+  if (purse) paintPurse(purse, room && room.seat ? room.seat : null);
   syncGameButtons();
   renderDebug();
   paintDialog();
+}
+
+// T-033 / Manual p.27 Alternate Function: the original's oil monitor swaps sides on Ctrl+V
+// (Monitor Four's alternate readout, DS:0xe184 = 5). One flag, drawn in the purse chip, so the
+// opponent's In/Out/reserve is one key away and never silently replaces the player's own numbers.
+let oilFoe = false;
+
+function paintPurse(el, seat) {
+  if (!el) return;
+  el.textContent = seat ? purseText(seat, oilFoe) : "";
+  const budget = seat ? (oilFoe ? seat.foeOil : seat.oil) : null;
+  el.classList.toggle("oilshort", Boolean(budget && budget.short === true));
+  el.title = oilFoe
+    ? "Alternate Function (manual p.27): the opponent's oil. Click or Ctrl+V to show your own."
+    : "Click, or press Ctrl+V, for the opponent's oil (manual p.27 Alternate Function).";
+  el.setAttribute("data-oil-side", oilFoe ? "foe" : "own");
+  const warn = oilWarning(budget);
+  if (warn) el.setAttribute("aria-label", el.textContent + " — " + warn);
+  else el.removeAttribute("aria-label");
+  el.onclick = () => toggleOilAlternate();
+}
+
+function toggleOilAlternate() {
+  oilFoe = !oilFoe;
+  const purse = document.getElementById("purseChip");
+  if (purse) paintPurse(purse, room && room.seat ? room.seat : null);
 }
 
 function seatRow(label, seat, yours) {
@@ -1446,7 +1480,7 @@ function renderRoom() {
   if (room.seat) {
     const purse = document.createElement("p");
     purse.className = "purse";
-    purse.textContent = purseText(room.seat);
+    paintPurse(purse, room.seat);
     roomBox.append(purse);
   }
   if (!sawRoom && room) {

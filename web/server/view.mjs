@@ -15,7 +15,7 @@
 
 import { CELL_W, SEATS } from "./board.mjs";
 import { combatRules, enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
-import { metersFor } from "./resources.mjs";
+import { metersFor, oilReadout } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing } from "./late.mjs";
@@ -169,6 +169,12 @@ function seatStatus(match, side) {
     // set one. A null rate means nobody recovered it, and the page says so instead of
     // drawing a number. Fuel's own field above stays for older readers.
     reserves: metersFor(match, side),
+    // T-033: the oil budget in the original's own terms - production In, consumption Out, the
+    // reserve, and the red warning when Out outruns the reserve plus In. The opponent's row is
+    // here too: Manual p.27's Alternate Function shows the other side's oil, and it is public
+    // information in the original (numbers only, no sight of anything else).
+    oil: oilReadout(match, side),
+    foeOil: oilReadout(match, side === "blue" ? "red" : "blue"),
     payIn,
     payEvery: Number.isFinite(every) && every > 0 ? every : null,
     // What the next payday is worth, counted by the economy module's own rule: one per owned city
