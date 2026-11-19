@@ -133,21 +133,47 @@ export async function run(ctx) {
     alice.onclose();
     if (lastRoom(bob).clock !== "held") fail("a dropped seat left the clock running");
 
-    // (4b) B's run is ACCEPTED with no refusal frame. If A's dropped hold had survived, this would
-    // be refused naming A - so this single assertion is also 4a's "no seat hold survives" proof.
+    // (4b) B's run is ACCEPTED with zero refusal frames. If A's dropped hold had survived, this
+    // would be refused naming A - so this single assertion is also 4a's "no seat hold survives"
+    // proof. Frames are counted from before the call: an error frame here is the room hold gating
+    // a run, which is exactly the shape openchq-pm 7439 struck.
+    const bobFramesBefore = bob.box.length;
     const afterDrop = gate.handle("pb134_bob", { op: "run" });
     if (!afterDrop || afterDrop.error) {
       fail("B's run after A dropped was refused - the absent seat gated the clock: " + JSON.stringify(afterDrop));
     }
+    const refusalFrames = bob.box.slice(bobFramesBefore).filter((m) => m && (m.op === "error" || m.error));
+    if (refusalFrames.length) {
+      fail("B's accepted run after A dropped carried a refusal frame: " + JSON.stringify(refusalFrames[refusalFrames.length - 1]));
+    }
     if (lastRoom(bob).clock !== "running") fail("B's run after A dropped did not start the clock");
 
-    // (4c) A rejoin restores the seat and leaves the clock held until someone runs.
+    // (4c) A rejoin restores the seat with its routes, and leaves the clock held until someone runs.
     const aliceBack = fakePeer();
     gate.join("pb134_alice", aliceBack);
     if (!lastRoom(aliceBack)) fail("A's rejoin carried no room frame");
     if (lastRoom(aliceBack).clock !== "running") fail("A's rejoin changed a clock B had started");
-    // A holds, takes the clock down, then drops: nobody runs while the seat is away.
+    if (lastRoom(aliceBack).you !== "blue") fail("A's rejoin did not land back in its own seat: " + lastRoom(aliceBack).you);
+    // A holds, queues a route, then drops: nobody runs while the seat is away, and the route has
+    // to be the one the rejoining seat is given. The destination is derived from the board at run
+    // time - issueOrder refuses an occupied cell, so the first free neighbour the engine accepts is
+    // the fixture, not a hardcoded coordinate a rebake could invalidate.
     gate.handle("pb134_alice", { op: "hold" });
+    const beforeDropRoom = lastRoom(aliceBack);
+    let queued = null;
+    for (const piece of beforeDropRoom.pieces || []) {
+      for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [2, 0], [0, 2]]) {
+        const to = { x: piece.x + dx, y: piece.y + dy };
+        const r = gate.handle("pb134_alice", { op: "order", piece: piece.id, x: to.x, y: to.y });
+        if (r && r.ok) { queued = { piece: piece.id, to }; break; }
+      }
+      if (queued) break;
+    }
+    if (!queued) fail("A could not queue a route before the drop, so the rejoin arm would carry nothing");
+    const queuedSteps = (lastRoom(aliceBack).routes || {})[queued.piece];
+    if (!queuedSteps || !queuedSteps.length) {
+      fail("A's order did not appear as a route before the drop: " + JSON.stringify(lastRoom(aliceBack).routes));
+    }
     aliceBack.closed = true;
     aliceBack.onclose();
     const syncB = gate.handle("pb134_bob", { op: "sync" });
@@ -159,6 +185,13 @@ export async function run(ctx) {
     if (!backRoom) fail("A's rejoin carried no room frame");
     if (backRoom.clock !== "held") {
       fail("A's rejoin started the clock on its own: " + backRoom.clock);
+    }
+    const carried = (backRoom.routes || {})[queued.piece];
+    if (!carried || carried.length !== queuedSteps.length) {
+      fail("A's rejoin lost the route queued before the drop: " + JSON.stringify(backRoom.routes));
+    }
+    if (carried[carried.length - 1].x !== queued.to.x || carried[carried.length - 1].y !== queued.to.y) {
+      fail("A's rejoined route no longer ends where the order put it: " + JSON.stringify(carried));
     }
     const afterRejoinRun = gate.handle("pb134_alice", { op: "run" });
     if (!afterRejoinRun || afterRejoinRun.error) fail("A's run after rejoining was refused: " + JSON.stringify(afterRejoinRun));
