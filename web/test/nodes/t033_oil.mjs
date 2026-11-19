@@ -14,7 +14,7 @@
 // Every expectation is read through the module under test or through config; no literal repeats a
 // number that the config owns.
 
-import { resourceSpec, oilFlow, oilReadout, chargeOil, spendOil, movementBlocked, meterOf } from "../../server/resources.mjs";
+import { resourceSpec, oilFlow, oilReadout, chargeOil, spendOil, movementBlocked, meterOf, upkeepResources } from "../../server/resources.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { advance } from "../../server/move.mjs";
 import { sendMission } from "../../server/air.mjs";
@@ -46,8 +46,20 @@ function room(sites, era = "1986") {
   return match;
 }
 
-function own(kind, id, owner, x = 10, y = 10) {
-  return { id, name: `${kind} ${id}`, kind, owner, x, y };
+function own(kind, id, owner, x = 10, y = 10, type = null) {
+  const site = { id, name: `${kind} ${id}`, kind, owner, x, y };
+  if (type !== null) site.type = type;
+  return site;
+}
+
+// PB-153: a type-5 site is the oil field. `own("facility", id, side, x, y, 5)`.
+function field(id, owner, x = 10, y = 10) {
+  return own("facility", id, owner, x, y, 5);
+}
+
+// A subtype-4 paying city.
+function city(id, owner, x = 10, y = 10) {
+  return own("city", id, owner, x, y, 4);
 }
 
 export async function run(ctx) {
@@ -55,8 +67,8 @@ export async function run(ctx) {
   const fuel = resourceSpec("fuel");
 
   // ---- 1. the rates are the recovered ones, and each says where it came from ---------------
-  must(typeof fuel.source === "string" && /ECONOMY\.md/.test(fuel.source),
-    "the fuel spec must name its derivation (ECONOMY.md) in `source`", fail);
+  must(typeof fuel.source === "string" && /ECONOMY_RE\.md/.test(fuel.source),
+    "the fuel spec must name its derivation (ECONOMY_RE.md) in `source`", fail);
   eq(Number(fuel.reserve), 3000, "setup reserve (FUN_20b1_01b6 @ 20b1:0b46)", fail);
   eq(Number(fuel.reserveCap), 10000, "reserve cap (FUN_15f4_0664 4876-4883)", fail);
   eq(Number(fuel.inPerWell), 200, "In per well (0x144a = wells*200, 4704-4710)", fail);
@@ -70,15 +82,31 @@ export async function run(ctx) {
 
   // ---- 2. In and Out ---------------------------------------------------------------------
   {
-    const match = room([own("oilfield", 1, "blue"), own("well", 2, "blue"), own("city", 3, "blue"), own("city", 4, "blue")]);
+    const match = room([field(1, "blue"), field(2, "blue"), city(3, "blue"), city(4, "blue")]);
     const flow = oilFlow(match, "blue");
-    eq(flow.wells, 2, "two owned wells", fail);
-    eq(flow.cities, 2, "two owned cities", fail);
-    eq(flow.in, 2 * Number(fuel.inPerWell), "In must be wells * inPerWell", fail);
+    eq(flow.fields, 2, "two owned type-5 oil fields", fail);
+    eq(flow.cities, 2, "two owned paying cities", fail);
+    eq(flow.pieces, 0, "a room with no pieces pays no per-piece term", fail);
+    eq(flow.in, 2 * Number(fuel.inPerWell), "In must be fields * inPerWell", fail);
     eq(flow.out, 2 * Number(fuel.outPerCity) + Number(fuel.outBase), "Out must be cities * outPerCity + outBase", fail);
-    // A side with no well still runs the minimum (4704-4707: count 0 becomes 1 before *200).
+    // The per-piece term: every live piece costs 2 a round (FUN_15f4_0664 4850).
+    const crewed = room([city(3, "blue")]);
+    crewed.pieces = [
+      { id: "b1", side: "blue", kind: "tank", domain: "land", x: 1, y: 1, path: [] },
+      { id: "b2", side: "blue", kind: "submarine", domain: "sea", x: 2, y: 2, path: [] },
+      { id: "r1", side: "red", kind: "tank", domain: "land", x: 3, y: 3, path: [] },
+    ];
+    const flow2 = oilFlow(crewed, "blue");
+    eq(flow2.pieces, 2, "only blue's pieces bill blue", fail);
+    eq(flow2.out, Number(fuel.outPerCity) + Number(fuel.outBase) + 2 * Number(fuel.perPiece),
+      "Out must add perPiece for each of the side's pieces", fail);
+    // A world.json sketched well has no subtype and produces nothing (PB-153).
+    const sketched = room([own("oilfield", 9, "blue"), own("well", 10, "blue")]);
+    eq(oilFlow(sketched, "blue").in, Number(fuel.inMinWells) * Number(fuel.inPerWell),
+      "a sketched world.json well must not produce oil", fail);
+    // A side with no field still runs the minimum (4704-4707: count 0 becomes 1 before *200).
     const barren = room([]);
-    eq(oilFlow(barren, "blue").in, Number(fuel.inMinWells) * Number(fuel.inPerWell), "the minimum In must hold at zero wells", fail);
+    eq(oilFlow(barren, "blue").in, Number(fuel.inMinWells) * Number(fuel.inPerWell), "the minimum In must hold at zero fields", fail);
   }
 
   // ---- 3. a dry side stops, and says so once ---------------------------------------------
@@ -141,9 +169,9 @@ export async function run(ctx) {
 
   // ---- 5. cities stop producing income ----------------------------------------------------
   {
-    // Two cities, no wells' worth of production, an empty reserve: the payday is cut by the
-    // unpaid share of Out (200 reserve-less vs 300 Out -> one of two cities lost, to rounding).
-    const match = room([own("city", 3, "blue"), own("city", 4, "blue")]);
+    // Four cities, no production beyond the 200 minimum, an empty reserve. Out = 4*50+200 = 400,
+    // available = 0 + 200, deficit 200: lost = floor(200 * 4 / 400) = 2 cities (7668).
+    const match = room([city(3, "blue"), city(4, "blue"), city(5, "blue"), city(6, "blue")]);
     match.round = 25; // a payday (payEvery)
     match.sides.blue.cash = 1000;
     match.sides.red.cash = 1000;
@@ -154,22 +182,45 @@ export async function run(ctx) {
     const blue = events.find((event) => event.type === "income" && event.side === "blue");
     must(blue, "blue must still be paid a (reduced) income: " + JSON.stringify(events), fail);
     eq(blue.oilShort, true, "a short side's income event must carry oilShort", fail);
-    must(blue.cities < 2, "a short side must lose cities from the payday: " + JSON.stringify(blue), fail);
-    must(match.sides.blue.cash - before < 2 * Number(cityIncome()), "a short side must be paid less than a full payday", fail);
+    eq(blue.cities, 2, "lost = floor(deficit * cities / lastOut): 4 - floor(200*4/400) = 2", fail);
+    eq(match.sides.blue.cash - before, 2 * Number(cityIncome()), "a short side must be paid for the cities that still pay", fail);
     // The funded side in the same room is paid in full.
     const red = events.find((event) => event.type === "income" && event.side === "red");
     if (red) must(!red.oilShort, "a funded side must not be marked short", fail);
   }
 
-  // ---- 6. ships use no oil -----------------------------------------------------------------
+  // ---- 5b. the reserve floor and the shortage round ---------------------------------------
   {
+    // Funded round: reserve = available - city term - per-piece, floored at 40 (4770).
+    const funded = room([city(3, "blue")]);
+    funded.sides.blue.resources = { fuel: { held: 60, dry: false } };
+    funded.sides.blue.fuel = 60;
+    funded.round = 1;
+    upkeepResources(funded);
+    // available = 60 + 200 = 260; city term = 250; residual 10 -> floored to 40.
+    eq(meterOf(funded, "blue", "fuel").held, 40, "a funded round must clamp the reserve up to the 40 floor", fail);
+    // Short round: zero the reserve, force the spend above available (RE-E5 did this with 0x1456).
+    const short = room([city(3, "blue"), city(4, "blue")]);
+    short.sides.blue.resources = { fuel: { held: 0, dry: false } };
+    short.sides.blue.fuel = 0;
+    short.round = 1;
+    upkeepResources(short);
+    // available 200 < Out 300: the side could not pay the city term, so the reserve is 0, not 40.
+    eq(meterOf(short, "blue", "fuel").held, 0, "a shortage round must leave the reserve at 0 (4864-4870)", fail);
+    eq(meterOf(short, "blue", "fuel").dry, true, "a shortage round must flag the side dry", fail);
+  }
+
+  // ---- 6. ships are charged (RE-E5, DOSBox 1986 Blue) --------------------------------------
+  {
+    // The capture: one ordered submarine raised Out 1812 -> 1817 and cut the round's reserve
+    // delta by exactly 5. So a sea move costs the 5 moving-piece base and nothing per kind
+    // (kinds 7-9 sit above the DS:0x19a6 allowance table).
+    eq(fuel.shipKinds, [], "the free-ship exemption must be empty (RE-E5 capture)", fail);
     const match = room([]);
     match.sides.blue.resources = { fuel: { held: 500, dry: false } };
-    for (const kind of fuel.shipKinds) {
-      const bill = chargeOil(match, "blue", kind, 1);
-      eq(bill.cost, 0, `a ${kind} cell must cost no oil (Manual p.36)`, fail);
-    }
-    eq(meterOf(match, "blue", "fuel").held, 500, "ships must not move the reserve", fail);
+    const bill = chargeOil(match, "blue", "submarine", 1);
+    eq(bill.cost, Number(fuel.moveCostPerCell), "a submarine cell must cost the 5 moving-piece base", fail);
+    eq(meterOf(match, "blue", "fuel").held, 500 - Number(fuel.moveCostPerCell), "ships must move the reserve", fail);
   }
 
   // ---- 7. 1918 and 1942 carry the budget but never run short ------------------------------
@@ -213,5 +264,36 @@ export async function run(ctx) {
     must(purseText(drySeat).includes("OIL SHORT"), "a short budget must print OIL SHORT in the chip", fail);
   }
 
-  console.log("t033_oil ok: rates, In/Out, stall, air, income, ships, eras, foe readout");
+  // ---- hand-worked 1986 Blue opening (7696 item 5) -----------------------------------------
+  // The real board, not a synthetic one: every term written out against RE-E5's panel
+  // (docs/re/ECONOMY_RE.md §1.1-1.2, §3). In matches the DOSBox reading exactly; Out differs
+  // only because the remake opens with 2 pieces a side where the original scenario has 31.
+  {
+    const { matchSites } = await import("../../server/board.mjs");
+    const { seedOwners } = await import("../../server/economy.mjs");
+    const opening = openMatch("1986", matchSites("1986"));
+    seedOwners(opening);
+    const flow = oilFlow(opening, "blue");
+    const fields = opening.sites.filter((site) => site && site.owner === "blue" && Number(site.type) === 5).length;
+    const type4 = opening.sites.filter((site) => site && site.owner === "blue" && Number(site.type) === 4).length;
+    const caps = opening.sites.filter((site) => site && site.owner === "blue" && (Number(site.type) === 1 || Number(site.type) === 2)).length;
+    const pieces = opening.pieces.filter((piece) => piece && piece.side === "blue").length;
+    // In = 200 x type-5 fields. DOSBox: 2200 (11 fields).
+    eq(fields, 11, "1986 Blue owns 11 type-5 oil fields (RE-E5 panel In = 2200)", fail);
+    eq(flow.in, fields * Number(fuel.inPerWell), "In must be the field count times the yield", fail);
+    eq(flow.in, 2200, "1986 Blue opening In is the measured 2200", fail);
+    // Out = 50 x paying cities + 200 + 2 x pieces. DOSBox steady state: 1812 at 31 cities,
+    // 31 pieces: 31 x 50 + 200 + 2 x 31. The remake's roster is 2 pieces a side, so its Out is
+    // 1750 + 4 = 1754; the formula is the same and the difference is named in ECONOMY_RE.md §3.
+    const paying = type4 + Math.max(0, caps - 1);
+    eq(paying, 31, "1986 Blue pays 31 cities (RE-E5 paid 1812 = 31 x 50 + 200 + 62)", fail);
+    eq(flow.cities, paying, "the flow's city count must be the PB-150 paying count", fail);
+    eq(flow.cityOut, paying * Number(fuel.outPerCity) + Number(fuel.outBase), "city term: 50 x paying + 200", fail);
+    eq(flow.pieces, pieces, "the flow must count the side's pieces", fail);
+    eq(flow.out, flow.cityOut + pieces * Number(fuel.perPiece), "Out = city term + 2 per piece", fail);
+    eq([flow.in, flow.cityOut, pieces, flow.out], [2200, 1750, 2, 1754],
+      "the hand-worked 1986 Blue opening (In, city term, pieces, Out)", fail);
+  }
+
+  console.log("t033_oil ok: rates, In/Out, stall, air, income, ships, eras, foe readout, opening");
 }

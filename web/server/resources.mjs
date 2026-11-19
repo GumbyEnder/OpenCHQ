@@ -22,6 +22,7 @@
 import { rules } from "./rules.mjs";
 import { eraOf } from "./match.mjs";
 import { cellKeyOf, cellsOfKinds } from "./siteindex.mjs";
+import { isOilField, payingCount, siteTypeOf } from "./sitetype.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -243,11 +244,9 @@ export function movementBlocked(match, side) {
 
 const OIL = "fuel";
 
-// Site kinds the budget counts. A city consumes oil; a well produces it. Kept here rather than
-// imported from economy.mjs, which imports this module (a cycle), and both are the board's own
-// kind names, not a second rule.
-const WELL_KINDS = new Set(["oilfield", "well"]);
-const CITY_KINDS = new Set(["city"]);
+// Site kinds the budget counts come from the subtype table, not the asset list's `kind`
+// (sitetype.mjs): a type-5 site is an oil field (PB-153), a paying city is the PB-150 count.
+// world.json's 38 sketched `wells` carry no subtype and drive nothing here.
 
 export function oilSpec() {
   const spec = resourceSpec(OIL);
@@ -279,15 +278,18 @@ export function oilUsesReserve(era) {
 // settlement and the payday). A room asked outside a tick - a test, a direct pay() - falls back
 // to counting its own sites, because a stale summary is worse than a scan.
 function countSites(match, side) {
-  let wells = 0;
-  let cities = 0;
+  let fields = 0;
+  let pieces = 0;
+  const owned = [];
   for (const site of match.sites) {
     if (!site || site.owner !== side) continue;
-    const kind = String(site.kind || "");
-    if (WELL_KINDS.has(kind)) wells += 1;
-    else if (CITY_KINDS.has(kind)) cities += 1;
+    owned.push(site);
+    if (isOilField(site)) fields += 1;
   }
-  return { wells, cities };
+  for (const piece of Array.isArray(match.pieces) ? match.pieces : []) {
+    if (piece && piece.side === side) pieces += 1;
+  }
+  return { fields, cities: payingCount(owned), pieces };
 }
 
 // A WeakMap, never a field on the match: adding a key to the match object mid-match pushes it
@@ -304,15 +306,25 @@ function oilCounts(match, side) {
 
 // One pass over the board for both sides, stored under the round it measured.
 export function buildOilSummary(match) {
-  const summary = { round: Number(match && match.round) || 0, blue: { wells: 0, cities: 0 }, red: { wells: 0, cities: 0 } };
+  const summary = {
+    round: Number(match && match.round) || 0,
+    blue: { fields: 0, type4: 0, caps: 0, cities: 0, pieces: 0 },
+    red: { fields: 0, type4: 0, caps: 0, cities: 0, pieces: 0 },
+  };
   for (const site of (match && match.sites) || []) {
-    if (!site) continue;
-    const row = summary[site.owner];
+    const row = summary[site && site.owner];
     if (!row) continue;
-    const kind = String(site.kind || "");
-    if (WELL_KINDS.has(kind)) row.wells += 1;
-    else if (CITY_KINDS.has(kind)) row.cities += 1;
+    const type = siteTypeOf(site);
+    if (type === 5) row.fields += 1;
+    else if (type === 4) row.type4 += 1;
+    else if (type === 1 || type === 2) row.caps += 1;
   }
+  for (const piece of (match && match.pieces) || []) {
+    const row = summary[piece && piece.side];
+    if (row) row.pieces += 1;
+  }
+  // paying = count(type 4) + max(0, count(type 1) + count(type 2) - 1) (PB-150).
+  for (const side of SIDES) summary[side].cities = summary[side].type4 + Math.max(0, summary[side].caps - 1);
   return summary;
 }
 
@@ -322,16 +334,19 @@ export function oilFlow(match, side) {
   const spec = oilSpec();
   if (!spec || !match || !Array.isArray(match.sites)) return null;
   const counted = oilCounts(match, side);
-  const wells = counted.wells;
+  const fields = counted.fields;
   const cities = counted.cities;
+  const pieces = counted.pieces;
   const minWells = Number.isFinite(Number(spec.inMinWells)) ? Number(spec.inMinWells) : 0;
   const inRate = Number(spec.inPerWell);
   const outRate = Number(spec.outPerCity);
   const base = Number.isFinite(Number(spec.outBase)) ? Number(spec.outBase) : 0;
-  const countedWells = Math.max(minWells, wells);
+  const perPiece = Number.isFinite(Number(spec.perPiece)) ? Number(spec.perPiece) : 0;
+  const countedWells = Math.max(minWells, fields);
   const inAmount = Number.isFinite(inRate) ? countedWells * inRate : null;
-  const outAmount = Number.isFinite(outRate) ? cities * outRate + base : null;
-  return { wells, cities, in: inAmount, out: outAmount };
+  const cityOut = Number.isFinite(outRate) ? cities * outRate + base : null;
+  const outAmount = Number.isFinite(cityOut) ? cityOut + perPiece * pieces : null;
+  return { fields, cities, pieces, cityOut, in: inAmount, out: outAmount };
 }
 
 // What the page draws for one side. `in`/`out` are the per-round flow, `held` the reserve, and
@@ -346,6 +361,7 @@ export function oilReadout(match, side) {
   const cap = Number.isFinite(Number(spec.reserveCap)) ? Number(spec.reserveCap) : Number(spec.reserve);
   const uses = oilUsesReserve(oilEra(match));
   const held = Number(meter.held);
+
   const short = uses && (meter.dry === true || (Number.isFinite(flow.out) && Number.isFinite(held) && held + flow.in < flow.out));
   return {
     side,
@@ -353,8 +369,10 @@ export function oilReadout(match, side) {
     cap: Number.isFinite(cap) ? cap : null,
     in: flow.in,
     out: flow.out,
-    wells: flow.wells,
+    wells: flow.fields,
+    fields: flow.fields,
     cities: flow.cities,
+    pieces: flow.pieces,
     uses,
     dry: meter.dry === true,
     short,
@@ -362,10 +380,13 @@ export function oilReadout(match, side) {
   };
 }
 
-// The per-cell price for a kind, as a plain number: 0 for a ship (Manual p.36 "ships use none";
-// the disassembly's 5-per-pass base charge on a sea move order is UNVERIFIED against a live sea
-// leg - see ECONOMY.md) and 0 in the two free scenarios. Called once per piece per round, never
-// per cell: the bench's round leg is the hot path here.
+// The per-cell price for a kind, as a plain number: the moving-piece base (5, FUN_15f4_0d7e
+// at 4798) plus, for land kinds, the kind allowance already folded into moveCostByKind
+// (infantry 5+12=17, tank 5+24=29). A ship has no allowance (kinds 7-9 are >= 5 in DS:0x19a6),
+// so it costs the 5 base. RE-E5 MEASURED this in DOSBox 1986 Blue: ordering one submarine one
+// leg raised Out 1812 -> 1817 and cut that round's reserve delta by exactly 5, so ships are
+// charged; the capture is docs/re/evidence/re5/ and ECONOMY_RE.md carries the numbers. Free in
+// the two scenarios whose reserve is rewritten every round (1918/1942).
 const costCache = new Map();
 let costCacheSpec = null;
 
@@ -379,7 +400,6 @@ export function oilCostPerCell(match, kind) {
   const name = String(kind || "");
   let value;
   if (!oilUsesReserve(oilEra(match))) value = 0;
-  else if (Array.isArray(spec.shipKinds) && spec.shipKinds.map(String).includes(name)) value = 0;
   else {
     const table = spec.moveCostByKind && typeof spec.moveCostByKind === "object" ? spec.moveCostByKind : {};
     value = Number.isFinite(Number(table[name]))
@@ -461,14 +481,27 @@ function settleOil(match, side, spec) {
     syncFuel(match, side, meter);
     return null;
   }
-  const flow = oilFlow(match, side) || { in: 0, out: 0 };
+  const flow = oilFlow(match, side) || { in: 0, cityOut: 0, out: 0, pieces: 0 };
   const held = Number.isFinite(Number(meter.held)) ? Number(meter.held) : 0;
-  let next = held + Number(flow.in || 0) - Number(flow.out || 0);
-  if (next < 0) next = 0;
+  const available = held + Number(flow.in || 0);
+  const cityOut = Number(flow.cityOut || 0);
+  const perPiece = Number.isFinite(Number(spec.perPiece)) ? Number(spec.perPiece) : 0;
+  const pieceBill = perPiece * Number(flow.pieces || 0);
+  // The city term and the per-piece term are paid in that order out of what is available; a
+  // shortfall in either one leaves the reserve at 0 rather than draining it to the floor.
+  const paidCity = Math.min(available, cityOut);
+  let residual = available - paidCity;
+  const piecePaid = Math.min(residual, pieceBill);
+  residual -= piecePaid;
+  const floor = Number.isFinite(Number(spec.reserveFloor)) ? Number(spec.reserveFloor) : 0;
+  const short = paidCity < cityOut || piecePaid < pieceBill;
+  let next = short ? 0 : Math.max(residual, floor);
   if (Number.isFinite(cap) && next > cap) next = cap;
   const wasDry = meter.dry === true;
   meter.held = next;
   meter.dry = next <= 0;
+  // 0x1452 as the round ended is the divisor of next round's city-loss term (4735-4740).
+  meter.lastOut = Number(flow.out || 0);
   syncFuel(match, side, meter);
   if (meter.dry && !wasDry) return { type: "dry", side, kind: OIL };
   if (!meter.dry && wasDry) return { type: "refuel", side, kind: OIL, held: meter.held };
@@ -488,17 +521,24 @@ export function oilIncome(match, side, cities) {
   const out = Number(readout.out);
   const available = (Number(readout.held) || 0) + (Number(readout.in) || 0);
   if (!Number.isFinite(out) || out <= 0) return { cities: count, penalty: 0 };
-  let unpaid = (out - available) / out;
-  if (!Number.isFinite(unpaid) || unpaid <= 0) return { cities: count, penalty: 0 };
-  if (unpaid > 1) unpaid = 1;
+  const deficit = out - available;
+  if (!(deficit > 0)) return { cities: count, penalty: 0 };
+  // lost = floor(deficit x cities / lastOut), the original's 32-bit division at 4735-4740.
+  // lastOut is 0x1452 as the settlement left it; fall back to this round's Out when a caller
+  // asks before any settlement has stored one.
+  const meter = meterOf(match, side, OIL);
+  const storedOut = Number(meter && meter.lastOut);
+  const lastOut = Number.isFinite(storedOut) && storedOut > 0 ? storedOut : out;
   const scaleRaw = spec.incomePenaltyEraScale && spec.incomePenaltyEraScale[oilEra(match)];
   const scale = Number.isFinite(Number(scaleRaw)) ? Number(scaleRaw) : 1;
-  let lost = count * unpaid * scale;
+  let lost = Math.floor((deficit * count) / lastOut);
+  if (scale !== 1) lost = Math.floor(lost * scale);
   if (lost > count) lost = count;
-  return { cities: Math.max(0, count - lost), penalty: unpaid };
+  return { cities: Math.max(0, count - lost), penalty: deficit / out };
 }
 
 // --- one running round ---------------------------------------------------------------------
+
 
 
 function refillKinds(spec) {

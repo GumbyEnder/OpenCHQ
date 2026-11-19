@@ -1,0 +1,20 @@
+base             = 0x788b34428cd0
+scenario_19e     = 1
+film_mode_1478   = 3
+round_1476       = 0
+pass_147c        = 0
+m4mode_e378      = 2
+alt_e32c         = 1
+blue: reserve_1446=3000 in_144a=200 paid_144e=200 out_1452=1890 spend_1456=0 cash_148e=2000
+red: reserve_1446=3000 in_144a=200 paid_144e=1580 out_1452=1580 spend_1456=0 cash_148e=1200
+pieces blue=29 red=31 ordered={'blue': 28, 'red': 31}
+  blue kind=2 n=5
+  blue kind=3 n=13
+  blue kind=7 n=4
+  blue kind=8 n=5
+  blue kind=9 n=2
+  red kind=2 n=6
+  red kind=3 n=12
+  red kind=7 n=5
+  red kind=8 n=6
+  red kind=9 n=2
