@@ -164,3 +164,231 @@ This is the march, not a ported AI routine, so it is labelled as behaviour rathe
   fixed. The original's garrison stays on the city and fights there (`duel-original.txt`).
 * `FUN_107e_1750`'s own distance gate already leaves the on-site garrison out of a defender
   dispatch (`8 < distance²`, and `0x18 < distance²` for infantry), so the two rules do not fight.
+
+---
+
+# T-032 Part A — the AI turn, decoded (2026-11-19)
+
+Source: the same Ghidra export, `decompiled.c` (`/mnt/nas/Projects/Command HQ/modern/docs/ghidra/export/decompiled.c`,
+49,686 lines, md5 read in the committing call). This section answers the T-032 question — how the
+original picks targets, defends capitals and buys units, and what the five opponent levels change.
+It also corrects one global that earlier docs got wrong, because the port would be built on it.
+
+## A0. Two globals: `0x19e` is the ERA, `0x1a0` is the OPPONENT
+
+`SYSTEMS.md` §9 calls `0x19e` "player count". The bytes say otherwise, and so does the setup menu:
+
+* `FUN_20b1_2134(0x16f0, 0x2dfc)` returns a menu index; the **crisis** menu is built at
+  `FUN_2dfc_152a(0x4ffe, 0, *(uint *)0x500e, 5)` (`decompiled.c:13098`) and its table at
+  `DS:0x500e` is ` 1918 / 1942 / 1986 / 2023 / ????` (read from `CHQ_unpacked.EXE`, DS base
+  `0x328b0`, five words `0x401a 0x4020 0x4026 0x402c 0x4032`). The selected index is stored at
+  `0x19e` (`:13103`) and loaded by `FUN_298d_0af2(*(uint *)0x19e)`.
+* The **opponent** menu is `FUN_2dfc_152a(0x4fd8, 1, *(uint *)0x4fea, 7)` (`:13408`) and its table
+  at `DS:0x4fea` is seven words: `ANOTHER HUMAN`, `SGT. STAN STIL`, `CAP. LUKE WARM`,
+  `COL. BUCK ZEAL`, `GEN. WIN MOORE`, `MARS GOD OF WAR`, `(RESTART)`. `if (bVar5 < 6)` and
+  `bVar5 != 0` stores it at **`0x1a0`** (`:13415`); `0x1a0 == 0` is "another human / none".
+  Confirmed on the running game under DOSBox: the OPPONENT OPTIONS list renders exactly that
+  seven-entry order (screenshot `/tmp/chq-opp/opp1.png`, 2026-11-19), so level **1..5 = STAN,
+  LUKE, ZEAL, MOORE, MARS** — five computer opponents, not four. `SGT. STAN STIL` is level 1 and
+  `MARS GOD OF WAR` is level 5.
+
+`0x19c` is the human side; `0xdb02` the side the human commands; `0xc350` = `side*0x40 + 0x40` and
+`0xe942` = its `^0x40` twin are the two owner masks (`:13120-13122`). `0xe94c` is the AI's
+**spare-action counter**, set at setup from the level: `e94c = level*2 - 4` when `level > 1`
+(`:13232`, again `:15158`).
+
+## A1. Call graph of one AI pass
+
+`FUN_1000_01da` (`1000:01da`, `:93-130`) is the tick hook:
+
+```
+105:  if ((param_1 & 1) && 1 < *(int *)0x1a0 && *(int *)0x3e87 == 0 && film/pause gates)
+115:      ai_command_process(local_4);        // per unit, 0..99
+        ...
+        FUN_107e_0bd6();                    // the AI turn itself
+```
+
+* **Level 1 never enters this block.** The gate is `1 < 0x1a0`, so `SGT. STAN STIL` issues no AI
+  orders at all — the name is the behaviour ("stand still"). Everything below is level 2..5.
+* `ai_command_process` = `FUN_107e_4616 @ 107e:4616` (`:3683`): per-piece housekeeping — finish a
+  half-move, re-order a piece whose order word lost its target, garrison a unit that arrived.
+* `FUN_107e_0bd6 @ 107e:0bd6` (`:1127`) is the turn: pick the lowest-score site and act, then
+  hand the rest of the budget to combat and purchasing (see A4).
+
+## A2. Buying units
+
+### A2.1 The site defender — `FUN_107e_1612 @ 107e:1612`
+
+Already in §3 above. One correction/addition from the level map: the "buy at a garrisoned site"
+shortcut is gated `*(int *)0x1a0 < 5` (`:1632`), so **MARS (level 5) is the one level that cannot
+use that shortcut** and must pass the movement-cost test. **UNVERIFIED** why; the branch is real
+and one byte wide.
+
+### A2.2 The purchase pass — `FUN_107e_3bd0 @ 107e:3bd0` (`ai_turn_process`, `:3234`)
+
+Called from `:1217` as `ai_turn_process(3 - local_c)`: at most `3 - actions_used` purchases per
+turn, and it returns early on the first unaffordable/failed one.
+
+Copy of the money it works in (`:3262`):
+
+```
+uVar2 = money[side] / 0x28;                 // 40-unit price steps, 0x148e + side*2
+```
+
+Base threshold `local_a` (`:3255`): `0x1e` = 30. For **era 0 (1918)** and **era 4 (????)** it drops
+to `10` while the round counter `0x1476 < 0x1e` (30), else `20` (`:3256-3263`); `uVar2 < local_a`
+returns without buying.
+
+Then, for eras **2 (1986) and 3 (2023)** only (`:3287`), a second decision picks the unit class
+`local_6`:
+
+```
+local_26 = byte[0xc3b6]; local_8 = local_26 + byte[0xc3b7];
+share    = local_26*100 / local_8;          // 0xc3b6 share of 0xc3b7
+if (byte[0xe934] < share || byte[0xc3b7]*4/3 < byte[0xc3ba]) {
+    r = rand() & 0xff;
+    local_6 = (r < 0x20) + (r < 0x80) + 2;   // 2, 3 or 4
+    if (local_6 > 3 && era == 0) local_6 = 3;
+    if (uVar2 < price[local_6]) return;      // 0x2e16 + class
+}
+```
+
+`0xc3b6/0xc3b7/0xc3ba/0xe934` are a strength/ownership score (four byte counters); **UNVERIFIED**
+which count is which. What is decoded is the shape: **the AI buys a heavier class (2/3/4, price
+bytes 10/20/20) when its share score is below a stored bar or when `0xc3ba` says the other side is
+ahead; the random roll weights it 2 (1/8), 3 (3/8), 4 (1/2).**
+
+Site choice, still era 2/3 (`:3288-3312`): it walks a 10-entry table at `0xf54`.
+
+* It counts own sites (`local_c`) and enemy sites (`local_e`) among those 10 entries; if
+  `local_c < local_8/20` (own holdings under 5%), it calls `FUN_107e_54b0` — a random own site with
+  a free unit slot — buys **class 6** there.
+* Else, if `film_mode==0 && local_e != 0 && local_c <= local_e && rand() < 0x10`, it buys **class
+  7** and takes its coordinates from `byte[0xf36+slot]<<1` / `byte[0xf40+slot]<<1`. **UNVERIFIED**
+  what those two 10-byte arrays are (candidate: forward staging coordinates); class 7 is created
+  off-site, which looks like a paradrop/air insertion rather than a shop buy.
+
+The create call for every class is the same engine primitive as the defender:
+`render_sprite(5, class, 0, x, y)` (`:3317`), charged
+`price[class] * -0x28` through `FUN_23aa_0cba` (`:3319`). If the queue is used instead (classes
+0..5), it builds a mission queue over own unit slots (`0x1102 & 0xc0 == e942`, order word `0xcb46
+< 0xfd`, garrison flag `0x10ae`) and `select_next_mission` (`:3337`) returns the destination; the
+unit is created with `FUN_107e_40a8` (`:3352`).
+
+### A2.3 What the level changes here
+
+`0xe94c` (spare actions) is the only direct level input in this function: a successful buy either
+records its cell (when `e94c == 0`) or decrements `e94c` (`:3356-3361`). With `e94c = level*2 - 4`,
+the budget is **0 / 2 / 4 / 6 extra purchases** for levels 2 / 3 / 4 / 5. Level 1 does not run the
+pass at all. There is **no per-level price or unit-class table** — the class mix is era-driven, not
+difficulty-driven.
+
+## A3. Picking targets
+
+### A3.1 Land: `calculate_combat @ 107e:4266` (`:3518`)
+
+For each own site with a **positive** score (`0xea6e > 0x27` = 39, `:3567`):
+
+1. `FUN_107e_45a8(site, 0x1e)` (`:3589`) finds the nearest enemy site with movement value
+   `< 30` (`0x1e`) and records that value at `0xc3b4`.
+2. It caps the attack radius score at `min(0xf, value*3/2)` (`:3590-3594`).
+3. It reads the site's garrison byte `0xe6da`, scales it `*2/3` (floor 2), and compares the
+   **friendly** strength (`sum strength/25` over pieces within range, `:3610-3620`) with the
+   **hostile** strength. The attack only proceeds when `0xb < local_e - local_14` — i.e. **the
+   friendly strength score must exceed the hostile score by more than 11** (`:3625`).
+4. It then queues every adjacent enemy site whose matrix entry `<= local_c` and whose garrison
+   difference `2*(enemy_mod - friendly_mod) <= local_e`, with priority
+   `value + local_e*-2 + diff*4` (`:3631-3640`).
+
+In plain words: **the AI attacks a site only when it has a decoded local strength advantage of
+more than 11 strength-units (11 x 25 = 275 raw strength), toward the nearest enemy site within 30
+cells, and it prefers sites with a larger margin.** This is a force-ratio attack, not a nearest-enemy
+attack.
+
+### A3.2 Ships and air: `select_combat_targets @ 107e:4c1c` (`:3911`)
+
+```
+for each own piece with kind nibble > 4 and ammo/flag bit (0xc46 & 7) != 0:
+    for each enemy piece with kind nibble > 6:
+        if calculate_damage(enemy, own, 10000) != 0xff:
+            queue (enemy cell, 0, own piece)
+```
+
+Then `select_next_mission` picks the best-scoring entry and orders the attacker onto the target's
+cell with order `target | 0x1080` (`:3953-3958`). The `kind > 4` gate restricts this pass to the
+naval/air kinds (per the 9-byte class table at `0x1a01`, kinds 5..9 map to classes 1..5), and
+`kind > 6` restricts valid *targets* to the same upper bands: **ships/air are ordered at ships/air,
+not at infantry.** `0x1080` is "move + attack" in the order word.
+
+`calculate_damage @ 107e:4b94` (`:3876`) is the range/type gate documented in `COMBAT.md`; the
+`0xff` return is "out of range".
+
+### A3.3 Invasion and merge passes
+
+`FUN_107e_251c @ 107e:251c` (`:2223`) queues **undefended enemy sites** (`e814 & 0xf2 == 0`, no
+garrison unit `0xcb46 > 0xfc`) that are within `0xc704` of one of our transports, scoring them with
+`FUN_107e_0fa4(site, 2, force_delta)` and issuing `FUN_107e_2696(..., 1)` (load/embark) for the
+best. This is the amphibious expansion pass, and it only runs when `0x157e` (the round clock) is
+below 2000 (`:1243`).
+
+`FUN_107e_1ace @ 107e:1ace` (`:1785`) merges a stationary friendly piece onto an adjacent friendly
+piece of the same class when the neighbour is at `>= 0x50` strength or carries the `0x80` flag —
+the stack/merge rule.
+
+## A4. Defending the capital
+
+* **The capital is the AI's 25-cell site.** At setup the two starting capitals are written from a
+  per-era table `0x1bbe + era + side*3` into `0x146a[side]` (`:13160-13167`), with their
+  coordinates at `0x1462`/`0x1466`. At the top of every AI turn
+  `0xe47e = byte[0x146a + (human_side==0)*2]` (`:1147`) — **the AI's own capital**.
+* The score routine `FUN_107e_0fa4` gives that one flagged site a radius of **25** cells, versus
+  **20** for other own cities/bases and **15** for everything else (`:1352-1359`, already §2). So a
+  hostile piece is seen as a threat to the capital from 5-10 cells farther away than to any other
+  site.
+* The response is the same sign test: a negative score at the capital makes `FUN_107e_1612` buy a
+  defender there (if affordable and there is a free slot) and `FUN_107e_1750` send the **nearest**
+  idle combat unit within `8 < d^2 <= 2500` (`:1687-1778`). Neither routine has a capital-specific
+  branch; the radius is the whole capital rule. If no unit is within 50 cells, nothing is sent.
+* Extra capital hardening with level: levels 2..4 can buy at a garrisoned site (`0x1a0 < 5`), and
+  level 1 never acts. **UNVERIFIED**: whether the `0xe47e` flag does anything else (it is only read
+  by the score routine in this export).
+
+## A5. The five opponents, side by side
+
+| Level | Name | AI pass (`1 < 0x1a0`) | Spare purchases `0xe94c` | Other decoded differences |
+|---|---|---|---|---|
+| 1 | SGT. STAN STIL | no — never acts | n/a | none; passive |
+| 2 | CAP. LUKE WARM | yes | 0 | baseline |
+| 3 | COL. BUCK ZEAL | yes | 2 | round timer branch for solo play is off above level 1 (`:11319`) |
+| 4 | GEN. WIN MOORE | yes | 4 | extra production pass `FUN_107e_065c` on unit arrival (`:9202`) |
+| 5 | MARS GOD OF WAR | yes | 6 | loses the garrison-shortcut buy (`:1632`); extra production in `FUN_1eb5_156a` (`:12378`) |
+
+Everything else the AI does — the score, the threat radius, the force-ratio attack, the merge, the
+amphibious pass — is **identical across levels 2-5**. The difficulty axis is *how many actions it
+gets*, not a different strategy table. That is the finding the port has to respect: a port that
+gives all four opponents the same action budget and calls them different levels is not faithful.
+
+`0x1a0` also gates presentation/non-AI code (turn banners, the `0x157e` clock for level 1, the
+`3e87` delay), so do not port `0x1a0` as "difficulty" into anything but the action budget without
+reading the site.
+
+## A6. Starting money (manual p.17)
+
+Manual p.17, "Starting Money": *"For all scenarios, you are allowed to adjust the amount of money
+with which your opponent begins the game. This can be useful as a handicapping device."* It is a
+**player-set spinner, not a per-level table** — there is no bytes-side opponent cash table in the
+setup code. The per-side money word is `0x148e + side*2` (40-unit price steps, `:3262`), and the
+setup passes the chosen amount through `FUN_1eb5_000c(0x11, side, hi, lo, 0)` (`:13280`). The port
+therefore adds a lobby control that writes the opponent's starting money; difficulty must not
+silently change it.
+
+## A7. Status
+
+* **DECODED**: the global identity (`0x19e`=era, `0x1a0`=level), the menu order and the five
+  names, the AI-pass gate, the spare-action formula, the purchase money gate and class roll, the
+  force-ratio attack threshold, the ship/air target classes, the capital radius, the merge and the
+  amphibious passes.
+* **UNVERIFIED**: the four ownership counters `0xc3b6/b7/ba/e934`; the two 10-byte arrays
+  `0xf36/0xf40`; why level 5 is excluded from the garrison buy; whether `0xe47e` is used elsewhere.
+* Part B ports the decoded logic; Part C measures it. Any value we tune is recorded as a
+  deliberate deviation in the ticket, not in this file.
