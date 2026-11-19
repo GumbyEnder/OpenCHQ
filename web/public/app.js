@@ -1188,6 +1188,14 @@ function syncGameButtons() {
   syncSpeed();
 }
 
+// PB-147: the Buy control carries the match's own state. A finished match has nothing to sell, so the
+// button is disabled on the over frame and enabled again by the next match; the click path, the panel
+// row and this control all read the same room.over byte, so the control cannot offer what they refuse.
+function syncBuyNav() {
+  const button = document.querySelector('.navbtn[data-dialog="buy"]');
+  if (button) button.disabled = Boolean(room && room.over);
+}
+
 clockBtn?.addEventListener("click", () => {
   if (!room) return;
   send({ op: room.clock === "running" ? "hold" : "run" });
@@ -1249,6 +1257,7 @@ function renderRoom() {
   // or leaves a match: a purchase changes the purse, and a run/hold changes the button.
   syncShell();
   syncGameButtons();
+  syncBuyNav();
   if (document.body.classList.contains("in-match") !== Boolean(room)) syncShell();
   else {
     const info = document.getElementById("stripInfo");
@@ -1264,6 +1273,10 @@ function renderRoom() {
     if (!overCleared) {
       overCleared = true;
       clearCommand();
+      // PB-147: an open Buy panel closes with the result. Leaving it up would list units whose row
+      // click arms a purchase the server refuses. closeDialog() only paints the panel; it writes no
+      // result text, so #result (PB-137 AC4) stays untouched.
+      if (openDialogId === "buy") closeDialog();
     }
   } else {
     overCleared = false;
@@ -1672,6 +1685,10 @@ function openDialog(id) {
     say("Start a match first.");
     return;
   }
+  // PB-147: a finished match sells nothing. The click path already refuses the order, so an armed row
+  // would offer a purchase that can never land. The refusal is a silent return: 7285 says the refusal
+  // surface does not widen, and a disabled control is its own explanation.
+  if (id === "buy" && room.over) return;
   openDialogId = dialogAfter(openDialogId, { type: "open", id });
   paintDialog();
 }
@@ -1728,6 +1745,10 @@ const DIALOG_PAINTERS = {
           ? "highlighted docks, or a coastal city or base"
           : "highlighted cities or bases") + ".";
         line.addEventListener("click", () => {
+          // PB-147: the over frame can land between the panel's paint and this click. Arming here
+          // would put a placement frame on the wire for a match that takes none, so the row reads the
+          // same byte as the click path. Silent: no new refusal sentence (7285).
+          if (room && room.over) return;
           buying = row.kind;
           selected = null;
           preview = null;
@@ -1977,6 +1998,9 @@ function paintDialog() {
   if (!panel || !body) return;
   for (const button of document.querySelectorAll(".navbtn")) {
     button.classList.toggle("armed", button.dataset.dialog === openDialogId);
+    // PB-147: the Buy control is disabled while the match is over, and enabled again by the next
+    // match. The panel repaint carries the same rule as renderRoom, so a close and a frame agree.
+    if (button.dataset.dialog === "buy") button.disabled = Boolean(room && room.over);
   }
   if (!room) openDialogId = dialogAfter(openDialogId, { type: "refresh", room: false });
   if (!openDialogId) {
