@@ -943,6 +943,16 @@ function screenPoint(event) {
 const WHEEL_GESTURE_GAP = 250; // ms without a notch that ends a gesture
 let wheelGesture = { surface: "", at: -Infinity, scroller: null };
 
+// The last notch, as this page saw it: which element it was hit-tested against, its client point,
+// and the surface the gesture latched to. The debug window prints it (PB-148) so a hand check that
+// sees the camera move can read whether the notch targeted the canvas or a panel.
+let lastWheel = null;
+
+function wheelTargetName(node) {
+  if (!(node instanceof Element)) return "?";
+  return node.id || node.tagName;
+}
+
 function wheelScroller(node) {
   let el = node instanceof Element ? node : null;
   while (el && el !== document.documentElement) {
@@ -979,6 +989,13 @@ window.addEventListener("wheel", (event) => {
       : { surface: "panel", at: now, scroller: wheelScroller(event.target) };
   }
   wheelGesture.at = now;
+  lastWheel = {
+    target: wheelTargetName(event.target),
+    x: event.clientX,
+    y: event.clientY,
+    surface: wheelGesture.surface,
+  };
+  renderDebug();
   if (wheelGesture.surface === "board") {
     event.preventDefault(); // a map gesture never scrolls a panel it drifts over
     zoomAtCursor(event);
@@ -1697,6 +1714,7 @@ function renderDebug() {
     },
     room,
     camera: camera ? { scale: Math.max(1, Math.round(camera.scale / dpr())), follow: following } : null,
+    wheel: lastWheel,
     pointer: pointerCell,
     selected,
   });

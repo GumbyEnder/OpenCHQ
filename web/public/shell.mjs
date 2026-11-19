@@ -79,6 +79,11 @@ export function debugRows(state = {}) {
   rows.push(["camera", camera
     ? String(camera.scale) + " px/cell" + (camera.follow ? " · following" : " · free")
     : "—"]);
+  // The last wheel notch exactly as this page hit-tested it (PB-148): the element the notch was
+  // targeted at, the page's own client point, and the surface the gesture latched to. A wheel event
+  // is hit-tested per notch, so a notch whose target is a panel never reaches the camera; this row
+  // is what tells a hand check which of the two it got. Display-only, and absent until a notch.
+  if (state.wheel) rows.push(["wheel", wheelText(state.wheel)]);
   // Where the pointer is and where the selection stands, both in board cells. A hand check that
   // cannot say which cell it is pointing at argues "the badge is on the wrong cell" from a
   // screenshot; these two rows make it a number both sides read off the same panel (PB-130).
@@ -110,3 +115,18 @@ function cellText(target) {
   const y = Number(target.y);
   return Number.isInteger(x) && Number.isInteger(y) ? x + "," + y : "";
 }
+
+// The last wheel notch on one line: "<target> <clientX,clientY> <latched surface>". The target is
+// the element's id when it has one (a panel's `dialogTitle`) and its tag name otherwise (`LI`), which
+// is how a browser reports it and how a hand check names it. A notch that carried no point reads
+// `?,?` rather than an invented 0,0, and a gesture with no surface yet reads an em dash.
+function wheelText(notch) {
+  if (!notch) return "";
+  const target = notch.target ? String(notch.target) : "?";
+  const x = Math.round(Number(notch.x));
+  const y = Math.round(Number(notch.y));
+  const at = Number.isFinite(x) && Number.isFinite(y) ? x + "," + y : "?,?";
+  const surface = notch.surface ? String(notch.surface) : "—";
+  return target + " " + at + " " + surface;
+}
+
