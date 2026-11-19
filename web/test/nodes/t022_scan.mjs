@@ -8,7 +8,7 @@ import {
   fitViewport, paintMatch, paintScanBar, paintScanShade, scanVisiblePieces,
 } from "../../public/render.mjs";
 import { SCAN, scanAddPieces, scanCovers, scanKeepsAcrossRound, scanSpec, scanState } from "../../public/scan.mjs";
-import { openMatch } from "../../server/match.mjs";
+import { ERAS, openMatch } from "../../server/match.mjs";
 import { toolsForEra, useTool } from "../../server/late.mjs";
 import { millionsPerBillion, priceOf, rules } from "../../server/rules.mjs";
 
@@ -219,15 +219,27 @@ export async function run() {
 
   // --- AC4: the tool is offered only where the manual puts it, at the recovered price, and it
   // --- touches neither a unit's position nor an owner (T-022 card AC4; room 7639).
-  for (const era of ["1918", "1942"]) {
-    ok(!toolsForEra(era).includes("intel"), era + " offers the intel scan");
+  // "Only 1986 and 2023" is swept over every era the match accepts, not just the two historical
+  // ones. 9999 is the concealed start: config gives it the 1986 kit (labelled UNVERIFIED), so it
+  // is named here rather than left as an untested hole in the word "only".
+  const INTEL_ERAS = ["1986", "2023"];
+  for (const era of ERAS) {
+    const offered = toolsForEra(era).includes("intel");
+    const expected = era === "9999" ? true : INTEL_ERAS.includes(era);
+    ok(offered === expected,
+      "intel is offered in " + era + " = " + offered + "; the manual puts it in 1986/2023 only" +
+        " (9999 concealed carries the 1986 kit)");
   }
-  for (const era of ["1986", "2023"]) {
-    ok(toolsForEra(era).includes("intel"), era + " does not offer the intel scan");
-  }
-  ok(rules().prices.intelScan === 10, "the config price is not the manual's 10 (" + rules().prices.intelScan + ")");
+  ok(ERAS.includes("1986") && ERAS.includes("2023"), "the sweep covered the two eras that sell intel");
+  ok(rules().prices.intelScan === 10, "the config price is not the manual's 10 (p.28, DS:0x2E16): " + rules().prices.intelScan);
   ok(priceOf("intelScan") === 10 * millionsPerBillion(),
-    "the charged price is not 10 billion (" + priceOf("intelScan") + " million)");
+    "the charged price is not 10 billion (p.28, DS:0x2E16): " + priceOf("intelScan") + " million");
+
+  // A closed era refuses the use itself, not just the bar entry.
+  const closed = openMatch("1942", []);
+  closed.pieces = [{ id: "red:sea", side: "red", domain: "sea", kind: "submarine", x: 200, y: 100 }];
+  closed.sides.blue.cash = 50000;
+  ok(useTool(closed, "blue", "intel").error, "intel was accepted in 1942 by useTool, not only hidden from the bar");
 
   const tool = openMatch("1986", []);
   tool.clock = "running";
@@ -246,8 +258,13 @@ export async function run() {
   const owners = () => JSON.stringify(tool.sites.map((s) => [s.id, s.owner]));
   const unitsBefore = unitBoard();
   const ownersBefore = owners();
+  const cashBefore = tool.sides.blue.cash;
   const scanUse = useTool(tool, "blue", "intel");
   ok(!scanUse.error, "intel was refused in 1986: " + scanUse.error);
+  ok(cashBefore - tool.sides.blue.cash === 10 * millionsPerBillion(),
+    "the intel scan charged " + (cashBefore - tool.sides.blue.cash) + " million, not 10 billion");
+  ok(scanUse.events.some((e) => e.type === "intel" && e.cost === 10 * millionsPerBillion()),
+    "the intel event does not report the manual's 10 billion cost");
   ok(unitBoard() === unitsBefore, "the intel scan moved a unit");
   ok(owners() === ownersBefore, "the intel scan changed an owner");
   ok(tool.pieces.filter((p) => p.side === "red").every((p) => p.revealedRound === tool.round),
