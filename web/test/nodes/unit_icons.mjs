@@ -110,11 +110,11 @@ export async function run() {
   }
   eq("twelve distinct silhouettes", signatures.size, 12);
 
-  // --- side is colour AND frame geometry ----------------------------------------------
+  // --- side is colour AND coin geometry (T-020: circle vs pointed hex) ----------------
   const blueFrame = framePolygon("blue");
   const redFrame = framePolygon("red");
-  eq("blue is a square", blueFrame.length, 4);
-  eq("red cuts its corners", redFrame.length, 8);
+  ok("blue is a circle", blueFrame.length >= 24);
+  eq("red is a pointed hex", redFrame.length, 6);
   ok("the two frames are not the same polygon", JSON.stringify(blueFrame) !== JSON.stringify(redFrame));
   ok("the sides differ in colour", BADGE_SIDE.blue.frame !== BADGE_SIDE.red.frame);
   ok("the interiors differ by domain", BADGE_INTERIOR.land !== BADGE_INTERIOR.sea &&
@@ -124,12 +124,13 @@ export async function run() {
     eq("the interior keeps the frame's point count on " + side, inset.length, framePolygon(side).length);
     eq("the selected ring keeps it too on " + side, selectedRing(side).length, framePolygon(side).length);
     ok("the interior sits inside the frame on " + side,
-      Math.abs(inset[0][0] - 12) < Math.abs(framePolygon(side)[0][0] - 12));
+      inset.every(([x, y]) => Math.hypot(x - 12, y - 12) < Math.hypot(framePolygon(side)[0][0] - 12, framePolygon(side)[0][1] - 12)));
   }
   for (const side of ["blue", "red"]) {
     const svg = badgeSvg({ kind: "tank", side, px: 24 });
-    ok("blue svg is a square polygon", side !== "blue" || svg.includes('points="3,3 21,3 21,21 3,21"'));
-    ok("red svg is the chamfered polygon", side !== "red" || svg.includes('points="7,3 17,3 21,7 21,17 17,21 7,21 3,17 3,7"'));
+    const polys = [...svg.matchAll(/points="([^"]+)"/g)].map((m) => m[1].split(" "));
+    ok("the " + side + " svg starts with the coin rim", polys[0].length === framePolygon(side).length);
+    ok("the " + side + " svg draws the coin face", polys[1].length === framePolygon(side).length);
   }
   ok("blue and red differ beyond hue", badgeSvg({ kind: "tank", side: "blue" }) !==
     badgeSvg({ kind: "tank", side: "red" }));
@@ -238,18 +239,18 @@ export async function run() {
   const drew = paintBadge(drawn.ctx, badgeGroups([piece({ id: "hit" })], 4)[0], view, { badgeMinPx: 14 });
   ok("paintBadge reports the badge it drew", drew && drew.kind === "infantry" && drew.size === 14 &&
     drew.side === "blue" && drew.count === 1);
-  ok("the frame is painted in the side's colour", drawn.fills.includes(BADGE_SIDE.blue.frame));
-  ok("the interior is painted for the domain", drawn.fills.includes(BADGE_INTERIOR.land));
-  ok("the silhouette is painted in the side's dark", drawn.fills.includes(BADGE_SIDE.blue.dark));
+  ok("the coin's rim is painted", drawn.fills.includes(BADGE_SIDE.blue.rim));
+  ok("the coin's face is the side's colour", drawn.fills.includes(BADGE_SIDE.blue.frame));
+  ok("the silhouette is painted white", drawn.fills.includes(BADGE_SIDE.blue.silhouette));
   ok("the strength bar is painted", drawn.fillsRect.some((r) => r.color === "#2f9e44"));
-  const framePath = drawn.paths.find((path) => path.length >= 4 && path.some((op) => op[0] === "Z"));
-  ok("the frame path is closed", Boolean(framePath));
+  const framePath = drawn.paths[1];
+  ok("the coin face path is closed", Boolean(framePath && framePath.some((op) => op[0] === "Z")));
   const frameBox = pathBox(framePath);
-  eq("the frame is 18/24 of a 14 px badge", [Math.round(frameBox.w), Math.round(frameBox.h)], [11, 11]);
+  eq("the coin face is 18.4/24 of a 14 px badge", [Math.round(frameBox.w), Math.round(frameBox.h)], [11, 11]);
   const small = recorder();
   paintBadge(small.ctx, badgeGroups([piece({ id: "small" })], 1)[0], makeView({ scale: 1 }), { badgeMinPx: 14 });
-  const smallBox = pathBox(small.paths.find((path) => path.length >= 4 && path.some((op) => op[0] === "Z")));
-  eq("a 1 px cell still draws an 11 px frame, not a 3x3 block", [Math.round(smallBox.w), Math.round(smallBox.h)], [11, 11]);
+  const smallBox = pathBox(small.paths[1]);
+  eq("a 1 px cell still draws an 11 px coin face, not a 3x3 block", [Math.round(smallBox.w), Math.round(smallBox.h)], [11, 11]);
 
   // The page's path: the sprite cache paints the static half once and the frame blits it.
   const blit = recorder();
@@ -260,16 +261,17 @@ export async function run() {
   eq("a blitted badge does not repaint the frame as paths", blit.fills.length, 0);
   const spriteDrawn = recorder();
   eq("the sprite painter fills the badge box", renderBadgeSprite(spriteDrawn.ctx, { kind: "tank", side: "red", size: 28 }), 28);
-  ok("the sprite carries the red frame", spriteDrawn.fills.includes(BADGE_SIDE.red.frame));
-  ok("the sprite carries the land interior", spriteDrawn.fills.includes(BADGE_INTERIOR.land));
-  ok("the sprite carries the silhouette", spriteDrawn.fills.includes(BADGE_SIDE.red.dark));
-  eq("the sprite's frame is drawn at the canvas origin",
-    Math.round(pathBox(spriteDrawn.paths.find((path) => path.some((op) => op[0] === "Z"))).w), 21);
+  ok("the sprite carries the red rim", spriteDrawn.fills.includes(BADGE_SIDE.red.rim));
+  ok("the sprite carries the red face", spriteDrawn.fills.includes(BADGE_SIDE.red.frame));
+  ok("the sprite carries the white silhouette", spriteDrawn.fills.includes(BADGE_SIDE.red.silhouette));
+  eq("the sprite's face is drawn at the canvas origin",
+    Math.round(pathBox(spriteDrawn.paths[1]).w), 19);
 
   const red = recorder();
   paintBadge(red.ctx, badgeGroups([piece({ side: "red" })], 4)[0], view, {});
   ok("the red badge uses the red frame", red.fills.includes(BADGE_SIDE.red.frame));
   ok("the red badge does not use the blue frame", !red.fills.includes(BADGE_SIDE.blue.frame));
+  ok("the red badge uses the red rim", red.fills.includes(BADGE_SIDE.red.rim));
 
   const many = recorder();
   const groups = paintPieces(many.ctx, crowd, view, {});

@@ -40,13 +40,16 @@ export const BADGE_MIN_PX = 14;
 // a badge sits where the block used to.
 export const BADGE_CELLS = 3;
 
-// The sides. `frame` is the badge body, `dark` the silhouette, `ink` the hairline that keeps a dark
-// hull legible on dark water.
+// The sides, as tokens (T-020 / D-023). `rim` is the thick edge of the coin, `frame` its face,
+// `silhouette` the white type mark, `ink` the hairline that holds the coin against dark water.
+// The side is carried by SHAPE as well as colour: blue is a circle, red is a pointed hex.
 export const BADGE_SIDE = Object.freeze({
-  blue: Object.freeze({ frame: "#1b3f8f", dark: "#0000aa", ink: "#08122b", frameShape: "square" }),
-  red: Object.freeze({ frame: "#8f1b1b", dark: "#aa0000", ink: "#2b0808", frameShape: "chamfered" }),
+  blue: Object.freeze({ frame: "#1b3f8f", rim: "#7fa7ff", silhouette: "#ffffff", ink: "#08122b", frameShape: "circle" }),
+  red: Object.freeze({ frame: "#8f1b1b", rim: "#ff8f7a", silhouette: "#ffffff", ink: "#2b0808", frameShape: "pointedHex" }),
 });
 
+// The light inks the board uses under a badge (the city tick's rim). Kept so the token's dark face
+// does not change what the site tick draws.
 export const BADGE_INTERIOR = Object.freeze({
   land: "#f2f5fb",
   sea: "#cfe3f6",
@@ -192,13 +195,33 @@ export const BADGE_SILHOUETTE = Object.freeze({
 
 // ---- frame geometry -------------------------------------------------------------------------
 
-// The badge body, as a polygon. Blue is a square; red has its corners cut, and that cut is the whole
-// point: it is the cue that survives a grayscale screen or a player who cannot separate the hues.
+// The coin's face, as a polygon (T-020 / D-023). Blue is a 32-gon inscribed in a circle - a circle
+// at every size this draws at, 14 px up; red is a pointed hex with its points on the vertical axis,
+// which is the silhouette that still reads as "not a circle" in grayscale. The vertex count itself
+// is the colour-blind cue: 32 vs 6.
 export function framePolygon(side) {
-  const loop = side === "red"
-    ? [[7, 3], [17, 3], [21, 7], [21, 17], [17, 21], [7, 21], [3, 17], [3, 7]]
-    : [[3, 3], [21, 3], [21, 21], [3, 21]];
-  return loop.map(([x, y]) => [x, y]);
+  if (side === "red") {
+    return [[12, 2.8], [20.2, 7.4], [20.2, 16.6], [12, 21.2], [3.8, 16.6], [3.8, 7.4]];
+  }
+  const points = [];
+  for (let i = 0; i < 32; i += 1) {
+    const t = (i / 32) * Math.PI * 2 - Math.PI / 2;
+    points.push([12 + Math.cos(t) * 9.2, 12 + Math.sin(t) * 9.2]);
+  }
+  return points;
+}
+
+// The coin's thick edge: the same shape, scaled a little further out, so the face sits on a rim and
+// the token reads as a coin rather than a flat cut-out. Same point count as the face, so the rim can
+// never disagree about the side's shape.
+export function rimPolygon(side, thickness = 1.15) {
+  const face = framePolygon(side);
+  return face.map(([x, y]) => {
+    const dx = x - 12;
+    const dy = y - 12;
+    const len = Math.hypot(dx, dy) || 1;
+    return [x + (dx / len) * thickness, y + (dy / len) * thickness];
+  });
 }
 
 // The same polygon shrunk by `inset`, for the interior. Scaling about the centre keeps the chamfer
@@ -380,9 +403,9 @@ function round(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
-function svgShape(shape, side, interior) {
-  const fill = shape.invert ? interior : BADGE_SIDE[side].dark;
-  const stroke = shape.strokeOnly ? BADGE_SIDE[side].dark : "none";
+function svgShape(shape, side, face) {
+  const fill = shape.invert ? face : BADGE_SIDE[side].silhouette;
+  const stroke = shape.strokeOnly ? BADGE_SIDE[side].silhouette : "none";
   const common = `fill="${shape.strokeOnly ? "none" : fill}" stroke="${stroke}"`;
   if (shape.t === "rect") {
     return `<rect x="${round(shape.x)}" y="${round(shape.y)}" width="${round(shape.w)}" height="${round(shape.h)}" rx="${round(shape.r)}" ${common}${shape.strokeOnly ? ' stroke-width="1.5"' : ""}/>`;
@@ -397,7 +420,7 @@ function svgShape(shape, side, interior) {
     return svgPoly(shape.pts, common);
   }
   const dash = shape.dash ? ` stroke-dasharray="${shape.dash.join(",")}"` : "";
-  return `<line x1="${round(shape.x1)}" y1="${round(shape.y1)}" x2="${round(shape.x2)}" y2="${round(shape.y2)}" stroke="${BADGE_SIDE[side].dark}" stroke-width="${round(shape.w)}" stroke-linecap="round"${dash}/>`;
+  return `<line x1="${round(shape.x1)}" y1="${round(shape.y1)}" x2="${round(shape.x2)}" y2="${round(shape.y2)}" stroke="${BADGE_SIDE[side].silhouette}" stroke-width="${round(shape.w)}" stroke-linecap="round"${dash}/>`;
 }
 
 /**
@@ -411,11 +434,10 @@ export function badgeSvg({
   stack = 0, px = 24, transport = false, title = "",
 } = {}) {
   const s = BADGE_SIDE[side] || BADGE_SIDE.blue;
-  const domain = transport ? "sea" : (BADGE_DOMAIN[kind] || "land");
-  const interior = BADGE_INTERIOR[domain] || BADGE_INTERIOR.land;
+  const face = s.frame;
   const shapes = badgeSilhouette(kind, transport) || UNKNOWN_SILHOUETTE;
+  const rim = rimPolygon(side);
   const frame = framePolygon(side);
-  const inner = insetPolygon(frame, 0.9);
 
   const marks = [];
   const band = strengthBand(state === "damaged" ? 55 : state === "hurt" ? 30 : state === "critical" ? 10 : 100, 100);
@@ -443,9 +465,9 @@ export function badgeSvg({
 
   const height = entrenched || bar ? 28 : 26;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 ${height}" width="${px}" height="${round(px * height / 24)}" shape-rendering="geometricPrecision" role="img"${title ? ` aria-label="${title.replace(/"/g, "'")}"` : ""}>
-    ${svgPoly(frame, `fill="${s.frame}" stroke="${s.ink}" stroke-width="1"`)}
-    ${svgPoly(inner, `fill="${interior}"`)}
-    <g>${shapes.map((shape) => svgShape(shape, side, interior)).join("")}</g>
+    ${svgPoly(rim, `fill="${s.rim}" stroke="${s.ink}" stroke-width="0.9"`)}
+    ${svgPoly(frame, `fill="${face}"`)}
+    <g>${shapes.map((shape) => svgShape(shape, side, face)).join("")}</g>
     ${bar}
     ${marks.join("\n    ")}
   </svg>`;

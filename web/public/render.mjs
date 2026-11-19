@@ -11,7 +11,7 @@ import { DEFAULT_THEME, terrainInk, themeById } from "./themes.mjs";
 import { textBitmap } from "./font.mjs";
 import {
   BADGE_INTERIOR, BADGE_MIN_PX, BADGE_SIDE, BADGE_UNIT, badgeForPiece, badgeGroups,
-  badgePx, badgeState, framePolygon, insetPolygon, selectedRing, showsEntrench, strengthBand,
+  badgePx, badgeState, framePolygon, rimPolygon, selectedRing, showsEntrench, strengthBand,
 } from "./badges.mjs";
 
 export const BOARD_W = 320;
@@ -719,18 +719,20 @@ function shapePath(ctx, shape, x0, y0, k) {
 // offscreen canvas and blits it. The chrome below (bars, ring, dashes, burst, disc) changes per
 // piece and stays per-frame. A caller with no offscreen canvas - the node harness - passes no cache
 // and gets this path painter, which is the same geometry the sprite was made from.
-function paintBadgeBody(ctx, x0, y0, k, side, spec, interior) {
+function paintBadgeBody(ctx, x0, y0, k, side, spec, face) {
   const palette = BADGE_SIDE[side];
+  const rim = rimPolygon(side);
   const frame = framePolygon(side);
-  polygonPath(ctx, frame, x0, y0, k);
-  ctx.fillStyle = palette.frame;
+  // The thick edge first, then the face on top of it: the band of rim left showing is the coin.
+  polygonPath(ctx, rim, x0, y0, k);
+  ctx.fillStyle = palette.rim;
   ctx.fill();
   ctx.strokeStyle = palette.ink;
   ctx.lineWidth = Math.max(1, k * 0.9);
   ctx.stroke();
 
-  polygonPath(ctx, insetPolygon(frame, 0.9), x0, y0, k);
-  ctx.fillStyle = interior;
+  polygonPath(ctx, frame, x0, y0, k);
+  ctx.fillStyle = face;
   ctx.fill();
 
   for (const shape of spec.silhouette) {
@@ -738,15 +740,15 @@ function paintBadgeBody(ctx, x0, y0, k, side, spec, interior) {
       ctx.beginPath();
       ctx.moveTo(x0 + shape.x1 * k, y0 + shape.y1 * k);
       ctx.lineTo(x0 + shape.x2 * k, y0 + shape.y2 * k);
-      ctx.strokeStyle = palette.dark;
+      ctx.strokeStyle = palette.silhouette;
       ctx.lineWidth = Math.max(1, shape.w * k);
       ctx.stroke();
       continue;
     }
     shapePath(ctx, shape, x0, y0, k);
-    ctx.fillStyle = shape.invert ? interior : palette.dark;
+    ctx.fillStyle = shape.invert ? face : palette.silhouette;
     if (shape.strokeOnly) {
-      ctx.strokeStyle = palette.dark;
+      ctx.strokeStyle = palette.silhouette;
       ctx.lineWidth = Math.max(1, k * 1.5);
       ctx.stroke();
     } else {
@@ -766,7 +768,7 @@ export function renderBadgeSprite(ctx, { kind = "infantry", side = "blue", trans
     transport, domain: transport ? "sea" : undefined,
     atSea: transport === true });
   paintBadgeBody(ctx, 0, 0, k, side === "red" ? "red" : "blue", spec,
-    BADGE_INTERIOR[spec.domain] || BADGE_INTERIOR.land);
+    BADGE_SIDE[side === "red" ? "red" : "blue"].frame);
   return px;
 }
 
@@ -789,7 +791,8 @@ export function paintBadge(ctx, group, view, opts = {}) {
 
   const side = group.side === "red" ? "red" : "blue";
   const spec = badgeForPiece(piece);
-  const interior = BADGE_INTERIOR[spec.domain] || BADGE_INTERIOR.land;
+  // The coin's face is the side's colour (T-020); the white silhouette carries the kind.
+  const face = BADGE_SIDE[side].frame;
 
   // The static half: one blit when the page handed us a sprite cache, the same geometry drawn as
   // paths when it did not (the node harness, and the mockup sheet's own large renders).
@@ -800,7 +803,7 @@ export function paintBadge(ctx, group, view, opts = {}) {
   if (sprite) {
     ctx.drawImage(sprite, x0, y0, size, size);
   } else {
-    paintBadgeBody(ctx, x0, y0, k, side, spec, interior);
+    paintBadgeBody(ctx, x0, y0, k, side, spec, face);
   }
 
   // Dug in: a green bar above the badge, and only on the kinds the runtime can entrench.

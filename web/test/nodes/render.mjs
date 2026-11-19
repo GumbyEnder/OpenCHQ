@@ -39,7 +39,7 @@ import {
   wrapX,
 } from "../../public/render.mjs";
 import { airNote, cargoNote } from "../../public/command.mjs";
-import { BADGE_INTERIOR, BADGE_SIDE } from "../../public/badges.mjs";
+import { BADGE_SIDE } from "../../public/badges.mjs";
 import { EXTRACT_MISSING, PALETTE, SCHEMATIC } from "../../public/paint.mjs";
 
 function recorder() {
@@ -224,16 +224,16 @@ export async function run(ctx) {
   const sea = recorder();
   const seaBadge = paintPiece(sea.ctx, { id: "b1", side: "blue", domain: "sea", kind: "cruiser", x: 0, y: 15 }, zoom, { own: "blue" });
   ok(fail, "a piece draws a badge", seaBadge && seaBadge.size > 0);
-  eq(fail, "the badge is the side's frame colour", sea.ops.find((op) => op.op === "fill").color, BADGE_SIDE.blue.frame);
+  eq(fail, "the token starts with the side's rim colour", sea.ops.find((op) => op.op === "fill").color, BADGE_SIDE.blue.rim);
   eq(fail, "a blue badge is blue", seaBadge.side, "blue");
-  ok(fail, "a sea piece's interior is the sea colour",
-    sea.ops.some((op) => op.op === "fill" && op.color === BADGE_INTERIOR.sea));
-  ok(fail, "the silhouette is drawn in the side's dark colour",
-    sea.ops.some((op) => op.op === "fill" && op.color === BADGE_SIDE.blue.dark));
+  ok(fail, "the coin's face is the side's colour",
+    sea.ops.some((op) => op.op === "fill" && op.color === BADGE_SIDE.blue.frame));
+  ok(fail, "the silhouette is drawn white",
+    sea.ops.some((op) => op.op === "fill" && op.color === BADGE_SIDE.blue.silhouette));
 
   const enemy = recorder();
   paintPiece(enemy.ctx, { id: "r1", side: "red", domain: "land", kind: null, x: 183, y: 25 }, zoom, { own: "blue" });
-  eq(fail, "a red badge is red", enemy.ops.find((op) => op.op === "fill").color, BADGE_SIDE.red.frame);
+  eq(fail, "a red token starts with the red rim", enemy.ops.find((op) => op.op === "fill").color, BADGE_SIDE.red.rim);
   const at = cellToPixel(183, 25, zoom);
   eq(fail, "a badge is centred on its cell", [Math.round(enemy.ops.find((op) => op.op === "fill").x ?? 0), 0].length, 2);
 
@@ -375,7 +375,7 @@ export async function run(ctx) {
     if (!(ground < frame)) fail("scale " + scale + ": the badge was drawn under the ownership fill");
     // The badge's own face, not an edge or a fill: the interior ink exists only on the badge.
     const faceAt = rec.seq.findIndex((op, i) => i > frame && op.kind === "fill"
-      && op.color === BADGE_INTERIOR.land);
+      && op.color === BADGE_SIDE.blue.frame);
     if (!(faceAt > frame)) fail("scale " + scale + ": the badge's interior is not painted over the fill");
     if (rec.seq[faceAt].color === OWNERSHIP.blue || rec.seq[faceAt].color === OWNERSHIP.edge.blue) {
       fail("scale " + scale + ": the badge face is the ownership ink");
