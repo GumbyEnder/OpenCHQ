@@ -229,7 +229,7 @@ and one byte wide.
 Called from `:1217` as `ai_turn_process(3 - local_c)`: at most `3 - actions_used` purchases per
 turn, and it returns early on the first unaffordable/failed one.
 
-Copy of the money it works in (`:3262`):
+Copy of the money it works in (`:3264`):
 
 ```
 uVar2 = money[side] / 0x28;                 // 40-unit price steps, 0x148e + side*2 (`:3264`)
@@ -285,52 +285,69 @@ difficulty-driven.
 
 ## A3. Picking targets
 
-### A3.1 Land: `calculate_combat @ 107e:4266` (`:3518`)
+The AI has two attack passes and one auto-acquire helper. Only the first two run for `e942`.
 
-For each own site with a **positive** score (`0xea6e > 0x27` = 39, `:3572`):
+### A3.1 The staged attack — `calculate_combat @ 107e:4266` (`:3518`)
 
-1. `FUN_107e_45a8(site, 0x1e)` (`:3573`) finds the nearest enemy site with movement value
+For each own site with a **positive** score (`0x27 < score`, `:3572`):
+
+1. `FUN_107e_45a8(site, 0x1e)` (`:3573`) finds the nearest enemy site with attack-matrix value
    `< 30` (`0x1e`) and records that value at `0xc3b4`.
-2. It caps the attack radius score at `min(0xf, value*3/2)` (`:3575-3576`), after a
-   pre-gate `0xb < (0xe78c - garrison)` (`:3582`).
-3. It reads the site's garrison byte `0xe6da`, scales it `*2/3` (floor 2), and compares the
-   **friendly** strength (`sum strength/25` over pieces within range, `:3584-3596`) with the
-   **hostile** strength. The attack only proceeds when `0xb < local_e - local_14` — i.e. **the
-   friendly strength score must exceed the hostile score by more than 11** (`:3600`).
-4. It then queues every adjacent enemy site whose matrix entry `<= local_c` and whose garrison
-   difference `2*(enemy_mod - friendly_mod) <= local_e`, with priority
+2. It caps the attack radius score at `min(0xf, value*3/2)` (`:3575-3576`) and requires
+   `0xb < (0xe78c - garrison)` as a pre-gate (`:3582`).
+3. It reads the site's modifier byte `0xe6da` (the per-site combat modifier, `COMBAT.md`), scales it
+   `*2/3` (floor 2), then walks **our** pieces at that site (`:3584-3596`): a piece below `0x50`
+   strength or carrying order flags `0x300` subtracts `strength/25` from that pool as a penalty,
+   a ready piece adds `strength/25` to `local_e`. The attack only proceeds when
+   `0xb < local_e - local_14` (`:3600`) — i.e. **ready strength must exceed modifier + weak-piece
+   penalty by more than 11 strength-units**.
+4. It queues every enemy site whose attack-matrix value is `<= local_c` and whose modifier
+   difference `2*(enemy_mod - friendly_mod) <= local_e`, priority
    `value + local_e*-2 + diff*4` (`:3601-3612`).
 
-In plain words: **the AI attacks a site only when it has a decoded local strength advantage of
-more than 11 strength-units (11 x 25 = 275 raw strength), toward the nearest enemy site within 30
-cells, and it prefers sites with a larger margin.** This is a force-ratio attack, not a nearest-enemy
-attack.
+Then `select_next_mission` (`:3546`) returns an (own site, enemy site) pair and
+`execute_movement` (`:3564`) orders **the strong ready pieces at that own site** toward the enemy
+site with mode `2` (`0x16` when both sites are hostile-flagged). In plain words: the AI masses at a
+front site and only attacks when the ready force there clears the site modifier by >11; it is a
+force-ratio attack, not a nearest-enemy attack.
 
-### A3.2 Ships and air: `select_combat_targets @ 107e:4c1c` (`:3911`)
+### A3.2 The per-piece opportunistic attack — `execute_combat @ 107e:380e` (`:3045`)
+
+Called from `:1219` with `execute_combat(4 - actions_used)`, and it is the rule the AI actually uses
+for every arm (`e942`, `:3069`):
 
 ```
-for each own piece with kind nibble > 4 and ammo/flag bit (0xc46 & 7) != 0:
-    for each enemy piece with kind nibble > 6:
-        if calculate_damage(enemy, own, 10000) != 0xff:
-            queue (enemy cell, 0, own piece)
+for each own piece with kind < 7 and combat-eligible order bit 0x800:
+    for each enemy site with garrison/queue byte 0xcb46 < 0x54:
+        priority = byte[site + 0xea6e] + (attack_matrix[own_site][site] & 0x7f)
+        queue (site, max(priority,0), piece)
 ```
 
-Then `select_next_mission` picks the best-scoring entry and orders the attacker onto the target's
-cell with order `target | 0x1080` (`:3948`). The `kind > 4` gate restricts this pass to the
-naval/air kinds (per the 9-byte class table at `0x1a01`, kinds 5..9 map to classes 1..5), and
-`kind > 6` restricts valid *targets* to the same upper bands: **ships/air are ordered at ships/air,
-not at infantry.** `0x1080` is "move + attack" in the order word.
+`select_next_mission` (`:3106`) picks the best pair and the piece is moved onto that enemy site
+with mode `2` (`0x16` if both are hostile-flagged). So **the AI's target is the enemy site with the
+best `site score + class-specific attack-matrix value`**, with a random tiebreak when a site already
+holds `0x54` units (`:3074-3076`). Kind `< 5` pieces also refuse a site that already holds 5+ of
+theirs unless a `rand()<8` roll passes — an anti-overstack rule.
+
+### A3.3 The player-side auto-acquire — `select_combat_targets @ 107e:4c1c` (`:3911`)
+
+This one runs for **`0xc350`**, the human seat, not `e942`: it is not an AI routine. Each own piece
+with kind `> 4` and flag `0xc46 & 7 != 0` is paired with every enemy piece of kind `> 6` that
+`calculate_damage(enemy, own, 10000)` can reach (`!= 0xff`), queued, and the best pair is ordered
+onto the target cell with order `target | 0x1080` (`:3948`) — move + attack. In the remake this is
+the player's "idle ship/air acquires a target" helper, and its rule is worth porting for that, but
+it must not be cited as AI targeting.
 
 `calculate_damage @ 107e:4b94` (`:3876`) is the range/type gate documented in `COMBAT.md`; the
 `0xff` return is "out of range".
 
-### A3.3 Invasion and merge passes
+### A3.4 Invasion and merge passes
 
 `FUN_107e_251c @ 107e:251c` (`:2223`) queues **undefended enemy sites** (`e814 & 0xf2 == 0`, no
-garrison unit `0xcb46 > 0xfc`) that are within `0xc704` of one of our transports, scoring them with
-`FUN_107e_0fa4(site, 2, force_delta)` and issuing `FUN_107e_2696(..., 1)` (load/embark) for the
-best. This is the amphibious expansion pass, and it only runs when `0x157e` (the round clock) is
-below 2000 (`:1243`).
+garrison unit `0xcb46 > 0xfc`) that sit within `0xc704` of one of our 30 mission records
+(`0x1364`), scoring them with `FUN_107e_0fa4(site, 2, force_delta)` and issuing
+`FUN_107e_2696(..., 1)` (load/embark) for the best. The amphibious expansion pass; it only runs
+while `0x157e` (the round clock) is below 2000 (`:1243`).
 
 `FUN_107e_1ace @ 107e:1ace` (`:1785`) merges a stationary friendly piece onto an adjacent friendly
 piece of the same class when the neighbour is at `>= 0x50` strength or carries the `0x80` flag —
@@ -360,9 +377,9 @@ the stack/merge rule.
 |---|---|---|---|---|
 | 1 | SGT. STAN STIL | no — never acts | n/a | none; passive |
 | 2 | CAP. LUKE WARM | yes | 0 | baseline |
-| 3 | COL. BUCK ZEAL | yes | 2 | round timer branch for solo play is off above level 1 (`:11319`) |
-| 4 | GEN. WIN MOORE | yes | 4 | extra production pass `FUN_107e_065c` on unit arrival (`:9202`) |
-| 5 | MARS GOD OF WAR | yes | 6 | loses the garrison-shortcut buy (`:1632`); extra production in `FUN_1eb5_156a` (`:12378`) |
+| 3 | COL. BUCK ZEAL | yes | 2 | no unique branch found — budget only |
+| 4 | GEN. WIN MOORE | yes | 4 | no unique branch found — budget only |
+| 5 | MARS GOD OF WAR | yes | 6 | the one unique level gate: excluded from the garrison-shortcut buy (`:1632`) |
 
 Everything else the AI does — the score, the threat radius, the force-ratio attack, the merge, the
 amphibious pass — is **identical across levels 2-5**. The difficulty axis is *how many actions it
@@ -378,7 +395,7 @@ reading the site.
 Manual p.17, "Starting Money": *"For all scenarios, you are allowed to adjust the amount of money
 with which your opponent begins the game. This can be useful as a handicapping device."* It is a
 **player-set spinner, not a per-level table** — there is no bytes-side opponent cash table in the
-setup code. The per-side money word is `0x148e + side*2` (40-unit price steps, `:3262`), and the
+setup code. The per-side money word is `0x148e + side*2` (40-unit price steps, `:3264`), and the
 setup passes the chosen amount through `FUN_1eb5_000c(0x11, side, hi, lo, 0)` (`:13309-13317`); the spinner's value is
 in 40-unit steps (`index * 0x28`, `:13311`), so the handicap is bounded the same way the shop is. The port
 therefore adds a lobby control that writes the opponent's starting money; difficulty must not
@@ -388,7 +405,7 @@ silently change it.
 
 * **DECODED**: the global identity (`0x19e`=era, `0x1a0`=level), the menu order and the five
   names, the AI-pass gate, the spare-action formula, the purchase money gate and class roll, the
-  force-ratio attack threshold, the ship/air target classes, the capital radius, the merge and the
+  force-ratio attack threshold, the per-piece site-score + attack-matrix target rule, the capital radius, the merge and the
   amphibious passes.
 * **UNVERIFIED**: the four ownership counters `0xc3b6/b7/ba/e934`; the two 10-byte arrays
   `0xf36/0xf40`; why level 5 is excluded from the garrison buy; whether `0xe47e` is used elsewhere.
