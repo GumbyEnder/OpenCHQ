@@ -71,9 +71,12 @@ clicking faster than your opponent.
   rosters are no longer stand-ins: they are the manual's, and every one carries its source in
   `config/game.json` → `sources`.
 - Still labelled UNVERIFIED in config: whether a capital pays like a city (`money.capitalPays` is
-  false and the code has never paid one), which p.28 icon row is the submarine, the cruiser and the
-  carrier, and the concealed era's roster (it uses the 1986 set). Opening money is no longer a
-  stand-in: `startPool` holds the per-era pools read off the original's Monitor Four (1918 10,
+  false and the code has never paid one) and the concealed era's roster (it uses the 1986 set). The
+  p.28 icon rows are answered: the original's own 1942 setup save (`CHQ-02.SG`, md5
+  `6544bf6f07196d3bf62492c31b82727b`) gives Blue submarine 4, cruiser 5, carrier 2, and the buy
+  panel's COUNT column is 13,5,4,5,2,7, so the three sea counts biject onto rows 3/4/5 and the
+  config's order is the measured one (`docs/re/evidence/pb166/SAVE-DECODE.md` §8). Opening money is
+  no longer a stand-in: `startPool` holds the per-era pools read off the original's Monitor Four (1918 10,
   1942 50, 1986 50, 2023 600; the concealed era is 50, UNVERIFIED), and `handicap` holds the
   opponent's starting-money spinner (p.17) - 1918 010, 1942 030, no spinner in 2023, and the
   0-999/1 range marked UNVERIFIED because no capture ever clicked a digit to its limit.

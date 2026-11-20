@@ -38,3 +38,8 @@ tests/e2e/node_modules/
 # ...and the same path when it is a symlink to a shared install (a trailing slash does not match).
 tests/e2e/node_modules
 tests/e2e/package-lock.json
+
+# Evidence captures stay out of the public repo: the original's own art (buy panel, manual pages,
+# live-board shots, cell masks) is not ours to publish (rooms 7868/7871). The decoded text and the
+# hashes are what ships - docs/re/evidence/pb166/SAVE-DECODE.md and ICON-CENSUS.md.
+docs/re/evidence/**/*.png

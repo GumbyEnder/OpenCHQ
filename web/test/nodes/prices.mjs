@@ -3,7 +3,8 @@
 // Manual p.28's production screen and the executable's own table at DS:0x2E16 agree:
 //   infantry 10, tank 20, submarine 10, cruiser 10, carrier 20, aircraft 20,
 //   recon satellite 10, satellite killer 5, use nukes 10, foreign aid 10, intel scan 10
-// in billions. The sub/cruiser/carrier row order is read from the p.28 icons and is UNVERIFIED.
+// in billions. The sub/cruiser/carrier row order is measured from the original's 1942 setup save
+// (CHQ-02.SG, Blue kind 7 = 4, kind 8 = 5, kind 9 = 2) against the buy panel's COUNT column.
 // Manual p.22 makes a tank twice an infantry; p.30 makes a nuke 10; p.27 makes each city pay
 // 50 million (0.05 billion) every round.
 //
@@ -92,8 +93,12 @@ export async function run(ctx) {
     if (!/DS:0x2E16/.test(source)) fail("no DS:0x2E16 source for " + kind + ": " + source);
   }
   for (const kind of ["submarine", "cruiser", "carrier"]) {
-    if (!/row order from p\.28 icons: UNVERIFIED/.test(sourceOf("prices." + kind))) {
-      fail(kind + " does not carry the p.28 icon row-order label");
+    const source = String(sourceOf("prices." + kind));
+    if (/row order from p\.28 icons: UNVERIFIED/.test(source)) {
+      fail(kind + " still carries the retired p.28 icon row-order label");
+    }
+    if (!/CHQ-02\.SG/.test(source) || !/6544bf6f07196d3bf62492c31b82727b/.test(source)) {
+      fail(kind + " does not cite the CHQ-02.SG row-order decode");
     }
   }
   if (!/Manual p\.27/.test(String(sourceOf("payEvery")))) fail("payEvery has no Manual p.27 source");
@@ -103,7 +108,7 @@ export async function run(ctx) {
   }
   if (String(sourceOf("capitalPays")) !== "undefined") fail("money.capitalPays must be retired by PB-150");
   eq(cityIncome(), 50, "a city pays 50 million a round (Manual p.27)");
-  console.log("criterion 8 ok: every price, payEvery, cityIncome and the PB-150 payingCount carry their source; sub/cruiser/carrier carry the p.28 icon-row UNVERIFIED label; capitalPays is retired");
+  console.log("criterion 8 ok: every price, payEvery, cityIncome and the PB-150 payingCount carry their source; sub/cruiser/carrier cite the CHQ-02.SG row-order decode and no longer carry the p.28 icon UNVERIFIED label; capitalPays is retired");
 
   // ---- 9: no money literal outside config ---------------------------------------------
   const offenders = [];
