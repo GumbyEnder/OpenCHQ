@@ -154,6 +154,10 @@ export async function run(ctx) {
       JSON.stringify(fieldEvents.filter((e) => e.type === "capture"))
   );
   must(field.owner === "blue", "the captured facility still belongs to " + field.owner);
+  // PB-156: the same rule on the other path. upkeep() above took the field; hand it back and let
+  // occupy() — the pass that cities and docks go through — take it, or say so out loud.
+  field.owner = "red";
+  must(occupy(match).some((event) => event.type === "capture" && event.site === field.id && event.side === "blue") && field.owner === "blue", "occupy() did not take a type-5 facility, and m4 stayed red on it");
   // capture() refuses a city, so the new sites did not blunt the rule
   const city = match.sites.find((site) => site.kind === "city");
   must(city, "the merged list has no city");
