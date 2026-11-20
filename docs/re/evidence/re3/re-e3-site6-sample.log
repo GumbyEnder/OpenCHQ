@@ -1,0 +1,12 @@
+target site 6 city (219,26) owner=red timer=0 byte=0x9c
+piece 0 at (220, 26) ordered onto (219,26); sampling at 0.1 s
+  t     owner   round  blue  red
+  9.12  red       20  3442  2358
+  9.22  red       20  3442  2358
+  9.32  red       20  3442  2358
+  9.42  red       20  3442  2358
+  9.52  red       20  3442  2358
+  9.62  red       20  3442  2358
+  9.72  blue      20  3522  2358
+step at the flip: blue +80 red +0 round 20 -> 20 (SAME round: not income)
+timer at site 6 now 15, owner blue

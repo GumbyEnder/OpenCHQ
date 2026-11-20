@@ -1,0 +1,151 @@
+base=0x7c83d2633cd0 scenario=2 film=0 cursor=54 round=18
+cash blue=3310 red=2326 (40ths of a billion)
+site  0 (182,13) base     owner=red   byte=0x9b timer=0
+site  1 (133,14) base     owner=blue  byte=0x5b timer=0
+site  2 (157,15) base     owner=blue  byte=0x5b timer=0
+site  3 (175,20) city     owner=red   byte=0x9c timer=0
+site  4 (292,23) base     owner=red   byte=0x9b timer=0
+site  5 (189,25) city     owner=blue  byte=0x7c timer=0
+site  6 (219,26) city     owner=red   byte=0x9c timer=0
+site  7 (158,27) city     owner=blue  byte=0x5c timer=0
+site  8 (180,28) city     owner=red   byte=0x9c timer=0
+site  9 (146,29) city     owner=blue  byte=0x5c timer=0
+site 10 (148,30) capital  owner=blue  byte=0x59 timer=0
+site 11 (161,30) city     owner=red   byte=0x9c timer=0
+site 12 (168,30) city     owner=red   byte=0x9c timer=0
+site 13 (268,30) city     owner=blue  byte=0x7c timer=15
+site 14 (174,31) city     owner=red   byte=0x9c timer=0
+site 15 (155,32) city     owner=blue  byte=0x5c timer=0
+site 16 (181,33) city     owner=red   byte=0x9c timer=0
+site 17 (150,34) city     owner=blue  byte=0x5c timer=0
+site 18 ( 39,35) city     owner=blue  byte=0x5c timer=0
+site 19 (167,35) city     owner=red   byte=0x9c timer=0
+site 20 ( 78,37) city     owner=blue  byte=0x5c timer=0
+site 21 (178,37) base     owner=red   byte=0x9b timer=0
+site 22 (267,39) base     owner=red   byte=0x9b timer=0
+site 23 (153,39) city     owner=blue  byte=0x5c timer=0
+site 24 ( 74,40) city     owner=blue  byte=0x5c timer=0
+site 25 ( 85,41) city     owner=blue  byte=0x5c timer=0
+site 26 (160,41) city     owner=blue  byte=0x5c timer=0
+site 27 ( 70,42) city     owner=blue  byte=0x5c timer=0
+site 28 ( 83,42) city     owner=blue  byte=0x5c timer=0
+site 29 (145,42) city     owner=blue  byte=0x5c timer=0
+site 30 (173,42) city     owner=blue  byte=0x5c timer=0
+site 31 (252,44) city     owner=None  byte=0x1c timer=0
+site 32 ( 39,44) city     owner=blue  byte=0x5c timer=0
+site 33 ( 54,44) city     owner=blue  byte=0x5c timer=0
+site 34 (261,46) city     owner=blue  byte=0x5c timer=0
+site 35 (272,45) capital  owner=blue  byte=0x59 timer=0
+site 36 ( 80,46) city     owner=blue  byte=0x5c timer=0
+site 37 (270,46) city     owner=blue  byte=0x5c timer=0
+site 38 ( 68,47) city     owner=blue  byte=0x5c timer=0
+site 39 (272,47) city     owner=blue  byte=0x5c timer=0
+site 40 (267,48) city     owner=blue  byte=0x5c timer=0
+site 41 (269,48) city     owner=blue  byte=0x5c timer=0
+site 42 ( 73,50) city     owner=blue  byte=0x5c timer=0
+site 43 (250,59) city     owner=None  byte=0x1c timer=0
+site 44 ( 45,51) city     owner=blue  byte=0x5c timer=0
+site 45 (180,52) city     owner=blue  byte=0x5c timer=0
+site 46 (255,52) city     owner=None  byte=0x1c timer=0
+site 47 (176,53) city     owner=None  byte=0x1c timer=0
+site 48 ( 67,54) city     owner=blue  byte=0x5c timer=0
+site 49 ( 62,55) city     owner=blue  byte=0x5c timer=0
+site 50 (214,62) city     owner=None  byte=0x1c timer=0
+site 51 ( 76,60) base     owner=red   byte=0x9b timer=0
+site 52 ( 10,62) base     owner=blue  byte=0x5b timer=0
+site 53 ( 59,63) city     owner=None  byte=0x1c timer=0
+site 54 (256,67) base     owner=blue  byte=0x5b timer=0
+site 55 (245,69) base     owner=red   byte=0x9b timer=0
+site 56 ( 90,71) city     owner=None  byte=0x1c timer=0
+site 57 ( 76,73) base     owner=blue  byte=0x5b timer=0
+site 58 (213,86) base     owner=blue  byte=0x5b timer=0
+site 59 (108,102) city     owner=None  byte=0x1c timer=0
+site 60 (173,102) city     owner=None  byte=0x1c timer=0
+site 61 (282,110) city     owner=blue  byte=0x5c timer=0
+site 62 ( 79,44) capital  owner=blue  byte=0x59 timer=0
+site 63 (183,25) capital  owner=red   byte=0x9a timer=0
+site 64 ( 18,18) oilfield owner=blue  byte=0x5d timer=0
+site 65 (218,23) oilfield owner=red   byte=0x9d timer=0
+site 66 (193,26) oilfield owner=red   byte=0x9d timer=0
+site 67 (194,30) oilfield owner=red   byte=0x9d timer=0
+site 68 ( 55,33) oilfield owner=blue  byte=0x5d timer=0
+site 69 (187,37) oilfield owner=red   byte=0x9d timer=0
+site 70 (240,30) oilfield owner=red   byte=0x9d timer=0
+site 71 ( 62,47) oilfield owner=blue  byte=0x5d timer=0
+site 72 (189,48) oilfield owner=red   byte=0x9d timer=0
+site 73 (195,49) oilfield owner=red   byte=0x9d timer=0
+site 74 ( 60,51) oilfield owner=blue  byte=0x5d timer=0
+site 75 (189,52) oilfield owner=blue  byte=0x5d timer=0
+site 76 (164,54) oilfield owner=red   byte=0x9d timer=0
+site 77 (189,56) oilfield owner=blue  byte=0x5d timer=0
+site 78 (250,79) oilfield owner=None  byte=0x1d timer=0
+site 79 (193,60) oilfield owner=blue  byte=0x5d timer=0
+site 80 (199,60) oilfield owner=blue  byte=0x5d timer=0
+site 81 ( 59,60) oilfield owner=blue  byte=0x5d timer=0
+site 82 ( 87,72) oilfield owner=blue  byte=0x5d timer=0
+site 83 (151,73) oilfield owner=blue  byte=0x5d timer=0
+piece  0 blue k2 (268,30)
+piece  1 blue k3 (155,32)
+piece  2 blue k2 (158,36)
+piece  3 blue k2 (148,30)
+piece  4 blue k2 (154,33)
+piece  5 blue k3 (160,41)
+piece  6 blue k2 (180,52)
+piece  7 blue k3 (261,46)
+piece  8 blue k3 (181,52)
+piece  9 blue k3 (158,27)
+piece 10 blue k3 (62,55)
+piece 11 blue k2 (77,49)
+piece 12 blue k7 (82,50)
+piece 13 blue k9 (91,46)
+piece 14 blue k8 (70,58)
+piece 15 blue k8 (77,73)
+piece 16 blue k8 (270,42)
+piece 17 blue k9 (272,51)
+piece 18 blue k8 (269,44)
+piece 19 blue k8 (151,26)
+piece 20 blue k7 (139,18)
+piece 21 blue k9 (143,33)
+piece 22 blue k9 (158,44)
+piece 23 blue k8 (166,46)
+piece 24 blue k8 (198,69)
+piece 25 blue k8 (254,71)
+piece 26 blue k8 (192,55)
+piece 27 blue k7 (266,44)
+piece 28 blue k7 (140,19)
+piece 29 blue k3 (189,56)
+piece 30 blue k3 (272,45)
+piece 31 red k2 (188,49)
+piece 32 red k2 (161,28)
+piece 33 red k2 (160,31)
+piece 34 red k3 (261,39)
+piece 35 red k2 (160,33)
+piece 36 red k2 (161,35)
+piece 37 red k2 (162,36)
+piece 38 red k2 (167,39)
+piece 39 red k2 (169,39)
+piece 40 red k2 (172,38)
+piece 41 red k2 (163,26)
+piece 42 red k3 (189,48)
+piece 43 red k3 (186,43)
+piece 44 red k3 (199,56)
+piece 45 red k3 (76,60)
+piece 46 red k3 (267,39)
+piece 47 red k2 (265,39)
+piece 48 red k2 (189,49)
+piece 49 red k3 (160,29)
+piece 50 red k2 (160,30)
+piece 51 red k3 (245,69)
+piece 52 red k2 (162,27)
+piece 53 red k7 (130,34)
+piece 55 red k7 (168,20)
+piece 56 red k7 (165,23)
+piece 57 red k8 (175,39)
+piece 58 red k8 (177,40)
+piece 59 red k8 (165,50)
+piece 60 red k7 (130,36)
+piece 61 red k8 (266,41)
+piece 62 red k8 (247,73)
+piece 63 red k8 (80,60)
+piece 64 red k7 (81,66)
+piece 65 red k7 (164,49)

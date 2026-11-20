@@ -152,3 +152,32 @@ Result at the tip: tick **11.6-11.8x**, round **10.6-11.4x** over 1,000 rooms x 
 cost, not a regression. The round-trip leg keeps its own six 60-cell orders, so the `>= 360 route
 steps restored` assertion still grades a real payload.
 
+
+
+## 3. RE-E3 - capture pays the CAPTURER 2 b and sets the site unready for 15 rounds (PB-155)
+
+Measured 2026-11-19 ~22:2x ET on the running DOSBox original (scenario index 2 = 1986,
+Blue seat), probe `docs/re/evidence/re3/ree3.py`, raw logs in the same directory.
+
+Method: read the site table (type/owner byte at `0x1102+id`, timer byte at `0x10ae+id`) and both
+cash slots (`0x148e`/`0x1490`, 40ths of a billion) every 0.1 s while a teleported blue ground
+piece walks one cell onto a red city. The capture reward is separated from the payday by the
+round counter: a cash step on a sample where `0x1476` is unchanged cannot be income.
+
+| run | site | owner before -> after | capturer cash step | loser cash step | round at the flip | timer `0x10ae[site]` |
+|---|---|---|---|---|---|---|
+| `re-e3-site6-sample.log` | 6 (219,26) city | red -> blue | blue **+80** | red **+0** | 20 -> 20 (same) | 0 -> **15** |
+| earlier run, site 13 (268,30) | 13 city | red -> blue | blue **+80** | red **+0** | 18 -> 18 (same) | 0 -> **15** |
+| earlier run, site 5 (189,25) | 5 city | red -> blue | blue +142 (80 reward + 62 payday) | red +20 (payday) | payday in the same window | 0 -> **15**, no other site's timer changed |
+
+So: the sign is the CAPTURER gaining (+80 units = 2 b), the loser gains nothing, and the captured
+site takes exactly the 15-round timer. `money.captureReward` (2000 M) and
+`readiness.captureRounds` (15) are therefore MEASURED, not merely decoded: the "confirm-or-refute"
+caveat in `notes.captureReward` is closed by this section.
+
+The timer decays one per round: site 5 read 15 at its capture and 0 fifteen rounds later
+(round counter advanced by exactly that much), which is the `readyRound = round + 15` shape.
+
+Not measured: a capital capture (no cash expected) and an oil field capture were not re-run here;
+the type test in `pb155_capture.mjs` pins the code path, the original's type-3/type-4 condition is
+what decompiled.c 9179-9182 shows.
