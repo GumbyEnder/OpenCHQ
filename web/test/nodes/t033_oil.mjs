@@ -77,6 +77,7 @@ export async function run(ctx) {
   eq(Number(fuel.moveCostByKind.infantry), 5 + 12, "infantry per-cell: 5 base + allowance 12 (0x19a6)", fail);
   eq(Number(fuel.moveCostByKind.tank), 5 + 24, "tank per-cell: 5 base + allowance 24 (0x19a6)", fail);
   eq(Number(fuel.airMission), 20, "air mission (0d7e(0x14), 4839)", fail);
+  eq(Number(fuel.outPerAirUnit), 20, "Out per air unit (7668 Out list; 4704-4723)", fail);
   eq(fuel.freeEras, ["1918", "1942"], "the two scenarios whose reserve is rewritten (4700)", fail);
   console.log("rates ok: reserve/cap/In/Out/per-kind/air all read from the spec with its source");
 
@@ -100,6 +101,27 @@ export async function run(ctx) {
     eq(flow2.pieces, 2, "only blue's pieces bill blue", fail);
     eq(flow2.out, Number(fuel.outPerCity) + Number(fuel.outBase) + 2 * Number(fuel.perPiece),
       "Out must add perPiece for each of the side's pieces", fail);
+    // An aircraft is its own Out term, 20 a round on top of the 2 per piece (7668 Out list:
+    // "each air unit: 20"; FUN_15f4_0664 4704-4723). The mission charge (airMission) is separate.
+    const winged = room([city(3, "blue")]);
+    winged.pieces = [
+      { id: "b1", side: "blue", kind: "aircraft", domain: "air", x: 1, y: 1, path: [] },
+      { id: "b2", side: "blue", kind: "tank", domain: "land", x: 2, y: 2, path: [] },
+      { id: "r1", side: "red", kind: "aircraft", domain: "air", x: 3, y: 3, path: [] },
+    ];
+    const wingedFlow = oilFlow(winged, "blue");
+    eq(wingedFlow.air, 1, "only blue's aircraft bill blue", fail);
+    eq(wingedFlow.out, Number(fuel.outPerCity) + Number(fuel.outBase) + 2 * Number(fuel.perPiece) + Number(fuel.outPerAirUnit),
+      "Out must add 20 for each of the side's air units", fail);
+    // ...and it comes out of the reserve at settlement, not only in the flow reading.
+    const airSettle = room([city(3, "blue")]);
+    airSettle.pieces = [{ id: "b1", side: "blue", kind: "aircraft", domain: "air", x: 1, y: 1, path: [] }];
+    airSettle.sides.blue.resources = { fuel: { held: 1000, dry: false } };
+    airSettle.sides.blue.fuel = 1000;
+    airSettle.round = 1;
+    upkeepResources(airSettle);
+    // available 1000 + 200; Out = 250 city + 2 piece + 20 air = 272 -> reserve 928.
+    eq(meterOf(airSettle, "blue", "fuel").held, 928, "the 20-per-air-unit term must be paid at settlement", fail);
     // A world.json sketched well has no subtype and produces nothing (PB-153).
     const sketched = room([own("oilfield", 9, "blue"), own("well", 10, "blue")]);
     eq(oilFlow(sketched, "blue").in, Number(fuel.inMinWells) * Number(fuel.inPerWell),

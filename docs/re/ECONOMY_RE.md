@@ -58,22 +58,24 @@ two early scenarios carry no fuel meter, which is what `resources.fuel.freeEras`
 | `2 per piece` per round | `perPiece x pieces` | `t033_oil`; `resources` empty-board leg | PINNED |
 | `+5 per moving piece` | `moveCostByKind` base 5 in `oilCostPerCell` | `t033_oil`; RE-E5 §1.3 | PINNED (MEASURED) |
 | `+ kind allowance for moving land` | infantry 17 = 5+12, tank 29 = 5+24 | `t033_oil` (5+12 / 5+24) | PINNED |
-| `20 per air unit` per round | **not implemented** | — | **OPEN** |
+| `20 per air unit` per round | `outPerAirUnit` x `flow.air`, paid after the city term | `t033_oil` flow + settlement legs | PINNED |
 | `In = 200 x owned type-5 fields, min 200` | `inPerWell`, `inMinWells` | `t033_oil`; §1.2 | PINNED |
 | reserve starts 3000, cap 10000 | `reserve`, `reserveCap` | `t033_oil`; §1.1 | PINNED |
 | floor 40 unless short; 0 on a shortage round | `reserveFloor` + `short` | `t033_oil`; §1.4 | PINNED |
 | `lost = floor(deficit x cities / lastOut)`, x1.5 capped in 2023 | `oilIncome`, `meter.lastOut` | `t033_oil` | PINNED |
 
-Two honest gaps:
+The air term is coded from the brief's own Out list (room 7668) and paid in the brief's order:
+cities, then each air unit, then each piece. It is distinct from `airMission` (the 20 spent when
+a mission is ordered, `FUN_15f4_0d7e` 4839); both now exist and both are pinned. The 1986 opening
+carries no aircraft, so the measured 1812 and 1754 are unchanged by it.
 
-1. **`20 per air unit` is not pinned and not coded.** `FUN_15f4_0664` at decompiled.c 4723
-   shows only `0x1452 = paying x 0x32 + 200`; the per-piece term and the air term must come
-   from `0x1456`/the 0x0d7e path, and the brief's "20 per air unit" is not visible in the
-   lines read so far. Do not claim it until the line is named.
-2. **Red's paying-city count disagrees with the original.** Our 1986 board pays Red for 10
+One honest gap:
+
+1. **Red's paying-city count disagrees with the original.** Our 1986 board pays Red for 10
    cities; the DOSBox opening shows paid 1150, i.e. 19 cities (`19 x 50 + 200`). Blue's 31
    matches exactly. The difference is a territory/era-table fact, not an oil formula, and it
-   predates T-033; it needs its own ticket rather than a silent widening of this one.
+   predates T-033; it is filed as PB-161 (needs RE on which sites pay) rather than a silent
+   widening of this one.
 
 ## 3. The remake's opening versus the original's
 
@@ -110,23 +112,43 @@ cd0c1ff10442fea07b65f7d782b3dc71  re5_alt_1986blue.png
 a5cd8a53730f3ceaa2ae358d5a3d115d  0_globals_1986blue.txt
 ```
 
-## 5. Load bench — the pin that moved, and why
+## 5. Load bench — the fixture is pinned, and the per-event cost
 
-`node tests: 107 passed, 1 failed` on this branch; the one red is `load_test`
-(tick 17.0-17.8 ms, headroom 7.9-8.6x against the 10x floor).
+`node tests: 110 passed, 0 failed, 11 skipped` on this branch, `load_test` included.
 
-Not overhead. With the floor of 40 the faithful settlement never leaves a side dry, so bench
-pieces keep moving all window; the old code let the reserve drain to 0, a side went dry, and
-the bench stopped exercising movement. Measured over 155,000 ticks, same fixture:
+The red that prompted the PM ruling (7744) was a **workload** change, not overhead. With the
+faithful floor of 40 the settlement never lets a side go dry, so bench pieces keep marching for the
+whole window; the old code drained the reserve, a side went dry, the walk stopped, and the bench was
+quietly measuring less movement. Over the same number of ticks:
 
 | | move events | attrition | capture | blocked | tick |
 |---|---|---|---|---|---|
-| branch | 332,810 | 198,832 | 558 | 172 | 17.0 ms |
+| branch, before the fixture pin | 332,810 | 198,832 | 558 | 172 | 17.0 ms |
 | pre-change | 144,161 | 90,950 | 44 | 83 | 11.9 ms |
 
-2.3x the movement work at the same tick count. The pin compares 1000 rooms x 8 rounds and the
-workload changed; this needs a PM ruling (fix the fixture's activity, or accept 8x), not a
-quiet floor edit.
+Per-event cost, measured directly (`t033-bench-probe`, 1,000 rooms x 8 pieces, funded, 20 ticks,
+183,008 moved cells each side, fresh rooms, median of 5):
 
-Snapshot cost, as 7670/7696 asked: full snapshot 20.3-21.5 ms and 11.2 KB per dry room in the
-bench run above; recorded as a known cost, not a regression.
+| tree | tick | ms per move event |
+|---|---|---|
+| base `288a7dd` | 282 ms / 20 tick passes | **1.54 us** |
+| branch (after the hot-path work below) | 341 ms / 20 tick passes | **1.87 us** |
+
+The residual is the new rule's **per-room-per-round settlement** (a site scan plus two side
+settlements), not per-cell work: per move event it is only 0.33 us. Two hot-path defects found and
+fixed on the way, both measured: `oilReadout()` (the page's payload object) was being built per
+side per room per round inside `oilIncome` — replaced with the same short-circuit arithmetic minus
+the object; and `buildOilSummary` called `layerOf` per piece (two `String()` allocations per piece per
+room per round) — replaced with `isAirPiece`, the same predicate without allocation. 1.98 -> 1.87 us
+per move event.
+
+The fixture is pinned so the bench measures hot-path cost at a fixed workload (PM 7744): exactly one
+land piece per room marches, re-ordered onto a fresh 60-cell lane when the lane is spent, and every
+other piece is pathless. That is ~150k move events over the run — the old fixture's ~144k — and it
+no longer depends on the reserve rule. The 10x floor is unchanged.
+
+Result at the tip: tick **11.6-11.8x**, round **10.6-11.4x** over 1,000 rooms x 8 pieces (host busy
+6-9%); full snapshot 20-38 ms depending on how much route payload the run holds, recorded as a known
+cost, not a regression. The round-trip leg keeps its own six 60-cell orders, so the `>= 360 route
+steps restored` assertion still grades a real payload.
+

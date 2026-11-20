@@ -23,6 +23,9 @@ import { rules } from "./rules.mjs";
 import { eraOf } from "./match.mjs";
 import { cellKeyOf, cellsOfKinds } from "./siteindex.mjs";
 import { isOilField, payingCount, siteTypeOf } from "./sitetype.mjs";
+// The air predicate is placement's (T-029), the same one combat and capture call: an aircraft is
+// `kind === "aircraft"` OR `domain === "air"`, never a third spelling here.
+import { isAirPiece } from "./placement.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -281,6 +284,7 @@ export function oilUsesReserve(era) {
 function countSites(match, side) {
   let fields = 0;
   let pieces = 0;
+  let air = 0;
   const owned = [];
   for (const site of match.sites) {
     if (!site || site.owner !== side) continue;
@@ -288,9 +292,11 @@ function countSites(match, side) {
     if (isOilField(site)) fields += 1;
   }
   for (const piece of Array.isArray(match.pieces) ? match.pieces : []) {
-    if (piece && piece.side === side) pieces += 1;
+    if (!piece || piece.side !== side) continue;
+    pieces += 1;
+    if (isAirPiece(piece)) air += 1;
   }
-  return { fields, cities: payingCount(owned), pieces };
+  return { fields, cities: payingCount(owned), pieces, air };
 }
 
 // A WeakMap, never a field on the match: adding a key to the match object mid-match pushes it
@@ -309,8 +315,8 @@ function oilCounts(match, side) {
 export function buildOilSummary(match) {
   const summary = {
     round: Number(match && match.round) || 0,
-    blue: { fields: 0, type4: 0, caps: 0, cities: 0, pieces: 0 },
-    red: { fields: 0, type4: 0, caps: 0, cities: 0, pieces: 0 },
+    blue: { fields: 0, type4: 0, caps: 0, cities: 0, pieces: 0, air: 0 },
+    red: { fields: 0, type4: 0, caps: 0, cities: 0, pieces: 0, air: 0 },
   };
   for (const site of (match && match.sites) || []) {
     const row = summary[site && site.owner];
@@ -322,7 +328,9 @@ export function buildOilSummary(match) {
   }
   for (const piece of (match && match.pieces) || []) {
     const row = summary[piece && piece.side];
-    if (row) row.pieces += 1;
+    if (!row) continue;
+    row.pieces += 1;
+    if (isAirPiece(piece)) row.air += 1;
   }
   // paying = count(type 4) + max(0, count(type 1) + count(type 2) - 1) (PB-150).
   for (const side of SIDES) summary[side].cities = summary[side].type4 + Math.max(0, summary[side].caps - 1);
@@ -338,16 +346,20 @@ export function oilFlow(match, side) {
   const fields = counted.fields;
   const cities = counted.cities;
   const pieces = counted.pieces;
+  // Air units are their own Out term, 20 each (7668 Out list, FUN_15f4_0664 4704-4723). A side
+  // that owns no aircraft pays nothing for them; the mission charge (airMission) is separate.
+  const air = Number(counted.air) || 0;
   const minWells = Number.isFinite(Number(spec.inMinWells)) ? Number(spec.inMinWells) : 0;
   const inRate = Number(spec.inPerWell);
   const outRate = Number(spec.outPerCity);
   const base = Number.isFinite(Number(spec.outBase)) ? Number(spec.outBase) : 0;
   const perPiece = Number.isFinite(Number(spec.perPiece)) ? Number(spec.perPiece) : 0;
+  const perAir = Number.isFinite(Number(spec.outPerAirUnit)) ? Number(spec.outPerAirUnit) : 0;
   const countedWells = Math.max(minWells, fields);
   const inAmount = Number.isFinite(inRate) ? countedWells * inRate : null;
   const cityOut = Number.isFinite(outRate) ? cities * outRate + base : null;
-  const outAmount = Number.isFinite(cityOut) ? cityOut + perPiece * pieces : null;
-  return { fields, cities, pieces, cityOut, in: inAmount, out: outAmount };
+  const outAmount = Number.isFinite(cityOut) ? cityOut + perPiece * pieces + perAir * air : null;
+  return { fields, cities, pieces, air, cityOut, in: inAmount, out: outAmount };
 }
 
 // What the page draws for one side. `in`/`out` are the per-round flow, `held` the reserve, and
@@ -374,6 +386,7 @@ export function oilReadout(match, side) {
     fields: flow.fields,
     cities: flow.cities,
     pieces: flow.pieces,
+    air: flow.air,
     uses,
     dry: meter.dry === true,
     short,
@@ -486,16 +499,21 @@ function settleOil(match, side, spec) {
   const held = Number.isFinite(Number(meter.held)) ? Number(meter.held) : 0;
   const available = held + Number(flow.in || 0);
   const cityOut = Number(flow.cityOut || 0);
+  const perAir = Number.isFinite(Number(spec.outPerAirUnit)) ? Number(spec.outPerAirUnit) : 0;
+  const airBill = perAir * Number(flow.air || 0);
   const perPiece = Number.isFinite(Number(spec.perPiece)) ? Number(spec.perPiece) : 0;
   const pieceBill = perPiece * Number(flow.pieces || 0);
-  // The city term and the per-piece term are paid in that order out of what is available; a
-  // shortfall in either one leaves the reserve at 0 rather than draining it to the floor.
+  // The terms are paid in the brief's order (7668 Out list: cities, then each air unit, then each
+  // piece) out of what is available; a shortfall in any one leaves the reserve at 0 rather than
+  // draining it to the floor.
   const paidCity = Math.min(available, cityOut);
   let residual = available - paidCity;
+  const airPaid = Math.min(residual, airBill);
+  residual -= airPaid;
   const piecePaid = Math.min(residual, pieceBill);
   residual -= piecePaid;
   const floor = Number.isFinite(Number(spec.reserveFloor)) ? Number(spec.reserveFloor) : 0;
-  const short = paidCity < cityOut || piecePaid < pieceBill;
+  const short = paidCity < cityOut || airPaid < airBill || piecePaid < pieceBill;
   let next = short ? 0 : Math.max(residual, floor);
   if (Number.isFinite(cap) && next > cap) next = cap;
   const wasDry = meter.dry === true;
@@ -517,10 +535,16 @@ export function oilIncome(match, side, cities) {
   const spec = oilSpec();
   const count = Number(cities) || 0;
   if (!spec || !oilUsesReserve(oilEra(match))) return { cities: count, penalty: 0 };
-  const readout = oilReadout(match, side);
-  if (!readout || !readout.short) return { cities: count, penalty: 0 };
-  const out = Number(readout.out);
-  const available = (Number(readout.held) || 0) + (Number(readout.in) || 0);
+  // No readout object here: pay() asks this per side per room per round, and oilReadout builds the
+  // page's payload (cap, divisor, labels) that this question never reads. Same numbers, same test.
+  const flow = oilFlow(match, side);
+  const oilMeter = flow ? meterOf(match, side, OIL) : null;
+  if (!flow || !oilMeter) return { cities: count, penalty: 0 };
+  const held = Number(oilMeter.held);
+  const out = Number(flow.out);
+  const available = (Number.isFinite(held) ? held : 0) + (Number(flow.in) || 0);
+  const short = oilMeter.dry === true || (Number.isFinite(out) && Number.isFinite(held) && held + flow.in < out);
+  if (!short) return { cities: count, penalty: 0 };
   if (!Number.isFinite(out) || out <= 0) return { cities: count, penalty: 0 };
   const deficit = out - available;
   if (!(deficit > 0)) return { cities: count, penalty: 0 };

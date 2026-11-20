@@ -277,6 +277,8 @@
       "outBaseSetup": 100,
       "setupCountsBases": true,
       "perPiece": 2,
+      "outPerAirUnit": 20,
+      "_airOutNote": "Out adds 20 per air unit the side owns (economy brief 7668: Out -> each air unit 20; FUN_15f4_0664 4704-4723 recompute). Distinct from airMission, the 20 spent when a mission is ordered (FUN_15f4_0d7e 4839): the mission charge was already coded; this is the per-round standing charge the term table was missing.",
       "reserveFloor": 40,
       "oilFieldType": 5,
       "moveCostPerCell": 5,

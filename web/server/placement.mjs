@@ -89,6 +89,14 @@ export function domainOf(kind) {
 
 // Which occupancy layer a piece or a kind lives on: "air" or "ground". Ground and sea share one
 // layer, which is why a hull and an infantry still cannot stand on one cell.
+// The same predicate as a boolean with no String() allocation. `layerOf` builds two strings per
+// call, which is right for a click and wrong for a per-piece per-room loop (the oil summary counts
+// aircraft once per piece per round); the branches are identical to layerOf's.
+export function isAirPiece(value) {
+  if (!value || typeof value !== "object") return value === "aircraft" || value === "air";
+  return value.kind === "aircraft" || value.domain === "air";
+}
+
 export function layerOf(value) {
   const kind = value && typeof value === "object" ? String(value.kind ?? "") : String(value ?? "");
   const domain = value && typeof value === "object" ? String(value.domain ?? "") : "";
