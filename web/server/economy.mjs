@@ -9,7 +9,7 @@
 // starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
 // because no duration was recovered.
 
-import { payEvery, priceOf, cityIncome, combatRules, missionedSurvivesCapture } from "./rules.mjs";
+import { payEvery, priceOf, cityIncome, maxCash, combatRules, missionedSurvivesCapture } from "./rules.mjs";
 import { upkeepResources, oilIncome } from "./resources.mjs";
 import { isOilField, siteTypeOf } from "./sitetype.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
@@ -488,6 +488,24 @@ export function incomeGate(match, side) {
   return true;
 }
 
+// PB-151: every CREDIT goes through here, so the original's 0..60000-unit clamp is one rule in
+// one place (FUN_23aa_0cba @ 23aa:0cba, decompiled.c 17186-17206). Income, a capture reward, a
+// refund and foreign aid all credit a seat; none of them may take the pool past 1500 b. Spending
+// does not come through here - a purchase debits and is refused when short, so a side at exactly
+// the ceiling can still buy.
+export function credit(match, side, millions) {
+  const seat = seatOf(match, side);
+  const amount = Number(millions);
+  if (!seat || !Number.isFinite(amount)) return null;
+  const base = Number.isFinite(seat.cash) ? Number(seat.cash) : 0;
+  let next = base + amount;
+  const ceiling = maxCash();
+  if (ceiling !== null && next > ceiling) next = ceiling;
+  if (next < 0) next = 0;
+  seat.cash = next;
+  return next;
+}
+
 // Income lands every round (payEvery, Manual p.27): cityIncome millions per paying site. PB-150
 // replaced the per-kind "capital pays" flag with the original's expression (type 4 plus every
 // capital after the first), so a base and an oil field pay nothing and a second capital pays as a
@@ -544,8 +562,12 @@ export function pay(match) {
     const oil = oilIncome(match, side, counted);
     const cities = oil.cities;
     const amount = cities * perCity;
-    seat.cash += amount;
-    const event = { type: "income", side, round, cities, wells, cashWells: 0, amount };
+    // PB-151: income is a credit, so it clamps at the original's ceiling. The event reports what
+    // actually landed, not what the count was worth, so a capped payday is not logged twice over.
+    const before = Number.isFinite(seat.cash) ? Number(seat.cash) : 0;
+    const credited = credit(match, side, amount);
+    const paid = Math.max(0, Number(credited) - before);
+    const event = { type: "income", side, round, cities, wells, cashWells: 0, amount: paid };
     if (oil.penalty > 0) {
       event.oilShort = true;
       event.oilPenalty = Number(oil.penalty.toFixed(4));
