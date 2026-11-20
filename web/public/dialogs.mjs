@@ -63,16 +63,41 @@ export function untypedCount(room) {
   return pieces.filter((piece) => piece.side === you && !piece.kind).length;
 }
 
-// Held sites by kind, straight off the room's own site list.
-function heldSites(room, you) {
+// The original's site subtype, read the way the server reads it (server/sitetype.mjs): the era
+// table's `type` byte wins, and a board built by hand falls back to its kind. The economy
+// dialogue counts by THIS, never by `kind`, because the asset list's word disagrees with the
+// subtype on 14 of the 84 sites - six type-3 bases and three capitals of 1986 are all drawn
+// with `kind: "city"` (PB-162).
+export function siteSubtype(site) {
+  if (!site) return 0;
+  const type = site.type;
+  if (typeof type === "number" && Number.isInteger(type) && type >= 0) return type;
+  switch (site.kind) {
+    case "city": return 4;
+    case "capital": return 1;
+    case "base": return 3;
+    case "facility": return 5;
+    default: return 0;
+  }
+}
+
+// Held sites by SUBTYPE, straight off the room's own site list (PB-162). The old helper counted
+// `kind === "city"` and the `oilfield`/`well` kinds, so 1986 Blue read "37 cities held" against
+// the 31 the payday pays (six bases and three capitals are drawn as cities) and "5 oilfields"
+// against the 11 type-5 fields the top bar's In already charges for. world.json's sketched
+// `oilfield`/`well` rows carry no subtype and drive no rule (PB-153), so they are counted in
+// none of these buckets.
+export function heldSites(room, you) {
   const sites = Array.isArray(room && room.sites) ? room.sites : [];
-  const held = { city: 0, capital: 0, dock: 0, well: 0 };
+  const held = { city: 0, capital: 0, base: 0, dock: 0, oilfield: 0 };
   for (const site of sites) {
     if (!site || site.owner !== you) continue;
-    if (site.kind === "city") held.city += 1;
-    else if (site.kind === "capital") held.capital += 1;
-    else if (site.kind === "dock") held.dock += 1;
-    else if (site.kind === "oilfield" || site.kind === "well") held.well += 1;
+    const type = siteSubtype(site);
+    if (type === 4) held.city += 1;
+    else if (type === 1 || type === 2) held.capital += 1;
+    else if (type === 3) held.base += 1;
+    else if (type === 5) held.oilfield += 1;
+    else if (site.kind === "dock" || site.kind === "docks") held.dock += 1;
   }
   return held;
 }
@@ -91,14 +116,34 @@ export function economyModel(room) {
       amount: Number(seat.income.amount) || 0,
     }
     : null;
+  // T-033's oil budget, as the seat carries it: In / Out / the reserve. The dialogue's Stocks
+  // list draws THIS for oil instead of the generic fuel meter, whose `held` is a cache that the
+  // view never primes and whose `rate` was never recovered - the stand-in that sat beside a real
+  // reserve of 3000 (PB-162).
+  const oil = seat && seat.oil && typeof seat.oil === "object"
+    ? {
+      held: Number.isFinite(Number(seat.oil.held)) ? Number(seat.oil.held) : null,
+      cap: Number.isFinite(Number(seat.oil.cap)) ? Number(seat.oil.cap) : null,
+      in: Number.isFinite(Number(seat.oil.in)) ? Number(seat.oil.in) : null,
+      out: Number.isFinite(Number(seat.oil.out)) ? Number(seat.oil.out) : null,
+      wells: Number(seat.oil.wells) || 0,
+      uses: seat.oil.uses !== false,
+      short: seat.oil.short === true,
+      dry: seat.oil.dry === true,
+    }
+    : null;
   const reserves = Array.isArray(seat && seat.reserves)
-    ? seat.reserves.map((meter) => ({
-      kind: String(meter.kind),
-      held: Number.isFinite(Number(meter.held)) ? Number(meter.held) : null,
-      reserve: Number.isFinite(Number(meter.reserve)) ? Number(meter.reserve) : null,
-      rate: meter.rate === null || meter.rate === undefined ? null : Number(meter.rate),
-      dry: meter.dry === true,
-    }))
+    ? seat.reserves
+      // The fuel meter is the same oil under a generic name; with the oil budget present it is a
+      // second, half-empty answer to the same question.
+      .filter((meter) => !(oil && meter && meter.kind === "fuel"))
+      .map((meter) => ({
+        kind: String(meter.kind),
+        held: Number.isFinite(Number(meter.held)) ? Number(meter.held) : null,
+        reserve: Number.isFinite(Number(meter.reserve)) ? Number(meter.reserve) : null,
+        rate: meter.rate === null || meter.rate === undefined ? null : Number(meter.rate),
+        dry: meter.dry === true,
+      }))
     : [];
   const pieces = Array.isArray(room && room.pieces) ? room.pieces : [];
   const enemy = you === "blue" ? "red" : you === "red" ? "blue" : "";
@@ -109,6 +154,7 @@ export function economyModel(room) {
     payEvery: seat && Number.isFinite(Number(seat.payEvery)) ? Number(seat.payEvery) : null,
     income,
     held,
+    oil,
     reserves,
     units: { own: you ? unitsOf(you) : 0, known: enemy ? unitsOf(enemy) : 0 },
   };
@@ -123,6 +169,21 @@ export function reserveLine(meter) {
   // readout itself so nobody reads it as a recovered rule.
   const original = meter.kind === "steel" ? " · non-original stand-in" : "";
   return meter.kind + ": " + held + " held · " + rate + (meter.dry ? " · dry" : "") + original;
+}
+
+// The oil budget in the player's words: the reserve, and what the next round puts in and takes
+// out (T-033). This is the real oil the top bar charges; the generic fuel meter above is not
+// drawn beside it any more (PB-162). A scenario that rewrites its reserve every round says so
+// instead of showing a budget the rules never spend.
+export function oilLine(oil) {
+  if (!oil) return "";
+  if (!oil.uses) return "oil: no oil use in this scenario";
+  const held = oil.held === null ? "unknown" : String(oil.held);
+  const cap = oil.cap === null ? "" : " of " + oil.cap;
+  const flow = (oil.in === null ? "In unknown" : "In " + oil.in) +
+    (oil.out === null ? " / Out unknown" : " / Out " + oil.out);
+  return "oil: " + held + cap + " held · " + flow + " a round" +
+    (oil.short ? " · short" : "") + (oil.dry ? " · dry" : "");
 }
 
 // The "Last rounds" list. The Log panel used to draw the last 8 LINES, so a single chatty round

@@ -34,7 +34,7 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
-import { NAV, buyRows, economyModel, navFor, reserveLine, untypedCount } from "./dialogs.mjs";
+import { NAV, buyRows, economyModel, navFor, oilLine, reserveLine, untypedCount } from "./dialogs.mjs";
 // The Log panel's buffer and scroll policy (PB-135): the panel paints every line the page retains
 // and a mid-match resync merges instead of being dropped.
 import {
@@ -2010,24 +2010,40 @@ const DIALOG_PAINTERS = {
     definition(dl, "Payday worth", model.income
       ? formatBillions(model.income.amount) + "b per round · " + model.income.cities + " cities + " + model.income.cashWells + " paying oil"
       : "unknown");
+    // PB-162: every count below is by the site SUBTYPE, not by the asset list's `kind`. 1986 Blue
+    // holds 29 type-4 cities, 3 capitals (one with kind "capital", two drawn as "city"), 6 type-3
+    // bases and 11 type-5 oil fields - so "37 cities" was counting bases and capitals as cities
+    // while the payday pays 31, and "5 oilfields" was counting world.json sketch wells.
+    definition(dl, "Paying cities", model.income ? String(model.income.cities) : "unknown");
     definition(dl, "Cities held", String(model.held.city));
+    definition(dl, "Capitals held", String(model.held.capital));
+    definition(dl, "Bases held", String(model.held.base));
     definition(dl, "Docks held", String(model.held.dock));
-    definition(dl, "Oilfields held", String(model.held.well));
+    definition(dl, "Oilfields held", String(model.held.oilfield));
     definition(dl, "Your units", String(model.units.own));
     definition(dl, "Enemy units seen", String(model.units.known));
     body.append(dl);
-    if (model.reserves.length) {
+    // Stocks: the real oil budget on its own line, then every other resource kind. PB-162: the
+    // generic "fuel" meter used to sit beside a reserve of 3000 saying "unknown held · rate
+    // unknown", because its held value is a cache nothing primes and its rate was never recovered.
+    const stocks = [];
+    if (model.oil) stocks.push({ text: oilLine(model.oil), title: "T-033's oil budget: the reserve, and the next round's In and Out." });
+    for (const meter of model.reserves) {
+      stocks.push({
+        text: reserveLine(meter),
+        title: meter.kind === "steel" ? "Steel is a non-original owner choice (D-003); the 1990 game had oil only." : "",
+      });
+    }
+    if (stocks.length) {
       const label = document.createElement("p");
       label.className = "dialoglabels";
       label.textContent = "Stocks";
       const list = document.createElement("ul");
       list.className = "reserves";
-      for (const meter of model.reserves) {
+      for (const stock of stocks) {
         const item = document.createElement("li");
-        item.textContent = reserveLine(meter);
-        if (meter.kind === "steel") {
-          item.title = "Steel is a non-original owner choice (D-003); the 1990 game had oil only.";
-        }
+        item.textContent = stock.text;
+        if (stock.title) item.title = stock.title;
         list.append(item);
       }
       body.append(label, list);
@@ -2036,7 +2052,7 @@ const DIALOG_PAINTERS = {
     const perCity = model.income && model.income.cities > 0 ? model.income.amount / model.income.cities : null;
     const every = model.payEvery === null || model.payEvery === undefined ? " every round" : (model.payEvery === 1 ? " every round" : " every " + model.payEvery + " rounds");
     body.append(note("Each city pays " + (perCity === null ? "its rate" : formatBillions(perCity) + " billion") + every +
-      ". Oilfields give oil, never cash. Bases and capitals pay nothing."));
+      ". Your first capital is free, and each capital after the first pays like one city. Bases, docks and oil fields pay nothing."));
   },
 
   // The fleet. Every aircraft this seat owns, where it is based, how many rounds it is away, and a
