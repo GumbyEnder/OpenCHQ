@@ -17,7 +17,7 @@
 import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { buy, seedOwners, occupy } from "../../server/economy.mjs";
-import { readinessNeighbours, markUnready } from "../../server/readiness.mjs";
+import { readinessNeighbours, poolReadiness } from "../../server/readiness.mjs";
 import { oilFlow } from "../../server/resources.mjs";
 import { isOilField, siteTypeOf } from "../../server/sitetype.mjs";
 import { sourceOf } from "../../server/rules.mjs";
@@ -95,7 +95,7 @@ export async function run(ctx) {
       const site = match.sites.find((entry) => entry && entry.id === id);
       must(site && siteTypeOf(site) !== 5, "a purchase marked an oil field unready: id " + id, fail);
     }
-    must(markUnready(match, "blue", city, "infantry") !== null, "markUnready must still work on a city", fail);
+    must(poolReadiness(match, "blue", city, "infantry") !== null, "poolReadiness must still work on a city", fail);
     console.log("pb153 criterion 3 ok: readiness lists no facility id");
   }
 

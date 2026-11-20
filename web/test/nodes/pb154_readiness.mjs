@@ -19,7 +19,7 @@ import { openMatch } from "../../server/match.mjs";
 import {
   capitalDivisor,
   isSiteReady,
-  markUnready,
+  poolReadiness,
   readinessNeighbours,
   readyRoundOf,
 } from "../../server/readiness.mjs";
@@ -89,7 +89,7 @@ export async function run(ctx) {
     must(!listed.includes(site(match, 64)), "a type-5 oil field is in the readiness list", fail);
     must(!listed.includes(site(match, "dock:50:49")), "a dock is in the readiness list", fail);
 
-    const marked = markUnready(match, "blue", site(match, 10), "infantry");
+    const marked = poolReadiness(match, "blue", site(match, 10), "infantry");
     eq(marked.rounds, 19, "AC1: floor(floor(10*80/3)/2)=133 over count 7 -> 19 rounds", fail);
     eq(marked.round, 19, "AC1: ready round at round 0", fail);
     eq(readyRoundOf(site(match, 10)), 19, "the build city's timer", fail);
@@ -107,7 +107,7 @@ export async function run(ctx) {
   {
     const match = fixture();
     site(match, 15).readyRound = 30; // remaining 30 at round 0
-    const marked = markUnready(match, "blue", site(match, 10), "infantry");
+    const marked = poolReadiness(match, "blue", site(match, 10), "infantry");
     // total = 133 base + 30 = 163; count 7; floor(163/7) = 23, 163 % 7 = 2 (not > 3.5).
     eq(marked.rounds, 23, "AC2: floor((133+30)/7) = 23", fail);
     eq(readyRoundOf(site(match, 15)), 23, "AC2: the 30-round neighbour got shorter, not longer", fail);
@@ -119,7 +119,7 @@ export async function run(ctx) {
   {
     for (const kind of ["tank", "aircraft"]) {
       const match = fixture();
-      const marked = markUnready(match, "blue", site(match, 10), kind);
+      const marked = poolReadiness(match, "blue", site(match, 10), kind);
       // floor(20*80/3) = 533; /2 = 266; count 7 -> 38, remainder 0.
       eq(marked.rounds, 38, `AC4: ${kind} (20 b) gives floor(533/2)=266 over 7 -> 38`, fail);
     }
@@ -131,7 +131,7 @@ export async function run(ctx) {
     const match = fixture();
     match.sites.push({ id: 1, name: "Capital2", kind: "capital", type: 2, x: 120, y: 100, owner: "blue" });
     eq(capitalDivisor(match, "blue"), 3, "two owned capitals -> caps 3", fail);
-    const marked = markUnready(match, "blue", site(match, 10), "infantry");
+    const marked = poolReadiness(match, "blue", site(match, 10), "infantry");
     // floor(266/3) = 88; count 7 -> 12, 88 % 7 = 4 > 3.5 -> +1 = 13.
     eq(marked.rounds, 13, "caps 3 pools to 13 rounds (the half-count rounding rule)", fail);
     console.log("pb154 caps ok: two capitals divide the base by 3 and the remainder rounds up");
@@ -141,7 +141,7 @@ export async function run(ctx) {
   {
     const match = fixture();
     match.round = 5;
-    const marked = markUnready(match, "blue", site(match, 10), "infantry");
+    const marked = poolReadiness(match, "blue", site(match, 10), "infantry");
     eq(marked.round, 24, "a round-5 build with 19 pooled rounds is ready at 24", fail);
     must(!isSiteReady(site(match, 10), 23), "ready one round early", fail);
     must(isSiteReady(site(match, 10), 24), "not ready on its own ready round", fail);
@@ -156,14 +156,14 @@ export async function run(ctx) {
     // (7 unique sites + the build site counted twice).
     site(match, 0).x = 50;
     site(match, 0).y = 52;
-    const exempt = markUnready(match, "blue", site(match, 10), "infantry");
+    const exempt = poolReadiness(match, "blue", site(match, 10), "infantry");
     // caps 2; floor(266/2)=133; count 8 -> floor(133/8)=16, 5 > 4 -> +1 = 17.
     eq(exempt.rounds, 17, "concealed era, first build: pooled timer with the capital in the list", fail);
     eq(readyRoundOf(site(match, 0)), 0, "build 1: the capital is exempt and keeps its timer", fail);
     eq(readyRoundOf(site(match, 10)), 17, "build 1: the city is still tired", fail);
     match.sides.blue.bought = 5;
     for (const entry of match.sites) delete entry.readyRound;
-    const tired = markUnready(match, "blue", site(match, 10), "infantry");
+    const tired = poolReadiness(match, "blue", site(match, 10), "infantry");
     eq(tired.rounds, 17, "concealed era, sixth build: same pool", fail);
     eq(readyRoundOf(site(match, 0)), 17, "build 6: the capital is tired like any other site", fail);
     console.log("pb154 concealed ok: capitals exempt for builds 1-5 (counter 0x1580), tired from build 6");

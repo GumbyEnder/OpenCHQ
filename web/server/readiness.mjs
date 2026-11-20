@@ -11,9 +11,9 @@
 //           +1 when total % count > count / 2
 // Timers drop by 1 per round, so a site is ready when its readyRound reaches the round.
 //
-// The old readinessRounds/markUnready stand-ins (roundsPerBillion, cityWeight, capitalWeight,
-// Chebyshev radiusCells, minRounds) are gone: their invented numbers are replaced by the decoded
-// constants in config/game.json `readiness`, each tagged DECODED with the address.
+// The old per-billion / city-weight stand-ins and their exported helper are gone: the numbers
+// they invented are replaced by the decoded constants in config/game.json `readiness`, each
+// tagged DECODED with the address.
 //
 // State is per site: `site.readyRound` is the first round the site may produce again. A site
 // with no readyRound, or one whose round has passed, is ready. The boolean `unready` from the
@@ -87,7 +87,7 @@ export function capitalDivisor(match, side) {
 }
 
 // The unique sites a production pools: the build site plus every site of the side among records
-// 0-63 inside d^2 < radiusSq. The build site appears once here; markUnready appends it a second
+// 0-63 inside d^2 < radiusSq. The build site appears once here; poolReadiness appends it a second
 // time because the original counts it twice.
 export function readinessNeighbours(match, side, site) {
   const { radiusSq } = readinessRules();
@@ -115,7 +115,7 @@ function capitalsExempt(match, side) {
 // they come back on, the pooled timer and the ids that were written, so the caller can report
 // exactly what a purchase did. A hull is built at a dock; the site that produces it is the nearest
 // friendly city, base or capital, so the dock itself is never the site that goes unready.
-export function markUnready(match, side, site, kind) {
+export function poolReadiness(match, side, site, kind) {
   const round = roundOf(match);
   const home = PRODUCE_KINDS.has(String(site && site.kind)) ? site : nearestProducer(match, side, site);
   if (!home) return { round: 0, rounds: 0, sites: [] };

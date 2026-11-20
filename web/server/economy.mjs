@@ -14,7 +14,7 @@ import { upkeepResources, oilIncome } from "./resources.mjs";
 import { isOilField, siteTypeOf } from "./sitetype.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace, siteLabel, layerOf } from "./placement.mjs";
-import { markUnready } from "./readiness.mjs";
+import { poolReadiness } from "./readiness.mjs";
 import { CELL_W } from "./board.mjs";
 import { siteAtCell, siteCells, cellKeyOf } from "./siteindex.mjs";
 // The opening owner bits, for the years the original wrote them from a file.
@@ -244,7 +244,7 @@ export function buy(match, side, kind, x, y, board = null) {
   // "Readiness"). readiness.mjs owns the radius and duration; every constant it reads is a
   // labelled UNMEASURED stand-in in config/game.json.
   const home = placement.site || null;
-  const readiness = home ? markUnready(match, side, home, unitKind) : null;
+  const readiness = home ? poolReadiness(match, side, home, unitKind) : null;
   // The cell the piece lands on. For a D-025 hull bought at a coastal city or base that is the
   // water cell beside it, docks first - the placement module resolved it.
   const at = placement.place || { x: cx, y: cy };
