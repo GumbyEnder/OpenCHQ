@@ -13,10 +13,20 @@
 //      Red 10, and the cash is exactly the measured Monitor Four figures (.650/.400/1.550/1.550);
 //   2. capturing a type-4 city adds 1; capturing a type-3 base adds 0; two capitals pay for one;
 //   3. sites with no subtype (docks, world.json wells) never pay;
-//   4. incomeGate(match, side) is the single hook pay() consults.
+//   4. incomeGate(match, side) is the single hook pay() consults;
+//   5. the 2023 opening - whose era row is ownerSource "rolled" with every owner null - is paid
+//      off seedOwners (world.json countries), not the original's owner file. Those two counts are
+//      a pin of today's board, not a measurement of the original.
+//
+// A captured type-3 base pays 0 (criterion 2), but it does become a legal placement site and air
+// base for the side that took it, because friendly() reads the owner byte. That behaviour is
+// UNVERIFIED against the original (RE question: in DOSBox, capture an enemy airbase and see
+// whether you can buy and place aircraft there); it is stated here so it is a decision to check,
+// not a side effect of the capture rule.
 
 import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
+import { eraTable } from "../../server/era.mjs";
 import { payoutFor, seedOwners, occupy, pay, incomeGate } from "../../server/economy.mjs";
 import { cityIncome } from "../../server/rules.mjs";
 import { siteTypeOf } from "../../server/sitetype.mjs";
@@ -135,5 +145,26 @@ export async function run(ctx) {
     console.log("pb150 criterion 4 ok: incomeGate(match, side) gates the payday");
   }
 
-  console.log("pb150_income ok: era openings, capture counts, subtype-only income, incomeGate");
+  // ---- 5. the 2023 opening rides on seedOwners --------------------------------------------
+  // 2023's era row is ownerSource "rolled" and every one of its 84 owners is null, so its opening
+  // is decided by seedOwners from world.json's country map, not by the original's owner file.
+  // world.json's countries are a sketch (like its wells), so the two counts below are a pin of
+  // today's board and NOT a measurement of the original: if the sketch moves, this goes red and
+  // the number has to be re-derived, not preserved.
+  {
+    const table = eraTable("2023");
+    must(table && Array.isArray(table.sites), "2023 must have a baked era row", fail);
+    eq(table.ownerSource, "rolled", "2023 owner source must be the seedOwners path", fail);
+    eq(table.sites.filter((entry) => entry.owner).length, 0, "2023 era row must carry no file owners", fail);
+    const match = opening("2023");
+    must(match.sites.some((entry) => entry.owner === "blue" || entry.owner === "red"),
+      "seedOwners must give 2023 an opening owner", fail);
+    eq(payoutFor(match, "blue").cities, 13, "2023 Blue paying sites (seedOwners opening)", fail);
+    eq(payoutFor(match, "red").cities, 7, "2023 Red paying sites (seedOwners opening)", fail);
+    eq(payoutFor(match, "blue").amount, 650, "2023 Blue pays .650 b (seedOwners opening)", fail);
+    eq(payoutFor(match, "red").amount, 350, "2023 Red pays .350 b (seedOwners opening)", fail);
+    console.log("pb150 criterion 5 ok: 2023 13/7 paying sites off seedOwners (rolled, 0 file owners)");
+  }
+
+  console.log("pb150_income ok: era openings, capture counts, subtype-only income, incomeGate, 2023 seedOwners");
 }
