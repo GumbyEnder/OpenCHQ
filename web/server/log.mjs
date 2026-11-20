@@ -134,7 +134,11 @@ export function logLines(match, side, events, round) {
         break;
       }
       case "income_skipped":
-        if (mine) push("no pay this round: the pool is short");
+        if (!mine) break;
+        // PB-156: two different reasons, two different lines. A pool that is short is the side's own
+        // doing; a skipped payday after detonations is the sky's, and telling a player "the pool is
+        // short" when their purse is full sends them looking in the wrong dialog.
+        push(event.reason === "gate" ? "no pay this round: nuclear winter" : "no pay this round: the pool is short");
         break;
       case "capture": {
         // A baked dock/facility is named after its own cell ("Dock 260,46"): that is a coordinate
@@ -282,6 +286,13 @@ export function logLines(match, side, events, round) {
       case "nuke":
         if (mine) push("a nuke was launched");
         else push("an enemy nuke was launched");
+        break;
+      case "nuke_warning":
+        // Global news: the count is shared, so both seats read the same warning.
+        push("the sky is dimming: " + (Number(event.detonated) || 0) + " detonations");
+        break;
+      case "nuclear_winter":
+        push("nuclear winter: the war is over and neither side holds anything");
         break;
       case "win": {
         // The set is the era's, not two fixed seats: 1918 is won by holding London, Berlin and

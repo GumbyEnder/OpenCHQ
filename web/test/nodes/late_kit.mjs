@@ -8,7 +8,7 @@
 import { openMatch } from "../../server/match.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { rules } from "../../server/rules.mjs";
-import { nukeStatus, toolsForEra, useTool, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
+import { nukeStatus, launchEdge, toolsForEra, useTool, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
 
 export const name = "late_kit";
 
@@ -112,12 +112,15 @@ export async function run(ctx) {
   if (!refused.error) fail("a nuke launched while refused");
   if (nukeStatus(nuked, "blue").allowed) fail("nukeStatus allowed a launch while refused");
 
-  // The limit rule is read from the counters, so it is provable without enabling anything.
+  // The limit is the DIFFERENCE of the two counters (Manual p.30, PB-156), and that arithmetic is
+  // readable without enabling the tool. The refusal itself needs `nukes.enabled:true`, so it is
+  // proved in pb156_nuke.mjs over a config that turns the block on; asserting it here would only
+  // read the disabled note and look like a rule test.
   const counted = fresh();
-  counted.late = { launched: { blue: { fired: 3, absorbed: 0 } } };
-  if (nukeStatus(counted, "blue").allowed) fail("a fourth launch was allowed");
-  counted.late = { launched: { blue: { fired: 1, absorbed: 3 } } };
-  if (nukeStatus(counted, "blue").allowed) fail("a launch was allowed after three were absorbed");
+  counted.late = { launched: { blue: { fired: 2 }, red: { fired: 0 } } };
+  if (launchEdge(counted, "blue") !== 2) fail("the launch edge is not fired(mine) - fired(theirs)");
+  counted.late = { launched: { blue: { fired: 3 }, red: { fired: 1 } } };
+  if (launchEdge(counted, "blue") !== 2) fail("the launch edge counted one side's absolute total");
 
   // --- a target near a capital is home ground ----------------------------------------
   const guarded = fresh();

@@ -24,6 +24,8 @@ import { capitalSetFor } from "./match.mjs";
 // The berth list is air.mjs's, not a second copy here: capture destroys the enemy aircraft on the
 // strip it takes, so it has to read the same set a transfer lands on and a mission flies from.
 import { AIRSTRIP_KINDS, inactiveRounds } from "./air.mjs";
+// PB-156: the income roll reads the global detonation count off the same module the launch writes.
+import { detonatedCount, incomeSkipPercent, nukesEnabled, nukeRoll } from "./nukes.mjs";
 
 const SIDES = Object.freeze(["blue", "red"]);
 
@@ -506,11 +508,16 @@ function incomeCounts(match) {
   return counts;
 }
 
-// PB-150 hook: whether this side's payday happens at all. Always true today; PB-156 fills it
-// with the 5n% nuclear-winter roll (FUN_15f4_0664 4763). Keeping the call here means that rule
-// lands in one place instead of a second pay() path.
+// PB-150 hook / PB-156 body: whether this side's payday happens at all. The original rolls rnd(100)
+// once per side per round and pays only if it is at least 5n, where n is the GLOBAL detonation
+// count (FUN_15f4_0664 4763). With nukes disabled the gate is not in play at all, so the default
+// config behaves exactly as PB-150 shipped: always paid. The roll comes off the match's own seeded
+// stream, so a reload replays the same round instead of re-rolling it.
 export function incomeGate(match, side) {
-  return true;
+  if (!nukesEnabled()) return true;
+  const n = detonatedCount(match);
+  if (n <= 0) return true;
+  return nukeRoll(match) >= incomeSkipPercent(n);
 }
 
 // PB-151: every CREDIT goes through here, so the original's 0..60000-unit clamp is one rule in

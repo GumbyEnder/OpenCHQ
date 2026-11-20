@@ -17,6 +17,8 @@
 // "sites the side already owns", and on the unseeded board every owner is still null. A literal "????"
 // string is not an era id: eraOf sends it to 1986, so only the code's own 9999 rolls.
 import { eraTable } from "./era.mjs";
+// One generator for the whole server (PB-156): the nuke rolls and the capital draw share it.
+import { mulberry32, seedOf } from "./rng.mjs";
 
 export const CAPITAL_TYPES = [1, 2];
 const SIDES = ["blue", "red"];
@@ -72,30 +74,6 @@ export function capitalsFromFile(era, sites) {
     });
   }
   return { era: String(era), source, list, missing };
-}
-
-// A small deterministic generator. Same seed, same capitals: a rolled era must be reproducible in a
-// test and in a replay, which a bare Math.random() would break.
-function mulberry32(seed) {
-  let state = Number(seed) >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function seedOf(value) {
-  if (Number.isInteger(value)) return value >>> 0;
-  const text = String(value === undefined || value === null ? "" : value);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
 }
 
 // A site that can hold a capital: on the map, a city or a capital by the asset list's word, not a

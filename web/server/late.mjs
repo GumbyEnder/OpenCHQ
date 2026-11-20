@@ -8,12 +8,16 @@
 // foreign aid, and the archive's own note says it flips a city's owner.
 
 import { millionsPerBillion, priceOf, rules } from "./rules.mjs";
+// PB-156: the launch gate is the DIFFERENCE of two counters, and one global detonation count drives
+// the income roll and the winter check. Both live in nukes.mjs so economy.incomeGate reads the same
+// numbers this module writes.
+import { launchLead, warnFrom, winterFrom, nukeState, nukeRoll, winterChancePercent } from "./nukes.mjs";
 
 const LATE_ERAS = new Set(["1986", "2023", "9999"]);
 
-// The booklet's limit, from docs/POLISH_LOOP.md: "after three nukes fired or three absorbed
-// without reply, further launches stop".
-const LAUNCH_LIMIT = 3;
+// Manual p.30: at most three more nukes than the opponent has fired. The old booklet paraphrase
+// ("three fired or three absorbed without reply") counted one side's total and an intercept count;
+// PB-156 replaces it with the difference. The number is config's `nukes.launchLead` (DECODED).
 
 export const INTEL_NOTE = "Intel. Every unit is revealed, and the other side is told.";
 export const SATELLITE_NOTE = "Satellite overhead. Its pass is quiet.";
@@ -79,16 +83,29 @@ function launchedBy(match, side) {
   return late.launched[side];
 }
 
+function otherSide(side) {
+  return side === "blue" ? "red" : "blue";
+}
+
+// How many launches this side leads by: fired(mine) - fired(theirs). Negative when the other side
+// is ahead, which is why a side that has already fired three may fire again once its opponent does.
+export function launchEdge(match, side) {
+  const mine = launchedBy(match, side);
+  const theirs = launchedBy(match, otherSide(side));
+  return Number(mine.fired || 0) - Number(theirs.fired || 0);
+}
+
 // Whether this side may still launch. Exported so the rule can be read without launching.
 export function nukeStatus(match, side) {
   const cfg = (rules().nukes || {});
   if (cfg.enabled !== true) return { allowed: false, reason: NUKE_NOTE };
-  const mine = launchedBy(match, side);
-  if (Number(mine.fired) >= LAUNCH_LIMIT) {
-    return { allowed: false, reason: `Three launches are already away. No further launches.` };
-  }
-  if (Number(mine.absorbed) >= LAUNCH_LIMIT) {
-    return { allowed: false, reason: `Three were absorbed without reply. No further launches.` };
+  const lead = launchLead();
+  const edge = launchEdge(match, side);
+  if (edge >= lead) {
+    return {
+      allowed: false,
+      reason: `${lead} more launches than the other side are already away. No further launches until they fire one.`,
+    };
   }
   return { allowed: true };
 }
@@ -119,8 +136,9 @@ export function kitBriefing(match, side) {
   const cfg = (rules().nukes || {});
   const radius = Number(cfg.exclusion);
   const status = nukeStatus(match, side);
-  const mine = match ? launchedBy(match, side) : { fired: 0, absorbed: 0 };
-  const left = Math.max(0, LAUNCH_LIMIT - Number(mine.fired || 0));
+  const lead = launchLead();
+  const edge = match ? launchEdge(match, side) : 0;
+  const left = Math.max(0, lead - edge);
   const kit = [];
 
   const add = (name, label, text, allowed, reason) => {
@@ -144,10 +162,16 @@ export function kitBriefing(match, side) {
     const radiusText = Number.isFinite(radius) && radius >= 1
       ? `A capital and the ${radius} cells around it cannot be targeted. That radius is a ${STAND_IN}: the archive kept a guard but never printed its size.`
       : "No home-ground guard is set in this match.";
-    const limitText = `Launches stop after ${LAUNCH_LIMIT} fired or ${LAUNCH_LIMIT} absorbed without reply (the booklet's count). ` +
-      `This side has ${left} of ${LAUNCH_LIMIT} left.`;
+    const limitText = `Launches stop once this side has ${lead} more fired than the other side (Manual p.30). ` +
+      `This side may fire ${left} more before the other side answers.`;
     const damageText = `A launch deals no damage and paints no wasteland — a ${STAND_IN}, because the archive's own nuke did neither.`;
-    add("nuke", "Nuke", [radiusText, limitText, damageText].join(" "), status.allowed, status.reason);
+    // PB-156: the global count is not decoration. Every launch feeds it, and it is what turns the
+    // sky on both sides: income can be skipped from the first detonation, the warning comes at 5,
+    // and winter can end the war from 10.
+    const parked = match ? nukeState(match) : null;
+    const detonated = parked ? Number(parked.detonated) || 0 : 0;
+    const countText = `Detonations so far: ${detonated}. From ${warnFrom()} the sky is warned; from ${winterFrom()} each launch can end the war for both sides.`;
+    add("nuke", "Nuke", [radiusText, limitText, countText, damageText].join(" "), status.allowed, status.reason);
   }
 
   return kit;
@@ -220,8 +244,38 @@ export function useTool(match, side, tool, target) {
     if (paid.error) return paid;
     const mine = launchedBy(match, side);
     mine.fired = Number(mine.fired || 0) + 1;
+    // FUN_1eb5_0eae: one global count, incremented by the detonation itself, whatever the side.
+    const state = nukeState(match);
+    state.detonated = Number(state.detonated || 0) + 1;
+    const detonated = state.detonated;
     // No wasteland, no flipped city, no damage: the archive's own rule for this stand-in.
-    events.push({ type: "nuke", side, x: at.x, y: at.y, round, launched: mine.fired, cost: paid.price, note: "Stand-in nuke. It paints nothing and deals no damage." });
+    events.push({
+      type: "nuke", side, x: at.x, y: at.y, round, launched: mine.fired, detonated, cost: paid.price,
+      note: "Stand-in nuke. It paints nothing and deals no damage.",
+    });
+    // From 5, a warning. Both seats read it: the count is global, not the launcher's business.
+    if (detonated >= warnFrom()) {
+      events.push({
+        type: "nuke_warning", side: null, round, detonated,
+        note: `${detonated} detonations. Nuclear winter can end the war from ${winterFrom()}.`,
+      });
+    }
+    // From 10, winter if rnd(100) < 100 / (20 - n). The game ends as a loss for BOTH sides: no
+    // winner is recorded, because neither side survives the sky.
+    if (detonated >= winterFrom()) {
+      const roll = nukeRoll(match);
+      const chance = winterChancePercent(detonated);
+      if (roll < chance) {
+        match.over = true;
+        match.clock = "held";
+        match.winner = null;
+        match.winReason = { kind: "nuclear_winter", side: null, detonated, round, chance, roll };
+        events.push({
+          type: "nuclear_winter", side: null, round, detonated, roll, chance,
+          note: "Nuclear winter. Neither side goes on.",
+        });
+      }
+    }
     return { ok: true, events };
   }
 

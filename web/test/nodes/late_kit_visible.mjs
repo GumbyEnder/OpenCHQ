@@ -89,9 +89,12 @@ export async function run() {
   {
     const m = match();
     eq("the seat view carries the kit", forSeat(m, "blue").seat.kit.length, kitBriefing(m, "blue").length);
-    const limited = match({ late: { launched: { blue: { fired: 2, absorbed: 0 } } } });
+    // PB-156: the limit is the DIFFERENCE of the two counters (Manual p.30), so a side two ahead
+    // may fire one more - and the sentence has to say so in those terms, not as "1 of 3 left".
+    const limited = match({ late: { launched: { blue: { fired: 2 }, red: { fired: 0 } } } });
     const nuke = kitBriefing(limited, "blue").find((entry) => entry.name === "nuke");
-    if (!/1 of 3 left/.test(nuke.text)) fail("the briefing does not count the launches left: " + nuke.text);
+    if (!/may fire 1 more/.test(nuke.text)) fail("the briefing does not count the launches left: " + nuke.text);
+    if (!/3 more fired/.test(nuke.text)) fail("the briefing does not state the difference rule: " + nuke.text);
   }
 
   // --- the round log records a tool use for its owner only ----------------------------------
