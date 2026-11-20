@@ -33,13 +33,14 @@ const CITY_KINDS = new Set(["city"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
 // PB-153: the 20 `facility` ids are the original's type-5 oil fields.
 const FACILITY_KINDS = new Set(["facility"]);
-// The original captures a base as well as a city and an oil field: PB-150 pays income on the
-// subtype, and PB-155 pays 2 b when a type-3 or type-4 site changes hands, so a base has to be
-// takeable by standing on it. Bases are not `ownable` (seedOwners never grants one from a
-// country) - they only change hands in battle.
+// The original captures a base as well as a city and an oil field: PB-155 pays 2 b when a
+// type-3 or type-4 site changes hands, so a base has to be takeable by standing on it. Bases are
+// not `ownable` (seedOwners never grants one from a country) - they only change hands in battle.
 const BASE_KINDS = new Set(["base"]);
-// world.json's sketched wells: ownership seeding (display) only, never a rule source.
-const WELL_KINDS = new Set(["oilfield", "well"]);
+// world.json's sketched wells are draw-only: they keep a display owner (seedOwners) so they
+// are painted in the country's colour, and no other rule may see them (PB-153 AC4). Kept out
+// of `ownable` on purpose so a piece standing on one can never take it.
+const DISPLAY_WELL_KINDS = new Set(["oilfield", "well"]);
 // A capital is occupiable and its owner byte is who holds it: the era table writes the scenario's
 // opening holder (1942 hands both seats to blue), and a capture overwrites the byte. The byte is
 // the win condition's own field, not a country claim - no income is ever counted from a capital.
@@ -122,7 +123,10 @@ function sideOfRegion(region) {
 // are not capturable and pay neither cash nor oil (PB-153 AC4).
 // Capitals are not on this list; they are the win condition, not income.
 function ownable(kind) {
-  return CITY_KINDS.has(kind) || DOCK_KINDS.has(kind) || FACILITY_KINDS.has(kind) || WELL_KINDS.has(kind);
+  // PB-153: the 20 `facility` sites are type-5 oil fields and are captured by standing on them.
+  // The world.json `wells` are a sketch: they keep their display owner (seedOwners) but no rule
+  // may take them, so they are not occupiable. Docks and cities keep their own kinds.
+  return CITY_KINDS.has(kind) || DOCK_KINDS.has(kind) || FACILITY_KINDS.has(kind);
 }
 
 // Ownership is seeded once per match object: a city, dock or well starts with the country
@@ -142,7 +146,7 @@ export function seedOwners(match) {
   const table = eraTable(match.era);
   const fromFile = Boolean(table && table.ownerSource === "file");
   for (const site of match.sites) {
-    if (!site || !ownable(site.kind)) continue;
+    if (!site || !(ownable(site.kind) || DISPLAY_WELL_KINDS.has(String(site.kind)))) continue;
     if (site.owner === "blue" || site.owner === "red") continue;
     if (fromFile && site.type !== undefined) continue;
     const side = sideOfRegion(regionOf(site));
@@ -478,16 +482,17 @@ function incomeCounts(match) {
 }
 
 // PB-150 hook: whether this side's payday happens at all. Always true today; PB-156 fills it
-// with the 5n% nuclear-winter roll. Keeping the call here means that rule lands in one place.
+// with the 5n% nuclear-winter roll (FUN_15f4_0664 4763). Keeping the call here means that rule
+// lands in one place instead of a second pay() path.
 export function incomeGate(match, side) {
   return true;
 }
 
-// Income lands every round (payEvery, Manual p.27): cityIncome millions per city and nothing per
-// PB-150 replaced the per-kind "capital pays" flag with the original's expression (type 4 plus
-// every capital after the first), so a base and an oil field pay nothing and a second capital pays
-// as a city. A finished match pays nothing. A side whose pool was never funded - cash not a number,
-// or already short (negative) - is not paid.
+// Income lands every round (payEvery, Manual p.27): cityIncome millions per paying site. PB-150
+// replaced the per-kind "capital pays" flag with the original's expression (type 4 plus every
+// capital after the first), so a base and an oil field pay nothing and a second capital pays as a
+// city. A finished match pays nothing. A side whose pool was never funded - cash not a number, or
+// already short (negative) - is not paid.
 export function pay(match) {
   if (!match || !Array.isArray(match.sites) || !match.sides) return [];
   seedOwners(match);
