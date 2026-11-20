@@ -1,13 +1,17 @@
-// Node test: docks and wells must exist as sites (graph node site_assets).
+// Node test: docks and oil fields must exist as sites (graph node site_assets).
 //
 // What breaks if this feature is removed: a 1986 room's site list carries 84 cities,
 // capitals and facilities and nothing else, so no ship can be bought (there is no dock) and
 // no well can change hands (there is no oilfield). A room without the extract would also
 // have to keep opening with an empty list instead of throwing.
+//
+// PB-153 moved the oil field from the sketched world.json `well` rows to the type-5 `facility`
+// sites. This node pins the reversed rule: a sketched well is draw-only and is NOT captured,
+// while a type-5 facility is taken by a ground unit standing on it.
 
 import { matchSites } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
-import { buy, capture, upkeep } from "../../server/economy.mjs";
+import { buy, capture, occupy, upkeep } from "../../server/economy.mjs";
 
 export const name = "site_assets";
 
@@ -105,18 +109,51 @@ export async function run(ctx) {
   must(ship.piece.domain === "sea", "the berth produced a " + ship.piece.domain + " piece");
   must(ship.piece.x === berth.x && ship.piece.y === berth.y, "the cruiser did not land on its berth");
 
+  // PB-153 reversed the old rule this node used to pin: a world.json `well` is a hand-placed sketch,
+  // draw-only. It keeps its display owner, and no rule may read it — standing on one captures
+  // nothing. There are two paths that could take it, and the reversal has to hold on both:
+  //   upkeep() -> capture()  (the path the old assertion used, now subtype-driven)
+  //   occupy()               (the pass that takes cities, docks and type-5 facilities)
+  // The original's oil field is the type-5 `facility` site (ids 64-83), and THAT is taken by a
+  // ground unit standing on it.
   const redWell = match.sites.find((site) => WELL(site) && site.owner === "red");
-  must(redWell, "no Red well to take");
+  must(redWell, "no Red sketched well on the merged list");
   const walker = match.pieces.find((piece) => piece.id === "blue:land");
   must(walker, "the opening blue land piece is missing");
+  const wellOwnerBefore = redWell.owner;
   walker.x = redWell.x;
   walker.y = redWell.y;
-  const events = upkeep(match);
+  const wellEvents = upkeep(match);
   must(
-    events.some((event) => event.type === "capture" && event.site === redWell.id && event.side === "blue"),
-    "standing on a well did not capture it: " + JSON.stringify(events.filter((e) => e.type === "capture"))
+    !wellEvents.some((event) => event.type === "capture" && event.site === redWell.id),
+    "upkeep captured a sketched well (PB-153: wells are not captured): " +
+      JSON.stringify(wellEvents.filter((e) => e.type === "capture"))
   );
-  must(redWell.owner === "blue", "the well still belongs to " + redWell.owner);
+  must(redWell.owner === wellOwnerBefore, "a sketched well changed hands in upkeep: " + redWell.owner);
+  const occupyEvents = occupy(match);
+  must(
+    !occupyEvents.some((event) => event.type === "capture" && event.site === redWell.id),
+    "occupy captured a sketched well (PB-153: wells are not captured): " +
+      JSON.stringify(occupyEvents.filter((e) => e.type === "capture"))
+  );
+  must(redWell.owner === wellOwnerBefore, "a sketched well changed hands in occupy: " + redWell.owner);
+
+  // The real oil asset: a type-5 facility, taken by a ground unit. Site 64 is the RE-E6 probe
+  // site; fall back to any free red-held facility if a rolled list ever moves it.
+  const occupied = new Set(match.pieces.map((piece) => piece.x + "," + piece.y));
+  const field = match.sites.find(
+    (site) => site.kind === "facility" && site.owner === "red" && !occupied.has(site.x + "," + site.y)
+  );
+  must(field, "no free Red facility to take");
+  walker.x = field.x;
+  walker.y = field.y;
+  const fieldEvents = upkeep(match);
+  must(
+    fieldEvents.some((event) => event.type === "capture" && event.site === field.id && event.side === "blue"),
+    "standing on a type-5 facility did not capture it: " +
+      JSON.stringify(fieldEvents.filter((e) => e.type === "capture"))
+  );
+  must(field.owner === "blue", "the captured facility still belongs to " + field.owner);
   // capture() refuses a city, so the new sites did not blunt the rule
   const city = match.sites.find((site) => site.kind === "city");
   must(city, "the merged list has no city");
