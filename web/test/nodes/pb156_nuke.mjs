@@ -19,7 +19,8 @@ import path from "node:path";
 import { configPath, resetRules, rules } from "../../server/rules.mjs";
 import { launchEdge, nukeStatus, useTool } from "../../server/late.mjs";
 import { detonatedCount, nukeState, incomeSkipPercent, winterChancePercent } from "../../server/nukes.mjs";
-import { incomeGate } from "../../server/economy.mjs";
+import { incomeGate, pay } from "../../server/economy.mjs";
+import { draw } from "../../server/rng.mjs";
 import { logLines } from "../../server/log.mjs";
 
 export const name = "pb156_nuke";
@@ -186,6 +187,58 @@ export async function run(ctx) {
         const m = match({ capitalSeed: i, nukes: { detonated: 8 } });
         useTool(m, "blue", "nuke", { x: 100, y: 100 });
         if (m.over) fail("the war ended in winter at nine detonations");
+      }
+    }
+
+    // --- 4. the draw ORDER within a round: launch's winter roll, then payday blue, then red ----
+    // One stream, two consumers, so the call order is part of the behaviour. The production order
+    // is fixed: a launch is a player action and rolls the winter check inside the launch; a round's
+    // payday runs afterwards in tick.mjs (`occupy` -> `pay` -> `upkeep`) and rolls once per side in
+    // SIDES order. Pin it explicitly here - a refactor that pays before it launches, or pays red
+    // before blue, would still look "seeded" while replaying a different round.
+    {
+      eq("the winter chance at 20 is the clamped 100 (an EXTRAPOLATION, not a decode)", winterChancePercent(20), 100);
+      eq("the clamp holds above 20", winterChancePercent(25), 100);
+
+      let discriminating = 0;
+      for (let seed = 0; seed < 60; seed += 1) {
+        const m = match({ capitalSeed: seed, nukes: { detonated: 9 } });
+        const state0 = nukeState(m).rngState;
+        const first = draw(state0);
+        const second = draw(first.state);
+        const third = draw(second.state);
+        const winterRoll = Math.floor(first.value * 100);
+        const blueRoll = Math.floor(second.value * 100);
+        const redRoll = Math.floor(third.value * 100);
+        const winterExpected = winterRoll < winterChancePercent(10);
+        const blueExpected = blueRoll >= incomeSkipPercent(10);
+        const redExpected = redRoll >= incomeSkipPercent(10);
+
+        const launch = useTool(m, "blue", "nuke", { x: 100, y: 100 });
+        if (launch.error) fail("seed " + seed + ": the tenth detonation was refused: " + launch.error);
+        eq("seed " + seed + ": the launch takes the FIRST draw", nukeState(m).rngState, first.state);
+        eq("seed " + seed + ": the winter verdict is the first draw", Boolean(m.over), winterExpected);
+        // A finished war pays nobody (tick.mjs returns before pay), so the payday half is asserted
+        // on the rounds that survived the winter.
+        if (winterExpected) continue;
+
+        const events = pay(m);
+        eq("seed " + seed + ": payday takes the next two draws, blue then red", nukeState(m).rngState, third.state);
+        const blueEvent = events.find((event) => event.side === "blue");
+        const redEvent = events.find((event) => event.side === "red");
+        const bluePaid = Boolean(blueEvent && blueEvent.type === "income");
+        const redPaid = Boolean(redEvent && redEvent.type === "income");
+        eq("seed " + seed + ": blue's payday is the SECOND draw", bluePaid, blueExpected);
+        eq("seed " + seed + ": red's payday is the THIRD draw", redPaid, redExpected);
+
+        // The pin must be able to bite: count the seeds where paying before launching, or paying
+        // red before blue, would produce a different record than the one just asserted.
+        const swappedOrderDiffers = (blueRoll >= incomeSkipPercent(10)) !== (winterRoll < winterChancePercent(10));
+        const swappedSidesDiffer = blueExpected !== redExpected;
+        if (swappedOrderDiffers || swappedSidesDiffer) discriminating += 1;
+      }
+      if (discriminating < 10) {
+        fail("the draw-order pin is degenerate: only " + discriminating + " of 60 seeds distinguish the order");
       }
     }
   } finally {

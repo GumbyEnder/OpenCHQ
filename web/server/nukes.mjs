@@ -80,6 +80,9 @@ export function incomeSkipPercent(n) {
   return pct > 100 ? 100 : pct;
 }
 
+// 100 / (winterDivisor - n), as the original divides it. At and above the divisor the original's
+// expression is undefined, so the 100% clamp here is an EXTRAPOLATION, not a decode: it stops the
+// rule at a certain winter instead of inventing the original's undefined branch.
 export function winterChancePercent(n) {
   const left = tunable("winterDivisor", FALLBACK.divisor) - Math.max(0, Number(n) || 0);
   return left <= 0 ? 100 : 100 / left;
