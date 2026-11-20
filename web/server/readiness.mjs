@@ -53,6 +53,14 @@ export function isSiteReady(site, round) {
   return !(at > 0 && at > roundOf({ round }));
 }
 
+// PB-155: how many rounds a site is unready after it changes hands. The original writes
+// 0x10ae[site] = 15 in the capture handler (FUN_1c0d_02ce @ 1c0d:02ce, decompiled.c 9169) -
+// a flat timer, not the pooled production formula - so it lives beside the readiness constants
+// and is read the same way.
+export function captureUnreadyRounds() {
+  return readinessRules().captureRounds;
+}
+
 // A record site: one of the era file's 0-63 producing rows (city, capital, base). The kind test
 // keeps a sketched well or a dock that happens to carry a small numeric id out of the list;
 // `Number.isInteger` excludes the synthetic `dock:<x>:<y>` ids.

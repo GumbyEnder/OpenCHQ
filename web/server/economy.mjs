@@ -9,12 +9,12 @@
 // starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
 // because no duration was recovered.
 
-import { payEvery, priceOf, cityIncome, maxCash, combatRules, missionedSurvivesCapture } from "./rules.mjs";
+import { payEvery, priceOf, cityIncome, maxCash, captureReward, combatRules, missionedSurvivesCapture } from "./rules.mjs";
 import { upkeepResources, oilIncome } from "./resources.mjs";
 import { isOilField, siteTypeOf } from "./sitetype.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace, siteLabel, layerOf } from "./placement.mjs";
-import { poolReadiness } from "./readiness.mjs";
+import { poolReadiness, captureUnreadyRounds } from "./readiness.mjs";
 import { CELL_W } from "./board.mjs";
 import { siteAtCell, siteCells, cellKeyOf } from "./siteindex.mjs";
 // The opening owner bits, for the years the original wrote them from a file.
@@ -376,8 +376,33 @@ export function occupy(match) {
     // win condition reads it, so a piece standing on it is the freshest fact about the holder.
     const side = holder === 1 ? "blue" : holder === 2 ? "red" : null; // contested or empty: nobody holds it
     if (side && site.owner !== side) {
-      events.push({ type: "capture", site: site.id, name: site.name, kind, side, from: site.owner ?? null });
+      const from = site.owner ?? null;
+      events.push({ type: "capture", site: site.id, name: site.name, kind, side, from });
       site.owner = side;
+      // PB-155: a captured type-3 base or type-4 city is unready for 15 rounds and pays the
+      // capturer 2 b (FUN_1c0d_02ce @ 1c0d:02ce, decompiled.c 9169/9179-9182). The owner test
+      // above is what makes the reward once per change of hands: a unit that keeps standing on
+      // the site never re-enters this branch. A capital (1/2) and an oil field (5) pay nothing.
+      const type = siteTypeOf(site);
+      if (type === 3 || type === 4) {
+        const round = Number(match.round) || 0;
+        site.readyRound = round + captureUnreadyRounds();
+        const seat = seatOf(match, side);
+        const before = seat && Number.isFinite(seat.cash) ? Number(seat.cash) : 0;
+        const credited = credit(match, side, captureReward());
+        const paid = credited === null ? 0 : Math.max(0, Number(credited) - before);
+        events.push({
+          type: "capture_reward",
+          side,
+          site: site.id,
+          name: site.name,
+          kind,
+          from,
+          amount: paid,
+          readyRound: site.readyRound,
+          round,
+        });
+      }
       // A captured air strip destroys the enemy aircraft based on it, in this same pass (Manual
       // printed p.10: the enemy air unit is destroyed when the city is taken). "Based on it" is the
       // plane's own cell being the site's cell - the same geometry transferPlane lands it on.

@@ -284,6 +284,15 @@ export function maxCash() {
 // PB-150: income is paid on the original's expression (count(type 4) + max(0, count(type 1) +
 // count(type 2) - 1)), so there is no per-kind "capital pays" flag to read. Retired with the rule.
 
+// PB-155: when a type-3 base or a type-4 city changes hands, the capturing side is paid 80 raw
+// units = 2 b (FUN_1c0d_02ce @ 1c0d:02ce, decompiled.c 9179-9182). The original's raw unit is a
+// 25-million step (80 raw = 2000 million), so `money.captureReward` is stored in millions like
+// every other credit. A capital or an oil field pays nothing.
+export function captureReward() {
+  const value = Number(rules().money?.captureReward);
+  return Number.isFinite(value) && value >= 0 ? value : 2000;
+}
+
 // Whether an aircraft away on a mission survives the capture of its base. Q50(a), UNVERIFIED: the
 // manual's p.10 "City Conquest" rule covers a plane BASED on the captured strip and says nothing
 // about one already in the air, so this is the remake's choice and not a recovered rule. `false` is
@@ -335,6 +344,9 @@ export function readinessRules() {
     priceScaleDenominator: number(block.priceScaleDenominator, 3, 1),
     // caps = capitalBase + owned capitals (type 1/2). The original's `1 +` is this base.
     capitalBase: Math.floor(number(block.capitalBase, 1, 1)),
+    // PB-155: a captured type-3/type-4 site is unready for 15 rounds (0x10ae[site] = 15 at
+    // 1c0d:02ce, decompiled.c 9169). This is a timer write, not a pooled production.
+    captureRounds: Math.floor(number(block.captureRounds, 15, 0)),
   };
 }
 

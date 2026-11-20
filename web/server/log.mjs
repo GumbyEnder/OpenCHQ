@@ -157,6 +157,15 @@ export function logLines(match, side, events, round) {
         }
         break;
       }
+      case "capture_reward": {
+        // PB-155: taking a city or a base pays the capturer 2 b. Only the seat that was paid reads
+        // the amount; the other side already has the capture line and nothing about its cash.
+        if (!mine) break;
+        const paid = amountOf(event);
+        if (paid === null || paid <= 0) break;
+        push("capture reward +" + billionsText(paid));
+        break;
+      }
       case "destroyed": {
         // A destroy event that names its site says why in the same line: an aircraft lost because its
         // air strip was taken reads as that, not as a bare "lost an aircraft at 80,99" (Manual p.10 is
