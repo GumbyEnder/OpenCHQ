@@ -318,10 +318,9 @@ export function sourceOf(path) {
   return path.split(".").reduce((node, key) => (node && Object.hasOwn(node, key) ? node[key] : undefined), sources);
 }
 
-// The readiness constants. Every one is an UNMEASURED stand-in (see the note in the tunables
-// file): the archive's radius and duration were never recovered, so this accessor keeps them in
-// one place and defaults them only when the block is missing. There is no placement reach any
-// more - D-019 puts land on a friendly city/base cell and ships on a friendly dock, both exact.
+// The readiness constants, DECODED from FUN_2dfc_1874 @ 2dfc:1874 (PB-154). The accessor keeps
+// them in one place and defaults them only when the block is missing. There is no placement reach
+// any more - D-019 puts land on a friendly city/base cell and ships on a friendly dock, both exact.
 export function readinessRules() {
   const block = rules().readiness || {};
   const number = (value, fallback, min) => {
@@ -329,11 +328,13 @@ export function readinessRules() {
     return Number.isFinite(n) && n >= min ? n : fallback;
   };
   return {
-    radius: Math.floor(number(block.radiusCells, 5, 0)),
-    roundsPerBillion: number(block.roundsPerBillion, 1, 0),
-    cityWeight: number(block.cityWeight, 0.25, 0),
-    capitalWeight: number(block.capitalWeight, 0.5, 0),
-    minRounds: Math.max(1, Math.floor(number(block.minRounds, 1, 1))),
+    // The original's Euclidean d^2 test against the build site: d^2 < 401 (radius 20 cells).
+    radiusSq: Math.floor(number(block.radiusSq, 401, 1)),
+    // floor(price_b * 80 / 3): a JSON number cannot hold 80/3 exactly, so the pair is carried.
+    priceScaleNumerator: number(block.priceScaleNumerator, 80, 0),
+    priceScaleDenominator: number(block.priceScaleDenominator, 3, 1),
+    // caps = capitalBase + owned capitals (type 1/2). The original's `1 +` is this base.
+    capitalBase: Math.floor(number(block.capitalBase, 1, 1)),
   };
 }
 

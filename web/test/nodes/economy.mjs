@@ -121,17 +121,18 @@ export async function run(ctx) {
   eq(firstBuy.piece.x + "," + firstBuy.piece.y, "80,40", "a purchase stands on the cell it was placed on");
   const infantryPrice = priceOf("infantry");
   eq(match.sides.blue.cash, 100000 - infantryPrice, "a setup purchase must spend its price");
-  // Readiness (T-011): the city produced a 10 billion infantry, so it and the friendly cities
-  // within the config radius are unready until the round the server names. New York's neighbours
-  // inside radius 5 are itself and Chicago, so the weight is 1 + 2 x cityWeight (1.5) and
-  // 10 x 1.5 rounds up to 15.
+  // Readiness (PB-154, FUN_2dfc_1874): the build site and every friendly record site within
+  // d^2 < 401 pool their timers. New York's blue neighbours inside that radius are Chicago
+  // (d^2 = 29) and Denver (d^2 = 104), so the list is three unique sites with the build site
+  // counted twice: count 4. No capital is owned (both are neutral in this fixture), so caps = 1
+  // and the base is floor(floor(10 x 80 / 3) / 1) = 266; floor(266 / 4) = 66 at round 0.
   must(Number(siteOf(match, 10).readyRound) > 0, "a purchase must put its city on a ready round");
-  eq(siteOf(match, 10).readyRound, 15, "the buying city's ready round (10b infantry, two cities)");
-  eq(siteOf(match, 11).readyRound, 15, "a nearby friendly city must go unready too");
+  eq(siteOf(match, 10).readyRound, 66, "the buying city's ready round (10b infantry, count 4, caps 1)");
+  eq(siteOf(match, 11).readyRound, 66, "a nearby friendly city must go unready too");
   // A neighbouring city is refused while it is unready, in the words AC4 names.
   const tired = buy(match, "blue", "infantry", 75, 42, board);
   must(tired && tired.error, "an unready city accepted a purchase");
-  must(/ready at round 15/.test(tired.error), "the unready refusal must name the round: " + tired.error);
+  must(/ready at round 66/.test(tired.error), "the unready refusal must name the round: " + tired.error);
 
   // two pieces cannot share a cell
   const shared = buy(match, "blue", "infantry", 80, 40, board);
@@ -150,6 +151,11 @@ export async function run(ctx) {
   // ---- buy: after the clock has run it spends the price and the city goes unready ------
   match.round = 3;
   match.clock = "running";
+  // PB-154: the first buy tired all three blue cities for 66 rounds, and Denver is inside the
+  // new 20-cell pool, so a round-3 purchase there would be refused. This leg is about spending
+  // and the tank's pooled number, so clear the timers first (the numbers above already pinned
+  // the infantry's pool).
+  for (const entry of match.sites) delete entry.readyRound;
   const tankPrice = priceOf("tank");
   eq(tankPrice, 2 * infantryPrice, "the tank price is twice an infantry (p.22)");
   const cashBeforeTank = match.sides.blue.cash;
@@ -157,7 +163,8 @@ export async function run(ctx) {
   must(tank && tank.ok === true, "a tank after the clock ran was refused: " + JSON.stringify(tank));
   eq(match.sides.blue.cash, cashBeforeTank - tankPrice, "a tank costs twice an infantry");
   eq(tank.piece.kind, "tank", "tank kind");
-  eq(siteOf(match, 14).readyRound, 33, "the producing city's ready round (20b tank, two cities)");
+  // caps 1; floor(floor(20 x 80 / 3) / 1) = 533; count 4 -> floor(533 / 4) = 133 at round 3.
+  eq(siteOf(match, 14).readyRound, 136, "the producing city's ready round (20b tank, count 4, caps 1)");
 
   // ---- buy: the placement rule (D-019) --------------------------------------------------
   // A cell that is not a friendly city or base is refused, and the sentence names the rule.

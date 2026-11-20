@@ -483,7 +483,7 @@
     "nukes": "A nuke is refused by default and the archive's own stand-in deals no damage and paints no wasteland. exclusion 2 is a STAND-IN guard around a capital; the archive kept a home-ground guard but never printed its size. The launch limit (three fired or three absorbed) is the booklet count and stays in code.",
     "overrun": "Overrun is the tank's (Manual p.9): an ordered tank that meets enemy infantry in the next cell fights through it, taking losses, and enters the cell and continues if the infantry is destroyed. There is no count-based instant removal. The losses are `combat.baseDamage` for both sides.",
     "placement": "D-019, the original's rule (Manual p.27 'General Placement Rules'). Land units and aircraft may be placed on a friendly city or base cell; ships only on a friendly dock, so a side with no port cannot buy a hull. There is no reach any more: config carries no zone or coast number because the rule is a site kind, not a distance. The archive's validator could not be located in the Ghidra export (the strings 'Must be placed in city', 'Must be placed on dock', 'Must be on mainland', 'Friendly waters only', 'Ships must stay at sea.' exist in the extract's string dump, but the export has no string cross-references); FUN_107e_4140 was mislabelled in the old ECONOMY.md summary and is in fact the arrival/berth search (five-ring scan for a free cell of an acceptable terrain class), not the validator. A dock is DERIVED from the extract, not a recovered rule: board.matchSites builds one dock site on every terrain cell with id 1, and the world's own counts report 150 docks for 150 paint cells. 'A friendly dock is the dock next to a friendly site' is likewise derived from world.json (150 of 150 dock cells take the country of an adjacent site), not a measured original rule. See docs/re/PLACEMENT.md.",
-    "readiness": "UNMEASURED stand-ins. Manual p.27 'Readiness': each production makes that city and several surrounding friendly cities unready; the time is proportional to the unit's cost and to the number of friendly cities, especially capitals, nearby; placing in an unready city shows the round it will be ready. The archive's radius and duration were not recovered (no capture times a city coming back, and FUN_107e_4140 is the arrival search), so the four numbers below are invented to make the rule exist and are labelled UNMEASURED. The shape is the manual's: rounds = ceil(roundsPerBillion * priceInBillions * (1 + cityWeight*cities + capitalWeight*capitals)) over the friendly cities inside radiusCells, minimum minRounds. Peacetime is N/A: this build has no peace state, so every production tires its city. Change the numbers here; the server refuses and the page paints from the same block."
+    "readiness": "DECODED, FUN_2dfc_1874 @ 2dfc:1874 (PB-154). Manual p.27 describes the shape; the archive gives the arithmetic: caps = 1 + the side's owned capitals (type 1/2) among records 0-63; the list is the build site plus every site of the side among records 0-63 with Euclidean d^2 < 401 (X wrapped at 320), with the build site counted twice; total = the listed sites' current remaining timers + floor(floor(price_b * 80 / 3) / caps); each listed site's remaining timer becomes floor(total / count), +1 when total % count > count / 2; timers drop by 1 per round. In the concealed era (9999) capitals are exempt for a side's first five builds via the per-side counter at 0x1580 (seat.bought). Peacetime is N/A: this build has no peace state, so every production tires its site. priceScaleNumerator/priceScaleDenominator carry 80/3 because JSON cannot hold the fraction exactly. Confirm-or-refute leg: RE-E2 (one DOSBox case) - if it disagrees, DOSBox wins and this block is reverted."
   },
   "air": {
     "strikeRounds": 8,
@@ -524,10 +524,9 @@
     }
   },
   "readiness": {
-    "radiusCells": 5,
-    "roundsPerBillion": 1,
-    "cityWeight": 0.25,
-    "capitalWeight": 0.5,
-    "minRounds": 1
+    "radiusSq": 401,
+    "priceScaleNumerator": 80,
+    "priceScaleDenominator": 3,
+    "capitalBase": 1
   }
 }

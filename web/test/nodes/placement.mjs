@@ -47,11 +47,13 @@ export const name = "placement";
 
 export async function run(ctx) {
   // --- the readiness constants come from config, and there is no reach any more ---------
+  // PB-154 replaced the stand-ins with the decoded block: d^2 < 401, price x 80/3, caps = 1 + capitals.
   const rules = readinessRules();
-  eq("the readiness radius is the config's", rules.radius, 5);
-  eq("the readiness cost is per billion of price", rules.roundsPerBillion, 1);
-  if (!Number.isFinite(rules.cityWeight) || !Number.isFinite(rules.capitalWeight)) {
-    fail("the readiness weights are not numbers: " + JSON.stringify(rules));
+  eq("the readiness radius is the config's", rules.radiusSq, 401);
+  eq("the readiness price scale is 80/3", [rules.priceScaleNumerator, rules.priceScaleDenominator], [80, 3]);
+  eq("the capital divisor base is 1", rules.capitalBase, 1);
+  if (!Number.isFinite(rules.radiusSq) || !Number.isFinite(rules.priceScaleNumerator)) {
+    fail("the readiness constants are not numbers: " + JSON.stringify(rules));
   }
 
   // --- a kind knows its domain ----------------------------------------------
@@ -236,16 +238,17 @@ export async function run(ctx) {
     const bought = buy(match, "blue", "infantry", 80, 50, grid);
     if (!bought.ok) fail("a legal purchase was refused: " + JSON.stringify(bought));
     eq("the piece stands on the chosen city cell", [bought.piece.x, bought.piece.y], [80, 50]);
-    // 10b infantry, the producing city and its one neighbour inside radius 5: ceil(10 * 1.5) = 15.
-    eq("the purchase reports the ready round", bought.readiness && bought.readiness.round, 15);
+    // PB-154: 10b infantry -> floor(floor(10 x 80 / 3) / 1) = 266; two unique sites with the
+    // build site counted twice = count 3; floor(266 / 3) = 88, 266 % 3 = 2 > 1.5 -> 89.
+    eq("the purchase reports the ready round", bought.readiness && bought.readiness.round, 89);
     const off = buy(match, "blue", "infantry", 84, 50, grid);
     if (!off.error) fail("a purchase outside every block was accepted");
     // the neighbouring city is unready too, and the refusal names its round
     const again = buy(match, "blue", "infantry", 82, 50, grid);
     if (!again.error) fail("a neighbouring unready city accepted a purchase");
-    if (!/ready at round 15/.test(again.error)) fail("neighbour refusal: " + again.error);
+    if (!/ready at round 89/.test(again.error)) fail("neighbour refusal: " + again.error);
     // once the round passes the neighbour produces again
-    match.round = 15;
+    match.round = 89;
     const later = buy(match, "blue", "infantry", 82, 50, grid);
     if (!later.ok) fail("the neighbour was still refused at its ready round: " + JSON.stringify(later));
   }

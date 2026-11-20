@@ -387,6 +387,11 @@ export async function run(ctx) {
     eq("the piece is on the water, not the city", [bought.piece.x, bought.piece.y], [80, 100]);
     eq("the message names the city", bought.label, "Portsmouth");
 
+    // PB-154 pools readiness over d^2 < 401 (radius 20), and Fort Base sits 20 cells from
+    // Portsmouth (d^2 = 400), so the first hull tires it. This leg is about D-025 placement, not
+    // readiness: clear the timers between the two buys rather than move the base out of the pool.
+    for (const entry of match.sites) delete entry.readyRound;
+
     // The dock cell is taken now, so the next hull from the base takes a neighbouring water cell.
     const baseBought = buy(match, "blue", "cruiser", 60, 99, grid);
     if (!baseBought.ok) fail("buying a hull at a coastal base was refused: " + JSON.stringify(baseBought));

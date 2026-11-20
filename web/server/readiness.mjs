@@ -1,15 +1,19 @@
-// Readiness: production tires the city it happened in and the friendly cities around it.
+// Readiness: production pools the timers of the build site and the friendly sites around it.
 //
-// Manual p.27, "Readiness": "each production makes that city and several surrounding cities
-// unready. The unready time is proportional to the unit's cost and to the number of friendly
-// cities (especially capitals) nearby. Placing in an unready city shows a mode-bar message
-// giving the round it will be ready."
+// DECODED from FUN_2dfc_1874 @ 2dfc:1874 (PB-154). The manual's description (p.27) is the
+// shape; the archive is the arithmetic:
+//   caps  = 1 + the side's owned capitals (type 1/2) anywhere among records 0-63
+//   list  = the build site + every site of the side among records 0-63 with d^2 < 401
+//           (Euclidean, X wrapped at 320). The build site is listed twice, as in the code.
+//   total = sum of the listed sites' current remaining timers
+//           + floor(floor(price_b * 80 / 3) / caps)
+//   each listed site's new remaining timer = floor(total / count),
+//           +1 when total % count > count / 2
+// Timers drop by 1 per round, so a site is ready when its readyRound reaches the round.
 //
-// The archive's radius and duration were never recovered: FUN_107e_4140 is the arrival/berth
-// search, not the readiness rule (docs/re/PLACEMENT.md), and no capture times a city coming
-// back. So every constant here is an UNMEASURED stand-in carried in config/game.json under
-// `readiness`, and the sentence a player reads names the round, which is exact regardless of
-// the constant.
+// The old readinessRounds/markUnready stand-ins (roundsPerBillion, cityWeight, capitalWeight,
+// Chebyshev radiusCells, minRounds) are gone: their invented numbers are replaced by the decoded
+// constants in config/game.json `readiness`, each tagged DECODED with the address.
 //
 // State is per site: `site.readyRound` is the first round the site may produce again. A site
 // with no readyRound, or one whose round has passed, is ready. The boolean `unready` from the
@@ -17,11 +21,16 @@
 
 import { millionsPerBillion, priceOf, readinessRules } from "./rules.mjs";
 
-const CITY_KINDS = new Set(["city"]);
-const CAPITAL_KINDS = new Set(["capital"]);
 // PB-153: a type-5 `facility` is an oil field, so it is not a producer and is never listed as a
 // readiness neighbour. Cities, capitals and bases produce.
 const PRODUCE_KINDS = new Set(["city", "capital", "base"]);
+// The 64 city-kind records of the era file. Records 64-83 are the type-5 oil fields (PB-153) and
+// carry no timer in the original, so the list stops at record 63. Docks and the world.json wells
+// have synthetic ids and are excluded by the same test, not by a second kind check.
+const RECORD_LIMIT = 64;
+const CAPITAL_TYPES = new Set([1, 2]);
+// The concealed era, whose per-side build counter exempts capitals for the first five builds.
+const CONCEALED_ERAS = new Set(["9999", "????"]);
 
 const BOARD_W = 320;
 
@@ -30,8 +39,8 @@ function roundOf(match) {
   return Number.isFinite(round) && round > 0 ? Math.floor(round) : 0;
 }
 
-// What a site's own field says. `Infinity` is a conveniences for a row that asked to be unready
-// with no round; nothing in this tree writes one, but a legacy row may carry the boolean only.
+// What a site's own field says. `readyRound` is the first round the site may produce again;
+// 0 (or a missing/NaN field) means ready.
 export function readyRoundOf(site) {
   if (!site) return 0;
   const round = Number(site.readyRound);
@@ -44,64 +53,102 @@ export function isSiteReady(site, round) {
   return !(at > 0 && at > roundOf({ round }));
 }
 
-// Chebyshev distance on the wrapping board, the same measure placement used before T-011.
-function distance(a, b) {
-  const dx = Math.abs(Number(a.x) - Number(b.x));
-  return Math.max(Math.min(dx, BOARD_W - dx), Math.abs(Number(a.y) - Number(b.y)));
+// A record site: one of the era file's 0-63 producing rows (city, capital, base). The kind test
+// keeps a sketched well or a dock that happens to carry a small numeric id out of the list;
+// `Number.isInteger` excludes the synthetic `dock:<x>:<y>` ids.
+function isRecordSite(site) {
+  const id = Number(site && site.id);
+  return Number.isInteger(id) && id >= 0 && id < RECORD_LIMIT && PRODUCE_KINDS.has(String(site.kind));
 }
 
-// The friendly cities a production tires: the producing site plus every friendly city, capital
-// or base inside `radiusCells`. Capitals are counted separately because the manual says they
-// weigh more.
+function distanceSq(a, b) {
+  const dx = Math.abs(Number(a.x) - Number(b.x));
+  const wrap = Math.min(dx, BOARD_W - dx);
+  const dy = Math.abs(Number(a.y) - Number(b.y));
+  return wrap * wrap + dy * dy;
+}
+
+function seatOf(match, side) {
+  const seat = match && match.sides ? match.sides[side] : null;
+  return seat && typeof seat === "object" ? seat : null;
+}
+
+// caps = 1 + the side's owned capitals (type 1/2) among records 0-63. The +1 is the original's
+// divisor base, so a side with no capital still divides by one.
+export function capitalDivisor(match, side) {
+  const { capitalBase } = readinessRules();
+  let capitals = 0;
+  for (const site of Array.isArray(match && match.sites) ? match.sites : []) {
+    if (!site || site.owner !== side || !isRecordSite(site)) continue;
+    if (!CAPITAL_TYPES.has(Number(site.type))) continue;
+    capitals += 1;
+  }
+  return Math.max(1, capitalBase + capitals);
+}
+
+// The unique sites a production pools: the build site plus every site of the side among records
+// 0-63 inside d^2 < radiusSq. The build site appears once here; markUnready appends it a second
+// time because the original counts it twice.
 export function readinessNeighbours(match, side, site) {
-  const { radius } = readinessRules();
+  const { radiusSq } = readinessRules();
   const out = [];
   for (const other of Array.isArray(match && match.sites) ? match.sites : []) {
     if (!other || other.owner !== side) continue;
-    if (!PRODUCE_KINDS.has(String(other.kind))) continue;
-    if (other !== site && distance(other, site) > radius) continue;
+    if (!isRecordSite(other)) continue;
+    if (other !== site && distanceSq(other, site) >= radiusSq) continue;
     out.push(other);
   }
   if (site && site.owner === side && !out.includes(site)) out.push(site);
   return out;
 }
 
-// How many rounds one production costs, from the cost of the unit and the friendly cities in
-// the radius. All weights are labelled stand-ins in config; the shape is the manual's.
-export function readinessRounds(match, side, site, kind) {
-  const { roundsPerBillion, cityWeight, capitalWeight, minRounds } = readinessRules();
-  const price = priceOf(kind);
-  if (!Number.isFinite(price)) return minRounds;
-  const perBillion = Number(millionsPerBillion());
-  const billions = perBillion > 0 ? price / perBillion : price;
-  const neighbours = readinessNeighbours(match, side, site);
-  let cities = 0;
-  let capitals = 0;
-  for (const other of neighbours) {
-    if (CAPITAL_KINDS.has(String(other.kind))) capitals += 1;
-    else if (CITY_KINDS.has(String(other.kind))) cities += 1;
-  }
-  const weight = 1 + cityWeight * cities + capitalWeight * capitals;
-  const rounds = Math.ceil(roundsPerBillion * billions * weight);
-  return Math.max(minRounds, rounds);
+// The concealed era's first five builds leave capitals untired (per-side counter 0x1580). The
+// original's skip sits on the write, so a capital stays in the count and in the pooled sum; it
+// just keeps its own timer.
+function capitalsExempt(match, side) {
+  if (!CONCEALED_ERAS.has(String(match && match.era))) return false;
+  const seat = seatOf(match, side);
+  return seat !== null && Number(seat.bought || 0) < 5;
 }
 
-// Mark the producing city and its neighbours unready. Returns the round they come back on and
-// the ids that were written, so the caller can report exactly what a purchase did. A hull is
-// built at a dock; the city that produces it is the nearest friendly city, base or capital, so
-// the dock itself is never the site that goes unready.
+// Mark the producing site and its neighbours unready from the decoded formula. Returns the round
+// they come back on, the pooled timer and the ids that were written, so the caller can report
+// exactly what a purchase did. A hull is built at a dock; the site that produces it is the nearest
+// friendly city, base or capital, so the dock itself is never the site that goes unready.
 export function markUnready(match, side, site, kind) {
   const round = roundOf(match);
   const home = PRODUCE_KINDS.has(String(site && site.kind)) ? site : nearestProducer(match, side, site);
   if (!home) return { round: 0, rounds: 0, sites: [] };
-  const rounds = readinessRounds(match, side, home, kind);
-  const readyAt = round + rounds;
-  const sites = readinessNeighbours(match, side, home);
-  for (const other of sites) {
-    const already = readyRoundOf(other);
-    if (already < readyAt) other.readyRound = readyAt;
+
+  const { priceScaleNumerator, priceScaleDenominator } = readinessRules();
+  const caps = capitalDivisor(match, side);
+  const unique = readinessNeighbours(match, side, home);
+  // The build site is counted twice: append it once more. `count` is the list length, so the
+  // divisor and the modulo both see the duplicate, exactly as the original's loop does.
+  const listed = unique.includes(home) ? unique.concat([home]) : [home].concat(unique);
+
+  const price = priceOf(kind);
+  const perBillion = Number(millionsPerBillion());
+  const billions = Number.isFinite(price) && perBillion > 0 ? price / perBillion : 0;
+  const scaled = Math.floor((billions * priceScaleNumerator) / priceScaleDenominator);
+  const base = Math.floor(scaled / caps);
+
+  let total = base;
+  for (const entry of listed) total += Math.max(0, readyRoundOf(entry) - round);
+
+  const count = listed.length;
+  let timer = Math.floor(total / count);
+  if (total % count > count / 2) timer += 1;
+
+  const readyAt = round + timer;
+  const exempt = capitalsExempt(match, side);
+  const written = [];
+  for (const entry of new Set(listed)) {
+    if (exempt && CAPITAL_TYPES.has(Number(entry.type))) continue;
+    entry.readyRound = readyAt;
+    written.push(entry);
   }
-  return { round: readyAt, rounds, sites: sites.map((other) => other.id) };
+  return { round: readyAt, rounds: timer, sites: written.map((other) => other.id) };
 }
 
 function nearestProducer(match, side, site) {
