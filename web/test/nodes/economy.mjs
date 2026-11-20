@@ -7,7 +7,7 @@
 // round 25 (or would land on round 24), and a dry side would keep a full reserve.
 
 import { priceOf } from "../../server/rules.mjs";
-import { resourceSpec } from "../../server/resources.mjs";
+import { resourceSpec, oilFlow } from "../../server/resources.mjs";
 import { startPool } from "../../server/rules.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { buy, capture, occupy, pay, upkeep } from "../../server/economy.mjs";
@@ -68,8 +68,16 @@ export async function run(ctx) {
   const eq = (actual, expected, label) => {
     if (actual !== expected) fail(`${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   };
-  const reserve = Number(resourceSpec("fuel").reserve);
-  const burn = Number(resourceSpec("fuel").burn);
+  const fuelSpec = resourceSpec("fuel");
+  const reserve = Number(fuelSpec.reserve);
+  const cap = Number(fuelSpec.reserveCap);
+  // T-033: oil is a budget - reserve + In - Out, clamped to 0..cap - not a flat burn. Every
+  // expectation below is that arithmetic read through oilFlow, never a literal.
+  const oilAfter = (m, side) => {
+    const flow = oilFlow(m, side);
+    // Both sides open at `reserve`; the settlement is reserve + In - Out, clamped.
+    return Math.max(0, Math.min(cap, reserve + flow.in - flow.out));
+  };
 
   // ---- oil: wells and cities start with the country they are in -------------------------
   const match = freshMatch();
@@ -89,9 +97,9 @@ export async function run(ctx) {
   eq(siteOf(match, 12).owner, "red", "a Soviet city starts Red");
   eq(siteOf(match, 13).owner, null, "a neutral city has no owner");
   eq(siteOf(match, 0).owner, null, "a capital is not a country claim");
-  // each side starts at its own reserve and burns a round with no unit on a well
-  eq(match.sides.blue.fuel, reserve - burn, "blue's own reserve after one dry round");
-  eq(match.sides.red.fuel, reserve - burn, "red's own reserve after one dry round");
+  // Each side starts at its own reserve and settles one round of In - Out (T-033).
+  eq(match.sides.blue.fuel, oilAfter(match, "blue"), "blue's reserve after one budget round");
+  eq(match.sides.red.fuel, oilAfter(match, "red"), "red's reserve after one budget round");
   eq(match.sides.blue.dry, false, "blue is not dry yet");
   eq(match.sides.red.dry, false, "red is not dry yet");
   must(Array.isArray(first), "upkeep returns an events list");
@@ -225,12 +233,12 @@ export async function run(ctx) {
     console.log("criterion 4 ok: 3 cities + 2 wells, 10 rounds, cash 0 -> 1500 million; each event 150 (0.15b), wells 0 in cash");
   }
 
-  // ---- income: a base and a capital pay nothing while capitalPays is false (criterion 6) ---
+  // ---- income: a base pays nothing; the first capital is free (criterion 6, PB-150) --------
   {
     const quiet = openMatch("1986", []);
     quiet.sites = [
-      { id: 50, name: "Base", x: 10, y: 10, kind: "base", owner: "blue" },
-      { id: 51, name: "Capital", x: 11, y: 10, kind: "capital", owner: "blue" },
+      { id: 50, name: "Base", x: 10, y: 10, kind: "base", type: 3, owner: "blue" },
+      { id: 51, name: "Capital", x: 11, y: 10, kind: "capital", type: 1, owner: "blue" },
     ];
     quiet.sides.blue.cash = 0;
     quiet.sides.red.cash = 0;
@@ -239,8 +247,13 @@ export async function run(ctx) {
       quiet.round = round;
       pay(quiet);
     }
-    eq(quiet.sides.blue.cash, 0, "a base and a capital paid cash while capitalPays is false");
-    console.log("criterion 6 ok: a base + a capital held 10 rounds add 0 while capitalPays is false");
+    eq(quiet.sides.blue.cash, 0, "a base (type 3) and a first capital (type 1) pay nothing");
+    // The rule, not a flag: a second capital is an extra capital and pays one city's income.
+    quiet.sites.push({ id: 52, name: "Capital 2", x: 12, y: 10, kind: "capital", type: 2, owner: "blue" });
+    quiet.round = 11;
+    pay(quiet);
+    eq(quiet.sides.blue.cash, 50, "the second capital pays one cityIncome (PB-150)");
+    console.log("criterion 6 ok: a base pays 0, one capital is free, the second pays one city");
   }
 
   // ---- income: a finished match pays nothing -------------------------------------------
@@ -273,13 +286,19 @@ export async function run(ctx) {
   eq(match.sides.blue.dry, true, "a side at zero must be marked dry");
   must(dryEvents.some((event) => event.type === "dry" && event.side === "blue"), "no dry event for blue");
   eq(match.sides.red.dry, false, "a dry blue must not stop red");
-  eq(match.sides.red.fuel, reserve - burn, "red keeps its own reserve and burns one round");
+  eq(match.sides.red.fuel, oilAfter(match, "red"), "red keeps its own reserve and settles one round");
   must(!dryEvents.some((event) => event.type === "dry" && event.side === "red"), "red was wrongly marked dry");
 
   // ---- oil: a well pays oil, never cash (criterion 5) ----------------------------------
   {
+    // T-033 + PB-153: an oil field pays In (200 a round), never cash. Two type-5 fields against
+    // no city pay 400 in and 200 out, so ten quiet rounds are +2,000 and the pool is untouched.
+    // A world.json `well` carries no subtype and is NOT one any more (PB-153 AC4).
     const wellOnly = openMatch("1986", []);
-    wellOnly.sites = [{ id: 60, name: "Well", x: 10, y: 10, kind: "well", owner: "blue" }];
+    wellOnly.sites = [
+      { id: 60, name: "Field A", x: 10, y: 10, kind: "facility", type: 5, owner: "blue" },
+      { id: 61, name: "Field B", x: 11, y: 10, kind: "facility", type: 5, owner: "blue" },
+    ];
     wellOnly.pieces = [{ id: "blue:land", side: "blue", domain: "land", kind: null, x: 10, y: 10, path: [], pace: 1 }];
     wellOnly.sides.blue.cash = 1000;
     wellOnly.sides.red.cash = 1000;
@@ -288,34 +307,47 @@ export async function run(ctx) {
       wellOnly.round = round;
       upkeep(wellOnly);
     }
-    eq(wellOnly.sides.blue.cash, 1000, "owning a well for 10 rounds changed cash");
-    must(wellOnly.sides.blue.fuel > 100, "a held well did not refill oil: " + wellOnly.sides.blue.fuel);
-    eq(wellOnly.sides.blue.fuel, Number(resourceSpec("fuel").reserve), "a well refilled the reserve");
-    console.log("criterion 5 ok: a held well for 10 rounds left cash at 1000 and refilled fuel to the reserve");
+    const flow = oilFlow(wellOnly, "blue");
+    eq(flow.fields, 2, "two held oil fields must count as two");
+    eq(flow.in, 2 * Number(resourceSpec("fuel").inPerWell), "a well's In must be its configured yield");
+    eq(wellOnly.sides.blue.cash, 1000, "owning wells for 10 rounds changed cash");
+    eq(wellOnly.sides.blue.fuel, Math.min(cap, 100 + 10 * (flow.in - flow.out)), "a held oil field must pay In every round");
+    console.log("criterion 5 ok: held oil fields paid In for 10 rounds, left cash at 1000, reserve " + wellOnly.sides.blue.fuel);
   }
 
-  // ---- oil: standing on a red well flips its owner to blue ----------------------------
-  const walker = match.pieces.find((piece) => piece.id === "blue:land");
-  must(walker, "the opening blue land piece is missing");
-  walker.x = 190;
-  walker.y = 30;
-  eq(siteOf(match, 30).owner, "red", "the Volga well was Red before the capture");
-  const capEvents = upkeep(match);
-  eq(siteOf(match, 30).owner, "blue", "standing on a Red well must take it for Blue");
+  // ---- oil: standing on a red oil field flips its owner to blue -----------------------
+  // PB-153: the fields are type-5 `facility` rows. Built here on their own match so the leg
+  // does not depend on which sites a shared board happened to carry: 64 at (194,30) starts Red,
+  // 65 at (250,79) is neutral, and the walker starts on 64.
+  const fieldMatch = openMatch("1986", []);
+  fieldMatch.sites = [
+    { id: 64, name: "field 64", x: 194, y: 30, kind: "facility", type: 5, owner: "red" },
+    { id: 65, name: "field 65", x: 250, y: 79, kind: "facility", type: 5, owner: null },
+    { id: 66, name: "city 66", x: 173, y: 42, kind: "city", type: 4, owner: "red" },
+  ];
+  fieldMatch.pieces = [
+    { id: "blue:land", side: "blue", domain: "land", kind: null, x: 194, y: 30, path: [], pace: 1 },
+  ];
+  fieldMatch.round = 0;
+  fieldMatch.clock = "running";
+  eq(siteOf(fieldMatch, 64).owner, "red", "field 64 was Red before the capture");
+  const capEvents = upkeep(fieldMatch);
+  eq(siteOf(fieldMatch, 64).owner, "blue", "standing on a Red oil field must take it for Blue");
   must(
-    capEvents.some((event) => event.type === "capture" && event.site === 30 && event.side === "blue" && event.from === "red"),
-    "no capture event for the Volga well: " + JSON.stringify(capEvents)
+    capEvents.some((event) => event.type === "capture" && event.site === 64 && event.side === "blue" && event.from === "red"),
+    "no capture event for the oil field: " + JSON.stringify(capEvents)
   );
-  must(match.sides.blue.wells.includes(30), "blue's well list did not take the field");
-  must(!match.sides.red.wells.includes(30), "red's well list kept the field");
-  // standing on any well refills that side, and clears the dry flag
-  eq(match.sides.blue.fuel, reserve, "standing on a well must refill the reserve");
-  eq(match.sides.blue.dry, false, "a refuelled side is no longer dry");
+  must(fieldMatch.sides.blue.wells.includes(64), "blue's field list did not take the field");
+  must(!fieldMatch.sides.red.wells.includes(64), "red's field list kept the field");
+  // The taken field now counts toward blue's In; there is no on-field refill in the budget model.
+  const afterCapture = oilFlow(fieldMatch, "blue");
+  eq(afterCapture.fields, 1, "the captured field must join blue's In count");
+  eq(afterCapture.in, Number(resourceSpec("fuel").inPerWell), "blue's In must follow its fields");
 
-  // capture() is the same rule asked directly, and it refuses a cell with no well
-  eq(capture(match, "red", 210, 65).length, 1, "a neutral well must be takeable");
-  eq(siteOf(match, 32).owner, "red", "the neutral well did not flip to red");
-  eq(capture(match, "red", 200, 60).length, 0, "a city is not a well: capture must do nothing");
+  // capture() is the same rule asked directly, and it refuses a cell with no field
+  eq(capture(fieldMatch, "red", 250, 79).length, 1, "a neutral oil field must be takeable");
+  eq(siteOf(fieldMatch, 65).owner, "red", "the neutral field did not flip to red");
+  eq(capture(fieldMatch, "red", 173, 42).length, 0, "a city is not an oil field: capture must do nothing");
 
   // ---- occupation: a city changes hands, a capital is held only while stood on --------
   // Until this existed, capture() could only ever take a well, so every city on the map was

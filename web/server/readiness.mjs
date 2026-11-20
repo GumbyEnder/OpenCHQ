@@ -19,7 +19,9 @@ import { millionsPerBillion, priceOf, readinessRules } from "./rules.mjs";
 
 const CITY_KINDS = new Set(["city"]);
 const CAPITAL_KINDS = new Set(["capital"]);
-const PRODUCE_KINDS = new Set(["city", "capital", "base", "facility"]);
+// PB-153: a type-5 `facility` is an oil field, so it is not a producer and is never listed as a
+// readiness neighbour. Cities, capitals and bases produce.
+const PRODUCE_KINDS = new Set(["city", "capital", "base"]);
 
 const BOARD_W = 320;
 

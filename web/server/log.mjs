@@ -236,6 +236,11 @@ export function logLines(match, side, events, round) {
         break;
       case "retired":
         break;
+      case "oil_hold":
+        // A unit that ran the budget dry stops where it stands (T-033). The order stays live, so
+        // this is a stall, not a refusal, and it is said once per episode by move.mjs.
+        if (mine) push("out of oil: that unit stopped");
+        break;
       case "dry": {
         // Name the resource that actually ran out. Saying "out of fuel" when the steel meter
         // emptied sent the owner looking at a fuel figure that was still 9,900.

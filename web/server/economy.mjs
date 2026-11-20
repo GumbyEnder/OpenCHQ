@@ -9,8 +9,9 @@
 // starts with (USA, USSR), and the stand-in "unready" flag, which carries no duration
 // because no duration was recovered.
 
-import { payEvery, priceOf, cityIncome, capitalPays, combatRules, missionedSurvivesCapture } from "./rules.mjs";
-import { upkeepResources } from "./resources.mjs";
+import { payEvery, priceOf, cityIncome, combatRules, missionedSurvivesCapture } from "./rules.mjs";
+import { upkeepResources, oilIncome } from "./resources.mjs";
+import { isOilField, siteTypeOf } from "./sitetype.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace, siteLabel, layerOf } from "./placement.mjs";
 import { markUnready } from "./readiness.mjs";
@@ -30,7 +31,16 @@ const SIDES = Object.freeze(["blue", "red"]);
 // the same asset list with other kinds.
 const CITY_KINDS = new Set(["city"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
-const WELL_KINDS = new Set(["oilfield", "well"]);
+// PB-153: the 20 `facility` ids are the original's type-5 oil fields.
+const FACILITY_KINDS = new Set(["facility"]);
+// The original captures a base as well as a city and an oil field: PB-155 pays 2 b when a
+// type-3 or type-4 site changes hands, so a base has to be takeable by standing on it. Bases are
+// not `ownable` (seedOwners never grants one from a country) - they only change hands in battle.
+const BASE_KINDS = new Set(["base"]);
+// world.json's sketched wells are draw-only: they keep a display owner (seedOwners) so they
+// are painted in the country's colour, and no other rule may see them (PB-153 AC4). Kept out
+// of `ownable` on purpose so a piece standing on one can never take it.
+const DISPLAY_WELL_KINDS = new Set(["oilfield", "well"]);
 // A capital is occupiable and its owner byte is who holds it: the era table writes the scenario's
 // opening holder (1942 hands both seats to blue), and a capture overwrites the byte. The byte is
 // the win condition's own field, not a country claim - no income is ever counted from a capital.
@@ -45,7 +55,7 @@ const CAPITAL_KINDS = new Set(["capital"]);
 // by combat, and a capture pass can never reach it.
 
 function occupiable(kind) {
-  return ownable(kind) || CAPITAL_KINDS.has(kind);
+  return ownable(kind) || CAPITAL_KINDS.has(kind) || BASE_KINDS.has(kind);
 }
 
 // A unit's domain. The match's piece shape names land and sea only, so aircraft are
@@ -107,10 +117,16 @@ function sideOfRegion(region) {
   return Object.hasOwn(HOME_SIDE, key) ? HOME_SIDE[key] : null;
 }
 
-// Sites that a side can own: the countries' cities, their docks, and the oilfields.
+// Sites that a side can own: the cities and docks the asset list names, plus the type-5 oil
+// fields (PB-153: the 20 `facility` sites, ids 64-83). world.json's sketched `oilfield`/`well`
+// rows keep country seeding (they stay drawn in the country's colour) but drive no rule: they
+// are not capturable and pay neither cash nor oil (PB-153 AC4).
 // Capitals are not on this list; they are the win condition, not income.
 function ownable(kind) {
-  return CITY_KINDS.has(kind) || DOCK_KINDS.has(kind) || WELL_KINDS.has(kind);
+  // PB-153: the 20 `facility` sites are type-5 oil fields and are captured by standing on them.
+  // The world.json `wells` are a sketch: they keep their display owner (seedOwners) but no rule
+  // may take them, so they are not occupiable. Docks and cities keep their own kinds.
+  return CITY_KINDS.has(kind) || DOCK_KINDS.has(kind) || FACILITY_KINDS.has(kind);
 }
 
 // Ownership is seeded once per match object: a city, dock or well starts with the country
@@ -130,7 +146,7 @@ export function seedOwners(match) {
   const table = eraTable(match.era);
   const fromFile = Boolean(table && table.ownerSource === "file");
   for (const site of match.sites) {
-    if (!site || !ownable(site.kind)) continue;
+    if (!site || !(ownable(site.kind) || DISPLAY_WELL_KINDS.has(String(site.kind)))) continue;
     if (site.owner === "blue" || site.owner === "red") continue;
     if (fromFile && site.type !== undefined) continue;
     const side = sideOfRegion(regionOf(site));
@@ -154,9 +170,11 @@ function siteAt(match, x, y) {
   return siteAtCell(match.sites, cx, cy);
 }
 
-function wellAt(match, x, y) {
+// The oil field under a cell: a type-5 site (PB-153). A world.json `oilfield`/`well` site is
+// NOT one - it has no subtype - so the sketched wells no longer hand oil fields around.
+function oilFieldAt(match, x, y) {
   const site = siteAt(match, x, y);
-  return site && WELL_KINDS.has(site.kind) ? site : null;
+  return site && isOilField(site) ? site : null;
 }
 
 function listOf(seat, key) {
@@ -285,20 +303,20 @@ function syncWellLists(match, siteId, side) {
 export function capture(match, side, x, y) {
   if (!match || !Array.isArray(match.sites) || !isSide(side)) return [];
   seedOwners(match);
-  const well = wellAt(match, x, y);
-  if (!well) return [];
-  if (well.owner === side) return [];
-  const from = well.owner ?? null;
-  well.owner = side;
-  syncWellLists(match, well.id, side);
-  // occupy() leaves paying-site counts behind for pay(); a well changing hands changes only the
-  // informational well count, so patch that summary instead of forcing pay() to rescan.
+  const field = oilFieldAt(match, x, y);
+  if (!field) return [];
+  if (field.owner === side) return [];
+  const from = field.owner ?? null;
+  field.owner = side;
+  syncWellLists(match, field.id, side);
+  // occupy() leaves paying-site counts behind for pay(); a type-5 field changing hands changes
+  // only the informational field count, so patch that summary instead of forcing a rescan.
   const tally = match.incomeSummary;
   if (tally && from !== side) {
     if ((from === "blue" || from === "red") && tally[from].wells > 0) tally[from].wells -= 1;
     if (side === "blue" || side === "red") tally[side].wells += 1;
   }
-  return [{ type: "capture", site: well.id, name: well.name, side, from }];
+  return [{ type: "capture", site: field.id, name: field.name, side, from }];
 }
 
 // --- occupation: what standing on a site does ----------------------------------------------
@@ -397,9 +415,10 @@ export function occupy(match) {
     const owner = site.owner;
     if (owner !== "blue" && owner !== "red") continue;
     const row = tally[owner];
-    if (kind === "city") row.cities += 1;
-    else if (kind === "capital") row.capitals += 1;
-    else if (WELL_KINDS.has(kind)) row.wells += 1;
+    const type = siteTypeOf(site);
+    if (type === 4) row.cities += 1;
+    else if (type === 1 || type === 2) row.capitals += 1;
+    else if (type === 5) row.wells += 1;
   }
 
   if (doomed) match.pieces = match.pieces.filter((piece) => !piece || !doomed.has(piece.id));
@@ -412,26 +431,35 @@ export function occupy(match) {
 
 export function payoutFor(match, side) {
   const counts = incomeCounts(match);
-  const { cities, wells } = counts[side] || { cities: 0, wells: 0 };
-  // A city pays cityIncome millions every round. A well gives oil (resources.mjs), never cash;
-  // `wells` is reported so the economy dialogue can show what is held, and `cashWells` is the
-  // part that pays, which is always zero. Bases are not ownable at all and pay nothing.
+  const row = counts[side] || { paying: 0, wells: 0 };
+  // PB-150: the paying count is subtype 4 plus one per extra capital; a type-5 oil field pays
+  // oil (resources.mjs), never cash, and is reported here for the dialog only.
+  const cities = row.paying;
   const amount = cities * cityIncome();
-  return { cities, wells, cashWells: 0, amount };
+  return { cities, wells: row.wells, cashWells: 0, amount };
 }
 
 // Both sides' paying-site counts in one pass over the sites. pay() runs every round now, so a
 // per-side scan of 84 sites per side per room would be paid for every room every round.
+// The per-site term, module-level: the same arithmetic is used by pay()'s fallback walk.
+function addToRow(row, site) {
+  const type = siteTypeOf(site);
+  if (type === 4) row.cities += 1;
+  else if (type === 1 || type === 2) row.capitals += 1;
+  else if (type === 5) row.wells += 1;
+}
+
 function incomeCounts(match) {
-  const counts = { blue: { cities: 0, wells: 0 }, red: { cities: 0, wells: 0 } };
-  const paysCapital = capitalPays();
+  const counts = {
+    blue: { cities: 0, capitals: 0, wells: 0, paying: 0 },
+    red: { cities: 0, capitals: 0, wells: 0, paying: 0 },
+  };
+  const add = addToRow;
   for (const site of match.sites) {
     if (!site) continue;
     const side = site.owner;
     if (side !== "blue" && side !== "red") continue;
-    const row = counts[side];
-    if (CITY_KINDS.has(site.kind) || (paysCapital && CAPITAL_KINDS.has(site.kind))) row.cities += 1;
-    else if (WELL_KINDS.has(site.kind)) row.wells += 1;
+    add(counts[side], site);
   }
   // A restored row can list a city whose site owner has since changed; the list is the second
   // source. It is normally empty, so this pass costs nothing on the hot path.
@@ -442,16 +470,29 @@ function incomeCounts(match) {
     for (const id of listed) {
       const site = match.sites.find((entry) => entry && entry.id === id);
       if (!site || site.owner === side) continue;
-      if (CITY_KINDS.has(site.kind) || (paysCapital && CAPITAL_KINDS.has(site.kind))) counts[side].cities += 1;
+      add(counts[side], site);
     }
+  }
+  // PB-150: paying = count(type 4) + max(0, count(type 1) + count(type 2) - 1).
+  for (const side of SIDES) {
+    const row = counts[side];
+    row.paying = row.cities + Math.max(0, row.capitals - 1);
   }
   return counts;
 }
 
-// Income lands every round (payEvery, Manual p.27): cityIncome millions per city and nothing per
-// well. Capitals pay only when config money.capitalPays is true (UNVERIFIED, off by default). A
-// finished match pays nothing. A side whose pool was never funded - cash not a number, or already
-// short (negative) - is not paid.
+// PB-150 hook: whether this side's payday happens at all. Always true today; PB-156 fills it
+// with the 5n% nuclear-winter roll (FUN_15f4_0664 4763). Keeping the call here means that rule
+// lands in one place instead of a second pay() path.
+export function incomeGate(match, side) {
+  return true;
+}
+
+// Income lands every round (payEvery, Manual p.27): cityIncome millions per paying site. PB-150
+// replaced the per-kind "capital pays" flag with the original's expression (type 4 plus every
+// capital after the first), so a base and an oil field pay nothing and a second capital pays as a
+// city. A finished match pays nothing. A side whose pool was never funded - cash not a number, or
+// already short (negative) - is not paid.
 export function pay(match) {
   if (!match || !Array.isArray(match.sites) || !match.sides) return [];
   seedOwners(match);
@@ -474,13 +515,13 @@ export function pay(match) {
       const owner = site.owner;
       if (owner !== "blue" && owner !== "red") continue;
       const row = owner === "blue" ? blue : red;
-      if (site.kind === "city") row.cities += 1;
-      else if (site.kind === "capital") row.capitals += 1;
-      else if (WELL_KINDS.has(site.kind)) row.wells += 1;
+      const type = siteTypeOf(site);
+      if (type === 4) row.cities += 1;
+      else if (type === 1 || type === 2) row.capitals += 1;
+      else if (type === 5) row.wells += 1;
     }
     tally = { blue, red };
   }
-  const paysCapital = capitalPays();
   const perCity = cityIncome();
   for (const side of SIDES) {
     const seat = seatOf(match, side);
@@ -489,12 +530,28 @@ export function pay(match) {
       events.push({ type: "income_skipped", side, reason: "short", round });
       continue;
     }
+    // PB-150's hook: PB-156 replaces the always-true body with the 5n% roll.
+    if (!incomeGate(match, side)) {
+      events.push({ type: "income_skipped", side, reason: "gate", round });
+      continue;
+    }
     const row = tally[side];
-    const cities = row.cities + (paysCapital ? row.capitals : 0);
+    // PB-150: paying = type 4 + one per extra capital (FUN_2dfc_1246 @ 2dfc:1246).
+    const counted = row.cities + Math.max(0, row.capitals - 1);
     const wells = row.wells;
+    // Oil short? The original takes the unpaid share off the city count before the payday, so a
+    // side out of oil stops producing income (Manual p.27; FUN_15f4_0664 4727-4762).
+    const oil = oilIncome(match, side, counted);
+    const cities = oil.cities;
     const amount = cities * perCity;
     seat.cash += amount;
-    events.push({ type: "income", side, round, cities, wells, cashWells: 0, amount });
+    const event = { type: "income", side, round, cities, wells, cashWells: 0, amount };
+    if (oil.penalty > 0) {
+      event.oilShort = true;
+      event.oilPenalty = Number(oil.penalty.toFixed(4));
+      event.citiesBeforeOil = counted;
+    }
+    events.push(event);
   }
   return events;
 }
@@ -515,8 +572,8 @@ export function upkeep(match) {
     if (!seatOf(match, side)) continue;
     for (const piece of match.pieces) {
       if (piece.side !== side) continue;
-      const well = wellAt(match, piece.x, piece.y);
-      if (well && well.owner !== side) events.push(...capture(match, side, piece.x, piece.y));
+      const field = oilFieldAt(match, piece.x, piece.y);
+      if (field && field.owner !== side) events.push(...capture(match, side, piece.x, piece.y));
     }
   }
 

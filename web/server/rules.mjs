@@ -271,11 +271,8 @@ export function cityIncome() {
   return Number(rules().money?.cityIncome);
 }
 
-// Whether a capital pays like a city. UNVERIFIED: the manual names only cities, and the code has
-// never paid a capital. The flag makes that choice explicit and editable.
-export function capitalPays() {
-  return rules().money?.capitalPays === true;
-}
+// PB-150: income is paid on the original's expression (count(type 4) + max(0, count(type 1) +
+// count(type 2) - 1)), so there is no per-kind "capital pays" flag to read. Retired with the rule.
 
 // Whether an aircraft away on a mission survives the capture of its base. Q50(a), UNVERIFIED: the
 // manual's p.10 "City Conquest" rule covers a plane BASED on the captured strip and says nothing

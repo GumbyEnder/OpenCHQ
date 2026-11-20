@@ -59,9 +59,10 @@ import { isSiteReady, readyRoundOf, unreadyRefusal } from "./readiness.mjs";
 const SEA_KINDS = new Set(["cruiser", "carrier", "submarine"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
 // "City or base" in the manual. world.json calls the non-capital settlements `city`; the era
-// table and combat also carry `base`, and a facility is a built site that owns ground, so it
-// produces like a base. A capital is a city for placement: it is highlighted and it produces.
-const LAND_SITE_KINDS = new Set(["city", "capital", "base", "facility"]);
+// table and combat also carry `base`. PB-153: a `facility` is a type-5 OIL FIELD, not a
+// placement site - it is captured by standing on it, it never produces a unit and never tires a
+// neighbour. A capital is a city for placement: it is highlighted and it produces.
+const LAND_SITE_KINDS = new Set(["city", "capital", "base"]);
 // Aircraft base in a city, base or carrier and never on a dock (manual p.22).
 const AIR_SITE_KINDS = LAND_SITE_KINDS;
 // D-025: a hull's berth is a dock OR a coastal settlement. Both are click targets; only the
@@ -88,6 +89,14 @@ export function domainOf(kind) {
 
 // Which occupancy layer a piece or a kind lives on: "air" or "ground". Ground and sea share one
 // layer, which is why a hull and an infantry still cannot stand on one cell.
+// The same predicate as a boolean with no String() allocation. `layerOf` builds two strings per
+// call, which is right for a click and wrong for a per-piece per-room loop (the oil summary counts
+// aircraft once per piece per round); the branches are identical to layerOf's.
+export function isAirPiece(value) {
+  if (!value || typeof value !== "object") return value === "aircraft" || value === "air";
+  return value.kind === "aircraft" || value.domain === "air";
+}
+
 export function layerOf(value) {
   const kind = value && typeof value === "object" ? String(value.kind ?? "") : String(value ?? "");
   const domain = value && typeof value === "object" ? String(value.domain ?? "") : "";

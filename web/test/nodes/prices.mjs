@@ -98,9 +98,12 @@ export async function run(ctx) {
   }
   if (!/Manual p\.27/.test(String(sourceOf("payEvery")))) fail("payEvery has no Manual p.27 source");
   if (!/Manual p\.27/.test(String(sourceOf("cityIncome")))) fail("cityIncome has no Manual p.27 source");
-  if (String(sourceOf("capitalPays")) !== "UNVERIFIED") fail("capitalPays must be labelled UNVERIFIED");
+  if (!/FUN_2dfc_1246/.test(String(sourceOf("payingCount")))) {
+    fail("the paying count must cite FUN_2dfc_1246 (PB-150)");
+  }
+  if (String(sourceOf("capitalPays")) !== "undefined") fail("money.capitalPays must be retired by PB-150");
   eq(cityIncome(), 50, "a city pays 50 million a round (Manual p.27)");
-  console.log("criterion 8 ok: every price, payEvery and cityIncome carries its source; sub/cruiser/carrier carry the p.28 icon-row UNVERIFIED label; capitalPays is UNVERIFIED");
+  console.log("criterion 8 ok: every price, payEvery, cityIncome and the PB-150 payingCount carry their source; sub/cruiser/carrier carry the p.28 icon-row UNVERIFIED label; capitalPays is retired");
 
   // ---- 9: no money literal outside config ---------------------------------------------
   const offenders = [];

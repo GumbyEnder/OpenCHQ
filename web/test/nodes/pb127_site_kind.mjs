@@ -71,15 +71,17 @@ export async function run() {
 
   const match1918 = openMatch("1918", sites1918);
   const paid = payoutFor(match1918, "blue");
-  // The same match with the pre-fix kind on 62: the defect shape, kept local.
+  // PB-150 moved the paying count from `kind` onto the site's subtype, so the defect shape to
+  // pin is a subtype change, not a kind one: the same match with 62's type put back to 3 (base)
+  // must pay exactly one city and 50M less. A type-3 site never pays, whatever its kind says.
   const regressed = {
     ...match1918,
-    sites: match1918.sites.map((site) => (Number(site.id) === 62 ? { ...site, kind: "capital" } : site)),
+    sites: match1918.sites.map((site) => (Number(site.id) === 62 ? { ...site, type: 3 } : site)),
   };
   const unpaid = payoutFor(regressed, "blue");
   if (paid.cities !== unpaid.cities + 1 || paid.amount !== unpaid.amount + 50) {
-    fail("1918 blue pays " + paid.cities + " cities/" + paid.amount + "M with 62 as city and " +
-      unpaid.cities + " cities/" + unpaid.amount + "M with it as capital; expected exactly one city and 50M more");
+    fail("1918 blue pays " + paid.cities + " cities/" + paid.amount + "M with 62 as type 4 and " +
+      unpaid.cities + " cities/" + unpaid.amount + "M with it as type 3; expected exactly one city and 50M more");
   }
   if (paid.cities < 2) fail("1918 blue pays " + paid.cities + " cities, so the leg cannot see 62 among them");
 

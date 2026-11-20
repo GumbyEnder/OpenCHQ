@@ -12,7 +12,7 @@ import { CELL_W, CELL_H, TERRAIN, boardPayload, resolveDataRoot } from "./board.
 import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostLimit, digInIds } from "./rules.mjs";
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
-import { movementBlocked } from "./resources.mjs";
+import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
 import { applyDamage, damageFor, ensureStrength } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
@@ -715,6 +715,10 @@ function canStepInto(piece, match, path, credit) {
 // water, it cannot enter any cell a piece stands on, and it must end on the SAME destination. Where
 // the straight line is walkable nothing here runs at all.
 const DETOUR_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+// Pieces that have already been told they are out of oil. A WeakSet keyed on the piece keeps the
+// once-per-episode rule without adding a key to a serialized object (see saveRoom's JSON cost).
+const oilHoldAnnounced = new WeakSet();
 const DETOUR_MAX_EXPANSIONS = 6000;
 const DETOUR_MAX_STEPS = 96;
 
@@ -822,6 +826,32 @@ export function advance(match) {
   const doomed = new Set(); // pieces a round of overrun removed; filtered once, after the walk
   // A dry blocking resource stops that side's pieces; a non-blocking one (steel, which is not in
   // the original) never does. The answer is per side and does not change inside one round.
+  // T-033 hot path: the bench ticks 1,000 rooms x 8 pieces and each moved cell debits the side's
+  // oil meter. Resolving the per-kind price and the side's meter per PIECE meant a config lookup
+  // and a seat walk per piece; both are per-round facts, so they are cached for this call and the
+  // held value stays in a local until the piece's walk ends. The rule is unchanged: the same
+  // meter is debited for the same cells, and the seat is written back once per side.
+  const oilPrices = new Map();
+  const oilMeters = new Map();
+  const oilHeld = new Map();
+  const oilDirty = new Set();
+  const oilPriceOf = (kind) => {
+    let price = oilPrices.get(kind);
+    if (price === undefined) {
+      price = oilCostPerCell(match, kind);
+      oilPrices.set(kind, price);
+    }
+    return price;
+  };
+  const oilMeterOf = (side) => {
+    let meter = oilMeters.get(side);
+    if (meter === undefined) {
+      meter = oilMeterFor(match, side);
+      oilMeters.set(side, meter);
+      if (meter) oilHeld.set(side, Number(meter.held));
+    }
+    return meter;
+  };
   const blocked = {};
   const isBlocked = (side) => {
     if (!(side in blocked)) {
@@ -852,6 +882,12 @@ export function advance(match) {
     let credit = (Number(piece.credit) || 0) + rate;
     let spent = 0;
     let stopped = false;
+    // Oil, resolved once for this piece's whole walk (T-033): a ship or a free-era side pays 0
+    // and never touches a meter.
+    const oilPrice = oilPriceOf(piece.kind);
+    const oilMeter = oilPrice > 0 ? oilMeterOf(piece.side) : null;
+    let heldLocal = oilMeter ? oilHeld.get(piece.side) : 0;
+    let oilTouched = false;
     while (piece.path.length > 0 && spent < rate) {
       const next = piece.path[0];
       const nx = wrapX(next.x);
@@ -1013,6 +1049,33 @@ export function advance(match) {
         piece.overrunBy = null;
         piece.overrunCell = null;
       }
+      // Oil (T-033): one cell entered costs this kind's charge out of the side's budget. A side
+      // that cannot pay stops here and says so once per episode; the order stays live, so the
+      // piece walks on when the wells pay again (Manual p.27 "units stop moving"). The price and
+      // the meter are resolved once per piece (before the walk), not per cell: this loop is the
+      // bench's hot path.
+      if (oilMeter) {
+        if (!Number.isFinite(heldLocal) || heldLocal < oilPrice) {
+          heldLocal = 0;
+          oilMeter.dry = true;
+          oilTouched = true;
+          // Said once per episode. A module-level WeakSet, not a field on the piece: a new key on
+          // a serialized piece changes its hidden class and the store bench pays for it.
+          if (!oilHoldAnnounced.has(piece)) {
+            oilHoldAnnounced.add(piece);
+            events.push({
+              type: "oil_hold", side: piece.side, pieceId: piece.id,
+              x: piece.x, y: piece.y, round: Number(match.round) || 0,
+            });
+          }
+          stopped = true;
+          break;
+        }
+        heldLocal -= oilPrice;
+        oilMeter.dry = heldLocal <= 0;
+        oilTouched = true;
+      }
+      oilHoldAnnounced.delete(piece);
       piece.facing = facingFor(fromX, fromY, nx, ny);
       piece.x = nx;
       piece.y = ny;
@@ -1042,9 +1105,21 @@ export function advance(match) {
         });
       }
     }
+    if (oilMeter) {
+      oilHeld.set(piece.side, heldLocal);
+      if (oilTouched) oilDirty.add(piece.side);
+    }
     piece.credit = stopped ? 0 : Math.max(0, credit);
     // Nothing to clear here: the hold memory lives until a step is actually taken (above) or a new
     // order replaces it (issueOrder). A round with no step attempted is not an end of the hold.
+  }
+  // One seat write per side that actually paid, after every piece of that side has walked.
+  for (const side of oilDirty) {
+    const meter = oilMeters.get(side);
+    if (!meter) continue;
+    meter.held = oilHeld.get(side);
+    meter.dry = meter.held <= 0;
+    syncOilSeat(match, side, meter);
   }
   if (doomed.size > 0) {
     match.pieces = match.pieces.filter((piece) => !doomed.has(piece.id));

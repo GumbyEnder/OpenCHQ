@@ -29,6 +29,7 @@ import {
   knownKinds,
   meterOf,
   metersFor,
+  oilFlow,
   produce,
   rateOf,
   resourceKinds,
@@ -148,6 +149,14 @@ export async function run(ctx) {
   const fuelMatch = openMatch("1986", []);
   upkeepResources(fuelMatch);
   const fuelSpec = resourceSpec("fuel");
-  eq(fuelMatch.sides.blue.fuel, Number(fuelSpec.reserve) - Number(fuelSpec.burn), "fuel's old seat field");
+  // T-033: the budget settles In - Out. The board has no sites, so In is the 200 minimum and
+  // Out is the 200 base plus 2 per piece - the opening roster's pieces are real and are charged
+  // (FUN_15f4_0664 4723). Derive the expectation from the flow instead of assuming 200/200.
+  const fuelFlow = oilFlow(fuelMatch, "blue");
+  eq(fuelFlow.in, Number(fuelSpec.inPerWell), "empty-board In is the minimum, not zero");
+  eq(fuelFlow.out, Number(fuelSpec.outBase) + Number(fuelSpec.perPiece) * fuelFlow.pieces,
+    "empty-board Out is the base plus 2 per piece");
+  eq(fuelMatch.sides.blue.fuel, Number(fuelSpec.reserve) + fuelFlow.in - fuelFlow.out,
+    "fuel's old seat field");
   eq(fuelMatch.sides.blue.resources.fuel.held, fuelMatch.sides.blue.fuel, "the fuel meter and the old field disagree");
 }

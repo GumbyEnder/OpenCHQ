@@ -1,0 +1,17 @@
+player_side      = 0
+side0.cash148e  = 400
+side0.money1446 = 3000
+side0.oilres    = 200
+side0.oilin     = 200
+side0.oilout    = 850
+side1.cash148e  = 400
+side1.money1446 = 3000
+side1.oilres    = 200
+side1.oilin     = 200
+side1.oilout    = 600
+raw148e          = 400  /40 = 10.0
+raw1490          = 400  /40 = 10.0
+mod148c          = 0
+m4mode_e378      = 0
+m4arm_3eb2       = 0
+alt_e32c         = 1

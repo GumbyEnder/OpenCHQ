@@ -39,6 +39,7 @@ process.env.OPENCHQ_WEB_DATA = dir;
 
 const { boardPayload } = await import("../web/server/board.mjs");
 const { openMatch } = await import("../web/server/match.mjs");
+const { resourceSpec } = await import("../web/server/resources.mjs");
 const { tickMatch } = await import("../web/server/tick.mjs");
 const { flushRooms, flushWindow, loadRooms, saveRoom } = await import("../web/server/rooms.mjs");
 const { db } = await import("../web/server/db.mjs");
@@ -87,8 +88,23 @@ if (!sites.length) {
 // those steps are part of the stored state; a handful of steps would be the fake number.
 const ROUTE_STEPS = 60;
 
-function lane(x, y) {
-  return Array.from({ length: ROUTE_STEPS }, (_, step) => ({ x: (x + step + 1) % 320, y, pace: 1 }));
+// T-033 fixture ruling (PM 7744): this bench measures hot-path cost at a FIXED workload. Before the
+// oil rule the fixture drained its reserve, the sides went dry and only about one piece per room
+// kept marching (~144,161 move events over the run). The faithful 40 floor now keeps the sides
+// funded, so the same fixture marched 2.3x as much and the 10x floor read as a regression when the
+// workload, not the cost, had changed. So the march itself is pinned here: exactly MARCH_PIECES
+// land pieces per room march, and every other piece is pathless. A marcher is re-ordered onto a
+// fresh ROUTE_STEPS lane when the lane runs out, so every pass moves the same number of cells at
+// every commit (155 passes x 1,000 rooms ~= the 144k move events the old fixture produced) and the
+// stored payload stays the size of one real order rather than a map-long synthetic route.
+const MARCH_PIECES = 1;
+const MARCH_STEPS = ROUTE_STEPS;
+// Which pieces are the fixture's marchers. A WeakSet, never a field on the piece: semantic keys on
+// a serialized piece change its hidden class and the store bench pays for it.
+const marchers = new WeakSet();
+
+function lane(x, y, steps = ROUTE_STEPS) {
+  return Array.from({ length: steps }, (_, step) => ({ x: (x + step + 1) % 320, y, pace: 1 }));
 }
 
 // Extra pieces are the same shape economy.buy produces, on their own lane so they do not
@@ -104,7 +120,7 @@ function addPiece(match, room, k) {
     kind: "infantry",
     x,
     y,
-    path: lane(x, y),
+    path: [],
     pace: 1,
     facing: null,
     fighting: null,
@@ -115,18 +131,50 @@ function addPiece(match, room, k) {
 function makeRoom(i) {
   const match = openMatch("1986", sites);
   match.clock = "running";
-  for (const piece of match.pieces) {
-    if (piece.domain === "land") piece.path = lane(piece.x, piece.y);
+  // T-033: the pinned march is one 360-cell route per room, i.e. 360 cells at the recovered
+  // infantry per-cell rate = 6,120 oil, against a 3,000 setup reserve. An unfunded room correctly
+  // runs dry, stops moving and keeps its route in the stored state (11.2 KB per room against 3.0 KB,
+  // and a 2x snapshot cost) - which measures the oil rule, not the round pass this probe exists to
+  // time. So the rooms carry a funded tank; every cell is still charged.
+  for (const side of ["blue", "red"]) {
+    const seat = match.sides && match.sides[side];
+    if (!seat) continue;
+    const cap = Number(resourceSpec("fuel").reserveCap);
+    seat.resources = { ...(seat.resources || {}), fuel: { held: cap, dry: false } };
+    seat.fuel = cap;
+    seat.dry = false;
   }
+  // Every piece starts pathless; the fixed march is assigned below, after the roster is filled.
+  for (const piece of match.pieces) piece.path = [];
   for (let k = 0; match.pieces.length < PIECES; k++) addPiece(match, i, k);
+  let marched = 0;
+  for (const piece of match.pieces) {
+    if (marched >= MARCH_PIECES) break;
+    if (piece.domain !== "land") continue;
+    piece.path = lane(piece.x, piece.y, MARCH_STEPS);
+    marchers.add(piece);
+    marched += 1;
+  }
+  if (marched < MARCH_PIECES) throw new Error("bench fixture has no land piece to march");
   return { id: `bench-${i}`, mode: "bot", era: "1986", clock: "running", note: "", seats: {}, match };
 }
 
 const rooms = Array.from({ length: ROOMS }, (_, i) => makeRoom(i));
 
+// The pinned march: a marcher whose lane is spent gets a fresh one, so the workload does not decay
+// across the pass. Allocation happens once per 60 ticks per room, not per tick.
+function stepRoom(room) {
+  if (marchers.size > 0) {
+    for (const piece of room.match.pieces) {
+      if (marchers.has(piece) && piece.path.length === 0) piece.path = lane(piece.x, piece.y, MARCH_STEPS);
+    }
+  }
+  return tickMatch(room.match);
+}
+
 // ---- a tick pass: one round of movement for every running room --------------------------
 const tickMs = timePass(() => {
-  for (const room of rooms) tickMatch(room.match);
+  for (const room of rooms) stepRoom(room);
 }, 6);
 const tickHeadroom = BUDGET_MS / tickMs;
 
@@ -134,7 +182,7 @@ const tickHeadroom = BUDGET_MS / tickMs;
 let cursor = 0;
 const roundMs = timePass(() => {
   for (const room of rooms) {
-    tickMatch(room.match);
+    stepRoom(room);
     room.dirty = true;
   }
   cursor = flushRooms(rooms, cursor, WINDOW).cursor;
@@ -170,7 +218,7 @@ cursor = 0;
 const heldMs = timePass(() => {
   for (const room of rooms) {
     if (!room.match || room.match.over || room.clock !== "running") continue;
-    tickMatch(room.match);
+    stepRoom(room);
     room.dirty = true;
     writes.n += 1;
   }
@@ -189,7 +237,7 @@ cursor = 0;
 const written = new Set();
 for (let round = 0; round < WINDOW; round++) {
   for (const room of rooms) {
-    tickMatch(room.match);
+    stepRoom(room);
     room.dirty = true;
   }
   const result = flushRooms(rooms, cursor, WINDOW);
@@ -199,7 +247,18 @@ for (let round = 0; round < WINDOW; round++) {
 const durable = written.size;
 
 // ---- round trip: the row must give back the same routes and the same owners ------------
+// The round-trip probe is its own room: six 60-cell orders, so the store's route payload and the
+// load_test assertion (>= 360 route steps restored) are exercised without putting six routes into
+// every timed room above.
 const probe = makeRoom(0);
+let probeRouted = 0;
+for (const piece of probe.match.pieces) {
+  if (probeRouted >= 6) break;
+  if (piece.domain !== "land") continue;
+  piece.path = lane(piece.x, piece.y, ROUTE_STEPS);
+  probeRouted += 1;
+}
+if (probeRouted < 6) throw new Error("round-trip fixture has fewer than six land pieces");
 probe.id = "roundtrip";
 probe.clock = "held";
 probe.match.clock = "held";

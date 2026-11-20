@@ -10,6 +10,7 @@ import { CELL_W } from "./board.mjs";
 import { layerOf } from "./placement.mjs";
 import { rules, combatRules } from "./rules.mjs";
 import { applyDamage, ensureStrength } from "./combat.mjs";
+import { resourceSpec, spendOil, oilUsesReserve } from "./resources.mjs";
 
 // The mission costs in rounds. They are tunables, so they live in config/game.json's air block and
 // nowhere else: this module used to keep its own copy (8 and 4), which is a second source of truth
@@ -243,6 +244,18 @@ export function sendMission(match, side, pieceId, mode, target) {
 
   const base = baseFor(match, side, plane);
   if (!base) return { error: "No friendly city, base or carrier within reach." };
+
+  // Oil (T-033): a mission costs the side's budget 20 before the plane leaves (FUN_15f4_0664
+  // 4839 calls FUN_15f4_0d7e(0x14); a side that cannot pay is `dry` and the plane stays on the
+  // ground - Manual p.27 "planes can't fly").
+  const fuel = resourceSpec("fuel");
+  const missionOil = fuel && Number.isFinite(Number(fuel.airMission)) ? Number(fuel.airMission) : 0;
+  if (missionOil > 0 && oilUsesReserve(match && match.era)) {
+    const bill = spendOil(match, side, missionOil);
+    if (!bill.ok) {
+      return { error: `Not enough oil to fly a mission: ${missionOil} needed, ${bill.held} in reserve.` };
+    }
+  }
 
   const events = [];
   plane.inactiveUntil = (Number(match.round) || 0) + mission.rounds;
