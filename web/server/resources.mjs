@@ -234,7 +234,8 @@ export function movementBlocked(match, side) {
 //
 // The 1990 game's oil is a SIDE-WIDE BUDGET, not per-unit fuel: owned oilfields produce ("In"),
 // cities and bases consume ("Out"), and the reserve is what is left. The numbers and their
-// addresses are in docs/re/ECONOMY.md and config/game.json's `resources.fuel`; this section only
+// addresses are in docs/re/ECONOMY_RE.md (the old docs/re/ECONOMY.md has wrong addresses and is
+// superseded) and config/game.json's `resources.fuel`; this section only
 // applies them. `upkeepResources` below settles the budget once a round, `chargeOil` takes the
 // per-unit spend as pieces move, and `oilReadout` is what the page draws.
 //
