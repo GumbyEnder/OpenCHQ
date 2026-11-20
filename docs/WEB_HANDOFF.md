@@ -126,8 +126,9 @@ checks the 23 Ghidra rename rows against `functions.txt` (`107e:3bd0` = `ai_turn
 - Prices are the manual's, in billions: infantry 10, tank 20 (twice infantry), submarine 10,
   cruiser 10, carrier 20, aircraft 20, reconSat 10, killerSat 5, nuke 10, foreignAid 10,
   intelScan 10. The server stores integer millions via `money.perBillion`.
-- Income: a city pays 50 million every `payEvery` round (1); a well pays oil, never cash; a base
-  pays nothing; `capitalPays` is false and UNVERIFIED. A finished match stops paying.
+- Income: the original's paying count (PB-150, FUN_2dfc_1246): type-4 cities plus every capital
+  after the first; 50 million per paying site every `payEvery` round (1). Bases, oil fields and
+  wells pay no cash. A finished match stops paying.
 - Resources are per side and data-driven (`config/game.json` → `resources`). Fuel is a stand-in
   (reserve 10000, burn 1, blocks movement, refilled at a well/oilfield). Steel is a non-original
   owner choice (D-003): 40 held, 1 a round, does not block movement, 1942/1986 only. The UI must

@@ -233,12 +233,12 @@ export async function run(ctx) {
     console.log("criterion 4 ok: 3 cities + 2 wells, 10 rounds, cash 0 -> 1500 million; each event 150 (0.15b), wells 0 in cash");
   }
 
-  // ---- income: a base and a capital pay nothing while capitalPays is false (criterion 6) ---
+  // ---- income: a base pays nothing; the first capital is free (criterion 6, PB-150) --------
   {
     const quiet = openMatch("1986", []);
     quiet.sites = [
-      { id: 50, name: "Base", x: 10, y: 10, kind: "base", owner: "blue" },
-      { id: 51, name: "Capital", x: 11, y: 10, kind: "capital", owner: "blue" },
+      { id: 50, name: "Base", x: 10, y: 10, kind: "base", type: 3, owner: "blue" },
+      { id: 51, name: "Capital", x: 11, y: 10, kind: "capital", type: 1, owner: "blue" },
     ];
     quiet.sides.blue.cash = 0;
     quiet.sides.red.cash = 0;
@@ -247,8 +247,13 @@ export async function run(ctx) {
       quiet.round = round;
       pay(quiet);
     }
-    eq(quiet.sides.blue.cash, 0, "a base and a capital paid cash while capitalPays is false");
-    console.log("criterion 6 ok: a base + a capital held 10 rounds add 0 while capitalPays is false");
+    eq(quiet.sides.blue.cash, 0, "a base (type 3) and a first capital (type 1) pay nothing");
+    // The rule, not a flag: a second capital is an extra capital and pays one city's income.
+    quiet.sites.push({ id: 52, name: "Capital 2", x: 12, y: 10, kind: "capital", type: 2, owner: "blue" });
+    quiet.round = 11;
+    pay(quiet);
+    eq(quiet.sides.blue.cash, 50, "the second capital pays one cityIncome (PB-150)");
+    console.log("criterion 6 ok: a base pays 0, one capital is free, the second pays one city");
   }
 
   // ---- income: a finished match pays nothing -------------------------------------------

@@ -33,6 +33,11 @@ const CITY_KINDS = new Set(["city"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
 // PB-153: the 20 `facility` ids are the original's type-5 oil fields.
 const FACILITY_KINDS = new Set(["facility"]);
+// The original captures a base as well as a city and an oil field: PB-150 pays income on the
+// subtype, and PB-155 pays 2 b when a type-3 or type-4 site changes hands, so a base has to be
+// takeable by standing on it. Bases are not `ownable` (seedOwners never grants one from a
+// country) - they only change hands in battle.
+const BASE_KINDS = new Set(["base"]);
 // world.json's sketched wells: ownership seeding (display) only, never a rule source.
 const WELL_KINDS = new Set(["oilfield", "well"]);
 // A capital is occupiable and its owner byte is who holds it: the era table writes the scenario's
@@ -49,7 +54,7 @@ const CAPITAL_KINDS = new Set(["capital"]);
 // by combat, and a capture pass can never reach it.
 
 function occupiable(kind) {
-  return ownable(kind) || CAPITAL_KINDS.has(kind);
+  return ownable(kind) || CAPITAL_KINDS.has(kind) || BASE_KINDS.has(kind);
 }
 
 // A unit's domain. The match's piece shape names land and sea only, so aircraft are
@@ -474,14 +479,15 @@ function incomeCounts(match) {
 
 // PB-150 hook: whether this side's payday happens at all. Always true today; PB-156 fills it
 // with the 5n% nuclear-winter roll. Keeping the call here means that rule lands in one place.
-export function incomeGate() {
+export function incomeGate(match, side) {
   return true;
 }
 
 // Income lands every round (payEvery, Manual p.27): cityIncome millions per city and nothing per
-// well. Capitals pay only when config money.capitalPays is true (UNVERIFIED, off by default). A
-// finished match pays nothing. A side whose pool was never funded - cash not a number, or already
-// short (negative) - is not paid.
+// PB-150 replaced the per-kind "capital pays" flag with the original's expression (type 4 plus
+// every capital after the first), so a base and an oil field pay nothing and a second capital pays
+// as a city. A finished match pays nothing. A side whose pool was never funded - cash not a number,
+// or already short (negative) - is not paid.
 export function pay(match) {
   if (!match || !Array.isArray(match.sites) || !match.sides) return [];
   seedOwners(match);
@@ -517,6 +523,11 @@ export function pay(match) {
     if (!seat) continue;
     if (!Number.isFinite(seat.cash) || seat.cash < 0) {
       events.push({ type: "income_skipped", side, reason: "short", round });
+      continue;
+    }
+    // PB-150's hook: PB-156 replaces the always-true body with the 5n% roll.
+    if (!incomeGate(match, side)) {
+      events.push({ type: "income_skipped", side, reason: "gate", round });
       continue;
     }
     const row = tally[side];
