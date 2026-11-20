@@ -271,6 +271,16 @@ export function cityIncome() {
   return Number(rules().money?.cityIncome);
 }
 
+// PB-151: the original clamps a side's cash to 0..60000 units (FUN_23aa_0cba @ 23aa:0cba,
+// decompiled.c 17186-17206). In millions that ceiling is `money.maxBillions` x perBillion =
+// 1500 b. `null` when the tunable is missing, so a caller never reads a silent 0 as a cap.
+export function maxCash() {
+  const billions = Number(rules().money?.maxBillions);
+  const per = millionsPerBillion();
+  if (!Number.isFinite(billions) || !Number.isFinite(per)) return null;
+  return billions * per;
+}
+
 // PB-150: income is paid on the original's expression (count(type 4) + max(0, count(type 1) +
 // count(type 2) - 1)), so there is no per-kind "capital pays" flag to read. Retired with the rule.
 

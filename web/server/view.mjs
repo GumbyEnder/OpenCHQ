@@ -286,10 +286,18 @@ export function forSeat(match, side) {
   // only reason to guess a holder from a label colour.
   const capitalList = capitalListOf(match);
 
+  // PB-152: the opponent's INCOME is public - the original's Alternate Function shows it (MANUAL
+  // p.27) - but their CASH is not: it prints ??? there. So the payload carries the payday's two
+  // public numbers and nothing else: no cash, no reserves, no fuel. `payoutFor` also returns the
+  // informational `wells`/`cashWells` counts, which are not part of this view - shape it here so
+  // the payload grep for a purse stays clean.
+  const payday = payoutFor(match, enemySide);
+  const opponent = { income: { cities: payday.cities, amount: payday.amount } };
+
   // The round the server is actually running, so the page can draw the same clock. A page that
   // keeps its own copy of the round length is a second source of truth for a tunable.
   return {
-    pieces, routes, sites, capitals, capitalList, seat, notes, alarm, over, winner, result, unscreened,
+    pieces, routes, sites, capitals, capitalList, seat, opponent, notes, alarm, over, winner, result, unscreened,
     // One entry per region (184 of them), in region id order: "blue", "red" or null. The page
     // fills the ground from this and the geometry that came with the board.
     ownership: ownershipOf(match),

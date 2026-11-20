@@ -177,8 +177,10 @@
   },
   "payEvery": 1,
   "money": {
+    "_comment": "PB-151: cash is clamped to 0..60000 units. FUN_23aa_0cba @ 23aa:0cba, decompiled.c 17186-17206. perBillion 1000 units per billion, so the ceiling is 1500 b; every credit (income, refunds, capture reward, aid) goes through economy.credit().",
     "perBillion": 1000,
-    "cityIncome": 50
+    "cityIncome": 50,
+    "maxBillions": 1500
   },
   "startPool": {
     "1918": 10,

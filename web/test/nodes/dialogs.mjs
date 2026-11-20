@@ -111,8 +111,8 @@ export async function run(ctx) {
   eq("the purse is the seat's", model.cash, 15000);
   eq("the next payday is the seat's countdown", [model.payIn, model.payEvery], [1, 1]);
   eq("the payday worth is the server's count", model.income, { cities: 2, wells: 1, cashWells: 0, amount: 100 });
-  eq("held cities, docks and oilfields come off the site list",
-    [model.held.city, model.held.dock, model.held.well], [2, 1, 1]);
+  eq("held sites are counted by subtype, not kind (PB-162)",
+    model.held, { city: 2, capital: 1, base: 0, dock: 1, oilfield: 0 });
   eq("the unit counts are the visible pieces", model.units, { own: 3, known: 3 });
   eq("the stocks are the seat's own meters", model.reserves.map((meter) => meter.kind), ["fuel", "steel"]);
 

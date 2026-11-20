@@ -285,6 +285,9 @@ export function createLobby() {
       // Cash, fuel and the rounds until the next payment. The page needs them to draw a
       // countdown; without them the clock is dead time and a player cannot plan a purchase.
       seat: seen ? seen.seat : null,
+      // PB-152: the other side's payday, for the Economy dialog's Alternate Function. The object
+      // is shaped in view.mjs and carries income only - never a purse, reserve or fuel.
+      opponent: seen ? (seen.opponent || null) : null,
       // Show Ownership reads who holds each of the 184 regions from here, not from the city cells
       // (T-018 AC4/AC5). It rides the room like the capital list does: both seats see the same
       // ground, and it is a view of the site table, never a second source of truth.
