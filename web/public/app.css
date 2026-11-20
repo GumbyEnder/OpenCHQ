@@ -770,6 +770,9 @@ body.in-match .speedctl { display: flex; }
 .dlgrid dt { color: var(--muted); }
 .dlgrid dd { margin: 0; font-variant-numeric: tabular-nums; }
 
+/* PB-152: the economy dialogue's own/opponent toggle. */
+.econview { display: flex; gap: 6px; margin: 0 0 10px; }
+
 .dialoglabels {
   margin: 12px 0 2px;
   font-size: 10px;

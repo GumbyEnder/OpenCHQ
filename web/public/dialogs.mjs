@@ -148,11 +148,21 @@ export function economyModel(room) {
   const pieces = Array.isArray(room && room.pieces) ? room.pieces : [];
   const enemy = you === "blue" ? "red" : you === "red" ? "blue" : "";
   const unitsOf = (side) => pieces.filter((piece) => piece.side === side).length;
+  // PB-152: the other side's payday, as the server sent it. The payload has no cash field to
+  // copy - the original prints ??? for the opponent's balance (MANUAL p.27) - so this model
+  // carries none either, and the dialog prints ??? from the absence.
+  const foe = room && room.opponent && room.opponent.income && typeof room.opponent.income === "object"
+    ? {
+      cities: Number(room.opponent.income.cities) || 0,
+      amount: Number(room.opponent.income.amount) || 0,
+    }
+    : null;
   return {
     cash: seat && Number.isFinite(seat.cash) ? Number(seat.cash) : null,
     payIn: seat && Number.isFinite(Number(seat.payIn)) ? Number(seat.payIn) : null,
     payEvery: seat && Number.isFinite(Number(seat.payEvery)) ? Number(seat.payEvery) : null,
     income,
+    opponent: foe ? { income: foe } : null,
     held,
     oil,
     reserves,

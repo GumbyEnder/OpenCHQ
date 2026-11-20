@@ -1858,6 +1858,10 @@ setDebug(debugOpen);
 // The original hid these commands behind a menu bar that appeared when the controller entered the
 // strip at the top of the screen. A browser has buttons instead, and one dialogue over the map.
 let openDialogId = null;
+// PB-152: the economy dialogue's Alternate Function. "own" is this seat; "opponent" shows the
+// other side's payday and their cash as ???. Reset whenever a new match opens, so a shared screen
+// never starts on someone else's page.
+let economyView = "own";
 
 function note(text) {
   const p = document.createElement("p");
@@ -2002,6 +2006,36 @@ const DIALOG_PAINTERS = {
   // figure here came off the seat the server sent.
   economy(body) {
     const model = economyModel(room);
+    // PB-152: the manual's Alternate Function (p.27). A second view shows the other side's
+    // payday; their balance is ??? because the original does not show it, and the payload does
+    // not carry it either. The toggle only exists when the server sent an opponent block.
+    if (model.opponent) {
+      const bar = document.createElement("div");
+      bar.className = "econview";
+      for (const [id, label] of [["own", "Your economy"], ["opponent", "Opponent"]]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "navbtn" + (economyView === id ? " armed" : "");
+        button.dataset.economyView = id;
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          economyView = id;
+          paintDialog();
+        });
+        bar.append(button);
+      }
+      body.append(bar);
+    }
+    if (economyView === "opponent" && model.opponent) {
+      const foe = document.createElement("dl");
+      foe.className = "dlgrid";
+      definition(foe, "Opponent income", formatBillions(model.opponent.income.amount) + "b per round");
+      definition(foe, "Opponent cities paid", String(model.opponent.income.cities));
+      definition(foe, "Opponent balance", "???");
+      body.append(foe);
+      body.append(note("The Alternate Function shows the other side's income. Their balance prints ??? there, and this panel shows nothing else of theirs."));
+      return;
+    }
     const dl = document.createElement("dl");
     dl.className = "dlgrid";
     definition(dl, "Pool", model.cash === null ? "unknown" : formatWholeBillions(model.cash) + "b");
@@ -2394,6 +2428,8 @@ function connect() {
         log = emptyLog();
         logView.pinned = true;
         logView.pending = 0;
+        // PB-152: a different room starts the economy dialogue on your own page.
+        economyView = "own";
       }
       room = message.room;
       // A new round normally drops the previous scan -- the server's reveal is a per-round mark.

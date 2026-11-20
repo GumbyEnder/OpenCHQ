@@ -151,8 +151,10 @@ export async function run(ctx) {
   // every seat view. A seat that could not see them would have to rebuild them from its own pieces.
   // ownership (T-018) is the per-region owner list the Show Ownership view fills from. It is
   // public by design - both seats see the same ground - and it is a view of the site table, so it
-  // leaks nothing the sites do not already carry.
-  expect(fail, topKeys === "alarm,capitalList,capitals,notes,over,ownership,pieces,result,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
+  // leaks nothing the sites do not already carry. opponent (PB-152) is the other side's payday
+  // only - the manual's Alternate Function shows income and prints ??? for the balance - and it
+  // carries no purse, so it is public in the same way.
+  expect(fail, topKeys === "alarm,capitalList,capitals,notes,opponent,over,ownership,pieces,result,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
   for (const piece of reachView.pieces) {
     for (const key of ["hidden", "visible", "concealed", "seen"]) {
       expect(fail, !(key in piece), "a piece carries a '" + key + "' flag: " + JSON.stringify(piece));

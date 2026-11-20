@@ -292,6 +292,28 @@ async function buyInfantry(page) {
   check(/Bought an infantry/.test(said), "the purchase line reads grammatically", said);
 }
 
+async function economyDialog(page) {
+  await page.click('#nav button[data-dialog="economy"]');
+  await page.waitForSelector('#dialog:not(.hidden)', { timeout: 10000 });
+  const bodyText = () => page.evaluate(() => document.getElementById("dialogBody").textContent || "");
+  const own = await bodyText();
+  check(/Payday worth/.test(own), "the economy dialog shows your own payday", own.slice(0, 140));
+  check(/Paying cities/.test(own), "the economy dialog has the subtype counts (PB-162)", own.slice(0, 200));
+  const toggle = await page.$('button[data-economy-view="opponent"]');
+  check(Boolean(toggle), "the economy dialog offers the opponent view (PB-152)");
+  if (toggle) {
+    await toggle.click();
+    const foe = await bodyText();
+    check(/Opponent income/.test(foe) && /\?\?\?/.test(foe),
+      "the opponent view shows their income and prints ??? for their balance", foe.slice(0, 180));
+    check(!/Pool/.test(foe), "the opponent view does not print your pool", foe.slice(0, 120));
+    await page.click('button[data-economy-view="own"]');
+    const back = await bodyText();
+    check(/Payday worth/.test(back), "the toggle returns to your own economy", back.slice(0, 100));
+  }
+  await page.click("#dialogClose");
+}
+
 async function moveOrder(page) {
   const room = await roomOf(page);
   const mine = (room.pieces || []).find((p) => p.side === room.you && p.domain === "land");
@@ -479,6 +501,7 @@ const main = async () => {
     check(Boolean(opened), "the " + PLAY_ERA + " match to play is open");
 
     await buyInfantry(page);
+    await economyDialog(page);
     const target = await moveOrder(page);
     check(Boolean(target), "a destination was ordered");
     await flashExpiry(page);
