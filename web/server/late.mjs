@@ -8,6 +8,7 @@
 // foreign aid, and the archive's own note says it flips a city's owner.
 
 import { millionsPerBillion, priceOf, rules } from "./rules.mjs";
+import { beginScan } from "./scan.mjs";
 // PB-156: the launch gate is the DIFFERENCE of two counters, and one global detonation count drives
 // the income roll and the winter check. Both live in nukes.mjs so economy.incomeGate reads the same
 // numbers this module writes.
@@ -195,6 +196,11 @@ export function useTool(match, side, tool, target) {
     const paid = charge(match, side, name);
     if (paid.error) return paid;
     for (const piece of foes) piece.revealedRound = round;
+    // PB-158: the reveal is the bar's, so the pass is armed on the server at the same instant.
+    // `view.forSeat` then sends only the pieces whose column the bar covers, and stops sending
+    // them once the trailing edge has passed (no lingering: Q51). A satellite pass stays a quiet
+    // whole-round reveal and does not arm this.
+    if (name === "intel") beginScan(match, side, Date.now(), round);
     events.push({
       type: name === "intel" ? "intel" : "satellite",
       side,

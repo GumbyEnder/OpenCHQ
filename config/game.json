@@ -502,6 +502,11 @@
     "bombOilLoss": 1000,
     "bombSource": "DECODED, PB-157. FUN_1ac5_0dbe @ 1ac5:0dbe, decompiled.c 8768-8782; MANUAL p.25. An air mission on an unoccupied enemy city or base takes 5 of the original's money units from the owner and adds 5 to the site's timer. The original's panel divides cash by 40 (START_MONEY.md), so 5 units = 125 M; this port stores cash in millions (money.perBillion 1000), so the charge is 125. A type-5 oil field is the oil branch: the owner's next-round oil available drops by 1000 raw units (8 on the panel's /125 scale). The mission costs the same 8 rounds as a strike and shares its resolution path; the original's own strike handler is the one measured, not a second roll invented here."
   },
+  "intel": {
+    "scanBarCells": 20,
+    "scanCrossSeconds": 15.85,
+    "source": "MEASURED Q51 (T-022): web/public/scan.mjs carries the capture numbers (one 40-px bar on a 624-px capture map = 20 of the board's 320 columns; 39.36 px/s = one crossing in 15.85 s) and MANUAL p.31 says units are revealed beneath the moving bar. PB-158 moves the reveal itself to the server: an enemy piece is in the scanner's payload only while the bar's server-side span covers its column. These two keys are the server's copy of the measured geometry; pb158_intel_server pins them equal to scanSpec()."
+  },
   "nukes": {
     "enabled": false,
     "exclusion": 2,

@@ -12,6 +12,7 @@ import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
+import { scanActiveFor, scanAnyActive } from "./scan.mjs";
 import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
 import { shopFor } from "./shop.mjs";
 import { compatUnitKind } from "./migrate.mjs";
@@ -371,6 +372,10 @@ export function createLobby() {
 
   function frameFor(room, side, view, username) {
     if (verbose.has(username)) return { op: "room", room: view };
+    // PB-158: while an intel pass runs, the reader gets the FULL view. A delta would carry the
+    // newly scanned piece but the page's scan snapshot only merges `room` frames, so a delta
+    // would hand the scanner a unit it never draws.
+    if (scanActiveFor(room.match, side, Date.now())) return { op: "room", room: view };
     const full = !seatShadow(room, side);
     if (full) return { op: "room", room: view };
     if (Number(view.round) % FULL_EVERY === 0) return { op: "room", room: view };
@@ -1002,6 +1007,16 @@ export function createLobby() {
     const events = [];
     for (const room of rooms.values()) {
       if (!room.match || room.match.over || room.clock !== "running") continue;
+      // PB-158: a running intel pass is sampled faster than the round clock (250 ms), because
+      // the bar crosses the board in 15.85 s while a round at the shipped speed is 5 s. Only a
+      // room with an armed pass pays this cost, and the span sent is still the bar's own.
+      if (stamp !== null && scanAnyActive(room.match, stamp)) {
+        const lastScanSend = Number(room.scanSentAt) || 0;
+        if (stamp - lastScanSend >= 250) {
+          room.scanSentAt = stamp;
+          tellRoom(room);
+        }
+      }
       if (stamp !== null) {
         const speed = speedOf(room);
         // Speed 0: orders and air strikes are still accepted, but game time does not pass.

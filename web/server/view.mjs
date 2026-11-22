@@ -25,6 +25,7 @@ import { ownershipOf } from "./territory.mjs";
 // The payday itself, so the economy dialog shows the figure the tick will pay rather than a page-side
 // copy of the rule.
 import { payoutFor } from "./economy.mjs";
+import { scanGate } from "./scan.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -104,9 +105,16 @@ function seatPieces(match, side) {
   return { own, enemy };
 }
 
-function visibleEnemy(unit, ownPieces, match) {
+function visibleEnemy(unit, ownPieces, match, side, now) {
   // Intel and a satellite pass reveal a piece for the round they were used, submarines included.
-  if (Number(unit.revealedRound) >= Number(match.round) && Number(unit.revealedRound) >= 0) return true;
+  if (Number(unit.revealedRound) >= Number(match.round) && Number(unit.revealedRound) >= 0) {
+    // PB-158: an intel reveal is only a reveal under the bar. `scanGate` returns null when the
+    // active pass is not this unit's (a satellite, or no scan), true while the bar covers its
+    // column, and false once the bar has left it - the original lingers for no measurable time
+    // after the trailing edge clears a unit (Q51). The unit then falls back to ordinary sight.
+    const gated = scanGate(match, side, unit, now);
+    if (gated !== false) return true;
+  }
   if (unit.kind === "submarine" && !movedThisRound(unit, match) && !unit.fighting) return false;
   return ownPieces.some((own) => withinSight(own, unit));
 }
@@ -189,7 +197,7 @@ function seatStatus(match, side) {
   };
 }
 
-export function forSeat(match, side) {
+export function forSeat(match, side, now = Date.now()) {
   if (!match || !Array.isArray(match.pieces)) {
     return { pieces: [], routes: {}, sites: [], capitals: {}, notes: [] };
   }
@@ -236,7 +244,7 @@ export function forSeat(match, side) {
 
   if (!hidden) {
     for (const unit of enemy) {
-      if (!visibleEnemy(unit, own, match)) continue;
+      if (!visibleEnemy(unit, own, match, side, now)) continue;
       const steps = enemyRoutes(unit);
       pieces.push(viewPiece(unit, steps, match.round));
       if (steps.length) routes[unit.id] = cloneSteps(steps);

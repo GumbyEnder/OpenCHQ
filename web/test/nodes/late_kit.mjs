@@ -8,6 +8,7 @@
 import { openMatch } from "../../server/match.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { rules } from "../../server/rules.mjs";
+import { scanSpec } from "../../public/scan.mjs";
 import { nukeStatus, launchEdge, toolsForEra, useTool, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
 
 export const name = "late_kit";
@@ -65,8 +66,16 @@ export async function run(ctx) {
   if (!intel.events.some((event) => event.type === "intel_seen" && event.side === "red")) {
     fail("intel did not tell the opponent");
   }
-  if (!forSeat(match, "blue").pieces.some((piece) => piece.id === "red:sub")) {
-    fail("intel did not reveal the submarine to the reader");
+  // PB-158: the reveal is the bar's, on the server. The submarine sits at column 200; at t=0 the
+  // bar is fully off the left, so the payload must not carry it, and it appears only when the
+  // bar's span reaches its column.
+  if (forSeat(match, "blue", match.scan.startedAt).pieces.some((piece) => piece.id === "red:sub")) {
+    fail("intel revealed a unit before the bar reached it");
+  }
+  const reach200 = Number(match.scan.startedAt) +
+    Math.round((200 / scanSpec(320).cellsPerSecond) * 1000) + 500;
+  if (!forSeat(match, "blue", reach200).pieces.some((piece) => piece.id === "red:sub")) {
+    fail("intel did not reveal the submarine once the bar covered its column");
   }
   if (/radius/i.test(INTEL_NOTE)) fail("the intel note contains the banned word radius: " + INTEL_NOTE);
 
