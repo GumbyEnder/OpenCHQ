@@ -283,6 +283,28 @@ export function logLines(match, side, events, round) {
         if (mine) push("aid reached " + (event.name || "a city"));
         else if (legible(match, side, event)) push("enemy aid reached a city");
         break;
+      case "bomb_hit": {
+        // PB-157: the raider reads what it took; the owner reads the loss. The owner's branch is
+        // the one that matters for the rule (125 M and +5 rounds), and it reads even if the site
+        // is off the seat's lit map - a city you own is a city you know.
+        const where = event.name ? " at " + event.name : "";
+        if (mine) {
+          const bits = [];
+          if (Number(event.cash) > 0) bits.push(billionsText(event.cash) + " taken");
+          if (Number(event.unready) > 0) bits.push("unready " + Number(event.unready) + " rounds");
+          if (Number(event.oil) > 0) bits.push("oil loss queued");
+          push("a bombing run hit" + where + (bits.length ? ": " + bits.join(", ") : ""));
+        } else if (event.owner === side) {
+          const bits = [];
+          if (Number(event.cash) > 0) bits.push("lost " + billionsText(event.cash));
+          if (Number(event.unready) > 0) bits.push("unready " + Number(event.unready) + " rounds");
+          if (Number(event.oil) > 0) bits.push("oil cut next round");
+          push("bombed" + where + (bits.length ? ": " + bits.join(", ") : ""));
+        } else if (legible(match, side, event)) {
+          push("a bombing run hit" + where);
+        }
+        break;
+      }
       case "nuke":
         if (mine) push("a nuke was launched");
         else push("an enemy nuke was launched");

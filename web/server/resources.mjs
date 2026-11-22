@@ -474,6 +474,20 @@ export function spendOil(match, side, amount) {
   return { ok: true, cost: want, held: meter.held, dry: meter.dry };
 }
 
+// PB-157: a bombing run on a type-5 oil field takes oil out of the owner's NEXT settlement
+// (FUN_1ac5_0dbe 8768-8782: 1000 raw units, 8 on the panel's /125 scale). It is queued on the
+// meter, not taken now: the owner may be in another round's flow, and the brief's wording is
+// "next-round oil available". settleOil consumes and clears the queue in the same read.
+export function queueOilLoss(match, side, amount) {
+  const spec = oilSpec();
+  const want = Number(amount);
+  if (!spec || !Number.isFinite(want) || want <= 0) return { ok: true, queued: 0 };
+  const meter = meterOf(match, side, OIL);
+  if (!meter) return { ok: false, queued: 0 };
+  meter.bombed = Math.max(0, Number(meter.bombed) || 0) + Math.floor(want);
+  return { ok: true, queued: meter.bombed };
+}
+
 function syncFuel(match, side, meter) {
   const seat = seatOf(match, side);
   if (!seat) return;
@@ -497,7 +511,11 @@ function settleOil(match, side, spec) {
   }
   const flow = oilFlow(match, side) || { in: 0, cityOut: 0, out: 0, pieces: 0 };
   const held = Number.isFinite(Number(meter.held)) ? Number(meter.held) : 0;
-  const available = held + Number(flow.in || 0);
+  // PB-157: oil taken by a bombing run last round is not available this round. One-shot: the
+  // queue is cleared here, whether or not the loss empties the pool.
+  const bombed = Math.max(0, Number(meter.bombed) || 0);
+  if (bombed > 0) meter.bombed = 0;
+  const available = Math.max(0, held + Number(flow.in || 0) - bombed);
   const cityOut = Number(flow.cityOut || 0);
   const perAir = Number.isFinite(Number(spec.outPerAirUnit)) ? Number(spec.outPerAirUnit) : 0;
   const airBill = perAir * Number(flow.air || 0);

@@ -10,6 +10,8 @@ import { CELL_W } from "./board.mjs";
 import { layerOf } from "./placement.mjs";
 import { rules, combatRules } from "./rules.mjs";
 import { applyDamage, ensureStrength } from "./combat.mjs";
+import { readyRoundOf } from "./readiness.mjs";
+import { queueOilLoss } from "./resources.mjs";
 import { resourceSpec, spendOil, oilUsesReserve } from "./resources.mjs";
 
 // The mission costs in rounds. They are tunables, so they live in config/game.json's air block and
@@ -33,11 +35,35 @@ function missionCosts() {
 function modeFor(name) {
   const costs = missionCosts();
   if (name === "strike") return costs.strike > 0 ? { rounds: costs.strike, type: "strike" } : null;
+  // PB-157: the bombing run is the strike's twin in cost and resolution; the original's own
+  // strike handler is the one measured (FUN_1ac5_0dbe), so it does not get a second roll or a
+  // second round price here.
+  if (name === "bomb") return costs.strike > 0 ? { rounds: costs.strike, type: "bomb" } : null;
   if (name === "patrol") return costs.patrol > 0 ? { rounds: costs.patrol, type: "scramble" } : null;
   return null;
 }
 
+// PB-157: the bombing run's numbers, read from config like every other tunable.
+// FUN_1ac5_0dbe @ 1ac5:0dbe, decompiled.c 8768-8782; MANUAL p.25.
+function bombRules() {
+  const air = (rules() && rules().air) || {};
+  const number = (value, fallback) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+  return {
+    cashM: number(air.bombCityCashM, 125),
+    unreadyRounds: Math.floor(number(air.bombCityUnreadyRounds, 5)),
+    oilLoss: number(air.bombOilLoss, 1000),
+  };
+}
+
+// A bombing run names a city, base or oil field. A capital is not in the list: the brief names
+// city, base and facility.
+const BOMB_SITE_KINDS = new Set(["city", "base", "facility"]);
+
 export const STRIKE_NOTE = "Air strike.";
+export const BOMB_NOTE = "Bombing run.";
 export const REACH_NOTE = "Stand-in reach. The aircraft range was not recovered.";
 export const PARADROP_NOTE = "Paradrop. The infantry pays its strength cost.";
 
@@ -127,6 +153,8 @@ export function airBriefing(match, side) {
       missions: [
         { mode: "patrol", label: "Scramble (CAP)", rounds: costs.patrol },
         { mode: "strike", label: "Strike", rounds: costs.strike },
+        // A bombing run hits an empty enemy city, base or oil field (PB-157).
+        { mode: "bomb", label: "Bomb", rounds: costs.strike },
         // A transfer rebases the plane instead of flying a mission (manual p.22: "Air units may
         // only be transferred to cities, bases, and aircraft carriers"). Its round cost comes from
         // config and is UNVERIFIED (air.transferRoundsSource): the manual never prints one.
@@ -245,6 +273,35 @@ export function sendMission(match, side, pieceId, mode, target) {
   const base = baseFor(match, side, plane);
   if (!base) return { error: "No friendly city, base or carrier within reach." };
 
+  // PB-157: validate the bombing target BEFORE the plane or the oil is spent. Every refusal
+  // below leaves the aircraft ready, the target untouched and the budget whole.
+  let bombTarget = null;
+  if (mission.type === "bomb") {
+    const wx = ((at.x % CELL_W) + CELL_W) % CELL_W;
+    const site = (match.sites || []).find(
+      (entry) => entry && Number(entry.x) === wx && Number(entry.y) === at.y,
+    );
+    if (!site) return { error: "A bombing run needs an enemy city, base or oil field." };
+    if (site.owner !== "blue" && site.owner !== "red") {
+      return { error: "A bombing run needs an enemy site, not a neutral one." };
+    }
+    if (site.owner === side) return { error: "That site is yours." };
+    if (!BOMB_SITE_KINDS.has(String(site.kind))) {
+      return { error: "A bombing run hits a city, a base or an oil field, not a " + String(site.kind || "site") + "." };
+    }
+    // "Empty" means no ground or sea defender. An aircraft based there is on the air layer and
+    // does not shield the site from a bombing run (T-021's layer rule).
+    const defender = (match.pieces || []).find(
+      (unit) => unit && layerOf(unit) !== "air" &&
+        Number(unit.x) === at.x && Number(unit.y) === at.y,
+    );
+    if (defender) {
+      const where = site.name ? String(site.name) : "That site";
+      return { error: where + " is defended (" + String(defender.id) + "); a bombing run needs an empty target." };
+    }
+    bombTarget = site;
+  }
+
   // Oil (T-033): a mission costs the side's budget 20 before the plane leaves (FUN_15f4_0664
   // 4839 calls FUN_15f4_0d7e(0x14); a side that cannot pay is `dry` and the plane stays on the
   // ground - Manual p.27 "planes can't fly").
@@ -269,8 +326,51 @@ export function sendMission(match, side, pieceId, mode, target) {
     y: at.y,
     rounds: mission.rounds,
     until: plane.inactiveUntil,
-    note: mission.type === "strike" ? STRIKE_NOTE : REACH_NOTE,
+    note: mission.type === "strike" ? STRIKE_NOTE : mission.type === "bomb" ? BOMB_NOTE : REACH_NOTE,
   });
+
+  // PB-157: a bombing run on an empty enemy site takes money and production, or oil. The
+  // numbers are config `air.bomb*` (FUN_1ac5_0dbe 8768-8782; MANUAL p.25).
+  if (mission.type === "bomb" && bombTarget) {
+    const bomb = bombRules();
+    const owner = bombTarget.owner;
+    const seat = match.sides && match.sides[owner];
+    let cash = 0;
+    let oil = 0;
+    if (String(bombTarget.kind) === "facility") {
+      // A type-5 site is an oil field (PB-153): the loss is oil, NOT cash - FUN_1ac5_0dbe
+      // 8768-8782 branches on the site type - and it lands on the owner's next settlement.
+      const queued = queueOilLoss(match, owner, bomb.oilLoss);
+      oil = queued && queued.ok ? bomb.oilLoss : 0;
+    } else {
+      if (seat) {
+        const held = Math.max(0, Number(seat.cash) || 0);
+        cash = Math.min(held, bomb.cashM);
+        seat.cash = held - cash;
+      }
+    }
+    if (String(bombTarget.kind) !== "facility" && bomb.unreadyRounds > 0) {
+      const round = Number(match.round) || 0;
+      const base = Math.max(round, readyRoundOf(bombTarget));
+      bombTarget.readyRound = base + bomb.unreadyRounds;
+    }
+    events.push({
+      type: "bomb_hit",
+      side,
+      pieceId: plane.id,
+      site: bombTarget.id,
+      name: bombTarget.name ?? null,
+      kind: bombTarget.kind,
+      owner,
+      x: bombTarget.x,
+      y: bombTarget.y,
+      cash,
+      oil,
+      unready: oil > 0 ? 0 : bomb.unreadyRounds,
+      round: Number(match.round) || 0,
+      note: BOMB_NOTE,
+    });
+  }
 
   // What a strike actually does (Manual p.25): a land unit loses half its remaining strength; a
   // sea unit takes a constant amount, so three strikes from full sink it. Cargo still cannot

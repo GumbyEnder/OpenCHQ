@@ -46,7 +46,9 @@ export async function run() {
     eq("a strike costs the config's strike rounds", byMode.strike, strikeRounds);
     eq("a scramble costs the config's patrol rounds", byMode.patrol, patrolRounds);
     // T-021 adds a transfer: a rebase, not a mission, so it costs no rounds (manual p.22).
-    eq("the modes are the three the server accepts", briefing.missions.map((miss) => miss.mode), ["patrol", "strike", "transfer"]);
+    // PB-157 adds a bombing run: the strike's round cost, but a different target rule.
+    eq("the modes are the four the server accepts", briefing.missions.map((miss) => miss.mode), ["patrol", "strike", "bomb", "transfer"]);
+    eq("a bombing run costs the config's strike rounds", byMode.bomb, strikeRounds);
 
     // What the server charges matches what the briefing promised.
     const result = sendMission(m, "blue", "p1", "patrol", { x: 90, y: 44 });

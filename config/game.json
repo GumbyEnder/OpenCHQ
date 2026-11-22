@@ -496,7 +496,11 @@
     "transferRoundsSource": "UNVERIFIED. Manual printed p.22 names only the sites an air unit may transfer to (cities, bases, carriers); it prints no round cost for a transfer and no read site that charges one was recovered in decompiled.c. 0 is the remake's assumption (a transfer rebases the aircraft, it is not a mission), recorded as Q50's sub-item. Nothing outside this file treats it as recovered.",
     "missionedSurvivesBaseCapture": false,
     "missionedSurvivesBaseCaptureSource": "remake current behaviour, Q50(a) UNVERIFIED, needs a DOSBox experiment",
-    "reachSource": "STAND-IN, UNMEASURED. The aircraft range was never recovered: manual p.22 prints no number and no read site was found. `reach` gates strikes, the mission base search and the transfer range alike, and every refusal that names it calls it a stand-in."
+    "reachSource": "STAND-IN, UNMEASURED. The aircraft range was never recovered: manual p.22 prints no number and no read site was found. `reach` gates strikes, the mission base search and the transfer range alike, and every refusal that names it calls it a stand-in.",
+    "bombCityCashM": 125,
+    "bombCityUnreadyRounds": 5,
+    "bombOilLoss": 1000,
+    "bombSource": "DECODED, PB-157. FUN_1ac5_0dbe @ 1ac5:0dbe, decompiled.c 8768-8782; MANUAL p.25. An air mission on an unoccupied enemy city or base takes 5 of the original's money units from the owner and adds 5 to the site's timer. The original's panel divides cash by 40 (START_MONEY.md), so 5 units = 125 M; this port stores cash in millions (money.perBillion 1000), so the charge is 125. A type-5 oil field is the oil branch: the owner's next-round oil available drops by 1000 raw units (8 on the panel's /125 scale). The mission costs the same 8 rounds as a strike and shares its resolution path; the original's own strike handler is the one measured, not a second roll invented here."
   },
   "nukes": {
     "enabled": false,

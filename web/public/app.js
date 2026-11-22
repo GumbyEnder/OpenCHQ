@@ -917,7 +917,7 @@ board.addEventListener("click", (event) => {
   // plane's own cell stays its base. Without this the only aim the page had was the plane's base
   // cell, where no enemy ever stands (T-003 hand check 4).
   if (selected.kind === "aircraft" || selected.domain === "air") {
-    const mode = pendingMission === "transfer" ? "transfer" : "strike";
+    const mode = pendingMission === "transfer" || pendingMission === "bomb" ? pendingMission : "strike";
     const mission = missionMessage(selected, mode, cell);
     if (mission) sendOrder(mission);
     // Back to the everyday meaning of a click on an aircraft's map.
@@ -1580,6 +1580,8 @@ function toolRow(room) {
             ? "No friendly city, dock or ship in reach."
             : mission.mode === "strike"
               ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
+              : mission.mode === "bomb"
+                ? "Pick an empty enemy city, base or oil field; the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
                 ? "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED."
                 : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
@@ -1587,11 +1589,13 @@ function toolRow(room) {
           // A strike hits the cell the player names, not the base the plane sits on. A transfer
           // names the berth the plane moves to. A scramble is a patrol around that base, so its
           // own cell is the right target for it.
-          if (mission.mode === "strike" || mission.mode === "transfer") {
+          if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb") {
             pendingMission = mission.mode;
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
-              : "Strike: pick the target cell on the map.");
+              : mission.mode === "bomb"
+                ? "Bomb: pick an empty enemy city, base or oil field."
+                : "Strike: pick the target cell on the map.");
             closeDialog();
             return;
           }
