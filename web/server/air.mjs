@@ -97,6 +97,16 @@ function airReach() {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
+// PB-178: the manual's TWO circles (p.25). `reach` above is the larger "maximum air radius"; a
+// mission target has to lie inside the smaller "restricted air radius", and only an UNLOADED
+// transfer may use the maximum one. Both sizes are UNVERIFIED port values (air.restrictedReachSource):
+// the archive's aircraft range was never recovered. 0 keeps the key optional, which is the old
+// behaviour (no target gate), so a config without it cannot silently start refusing orders.
+function restrictedReach() {
+  const value = Number((rules().air || {}).restrictedReach);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
 // The counts the badge shows: rounds left before this aircraft can fly again.
 export function inactiveRounds(piece, round) {
   if (!piece) return 0;
@@ -136,6 +146,7 @@ function baseFor(match, side, from) {
 export function airBriefing(match, side) {
   const costs = missionCosts();
   const reach = airReach();
+  const restricted = restrictedReach();
   const planes = (match && Array.isArray(match.pieces) ? match.pieces : [])
     .filter((piece) => piece && piece.side === side && isAircraft(piece));
   return planes.map((plane) => {
@@ -151,6 +162,10 @@ export function airBriefing(match, side) {
       // A mission needs somewhere to fly from. Without a city, base or carrier in reach the choice
       // exists on the page but is refused by the server, and this says which.
       reach: reach > 0 ? reach : null,
+      // PB-178: the smaller circle a mission's target must lie inside (manual p.25). Shipped with
+      // the briefing so the PAGE can refuse a far click before it becomes an order; the server
+      // refuses it again on its own, which is what makes the rule true for any client.
+      restrictedReach: restricted > 0 ? restricted : null,
       base: base ? (base.name || base.id) : null,
       canFly: Boolean(base),
       missions: [
@@ -306,6 +321,22 @@ export function sendMission(match, side, pieceId, mode, target) {
     if (defender) {
       const where = site.name ? String(site.name) : "That site";
       return { error: where + " is defended (" + String(defender.id) + "); a bombing run needs an empty target." };
+    }
+    // PB-178 (manual p.25): a mission's target must lie inside the RESTRICTED air radius, the
+    // smaller circle. Only an unloaded transfer may use the maximum radius. Measured from the
+    // aircraft's own cell - its strip while it is on the ground - and wrap-aware, like every other
+    // distance on this board. Refused BEFORE the oil is spent and before the plane is touched, so a
+    // far click costs the player nothing.
+    const restricted = restrictedReach();
+    if (restricted > 0) {
+      const away = chebyshev(plane, { x: wx, y: at.y });
+      if (away > restricted) {
+        const max = airReach();
+        return {
+          error: "That target is " + away + " cells from the aircraft; a bombing run must be inside the restricted air radius ("
+            + restricted + " cells). Only a transfer may use the maximum radius (" + max + " cells). Both radii are port values, UNVERIFIED.",
+        };
+      }
     }
     bombTarget = site;
   }

@@ -23,7 +23,7 @@
 // id null, an error frame, and the queued line. The leg does not decide which tree it is on - it
 // prints the observed frames and grades the ACs.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -196,6 +196,24 @@ try {
   mark("the clock is held for the measurement", Boolean(cur && cur.clock !== "running"), "clock " + (cur && cur.clock));
 
   // ---------------------------------------------------------------- buy an aircraft
+  // PB-178b: a bombing run's target must lie inside the restricted air radius (config/game.json ->
+  // air.restrictedReach, manual p.25), so this leg's fixture has two distance decisions in it: the
+  // BERTH (chosen before the piece exists, so its circle comes from config) and the TARGET (graded
+  // against the radius the aircraft's own brief ships). Both use the board's own wrap: a Chebyshev
+  // distance that takes the short way round in x.
+  const CONFIG_AIR = JSON.parse(readFileSync(path.join(root, "config", "game.json"), "utf8")).air || {};
+  const FIXTURE_CIRCLE = Math.floor(Number(CONFIG_AIR.restrictedReach)) || 6;
+  const WIDTH = Number(await page.evaluate(() => (window.__chq.boardWidth ? window.__chq.boardWidth() : 320)).catch(() => 320)) || 320;
+  const awayOn = (a, b) => {
+    const dx = Math.abs(Number(a.x) - Number(b.x));
+    return Math.max(Math.min(dx, Math.abs(WIDTH - dx)), Math.abs(Number(a.y) - Number(b.y)));
+  };
+  const restrictedFor = (view, id) => {
+    const brief = ((view.seat && view.seat.air) || []).find((p) => String(p.id) === String(id));
+    const cells = Math.floor(Number(brief && brief.restrictedReach));
+    return Number.isFinite(cells) && cells > 0 ? cells : 0;
+  };
+
   async function buyAircraft() {
     const before = new Set(((await room()).pieces || []).map((p) => p.id));
     await page.click('.navbtn[data-dialog="buy"]').catch(() => {});
@@ -212,8 +230,20 @@ try {
     const view = await room();
     const mine = new Set(((view.sites || []).filter((s) => s.owner === "blue")).map((s) => s.x + "," + s.y));
     const taken = new Set((view.pieces || []).map((p) => p.x + "," + p.y));
+    const ports = (view.sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
     const cells = await page.evaluate(() => window.__chq.legalCells(8000));
-    const pick = (cells || []).find((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y));
+    // PB-178b: the berth is a distance decision now. Stand the plane at the EDGE of the restricted
+    // circle rather than on the front - a berth 3 cells off the nearest port sits inside the bot's
+    // opening march line and the aircraft is lost before the 8-round strike returns (measured on
+    // pb157a's leg). Among the edge cells take an eastern berth, away from the western blue cluster.
+    // FIXTURE_CIRCLE is config's, labelled as the fixture's circle: it is what a berth is chosen by
+    // before the aircraft exists. The TARGET below is graded against the brief the server ships.
+    const scored = (cells || [])
+      .filter((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y))
+      .map((c) => ({ c, near: ports.length ? Math.min(...ports.map((s) => awayOn(c, s))) : 999 }));
+    const inside = scored.filter((s) => s.near <= FIXTURE_CIRCLE).sort((a, b) => b.near - a.near || b.c.x - a.c.x);
+    const berth = inside[0] || scored.sort((a, b) => a.near - b.near)[0] || null;
+    const pick = berth ? berth.c : null;
     if (!pick) return { error: "no free friendly city/base cell for the aircraft (legal " + (cells || []).length + ")" };
     await clickCell(pick);
     await page.waitForFunction((ids) => (window.__chq.room().pieces || []).some((p) => !ids.includes(p.id)), [...before], { timeout: 20000, polling: 100 })
@@ -244,18 +274,40 @@ try {
     return { ok: true };
   }
 
-  // Targets from the page's own view: an enemy city or base. Visibility is the page's, so a target
-  // that turns out to be occupied is a refusal and the leg tries the next one; a landed run (the
-  // plane leaves `ready`) ends the search.
-  function candidateTargets(view) {
-    return (view.sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+  // Targets from the page's own view: an enemy city or base INSIDE this aircraft's restricted air
+  // radius, nearest first. PB-178b: the first six enemy ports in view order are all outside the
+  // circle on this board, so an unfiltered picker aims every click at a refusal, the page sends no
+  // mission frame, and the leg reads as "no enemy city accepted" on correct code. Visibility is the
+  // page's, so a target that turns out to be occupied is still a refusal and the leg tries the next.
+  function candidateTargets(view, id) {
+    const plane = (view.pieces || []).find((p) => String(p.id) === String(id));
+    const cells = restrictedFor(view, id);
+    const ports = (view.sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+    const away = (s) => (plane ? awayOn(plane, s) : 999);
+    return ports
+      .filter((s) => cells <= 0 || away(s) <= cells)
+      .sort((a, b) => away(a) - away(b));
   }
+  const allPorts = (await room()).sites || [];
 
   const armed = await airBomb();
   if (armed.error) throw new Error(armed.error);
+  const targetCells = restrictedFor(await room(), planeId);
+  const pickList = candidateTargets(await room(), planeId);
+  // The precondition is graded, not left to `if (found)`: a fixture that stands the aircraft outside
+  // every circle would otherwise measure nothing and still pass.
+  mark("an enemy city or base stands inside the restricted air radius",
+    pickList.length > 0,
+    "circle " + targetCells + " cells, " + pickList.length + " candidate(s) of "
+      + allPorts.filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base")).length
+      + " red port(s); nearest " + (pickList[0] ? pickList[0].name + " d=" + awayOn(bought.plane, pickList[0]) : "none"));
+  if (!pickList.length) {
+    throw new Error("no enemy city/base inside the restricted air radius ("
+      + targetCells + " cells) from the berth at " + bought.cell.x + "," + bought.cell.y);
+  }
   let target = null;
   let beforeClickCount = 0;
-  for (const candidate of candidateTargets(await room()).slice(0, 6)) {
+  for (const candidate of pickList) {
     const pre = (await frames()).length;
     await clickCell({ x: candidate.x, y: candidate.y });
     await page.waitForFunction((id) => {
@@ -283,6 +335,11 @@ try {
   const firstId = missionOut.length ? missionOut[missionOut.length - 1].id : null;
   mark("the mission frame carries an order id", Boolean(firstId), "out ids " + JSON.stringify(missionOut.map((f) => f.id)));
   mark("one target click sends ONE mission frame", beforeClickCount === 1, beforeClickCount + " frame(s) in this click");
+  // PM 8488 §2: the frame this leg replays must be the BOMBING RUN itself, not a strike that
+  // happened to reach the same site - the mode is what makes the replay the mission under test.
+  mark("the mission frame is the bombing run (mode \"bomb\")",
+    missionOut.length > 0 && missionOut[missionOut.length - 1].mode === "bomb",
+    "out modes " + JSON.stringify(missionOut.map((f) => f.mode)));
 
   const acksForMission = allFrames.filter((f) => f.dir === "in" && f.op === "ack");
   const exactAck = acksForMission.find((f) => f.id === firstId);

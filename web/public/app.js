@@ -25,6 +25,7 @@ import {
   purseText,
   refreshSelection,
   refusalText,
+  restrictedTargetRefusal,
   routeRequest,
   selectionNote,
   selectionToast,
@@ -54,7 +55,7 @@ import {
 // The buy table's icon is the board's own badge, drawn by the same badgeSvg as the legend, so a
 // player picks a unit by the shape they will see on the map. (T-014 gate, room 4035.)
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
-import { formatBillions, formatWholeBillions, purchaseText } from "./command.mjs";
+import { formatBillions, formatWholeBillions, nextDoorMode, purchaseText } from "./command.mjs";
 import { createLateOrders, createOrderWatch, queuedText } from "./orderwatch.mjs";
 // How long the page waits to reconnect, and how long one attempt may hang before it is a failure.
 // Both numbers are bounded so a 10 s outage cannot cost a minute (PB-025).
@@ -847,6 +848,9 @@ function clearCommand() {
   hoverKey = "";
   fogSeen = null;
   fogKey = "";
+  // PB-193: Escape and every other clear also disarm the door, so a bomb kept armed through a
+  // refusal cannot outlive the selection that armed it.
+  pendingMission = nextDoorMode(pendingMission, "cleared");
   drawMatch();
 }
 
@@ -955,10 +959,26 @@ board.addEventListener("click", (event) => {
   // cell, where no enemy ever stands (T-003 hand check 4).
   if (selected.kind === "aircraft" || selected.domain === "air") {
     const mode = pendingMission === "transfer" || pendingMission === "bomb" ? pendingMission : "strike";
+    // PB-178: a bombing run's target must lie inside the restricted air radius (manual p.25).
+    // Refused here, with the circle named, so the click never becomes an order at all - the
+    // server would refuse it too, but a refusal the player can see before the wire is the point.
+    if (mode === "bomb") {
+      const briefing = ((room && room.seat && room.seat.air) || []).find((plane) => plane.id === selected.id);
+      const refusal = briefing
+        ? restrictedTargetRefusal(selected, cell, briefing.restrictedReach, briefing.reach, BOARD_W)
+        : null;
+      if (refusal) {
+        say(refusal);
+        // PB-193: a refusal keeps the door armed for the order it refused - a bombing run is not a
+        // strike, and the player has not asked for one.
+        pendingMission = nextDoorMode(pendingMission, "refused");
+        return;
+      }
+    }
     const mission = missionMessage(selected, mode, cell);
     if (mission) sendOrder(mission);
     // Back to the everyday meaning of a click on an aircraft's map.
-    pendingMission = "strike";
+    pendingMission = nextDoorMode(pendingMission, "sent");
     return;
   }
   const message = orderMessage(selected, cell);
@@ -1705,7 +1725,7 @@ function toolRow(room) {
             : mission.mode === "strike"
               ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
               : mission.mode === "bomb"
-                ? "Pick an empty enemy city, base or oil field; the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
+                ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius (" + (briefing.restrictedReach || "?") + " cells); the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
                 ? "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED."
                 : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
@@ -2255,9 +2275,18 @@ const DIALOG_PAINTERS = {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = mission.label;
-        button.title = mission.rounds > 0
-          ? "Away for " + mission.rounds + " rounds."
-          : "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED.";
+        // PB-178: the Bomb door names the restricted air radius before the player aims, because a
+        // target outside that circle is refused - the player should learn the rule from the door,
+        // not from a refusal after a wasted click. The number is the briefing's, so it is the same
+        // circle the server charges.
+        button.title = !plane.ready
+          ? "Away for " + plane.roundsLeft + " more rounds."
+          : mission.mode === "bomb"
+            ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
+              + (plane.restrictedReach || "?") + " cells); away for " + mission.rounds + " rounds."
+            : mission.rounds > 0
+              ? "Away for " + mission.rounds + " rounds."
+              : "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED.";
         button.disabled = !plane.ready;
         button.addEventListener("click", () => {
           // A strike, a bombing run or a transfer is aimed: the air dialog names the plane and
@@ -2276,7 +2305,8 @@ const DIALOG_PAINTERS = {
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : mission.mode === "bomb"
-                ? "Bomb: pick an empty enemy city, base, oil field or capital."
+                ? "Bomb: pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
+                  + (plane.restrictedReach || "?") + " cells)."
                 : "Strike: pick the target cell on the map.");
             closeDialog();
             drawMatch();

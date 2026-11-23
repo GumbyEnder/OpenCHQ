@@ -336,6 +336,38 @@ export function routeRequest(piece, target) {
   return { op: "route", piece: piece.id, to };
 }
 
+// PB-178: the manual's two air circles (p.25). A mission target must lie inside the RESTRICTED
+// radius; only an unloaded transfer may use the MAXIMUM one. This is the page's half of the rule:
+// it refuses a far click with a sentence BEFORE anything goes on the wire, so "no order went out"
+// is a fact of the click and not a promise about the server. The server refuses it again on its
+// own - the page is never the only guard. Both numbers arrive in the plane's briefing, so the page
+// cannot disagree with the config the server charged.
+export function restrictedTargetRefusal(piece, target, restricted, max, boardW) {
+  const cells = Math.floor(Number(restricted));
+  if (!piece || !target || !Number.isFinite(cells) || cells <= 0) return null;
+  const width = Number(boardW) > 0 ? Number(boardW) : 320;
+  const dx = Math.abs(Number(piece.x) - Number(target.x));
+  const wrap = Math.min(dx, Math.abs(width - dx));
+  const away = Math.max(wrap, Math.abs(Number(piece.y) - Number(target.y)));
+  if (!Number.isFinite(away) || away <= cells) return null;
+  const far = Math.floor(Number(max));
+  return "That target is " + away + " cells from the aircraft; a bombing run must be inside the restricted air radius ("
+    + cells + " cells). Only a transfer may use the maximum radius ("
+    + (Number.isFinite(far) && far > 0 ? far + " cells" : "a longer one") + ").";
+}
+
+// PB-193: what a click on the map does to the armed door. A refusal must not spend the intent it
+// refused - a bombing run and an air strike are separate orders on the Air panel, so a far bomb
+// click leaves the door armed for a bomb, and only the Strike door (or a clear) arms a strike.
+// A send and an Escape both return to the everyday meaning of a click on an aircraft's map. This
+// lives here as one pure function so the node suite can pin the transition the DOM cannot see.
+export function nextDoorMode(pending, outcome) {
+  if (outcome === "refused") {
+    return pending === "bomb" || pending === "transfer" ? pending : "strike";
+  }
+  return "strike";
+}
+
 export function roundsText(rounds) {
   const value = Math.max(0, Math.trunc(Number(rounds) || 0));
   return value + (value === 1 ? " round" : " rounds");
