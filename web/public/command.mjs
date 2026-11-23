@@ -403,8 +403,35 @@ export function purseText(seat, showFoe = false) {
   return parts.join(" · ");
 }
 
-// A piece at sea is cargo: it cannot fight back, and the first enemy ship that catches it sinks
-// it. That is the whole reason an escort matters, and the page should say it out loud.
+// PB-180 (PM 8316 §1, option (a)): the strip is the original's main display, not its ledger. It
+// carries a summary — your cash in whole billions and income per round, e.g. "116b +1.45b/rd" — and
+// the long economy string above (oil in/out, reserves, the payday countdown) belongs in the chip's
+// title and the Economy dialogue.
+//
+// Two rules this function exists to keep:
+//   - the balance is always the PLAYER's own cash field. There is no code path here that can print
+//     the opponent's balance, which is the one number the original keeps secret (Manual p.27).
+//   - the Alternate Function swaps the INCOME leg to the other side's payday, because that is
+//     public arithmetic off the board the player can already see; it never swaps the balance.
+export function purseSummaryParts(seat, foeIncome = null) {
+  const cash = seat ? Number(seat.cash) : NaN;
+  const own = seat && seat.income ? Number(seat.income.amount) : NaN;
+  const foe = foeIncome ? Number(foeIncome.amount) : NaN;
+  const useFoe = Number.isFinite(foe) && foe > 0;
+  const amount = useFoe ? foe : own;
+  const income = Number.isFinite(amount) && amount > 0
+    ? (useFoe ? " +foe " : " +") + formatBillions(amount) + "b/rd"
+    : "";
+  return { cash: Number.isFinite(cash) ? formatWholeBillions(cash) + "b" : "", income };
+}
+
+export function purseSummary(seat, foeIncome = null) {
+  const parts = purseSummaryParts(seat, foeIncome);
+  return (parts.cash + parts.income).trim();
+}
+
+// A piece at sea is cargo: it cannot fight back, and the first enemy ship that catches it sinks it.
+// That is the whole reason an escort matters, and the page should say it out loud.
 export function cargoNote(piece) {
   if (!piece || piece.transport !== true) return "";
   return "At sea as a transport: it cannot fight back, and an enemy ship that catches it sinks it.";
