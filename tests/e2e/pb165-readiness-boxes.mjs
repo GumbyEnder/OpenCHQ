@@ -150,7 +150,23 @@ let server = null;
 let browser = null;
 let BASE = GIVEN;
 
+// A leg that exits before its own finally (loadPlaywright calls process.exit(1) when the module is
+// missing) leaves that server process behind: two such orphans were found on this host, one from a
+// resolver check on a clean worktree. Load Playwright FIRST, before anything is spawned, and keep an
+// exit hook as a backstop so no path can strand a listener.
+process.on("exit", () => {
+  if (server && server.exitCode === null && server.signalCode === null) {
+    try {
+      server.kill("SIGKILL");
+    } catch (err) {
+      void err;
+    }
+  }
+});
+
 try {
+  const { chromium } = await loadPlaywright();
+
   if (!BASE) {
     const port = await freePort();
     server = await startServer(port, dataDir);
@@ -158,7 +174,6 @@ try {
     mark("a local server answers", true, BASE + " (tree HEAD " + (HEAD_SHA || "unknown") + ")");
   }
 
-  const { chromium } = await loadPlaywright();
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await context.addInitScript(classifyInPage);
