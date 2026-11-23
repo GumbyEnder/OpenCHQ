@@ -57,6 +57,47 @@ export function distance(a, b) {
   return Math.max(wrap, dy);
 }
 
+// PB-204: the 0x1956 range matrix stores SQUARED distance thresholds (docs/re/COMBAT.md s3), so a
+// reach test has to square the offset rather than take Chebyshev cells. Same X wrap as distance();
+// this is the ONE squared distance in the server - move.mjs imports it instead of keeping a copy.
+export function squaredDistance(a, b) {
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  const dx = Math.abs(Number(a.x) - Number(b.x));
+  const wrap = Math.min(dx, CELL_W - dx);
+  const dy = Math.abs(Number(a.y) - Number(b.y));
+  return wrap * wrap + dy * dy;
+}
+
+// DS:0x194c maps a kind to a range class: kinds 0-4 -> 0, 5-6 -> 1, 7 -> 2, 8 -> 3, 9 -> 4,
+// 10-11 -> 5. A transport keeps its land kind, so it is read as the sea cargo class here for the
+// same reason PB-202 reads it that way for damage: the sea rows are the ones the table has.
+function rangeClassOf(piece, block) {
+  if (!piece) return 0;
+  let kind = piece.kind;
+  if (piece.transport === true) kind = block.transportDamageKind;
+  const byte = Number(block.damageKind[String(kind)] ?? (Number(kind) || 0));
+  if (byte <= 4) return 0;
+  if (byte <= 6) return 1;
+  if (byte <= 9) return byte - 5;
+  return 5;
+}
+
+// The measured engage threshold for an ordered pair, as a SQUARED distance: row = attacker class,
+// column = target class. 0 means the pairing never engages (a submarine never acquires land, and
+// column 5 is the piece's own contact range, not an engage column).
+export function engageRange2(attacker, target, combat = null) {
+  const block = combat || combatRules();
+  const rows = block && block.rangeMatrix;
+  if (!Array.isArray(rows)) return 0;
+  const row = rows[rangeClassOf(attacker, block)];
+  if (!Array.isArray(row)) return 0;
+  const targetClass = rangeClassOf(target, block);
+  // Column 5 is the piece's OWN contact range, not an engage column: reading it as a target's
+  // threshold would hand a class-5 target (kinds 10-11) its own notice range instead of 0.
+  if (targetClass >= 5) return 0;
+  return Math.max(0, Number(row[targetClass]) || 0);
+}
+
 // A piece's strength defaults to full the first time anything reads it, so a piece created before
 // T-003 (or by a test) is a full-strength piece rather than an empty one.
 export function ensureStrength(piece, max = combatRules().maxStrength) {
@@ -103,12 +144,16 @@ export function candidatesFor(piece, pieces) {
   if (!piece) return [];
   const range = rangeOf(piece);
   if (range <= 0) return [];
+  const block = combatRules();
   const out = [];
   for (const other of pieces || []) {
     if (!other || other.id === piece.id) continue;
     if (other.side === piece.side) continue;
     if (onAirLayer(other)) continue;
-    if (distance(piece, other) <= range) out.push(other);
+    // PB-204: the matrix column is a squared threshold, so the compare is squared. Chebyshev here
+    // admitted (2,2) for a 2-cell hull: a submarine acquired at d^2 = 8 where the table allows 5.
+    const reach2 = engageRange2(piece, other, block);
+    if (reach2 > 0 && squaredDistance(piece, other) <= reach2) out.push(other);
   }
   return out;
 }
@@ -118,10 +163,9 @@ export function candidatesFor(piece, pieces) {
 // One pass, no allocation: this runs for every piece of every room every round.
 export function chooseTarget(piece, pieces, combat = null) {
   if (!piece) return null;
+  const block = combat || combatRules();
   const range = rangeOf(piece, combat);
   if (range <= 0) return null;
-  const px = Number(piece.x);
-  const py = Number(piece.y);
   let best = null;
   let bestDistance = Infinity;
   let held = null;
@@ -130,10 +174,13 @@ export function chooseTarget(piece, pieces, combat = null) {
     if (!other || other.id === piece.id) continue;
     if (other.side === piece.side) continue;
     if (onAirLayer(other)) continue;
-    const raw = Math.abs(px - Number(other.x));
-    const dx = raw > CELL_W / 2 ? CELL_W - raw : raw;
-    const distanceTo = Math.max(dx, Math.abs(py - Number(other.y)));
-    if (distanceTo > range) continue;
+    // PB-204: reach is the matrix's squared threshold, so the filter is squared. The nearest-first
+    // ordering keeps comparing the same quantity, which only re-orders exact ties and keeps the
+    // lower-id tie-break deterministic.
+    const reach2 = engageRange2(piece, other, block);
+    if (reach2 <= 0) continue;
+    const distanceTo = squaredDistance(piece, other);
+    if (distanceTo > reach2) continue;
     if (other.id === piece.fighting) {
       held = other;
       heldDistance = distanceTo;
@@ -340,12 +387,18 @@ export function computeTargets(pieces) {
     for (let j = 0; j < n; j++) {
       if (j === i || !armed[j]) continue;
       if (sides[j] === sides[i]) continue;
+      const other = pieces[j];
+      // PB-204: the room-wide pass has to read the matrix's squared threshold too, or the fix only
+      // exists in the readable chooseTarget and never reaches resolve(). The `ranges[i]` prefilter
+      // above stays in CELLS on purpose: it is the Chebyshev bound of the squared disc (d^2 <= 5
+      // implies max(|dx|,|dy|) <= 2), so it never skips a pair the squared test would admit.
+      const reach2 = engageRange2(piece, other, combat);
+      if (reach2 <= 0) continue;
       const raw = Math.abs(px - xs[j]);
       const dx = raw > CELL_W / 2 ? CELL_W - raw : raw;
-      const dy = Math.abs(py - ys[j]);
-      const distanceTo = dx > dy ? dx : dy;
-      if (distanceTo > range) continue;
-      const other = pieces[j];
+      const dy = py - ys[j];
+      const distanceTo = dx * dx + dy * dy;
+      if (distanceTo > reach2) continue;
       if (other.id === piece.fighting) {
         held = j;
         heldDistance = distanceTo;

@@ -492,6 +492,12 @@ export function combatRules() {
     entrenchDamageFactor: finiteNumber(combatValue("entrenchDamageFactor"), 1),
     entrenchRounds: Math.max(0, Math.floor(finiteNumber(combatValue("entrenchRounds"), 0))),
     landEngageCells: Math.max(1, Math.floor(finiteNumber(combatValue("landEngageCells"), 1))),
+    // PB-204: the 0x1956 range matrix, as measured (values are SQUARED distance thresholds, not
+    // cell counts). Carried here so combat.mjs reads the one copy in config instead of holding a
+    // second 5/10/17 literal that could drift from the table it came from.
+    rangeMatrix: Array.isArray(measured.rangeMatrix && measured.rangeMatrix.classes)
+      ? measured.rangeMatrix.classes.map((row) => (Array.isArray(row) ? row.map((v) => Math.max(0, finiteNumber(v, 0))) : []))
+      : null,
     seaRangeCells: Object.fromEntries(Object.entries(sea).map(([kind, value]) => [kind, Math.max(0, Math.floor(finiteNumber(value, 0)))])),
     attritionPerRound: Object.fromEntries(Object.entries(attrition).map(([terrain, value]) => [terrain, Math.max(0, finiteNumber(value, 0))])),
     attritionFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("attritionFloor"), 0))),

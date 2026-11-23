@@ -13,7 +13,7 @@ import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostL
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
-import { applyDamage, damageFor, ensureStrength, distance, rangeOf } from "./combat.mjs";
+import { applyDamage, damageFor, engageRange2, ensureStrength, rangeOf, squaredDistance } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -48,19 +48,21 @@ export function wrapDelta(from, to) {
 // to the spec; it is not.
 const ENGAGE_DIST2 = 5;
 
-export function squaredDistance(a, b) {
-  if (!a || !b) return Number.POSITIVE_INFINITY;
-  const dx = wrapDelta(a.x, b.x);
-  const dy = Number(a.y) - Number(b.y);
-  return dx * dx + dy * dy;
-}
+// PB-204: there is one squared distance in the server and it lives in combat.mjs, because combat's
+// own reach tests (candidatesFor, chooseTarget, computeTargets) have to use the same one as this
+// completion rule. Re-exported here so the PB-097b legs that import it from move.mjs keep working.
+export { squaredDistance };
 
-// Land reads the measured squared threshold; sea keeps its kind's Chebyshev range (p.22, p.24);
-// anything with no reach (air, a transport's cargo) is never in range.
+// Land reads the measured squared threshold; sea reads its own row of the 0x1956 matrix (PB-204:
+// squared thresholds 5/10/17 for class 2/3/4, not the Chebyshev cell counts 2/3/4 that admitted a
+// (2,2) hull); anything with no reach (air, a transport's cargo) is never in range.
 export function inEngageRange(piece, foe, reach) {
   const r = reach === undefined ? rangeOf(piece) : reach;
   if (!piece || !foe || !(r > 0)) return false;
-  if (piece.domain === "sea") return distance(piece, foe) <= r;
+  if (piece.domain === "sea") {
+    const reach2 = engageRange2(piece, foe);
+    return reach2 > 0 && squaredDistance(piece, foe) <= reach2;
+  }
   return squaredDistance(piece, foe) <= ENGAGE_DIST2;
 }
 
