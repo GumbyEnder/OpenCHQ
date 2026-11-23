@@ -47,6 +47,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { loadPlaywright } from "./playwright.mjs";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 
@@ -108,20 +110,9 @@ function startServer(port, dataDir) {
   });
 }
 
-async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    path.join(here, "node_modules", "playwright", "index.mjs"),
-    path.join(here, "..", "..", "node_modules", "playwright", "index.mjs"),
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    if (candidate !== "playwright" && !existsSync(candidate)) continue;
-    try {
-      return await import(pathToFileURL(candidate).href);
-    } catch (err) { void err; }
-  }
-  return import("playwright");
-}
+// Playwright comes from ./playwright.mjs (PB-176). This leg carried its own two-path candidate
+// list until a re-cut reverted it; without PLAYWRIGHT_MODULE it fell through to bare
+// `import("playwright")` and threw CANNOT_FIND_PACKAGE from a clean worktree.
 
 const evidence = [];
 let failed = 0;
