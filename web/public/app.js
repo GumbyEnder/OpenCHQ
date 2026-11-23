@@ -1720,7 +1720,7 @@ function toolRow(room) {
             : mission.mode === "strike"
               ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
               : mission.mode === "bomb"
-                ? "Pick an empty enemy city, base or oil field inside the restricted air radius (" + (briefing.restrictedReach || "?") + " cells); the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
+                ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius (" + (briefing.restrictedReach || "?") + " cells); the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
                 ? "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED."
                 : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";

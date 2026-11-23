@@ -203,7 +203,31 @@ try {
   const mine = new Set(((cur.sites || []).filter((s) => s.owner === "blue")).map((s) => s.x + "," + s.y));
   const taken = new Set((cur.pieces || []).map((p) => p.x + "," + p.y));
   const cells = await page.evaluate(() => window.__chq.legalCells(8000));
-  const pick = (cells || []).find((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y));
+  // PB-178 gave the bombing run a distance rule (the restricted air radius), so the berth is picked
+  // for REACH: the legal cell nearest an enemy port is what puts a target inside the circle. A
+  // first-come cell can leave every red city outside it, and this leg would then measure a refusal
+  // instead of the note it is named for.
+  const board0 = await page.evaluate(() => (window.__chq.boardWidth ? window.__chq.boardWidth() : 320)).catch(() => 320);
+  const WIDTH = Number(board0) || 320;
+  const awayOn = (a, b) => {
+    const dx = Math.abs(Number(a.x) - Number(b.x));
+    return Math.max(Math.min(dx, Math.abs(WIDTH - dx)), Math.abs(Number(a.y) - Number(b.y)));
+  };
+  const ports = (cur.sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+  const legal = (cells || []).filter((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y));
+  const scored = legal.map((c) => ({ c, near: ports.length ? Math.min(...ports.map((s) => awayOn(c, s))) : 999 }));
+  // A legal target must lie inside the restricted radius (6), so the berth has to be within 6 of some
+  // red port. Two facts decide the rest, both measured on this leg:
+  //  - a berth ON the front (3 cells from Berlin) sits inside the bot's opening march line and the
+  //    aircraft is destroyed on round 8, before the note can read "Ready to fly" (probe170: the piece
+  //    is gone from room().pieces and the round-8 frame is a full room frame, not a delta);
+  //  - the enemy pieces are not in this seat's view at placement time, so proximity to them cannot be
+  //    the rule. Stand the plane at the EDGE of the circle (near == restricted) instead, and among
+  //    those choose the eastern berth, which is the one away from the western blue cluster the bot
+  //    marches toward.
+  const reachable = scored.filter((s) => s.near <= 6).sort((a, b) => b.near - a.near || b.c.x - a.c.x);
+  const berth = reachable[0] || scored.sort((a, b) => a.near - b.near)[0] || null;
+  const pick = berth ? berth.c : null;
   if (!pick) throw new Error("no free friendly city/base cell for the aircraft");
   await clickCell(pick);
   await page.waitForFunction((ids) => (window.__chq.room().pieces || []).some((p) => !ids.includes(p.id)), [...before], { timeout: 20000, polling: 100 }).catch(() => {});
@@ -211,7 +235,12 @@ try {
   const plane = (cur.pieces || []).find((p) => !before.has(p.id));
   if (!plane) throw new Error("the aircraft never appeared on the board");
   const planeId = plane.id;
-  mark("one aircraft is bought and placed", true, planeId);
+  const planeCell = { x: Number(plane.x), y: Number(plane.y) };
+  const planeBrief = (((await room()).seat || {}).air || []).find((p) => String(p.id) === String(planeId));
+  const restricted = Math.floor(Number(planeBrief && planeBrief.restrictedReach));
+  mark("one aircraft is bought and placed", true,
+    planeId + " at " + planeCell.x + "," + planeCell.y + " (nearest enemy port " + (berth ? berth.near : "?")
+    + ", restricted radius " + (Number.isFinite(restricted) ? restricted : "?" ) + ")");
 
   // Select it: the note must speak about THIS plane.
   await clickCell({ x: plane.x, y: plane.y });
@@ -233,7 +262,16 @@ try {
     await sleep(400);
   }
 
-  const candidates = ((await room()).sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+  const candidates = ((await room()).sites || [])
+    .filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"))
+    // PB-178: a bomb target must lie inside the restricted air radius or the page refuses the
+    // click before the wire. Keep only legal targets and try the nearest first.
+    .filter((s) => !Number.isFinite(restricted) || restricted <= 0 || awayOn(planeCell, s) <= restricted)
+    .sort((a, b) => awayOn(planeCell, a) - awayOn(planeCell, b));
+  if (!candidates.length) {
+    throw new Error("no red city/base inside the restricted air radius (" + restricted + " cells) of the plane at "
+      + planeCell.x + "," + planeCell.y);
+  }
   let target = null;
   for (const candidate of candidates.slice(0, 6)) {
     await airBomb();
