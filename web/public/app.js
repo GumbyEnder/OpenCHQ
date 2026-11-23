@@ -1726,6 +1726,7 @@ function applyDelta(delta) {
   if (!room || !delta) return;
   const next = Number(delta.round) || 0;
   const here = Number(room.round) || 0;
+  const advanced = next !== here;
   if (next !== here + 1 && next !== here) {
     send({ op: "sync" });
     return;
@@ -1777,6 +1778,12 @@ function applyDelta(delta) {
     preview = null;
     hoverKey = "";
   }
+  // PB-182: `placement` is a SNAPSHOT taken once, when the row was armed. Its mask bytes carry the
+  // readiness of that instant, so a unit kept armed across a round boundary painted its old boxes
+  // (long -> soon -> ready all frozen) until the player disarmed and re-armed. The mask is only
+  // re-requested by the arm click, so the round delta has to ask again: the server recomputes the
+  // box per cell from the readiness timer and the next "placement" frame repaints it in place.
+  if (advanced && placement && buying) send({ op: "placement", kind: buying });
   renderRoom();
   drawMatch();
 }
