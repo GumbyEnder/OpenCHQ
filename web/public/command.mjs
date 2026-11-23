@@ -478,3 +478,61 @@ export function selectionNote(piece) {
   if (!piece) return "";
   return unitLabel(piece.kind) + " selected — hover a destination to see the route.";
 }
+
+// PB-163: clicking a city outside Buy mode names it and says whether it can produce yet. The note
+// lives here - beside the other one-line board sentences - so the wording is a pure function the
+// suite can read, not a string buried in a click handler.
+//
+// Readiness is the server's own field: `site.readyRound` is the first round the site may produce
+// again (readiness.mjs), so a site with no field, or one whose round has passed, is ready. The page
+// never recomputes the pooled arithmetic; it only reads the round the server wrote.
+const SITE_KINDS = Object.freeze({
+  capital: "capital",
+  city: "city",
+  base: "base",
+  facility: "oil field",
+  oilfield: "oil field",
+  well: "oil field",
+  dock: "dock",
+  docks: "dock",
+});
+// Cities, capitals and bases produce; an oil field and a dock take no readiness timer.
+const PRODUCING = new Set(["city", "capital", "base"]);
+
+function siteKindLabel(site) {
+  const kind = String((site && site.kind) || "").toLowerCase();
+  return SITE_KINDS[kind] || "site";
+}
+
+function siteOwnerLabel(site) {
+  const owner = String((site && site.owner) || "").toLowerCase();
+  if (owner === "blue") return "blue";
+  if (owner === "red") return "red";
+  return "unheld";
+}
+
+// The site whose cell the click landed on. A city is one map cell in the site table; the drawn blob
+// around it belongs to the same site, so the record's own (x,y) is the match the page can trust.
+export function siteAtCell(sites, cell) {
+  if (!Array.isArray(sites) || !cell) return null;
+  const x = Number(cell.x);
+  const y = Number(cell.y);
+  return sites.find((site) => site && Number(site.x) === x && Number(site.y) === y) || null;
+}
+
+export function siteInspectText(site, round) {
+  if (!site) return "";
+  const name = String(site.name || "A site");
+  const head = name + " — " + siteKindLabel(site) + ", " + siteOwnerLabel(site) + ".";
+  const kind = String(site.kind || "").toLowerCase();
+  if (!PRODUCING.has(kind)) {
+    return head + " No production timer.";
+  }
+  const now = Number.isFinite(Number(round)) ? Math.floor(Number(round)) : 0;
+  const at = Number(site.readyRound);
+  if (!(Number.isFinite(at) && at > now)) {
+    return head + " Ready.";
+  }
+  const rounds = Math.floor(at) - now;
+  return head + " Unready — ready at round " + Math.floor(at) + " (" + roundsText(rounds) + ").";
+}
