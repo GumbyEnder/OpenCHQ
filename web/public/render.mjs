@@ -498,15 +498,27 @@ export function legendEntries(theme, opts = {}) {
 // pixels around its cell, at every zoom, in both readiness colours. The casing is drawn first and
 // wider, so the box reads over a black city square as well as over water (PB-029).
 export const PLACEMENT_BOX_PX = 10;
+// PB-165: the manual's p.14 three states, in the original's own inks. FUN_2c85_1022 @ 2c85:1022
+// (decompiled.c:24259-24267) picks palette 10 / 14 / 12 off the site's readiness timer, and the
+// game draws with the default VGA 16 palette (measured on the running 1942 war room), so those are
+// #55ff55 green, #ffff55 yellow and #ff5555 red. The casing stays ours: the original boxes a 2 px
+// tile, we box a 10 px target.
 export const PLACEMENT_BOX = {
-  ready: "rgba(140, 245, 255, 0.95)",
-  unready: "rgba(255, 196, 96, 0.95)",
+  ready: "rgba(85, 255, 85, 0.95)",
+  soon: "rgba(255, 255, 85, 0.95)",
+  long: "rgba(255, 85, 85, 0.95)",
   casing: "rgba(6, 10, 18, 0.9)",
+};
+// The cell overlay, one step quieter than the box so the two do not fight.
+export const PLACEMENT_FILL = {
+  ready: "rgba(85, 255, 85, 0.62)",
+  soon: "rgba(255, 255, 85, 0.62)",
+  long: "rgba(255, 85, 85, 0.62)",
 };
 
 // The cells a purchase may stand on, painted over the board. `placement` is exactly what the server
 // sent: {width, height, mask} with the mask a byte per cell. The page never re-derives the rule.
-export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255, 0.62)", unreadyColor = "rgba(255, 186, 92, 0.62)") {
+export function paintPlacement(ctx, placement, view, colors = PLACEMENT_FILL) {
   if (!placement || !placement.mask || !view) return 0;
   const bw = Number(placement.width) || 0;
   const bh = Number(placement.height) || 0;
@@ -525,9 +537,9 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
       const x = wrapX(sx, view.boardW);
       const value = placement.mask[y * bw + x];
       if (!value) continue;
-      // 1 is a ready city or base; 2 is the same site while it is unready. Two colours, because
-      // "where may I place" and "where may I place right now" are different questions (T-011 AC3).
-      ctx.fillStyle = value === 2 ? unreadyColor : color;
+      // PB-165: the original's three-way readiness box (manual p.14). 1 ready (green), 2 ready
+      // soon (yellow), 3 not for a long time (red) - the server's own byte, painted as given.
+      ctx.fillStyle = value === 3 ? colors.long : value === 2 ? colors.soon : colors.ready;
       // At the whole-world fit a cell is one pixel. Draw it at least one full pixel and at a
       // strength a player can see; a 30%-alpha single pixel read as "no highlights at all".
       const size = Math.max(1, Math.round(view.scale));
@@ -555,7 +567,8 @@ export function paintPlacement(ctx, placement, view, color = "rgba(120, 235, 255
     for (const box of boxes) ctx.strokeRect(box.cx - side / 2, box.cy - side / 2, side, side);
     ctx.lineWidth = 1.5;
     for (const box of boxes) {
-      ctx.strokeStyle = box.value === 2 ? PLACEMENT_BOX.unready : PLACEMENT_BOX.ready;
+      ctx.strokeStyle = box.value === 3 ? PLACEMENT_BOX.long
+        : box.value === 2 ? PLACEMENT_BOX.soon : PLACEMENT_BOX.ready;
       ctx.strokeRect(box.cx - side / 2, box.cy - side / 2, side, side);
     }
   }

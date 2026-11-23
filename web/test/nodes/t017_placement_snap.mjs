@@ -249,10 +249,11 @@ export async function run(ctx) {
     if (!cell80) fail("no box was drawn around the city cell at zoom 4");
     near("the box is centred on the cell", cell80.y + cell80.h / 2, (50 + 0.5) * 4);
 
-    // Both readiness colours get a box, not only the "ready" one.
+    // Every readiness state present in the mask gets a box in its own ink, not only "ready".
+    // PB-165: three inks now (green/yellow/red); this fixture carries ready plus one unready.
     const colours = new Set(one.strokes.map((s) => s.color));
-    if (!colours.has(PLACEMENT_BOX.ready) || !colours.has(PLACEMENT_BOX.unready)) {
-      fail("the boxes are not drawn in both readiness colours: " + JSON.stringify([...colours]));
+    if (!colours.has(PLACEMENT_BOX.ready) || (!colours.has(PLACEMENT_BOX.soon) && !colours.has(PLACEMENT_BOX.long))) {
+      fail("the boxes are not drawn in the readiness inks: " + JSON.stringify([...colours]));
     }
     // A payload asking for a bigger box gets it; one asking for a smaller box is floored at 10 px.
     const big = recorder();

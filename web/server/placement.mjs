@@ -44,9 +44,11 @@
 // (a REMAKE CHOICE, not an original rule). The coastal site is a click
 // target, using the same snap and box as T-017, and the mask paints it.
 //
-// Readiness is the second half of the rule and it is per site (readiness.mjs). The mask marks a
-// legal cell that is ready with 1 and a legal cell whose city is unready with 2, so the page can
-// paint them differently; canPlace refuses the unready one with the round it comes back.
+// Readiness is the second half of the rule and it is per site (readiness.mjs). The mask carries
+// the site's own box state, which is the original's three-way choice (PB-165, readiness.mjs
+// placementBoxState): 1 ready (green), 2 ready soon (yellow), 3 not for a long time (red), so the
+// page paints the manual's p.14 three colours; canPlace refuses anything but 1 with the round the
+// site comes back.
 //
 // This module is the only authority for the rule. The purchase is refused here, and the page
 // paints the mask this module returns, so the highlight a player clicks is exactly what the
@@ -54,7 +56,7 @@
 
 import { readFileSync } from "node:fs";
 import { placementRules, readinessRules } from "./rules.mjs";
-import { isSiteReady, readyRoundOf, unreadyRefusal } from "./readiness.mjs";
+import { isSiteReady, placementBoxState, readyRoundOf, unreadyRefusal } from "./readiness.mjs";
 
 const SEA_KINDS = new Set(["cruiser", "carrier", "submarine"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
@@ -355,8 +357,8 @@ export function friendlySites(match, side, domain, board = null) {
   return count;
 }
 
-// The legal placement cells for one purchase, as a bit mask over the board: 0 illegal,
-// 1 legal and ready, 2 legal but its city is unready.
+// The legal placement cells for one purchase, one byte per cell: 0 illegal, else the original's
+// readiness box state - 1 ready (green), 2 soon (yellow), 3 not for a long time (red).
 export function placementMask(match, side, kind, board) {
   const w = Number(board && board.width) || 0;
   const h = Number(board && board.height) || 0;
@@ -397,7 +399,9 @@ export function placementMask(match, side, kind, board) {
       if (!touchesWater(board, site)) continue;
       if (!shipBerth(site, board, taken)) continue;
     }
-    const ok = isSiteReady(site, round);
+    // PB-165: the box state, not a boolean. 1 ready, 2 soon, 3 a long wait - the original's own
+    // three branches on the readiness timer (readiness.mjs, FUN_2c85_1022).
+    const state = placementBoxState(site, round);
     // Land and air (D-026): every cell of the site's footprint is a legal click target, and the
     // unit lands on the cell that was clicked. A ship keeps its one-cell berth (D-025).
     const cells = domain === "sea" ? [[x, y]] : footprintCells(site, board);
@@ -406,17 +410,22 @@ export function placementMask(match, side, kind, board) {
       // Only a piece on the SAME layer makes the cell unavailable.
       if (taken.has(cx + "," + cy)) continue;
       const id = cy * w + cx;
-      if (mask[id] === 2 && ok) {
-        // Two sites claim the cell and one of them is ready: the player's click is legal.
-        mask[id] = 1;
-        unready -= 1;
-        ready += 1;
+      if (mask[id]) {
+        // Two sites claim the cell: the better availability wins, because the click is legal
+        // wherever its best claimant is ready. With three states "better" is the SMALLER value
+        // (1 ready beats 2 soon beats 3 a long wait) - not "ready beats unready" any more.
+        if (state < mask[id]) {
+          if (mask[id] === 1) ready -= 1;
+          else unready -= 1;
+          mask[id] = state;
+          if (state === 1) ready += 1;
+          else unready += 1;
+        }
         continue;
       }
-      if (mask[id]) continue; // already counted through another site
-      mask[id] = ok ? 1 : 2;
+      mask[id] = state;
       count += 1;
-      if (ok) ready += 1;
+      if (state === 1) ready += 1;
       else unready += 1;
     }
   }
@@ -524,7 +533,10 @@ export function canPlace(match, side, kind, x, y, board) {
   }
   const site = placementSite(match, side, kind, cx, cy, board);
   const label = site ? siteLabel(match, site) : "";
-  if (value === 2) {
+  // PB-165: anything but 1 is unready - 2 (yellow, soon) and 3 (red, a long wait) are both
+  // refused, and the refusal names the round either way. The colour is presentation; the rule is
+  // the same one.
+  if (value !== 1) {
     return { error: unreadyRefusal(site, label), domain, site, readyRound: readyRoundOf(site) };
   }
   // The cell the unit actually lands on (D-026): the footprint cell the player clicked. For a
