@@ -1767,8 +1767,13 @@ function applyDelta(delta) {
     winner: delta.winner === undefined ? room.winner : delta.winner,
     result: delta.result === undefined ? room.result : delta.result,
   };
-  if (selected && !byId.has(selected.id)) {
-    selected = null;
+  // PB-170b: the same re-bind the whole-room branch does (PB-170), because this branch also
+  // replaces the piece objects. Before this, an id that was still on the board kept the
+  // click-time object, so its `inactive` count froze: the note read "Away ... 8 rounds" for every
+  // delta-only round and only corrected itself when a full frame happened to land (the PM's live
+  // read on 6d4ecd3, rounds 37-48). Re-point by id; a vanished id still clears the selection.
+  selected = refreshSelection(room.pieces, selected);
+  if (!selected) {
     preview = null;
     hoverKey = "";
   }
