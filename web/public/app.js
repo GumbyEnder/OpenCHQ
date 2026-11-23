@@ -2122,9 +2122,13 @@ const DIALOG_PAINTERS = {
           : "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED.";
         button.disabled = !plane.ready;
         button.addEventListener("click", () => {
-          // A strike or a transfer is aimed: the air dialog names the plane and hands the player
-          // the map, because the cell the plane sits on is its base, not the cell meant (T-003).
-          if (mission.mode === "strike" || mission.mode === "transfer") {
+          // A strike, a bombing run or a transfer is aimed: the air dialog names the plane and
+          // hands the player the map, because the cell the plane sits on is its base, not the
+          // cell meant (T-003). PB-157a: the panel used to omit "bomb", so Air > Bomb sent the
+          // mission at the plane's own cell and the server refused every time ("That site is
+          // yours." / "needs an enemy site"). The Kit panel's toolRow already armed it; this is
+          // the same three arms, so the two doors give one result.
+          if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb") {
             const planePiece = (room.pieces || []).find((piece) => piece.id === plane.id);
             if (planePiece) {
               selected = planePiece;
@@ -2133,7 +2137,9 @@ const DIALOG_PAINTERS = {
             pendingMission = mission.mode;
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
-              : "Strike: pick the target cell on the map.");
+              : mission.mode === "bomb"
+                ? "Bomb: pick an empty enemy city, base or oil field."
+                : "Strike: pick the target cell on the map.");
             closeDialog();
             drawMatch();
             return;

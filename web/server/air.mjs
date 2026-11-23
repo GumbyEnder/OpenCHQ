@@ -286,6 +286,12 @@ export function sendMission(match, side, pieceId, mode, target) {
       return { error: "A bombing run needs an enemy site, not a neutral one." };
     }
     if (site.owner === side) return { error: "That site is yours." };
+    // A capital is not a bombing target, and that rule is this set: BOMB_SITE_KINDS is
+    // city/base/facility while AIRSTRIP_KINDS (below) adds "capital" - a plane may be based at a
+    // capital (manual p.22), it may not bomb one. The two sets are one word apart, so nothing but
+    // this refusal pins the difference; the mutant that must red the pin is "capital" added to
+    // BOMB_SITE_KINDS. PORT DECISION: the original's own target test at 8768-8782 was never
+    // recovered (Open RE Questions).
     if (!BOMB_SITE_KINDS.has(String(site.kind))) {
       return { error: "A bombing run hits a city, a base or an oil field, not a " + String(site.kind || "site") + "." };
     }
