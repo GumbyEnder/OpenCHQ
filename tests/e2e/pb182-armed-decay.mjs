@@ -326,6 +326,16 @@ try {
   mark("the server names a ready round for the built city", readyAt > placedRound,
     (latest ? latest.name + " readyRound " + latest.readyRound : "none") + ", now round " + placedRound);
 
+  // PB-185: the BEFORE state comes from the arm-time snapshot, never from the first read of the loop.
+  // The speed ramp (held clock -> speed 6) costs one or two rounds at 0.6 s/round, so on a live board
+  // the loop's first sample can land after this cell's two-round box-3 window; `series` then holds no
+  // box-3 row and the transition was asserted against a state the leg never saw — while the two
+  // checks above had already passed ON that box 3. The mask row for the tracked cell at placedRound
+  // is box 3 by construction: the cell was picked out of armed2's box-3 list.
+  const armBox = track
+    ? (armed2.find((c) => c.x === track.x && c.y === track.y) || {}).box
+    : null;
+
   // Start the clock only now, so the decay happens under the read loop at speed 6 (0.6 s/round).
   const clock0 = (await room()).clock;
   if (clock0 === "held" || clock0 === "paused") {
@@ -345,7 +355,8 @@ try {
     clock0 + " -> " + speedState.clock + " speed " + speedState.speed);
 
   const startRound = Number((await room()).round) || 0;
-  console.log("decay read begins at round " + startRound + ", readyAt " + readyAt + ", speed " + (await room()).speed);
+  console.log("decay read begins at round " + placedRound + " (arm-time snapshot); first clock read at round "
+    + startRound + ", readyAt " + readyAt + ", speed " + speedState.speed);
   const series = [];
   let armStateBroken = null;
   const clicksAtDecayStart = boardClicks;
@@ -366,13 +377,15 @@ try {
     await waitRound(r + 1, 60000);
   }
 
-  const firstBox = series.find((row) => row.box === 3);
+  const firstBox = series.find((row) => row.box === 3)
+    || (armBox === 3 ? { round: placedRound, box: 3, fromArm: true } : null);
   const firstSoon = series.find((row) => row.box === 2);
   const firstReady = series.find((row) => row.box === 1 && row.round > (firstBox ? firstBox.round : 0));
   const yellow = series.find((row) => row.ink === "yellow");
   const green = series.find((row) => row.ink === "green");
   mark("the cell leaves the long state on its own (box 3 -> 2)", Boolean(firstBox && firstSoon) && firstSoon.round > firstBox.round,
-    "box3 at " + (firstBox && firstBox.round) + ", box2 at " + (firstSoon && firstSoon.round));
+    "box3 at " + (firstBox && firstBox.round) + (firstBox && firstBox.fromArm ? " (arm-time)" : "")
+      + ", box2 at " + (firstSoon && firstSoon.round));
   mark("the cell reaches the ready state (box 2 -> 1)", Boolean(firstSoon && firstReady) && firstReady.round >= firstSoon.round,
     "box1 at " + (firstReady && firstReady.round) + " (readyRound " + readyAt + ")");
   mark("the paint follows the box: a YELLOW read with no re-arm", Boolean(yellow) && yellow.ink === "yellow"
