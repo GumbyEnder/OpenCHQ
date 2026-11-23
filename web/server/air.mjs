@@ -322,23 +322,35 @@ export function sendMission(match, side, pieceId, mode, target) {
       const where = site.name ? String(site.name) : "That site";
       return { error: where + " is defended (" + String(defender.id) + "); a bombing run needs an empty target." };
     }
-    // PB-178 (manual p.25): a mission's target must lie inside the RESTRICTED air radius, the
-    // smaller circle. Only an unloaded transfer may use the maximum radius. Measured from the
-    // aircraft's own cell - its strip while it is on the ground - and wrap-aware, like every other
-    // distance on this board. Refused BEFORE the oil is spent and before the plane is touched, so a
-    // far click costs the player nothing.
+    bombTarget = site;
+  }
+
+  // PB-178 + PB-188 (manual p.25): a mission's target must lie inside the RESTRICTED air radius,
+  // the smaller circle. Only an unloaded transfer may use the maximum radius. PB-188 (ruling,
+  // room 8383 §4): the circle belongs to the AIR LAYER, not to the Bomb button alone, so a strike
+  // is gated here too - the manual's sentence is "the restricted air radius in which most missions
+  // must be performed" and a strike is a mission. The gate sits AFTER the bombing run's
+  // kind/owner/emptiness tests and BEFORE the oil or the plane is touched, so a far click costs the
+  // player nothing. Patrol keeps the open range on purpose: it is the defensive scramble and
+  // already defaults to the aircraft's own cell, so gating it would stack a second unverified
+  // assumption on the unverified 6. Measured from the aircraft's own cell - its strip while it is
+  // on the ground - and wrap-aware, like every other distance on this board.
+  if (mission.type === "bomb" || mission.type === "strike") {
     const restricted = restrictedReach();
     if (restricted > 0) {
+      const wx = ((at.x % CELL_W) + CELL_W) % CELL_W;
       const away = chebyshev(plane, { x: wx, y: at.y });
       if (away > restricted) {
         const max = airReach();
+        const what = mission.type === "strike" ? "an air strike" : "a bombing run";
         return {
-          error: "That target is " + away + " cells from the aircraft; a bombing run must be inside the restricted air radius ("
-            + restricted + " cells). Only a transfer may use the maximum radius (" + max + " cells). Both radii are port values, UNVERIFIED.",
+          error: "That target is " + away + " cells from the aircraft; " + what
+            + " must be inside the restricted air radius (" + restricted
+            + " cells). Only a transfer may use the maximum radius (" + max
+            + " cells). Both radii are port values, UNVERIFIED.",
         };
       }
     }
-    bombTarget = site;
   }
 
   // Oil (T-033): a mission costs the side's budget 20 before the plane leaves (FUN_15f4_0664

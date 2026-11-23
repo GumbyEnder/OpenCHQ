@@ -341,8 +341,9 @@ export function routeRequest(piece, target) {
 // it refuses a far click with a sentence BEFORE anything goes on the wire, so "no order went out"
 // is a fact of the click and not a promise about the server. The server refuses it again on its
 // own - the page is never the only guard. Both numbers arrive in the plane's briefing, so the page
-// cannot disagree with the config the server charged.
-export function restrictedTargetRefusal(piece, target, restricted, max, boardW) {
+// cannot disagree with the config the server charged. PB-188 (room 8383 §4): the circle is the air
+// layer's rule, so `mode` picks the noun a strike and a bombing run each read in their own words.
+export function restrictedTargetRefusal(piece, target, restricted, max, boardW, mode = "bomb") {
   const cells = Math.floor(Number(restricted));
   if (!piece || !target || !Number.isFinite(cells) || cells <= 0) return null;
   const width = Number(boardW) > 0 ? Number(boardW) : 320;
@@ -351,7 +352,9 @@ export function restrictedTargetRefusal(piece, target, restricted, max, boardW) 
   const away = Math.max(wrap, Math.abs(Number(piece.y) - Number(target.y)));
   if (!Number.isFinite(away) || away <= cells) return null;
   const far = Math.floor(Number(max));
-  return "That target is " + away + " cells from the aircraft; a bombing run must be inside the restricted air radius ("
+  const what = String(mode) === "strike" ? "an air strike" : "a bombing run";
+  return "That target is " + away + " cells from the aircraft; " + what
+    + " must be inside the restricted air radius ("
     + cells + " cells). Only a transfer may use the maximum radius ("
     + (Number.isFinite(far) && far > 0 ? far + " cells" : "a longer one") + ").";
 }

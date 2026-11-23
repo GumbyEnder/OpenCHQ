@@ -41,7 +41,7 @@ export async function run(ctx) {
   const aircraft = plane("blue:air", "blue", 80, 40);
   match.pieces = [aircraft];
   match.round = 10;
-  const strike = sendMission(match, "blue", "blue:air", "strike", { x: 100, y: 40 });
+  const strike = sendMission(match, "blue", "blue:air", "strike", { x: 85, y: 40 });
   if (strike.error) fail("a strike from a friendly city was refused: " + strike.error);
   if (inactiveRounds(aircraft, match.round) !== 8) {
     fail("a strike did not cost 8 rounds: " + inactiveRounds(aircraft, match.round));
@@ -51,7 +51,7 @@ export async function run(ctx) {
   }
 
   // --- while inactive: no second mission, and no order either --------------------------
-  const again = sendMission(match, "blue", "blue:air", "strike", { x: 100, y: 40 });
+  const again = sendMission(match, "blue", "blue:air", "strike", { x: 85, y: 40 });
   if (!again.error) fail("an inactive aircraft flew a second mission");
   if (!/8 more rounds/.test(again.error)) fail("the refusal did not say how long: " + again.error);
   aircraft.path = [{ x: 81, y: 40, pace: 1 }];
@@ -83,6 +83,75 @@ export async function run(ctx) {
   if (!refused.error) fail("an aircraft struck with no city, dock or ship within reach");
   if (!/within reach/.test(refused.error)) fail("the refusal did not name the reason: " + refused.error);
   if (inactiveRounds(lonely, far.round) !== 0) fail("a refused mission still cost flying time");
+
+  // --- PB-188: a STRIKE is a mission, so it flies inside the restricted circle ----------------
+  // The ruling (room 8383 §4): the circle is a property of the air layer, not of the Bomb button.
+  // The arms below pin the boundary, the cost of a refusal, and the two decisions the ticket
+  // records rather than leaves implicit: the wrap seam counts as distance, and a patrol keeps the
+  // open range because a scramble defaults to the aircraft's own cell.
+  {
+    const restricted = Math.floor(Number(air.restrictedReach));
+    const maximum = Math.floor(Number(air.reach));
+    if (!(restricted > 0)) fail("no restricted air radius is configured, so PB-188 cannot be measured");
+    if (!(maximum > restricted)) fail("the maximum radius must be larger than the restricted one: " + maximum + " vs " + restricted);
+
+    const atEdge = freshMatch();
+    const edgePlane = plane("blue:air", "blue", 80, 40);
+    atEdge.pieces = [edgePlane];
+    atEdge.round = 3;
+    const edge = sendMission(atEdge, "blue", "blue:air", "strike", { x: 80 + restricted, y: 40 });
+    if (edge.error) fail("a strike exactly at the restricted radius was refused: " + edge.error);
+    if (inactiveRounds(edgePlane, atEdge.round) !== 8) fail("the edge strike did not cost 8 rounds");
+
+    const band = freshMatch();
+    const bandPlane = plane("blue:air", "blue", 80, 40);
+    const bystander = { id: "red:inf", side: "red", domain: "land", kind: "infantry", x: 80 + restricted + 1, y: 40, path: [], pace: 1, facing: null, fighting: null, shots: 0, strength: 100, maxStrength: 100 };
+    band.pieces = [bandPlane, bystander];
+    band.round = 3;
+    const fuelBefore = JSON.stringify((band.sides && band.sides.blue && band.sides.blue.fuel) ?? null);
+    const refusedStrike = sendMission(band, "blue", "blue:air", "strike", { x: 80 + restricted + 1, y: 40 });
+    if (!refusedStrike.error) fail("a strike one cell past the restricted radius was accepted");
+    if (!/air strike must be inside the restricted air radius \(\d+ cells\)/.test(refusedStrike.error)) {
+      fail("the strike refusal did not name the restricted circle as a strike: " + refusedStrike.error);
+    }
+    if (!/maximum radius/.test(refusedStrike.error)) fail("the refusal did not name the maximum radius too: " + refusedStrike.error);
+    if (inactiveRounds(bandPlane, band.round) !== 0) fail("a refused strike still cost the plane its flying time");
+    if (JSON.stringify((band.sides && band.sides.blue && band.sides.blue.fuel) ?? null) !== fuelBefore) {
+      fail("a refused strike still spent oil");
+    }
+    if (band.round !== 3) fail("a refused strike moved the round");
+    if (bystander.strength !== 100) fail("a refused strike damaged a unit outside the circle: " + bystander.strength);
+
+    // The wrap seam: at the board's edge the distance is the short way round, so a target
+    // `restricted` cells across x=319/0 is INSIDE and one more is outside.
+    const W = 320;
+    const seam = openMatch("1986", []);
+    seam.clock = "running";
+    seam.sites = [
+      { id: 20, name: "Seam Base", x: 2, y: 40, kind: "city", owner: "blue" },
+      { id: 21, name: "Seam City", x: 200, y: 20, kind: "city", owner: "red" },
+    ];
+    const seamPlane = plane("blue:air", "blue", 2, 40);
+    seam.pieces = [seamPlane];
+    seam.round = 3;
+    const wrapTarget = { x: (2 - restricted + W) % W, y: 40 };
+    const wrapped = sendMission(seam, "blue", "blue:air", "strike", wrapTarget);
+    if (wrapped.error) fail("a strike " + restricted + " cells across the wrap seam was refused: " + wrapped.error);
+    seamPlane.inactiveUntil = 0;
+    const seamOut = { x: (2 - restricted - 1 + W) % W, y: 40 };
+    const across = sendMission(seam, "blue", "blue:air", "strike", seamOut);
+    if (!across.error) fail("a strike " + (restricted + 1) + " cells across the wrap seam was accepted");
+
+    // Patrol keeps the open range: DECIDED in the ticket, not forgotten. A scramble named at a far
+    // cell still flies, because gating it would stack a second unverified assumption on the 6.
+    const scramble = freshMatch();
+    const scrambler = plane("blue:air", "blue", 80, 40);
+    scramble.pieces = [scrambler];
+    scramble.round = 3;
+    const patrolFar = sendMission(scramble, "blue", "blue:air", "patrol", { x: 80 + maximum, y: 40 });
+    if (patrolFar.error) fail("a patrol is supposed to keep the open range and was refused: " + patrolFar.error);
+    if (inactiveRounds(scrambler, scramble.round) !== 4) fail("the far patrol did not cost 4 rounds");
+  }
 
   // --- a strike catches cargo; it does not invent damage on anything else ------------
   const sea = freshMatch();
