@@ -23,6 +23,14 @@
 // blue), and a ring probe at +-8 px reaches the adjacent cell's box. Both readings are printed by
 // this leg; the reference stays on a painted box-1 cell.
 //
+// Same-cell clause (room 8246 ruling, 2026-11-23). "pxReady from the city's own cell at placement"
+// was refused as measured: that cell's centre is the city glyph (27,63,143) and a ring probe at +-8 px
+// reads a neighbouring cell's box. The clause is therefore "assert rgba 61,185,65 on the same cell when
+// it becomes ready", and it is asserted on ONE cell by coordinate - the cell that reads box 3 (red) is
+// the cell that reads box 2 (yellow) is the cell that reads box 1 and paints 61,185,65. The yellow
+// check's reference stays a separately measured green cell (hue 120), plus an assertion that the built
+// cell is NOT green.
+//
 // Lives in tests/e2e/, not web/test/nodes/: run.mjs imports every nodes/*.mjs as {name, run(ctx)}
 // and counts it inside the 137-test suite, so a browser leg parked there would either join the suite
 // (Chromium in every gate run) or need a skip hook. Every other tracked page leg (pb169, pb170,
@@ -305,6 +313,10 @@ try {
   const h3 = counts(inf3);
   mark("the built city's radius reads the long-wait state (3)", (h3[3] || 0) > 0, JSON.stringify(h3));
   const longCell = inf3.find((c) => c.box === 3);
+  // Same-cell pin (room 8246 ruling, 2026-11-23): one cell, held by coordinate, from the red read
+  // through the yellow read to the ready read. Without it each read takes the first cell carrying
+  // its box byte, so "the same cell" is an ordering coincidence, not an assertion.
+  const cell = longCell ? { x: longCell.x, y: longCell.y } : null;
   const pxLong = longCell ? await sample(longCell) : [0, 0, 0, 0];
   const inkLong = await classify(pxLong);
   mark("a long-wait cell paints RED (VGA 12 #ff5555)", inkLong.ink === "red",
@@ -332,7 +344,10 @@ try {
   const h2 = counts(inf2);
   mark("the same radius reads the soon state (2) as the timer decays", (h2[2] || 0) > 0,
     "round " + (await room()).round + " " + JSON.stringify(h2));
-  const soonCell = inf2.find((c) => c.box === 2);
+  const soonCell = inf2.find((c) => cell && c.x === cell.x && c.y === cell.y);
+  mark("the same cell is the one that decays to the soon state (2)", Boolean(soonCell) && soonCell.box === 2,
+    "cell " + (cell ? cell.x + "," + cell.y : "none") + " box " + (soonCell ? soonCell.box : "absent")
+      + " frame " + JSON.stringify(h2));
   const pxSoon = soonCell ? await sample(soonCell) : [0, 0, 0, 0];
   const inkSoon = await classify(pxSoon);
   const greenRef = pxReady ? await classify(pxReady) : { ink: "none", h: null };
@@ -361,10 +376,16 @@ try {
   const h4 = counts(inf4);
   mark("the long-wait cells are gone once their round arrives", !h4[3],
     "round " + (await room()).round + " " + JSON.stringify(h4));
-  const pxBack = await sample(inf4.find((c) => c.box === 1));
+  const backCell = inf4.find((c) => cell && c.x === cell.x && c.y === cell.y);
+  const pxBack = backCell ? await sample(backCell) : [0, 0, 0, 0];
   const inkBack = await classify(pxBack);
-  mark("a ready cell is back to the green ink", inkBack.ink === "green",
-    "rgba " + pxBack.join(",") + " -> " + JSON.stringify(inkBack));
+  // The clause's pixel, asserted rather than printed: the ready ink on the SAME cell is 61,185,65.
+  // +-10 per channel absorbs the probe's edge pixel, not the colour.
+  const nearInk = (px, want) => px.slice(0, 3).every((v, i) => Math.abs(v - want[i]) <= 10);
+  mark("the same cell is back to the ready ink rgba 61,185,65",
+    Boolean(backCell) && backCell.box === 1 && inkBack.ink === "green" && nearInk(pxBack, [61, 185, 65]),
+    "cell " + (cell ? cell.x + "," + cell.y : "none") + " box " + (backCell ? backCell.box : "absent")
+      + " rgba " + pxBack.join(",") + " -> " + JSON.stringify(inkBack));
 
   mark("the page raised no script error", pageErrors.length === 0, pageErrors.join(" ; ").slice(0, 300));
 } catch (err) {
