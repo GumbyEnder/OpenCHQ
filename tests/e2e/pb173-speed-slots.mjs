@@ -120,7 +120,7 @@ try {
 
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 25000 });
-  const name = "e2e-pb173-" + Date.now().toString(36).slice(-8);
+  const name = "e2e-pb173-" + Math.random().toString(36).slice(2, 18).padEnd(16, "0");
   await page.fill("#register input[name=username]", name);
   await page.fill("#register input[name=password]", "pw-" + Math.random().toString(36).slice(2, 12));
   await page.click("#register button[type=submit]");
@@ -230,6 +230,7 @@ try {
     return { cash, chip, cashBox, brand, items, strip: { scrollW: strip.scrollWidth, clientW: strip.clientWidth } };
   }, { cash, round, row: ROW });
 
+  const signoutW = {};
   for (const { w, h, label } of WIDTHS) {
     await page.setViewportSize({ width: w, height: h });
     await sleep(500);
@@ -289,6 +290,37 @@ try {
           w: chip && chip.w, textOk: /\db \+.*b\/rd/.test((chip && chip.text) || ""),
           nat: Boolean(chip) && chip.scrollW <= chip.clientW, wide: wide.fits, at116b: wide.detail,
           titleHasLedger: LEDGER.test((chip && chip.title) || "") }));
+      // PB-187b (frodo 8371 §4): the handle ellipsizes; the Sign out button is a CONTROL and used to
+      // live in the same clipping box as the text. With a legal 26-char handle at 1280x800 the
+      // ellipsis ate the button — 23.39 px inside the clip box, 42.65 px cut — so elementFromPoint on
+      // its centre returned #debugToggle and the control was effectively gone. Measure the button:
+      // inside #account, its own full width (not clipped), and the top element at its centre.
+      const acct = await page.evaluate(() => {
+        const a = document.getElementById("account");
+        const btn = a ? a.querySelector("button") : null;
+        const who = a ? a.querySelector(".who") : null;
+        const box = (n) => {
+          const r = n.getBoundingClientRect();
+          return { x: +r.x.toFixed(2), right: +(r.x + r.width).toFixed(2), w: +r.width.toFixed(2),
+            scrollW: n.scrollWidth, clientW: n.clientWidth };
+        };
+        let hit = null;
+        if (btn) {
+          const r = btn.getBoundingClientRect();
+          const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          hit = el ? (el.id || el.tagName) : null;
+        }
+        return { name: who ? who.textContent : null, account: a ? box(a) : null,
+          signout: btn ? box(btn) : null, text: btn ? btn.textContent : null, hit };
+      });
+      signoutW[label] = acct.signout ? acct.signout.w : null;
+      mark("Sign out is whole and hittable beside a " + ((acct.name || "").length) + "-char handle at " + label,
+        Boolean(acct.signout) && (acct.name || "").length >= 26
+          && acct.signout.right <= acct.account.right + 0.5
+          && acct.signout.scrollW <= acct.signout.clientW
+          && acct.hit === "BUTTON" && acct.text === "Sign out"
+          && (label.indexOf("1280") !== 0 || signoutW["1440x900"] == null || near(acct.signout.w, signoutW["1440x900"])),
+        JSON.stringify(acct));
     } else {
       const cash = run.rows.purseCash;
       const chip = run.rows.purseChip;

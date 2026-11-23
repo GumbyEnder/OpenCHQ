@@ -731,13 +731,30 @@ body.in-match #strip > .whoami {
 }
 
 body.in-match .account {
-  white-space: nowrap;
+  max-width: 22vw;
+  min-width: 0;
+}
+
+/* PB-187b: the username is the only thing allowed to ellipsize. #account is a flex row whose
+   LAST item is a control, and a single clipping box that held text + button (PB-187's shape) let
+   the ellipsis eat the control: at 1280x800 a 26-char handle pushed "Sign out" 23.4 px inside the
+   clip box and 42.7 px of it was cut, so the button looked gone and elementFromPoint on its
+   centre returned #debugToggle. The text shrinks inside its own span; the button is a fixed item. */
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+.account .who {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 22vw;
-  /* PB-187: a flex item's automatic minimum is min-content, which is the whole username — so
-     `flex-shrink` on .whoami did nothing and the brand's readouts lost the pixels instead. */
-  min-width: 0;
+  white-space: nowrap;
+}
+.account .ghost {
+  flex: 0 0 auto;
 }
 
 /* At 1024x768 the strip's commands alone fill the row, so the wordmark and the account line give

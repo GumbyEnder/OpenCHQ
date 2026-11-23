@@ -1279,7 +1279,12 @@ async function loadBoard() {
 function renderAccount() {
   account.textContent = "";
   if (!me) return;
-  account.textContent = me + " ";
+  // PB-187b: the handle lives in its own span so the ellipsis can only eat the name. While the
+  // name and the Sign out button shared one clipping box, a long handle clipped the button itself.
+  const who = document.createElement("span");
+  who.className = "who";
+  who.textContent = me;
+  account.append(who);
   const button = document.createElement("button");
   button.className = "ghost";
   button.type = "button";
