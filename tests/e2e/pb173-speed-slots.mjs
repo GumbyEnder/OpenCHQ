@@ -249,7 +249,10 @@ try {
           && /^\d+b$/.test(cash.text) && /b\/rd/.test(chip ? chip.title : "")
           && LEDGER.test(chip ? chip.title : ""),
         JSON.stringify({ cash: cash && cash.text, scrollW: cash && cash.scrollW, clientW: cash && cash.clientW,
-          chipText: chip && chip.text, titleHasIncome: Boolean(chip && /b\/rd/.test(chip.title)) }));
+          chipText: chip && chip.text, titleHasIncome: Boolean(chip && /b\/rd/.test(chip.title)),
+          // frodo 8343 §2: the PASS condition asserts the full LEDGER on the title, so the detail
+          // prints that same field. `titleHasIncome` alone under-reports what the mark requires.
+          titleHasLedger: LEDGER.test((chip && chip.title) || "") }));
     }
     // PB-179's floor: nothing overlaps and nothing runs past the window.
     const pairs = overlapPairs(run.items);
