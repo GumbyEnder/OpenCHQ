@@ -524,15 +524,40 @@ body.in-match .mark {
 body.in-match .sub,
 body.in-match #passwordBox { display: none; }
 
+/* PB-173/PB-180: below 1400 px the wordmark is the first thing to go. The strip has to hold the
+   round/clock readout, the purse, the clock, the speed control, the command nav, Resign/New/Quit and
+   the account block in one 34 px row; at 1280x800 the row is packed to the pixel, and the readouts —
+   the two boxes a player reads every few seconds — were the ones being clipped. The mark is the
+   page's name, and the page is the only thing on the screen. */
+@media (max-width: 1400px) {
+  body.in-match .mark { display: none; }
+}
+
 /* The strip's own line: where the war is, and what is in the pool. Everything else the match needs is
    a command in the strip that opens a dialogue. */
 body.in-match .stripinfo {
-  display: inline;
+  display: inline-block;
   font-size: 12px;
   color: #9fb0c6;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* PB-173: the phase word ("running" / "held" / "paused") is the only part of this string that
+     changes on a clock toggle, and it was worth -10.65 px of the row's -11.18 px. So the word gets a
+     slot of its own (below) and the box measures the same in every clock state. Careful: a slot for
+     the WHOLE string costs 176 px, and at 1280x800 the strip is packed to the pixel — that version
+     squeezed #purseChip to 0 px wide. Slot only what varies.
+   It is also `flex: 0 0 auto`: with the default shrink it was the item that gave way when the
+   purse's own string grew (fuel/steel appear a round in), so the readout moved 17.35 px for a
+   reason that had nothing to do with the clock. The purse chip is the one elastic box in the row. */
+  flex: 0 0 auto;
+}
+
+/* PB-173: one width for the clock word, whatever the word is. 7ch is "running", the longest of
+   running / held / paused, in this font. */
+body.in-match .stripinfo .phase {
+  display: inline-block;
+  width: 7ch;
 }
 
 /* T-033: the red OIL warning. The chip turns red only when the server's own `short` flag says
@@ -544,13 +569,25 @@ body.in-match .pursechip.oilshort {
 }
 
 body.in-match .pursechip {
-  display: inline;
+  display: inline-block;
   font-size: 12px;
   color: #9fe8d0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 34vw;
+  /* PB-180: the chip is the brand's one elastic box, so whatever room the row has left goes here
+     and nowhere else. `max-width: 34vw` capped it at 34% of the window no matter how much room was
+     free, which is how a 412 px string rendered in 115 px at 1280x800. No cap now; min-width 0 keeps
+     it from ever pushing its siblings. */
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  /* PB-179's floor: the purse must stay legible. With no floor it collapsed to 0 px at 1280x800
+     once #stripInfo stopped giving way — an invisible readout is worse than an ellipsized one. This
+     is the widest floor that does not push a control off the row at 1280x800 (measured: 118 px
+     overlapped the clock by 29.28 px, 96 px still grazed it by 9.93 px when the round number grew a
+     digit mid-run; 84 px holds under that). */
+  min-width: 84px;
 }
 
 /* The chip row above the map was the whole interface before the dialogues existed. Seats, the clock
@@ -682,6 +719,10 @@ body.in-match .account {
 @media (max-width: 1100px) {
   body.in-match .mark { display: none; }
   body.in-match #account { display: none; }
+  /* The row is narrower than the two readouts together at this width: the purse keeps a legible
+     floor and ellipsizes, the round/clock readout keeps its own width (PB-173). 30 px is the widest
+     floor that does not overlap the clock at 1024x768 (60 px overlapped it by 29.15 px). */
+  body.in-match .pursechip { min-width: 30px; }
   body.in-match #strip > .brand {
     flex: 1 1 120px;
     min-width: 120px;
@@ -702,7 +743,10 @@ body.in-match .account {
 .navbtn:hover { background: #16243a; }
 .navbtn.danger { color: #ffb4a8; border-color: #4a2028; }
 .navbtn.danger:hover { background: #3a1418; }
-.navbtn.clockbtn { min-width: 30px; font-size: 13px; }
+/* PB-173: the pause glyph (❚❚) is 12 px wider than the play glyph (▶), so the button changed width
+   with the clock and took the speed control with it. A fixed 43 px box centred on the glyph is
+   glyph-independent — and it is the width the card's own candidate probe measured to 0.00 px. */
+.navbtn.clockbtn { min-width: 43px; width: 43px; padding-left: 0; padding-right: 0; text-align: center; font-size: 13px; }
 .navbtn:disabled { opacity: 0.4; cursor: default; }
 .gamebtns { display: none; gap: 4px; align-items: center; }
 body.in-match .gamebtns { display: flex; }
