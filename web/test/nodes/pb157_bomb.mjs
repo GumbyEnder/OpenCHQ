@@ -2,8 +2,9 @@
 //
 // What breaks if this node is removed: a bombing run takes no money, a bombed city can still
 // produce next round, a bombed oil field costs the owner nothing, a defended target is accepted
-// (spending the aircraft on a site the strike mission already covers), and a refusal burns the
-// plane or the mission's oil.
+// (spending the aircraft on a site the strike mission already covers), a capital is accepted, a
+// refusal burns the plane or the mission's oil, or one of the two client doors (Kit, Air) stops
+// arming its Bomb button (see BOMB_SITE_KINDS and the capital rule in sendMission).
 //
 // Rule, decoded (config `air.bomb*`): FUN_1ac5_0dbe @ 1ac5:0dbe, decompiled.c 8768-8782;
 // MANUAL p.25. An air mission on an unoccupied enemy city or base takes 5 of the original's money
@@ -12,6 +13,7 @@
 // scale). The aircraft is inactive for the strike's 8 rounds and is refused, not spent, on a
 // defended or invalid target.
 
+import { readFileSync } from "node:fs";
 import { openMatch } from "../../server/match.mjs";
 import { sendMission, airBriefing } from "../../server/air.mjs";
 import { meterOf, upkeepResources } from "../../server/resources.mjs";
@@ -36,8 +38,11 @@ function plane(id, side, x, y) {
   };
 }
 
-// A 1986 board: Blue holds a city with a plane on it (its berth), Red holds a city, a base and a
-// type-5 oil field. Nothing is within sight of anything, so only the bombing rule moves a number.
+// A 1986 board: Blue holds a city with a plane on it (its berth), Red holds a capital, a city, a
+// base and a type-5 oil field. Nothing is within sight of anything, so only the bombing rule moves
+// a number. PB-157a: the capital is its own site, because a bombing run must not be able to hit it
+// (the fixture used to park `capitals.red` on Kiev, which made "bomb an enemy city" and "bomb a
+// capital" the same click).
 function board() {
   const match = openMatch("1986", []);
   match.clock = "running";
@@ -47,12 +52,13 @@ function board() {
   match.sides.red.fuel = 5000;
   match.sites = [
     { id: 10, name: "New York", x: 80, y: 40, kind: "city", type: 4, owner: "blue" },
+    { id: 63, name: "Moscow", x: 150, y: 22, kind: "capital", type: 2, owner: "red" },
     { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", type: 4, owner: "red" },
     { id: 30, name: "Minsk Base", x: 200, y: 40, kind: "base", type: 3, owner: "red" },
     { id: 64, name: "Baku Field", x: 200, y: 60, kind: "facility", type: 5, owner: "red" },
   ];
   match.pieces = [plane("blue:plane", "blue", 80, 40)];
-  match.capitals = { blue: { x: 80, y: 40 }, red: { x: 180, y: 22 } };
+  match.capitals = { blue: { x: 80, y: 40 }, red: { x: 150, y: 22 } };
   return match;
 }
 
@@ -123,6 +129,20 @@ export async function run() {
     fail("a cell with no enemy site accepted a bombing run");
   }
 
+  // --- a capital is refused (frodo m7) -------------------------------------------------------
+  // The refusal is the site-kind arm below the owner checks: BOMB_SITE_KINDS is city/base/facility
+  // while AIRSTRIP_KINDS adds "capital" (a plane may be based at a capital, p.22), so the two sets
+  // are one word apart and this assertion is the only thing pinning the difference. The mutant that
+  // must red this is "capital" added to BOMB_SITE_KINDS at web/server/air.mjs.
+  const cap = board();
+  const onCapital = sendMission(cap, "blue", "blue:plane", "bomb", { x: 150, y: 22 });
+  if (!onCapital.error) fail("a capital accepted a bombing run");
+  eq("the capital refusal is the site-kind message", onCapital.error,
+    "A bombing run hits a city, a base or an oil field, not a capital.");
+  eq("a refused capital leaves the owner's cash alone", cap.sides.red.cash, 50000);
+  eq("a refused capital leaves the aircraft ready", cap.pieces[0].inactiveUntil, 0);
+  eq("a refused capital is not left unready", cap.sites.find((s) => s.id === 63).readyRound ?? null, null);
+
   // --- an oil field queues 1000, and T-033's NEXT settle consumes it -----------------
   const field = board();
   const raided = sendMission(field, "blue", "blue:plane", "bomb", { x: 200, y: 60 });
@@ -141,4 +161,20 @@ export async function run() {
   const cleanHeld = Number(meterOf(twin, "red", "fuel").held);
   eq("the next settlement consumed the queued 1000", cleanHeld - bombedHeld, 1000);
   eq("the queue is one-shot", Number(meterOf(field, "red", "fuel").bombed) || 0, 0);
+
+  // --- the two client doors arm the same three aims (PB-157a) --------------------------------
+  // The browser leg (tests/e2e/pb157a-air-bomb.mjs) clicks the real buttons; this is the half that
+  // runs in the node suite, so reverting either arm is red here on a host with no browser. The
+  // defect was exactly one door: the Air dialog listed strike and transfer, so its Bomb button sent
+  // the mission at the plane's own cell and the server refused it every time.
+  const APP = readFileSync(new URL("../../public/app.js", import.meta.url), "utf8");
+  const guards = APP.split("\n").filter((line) =>
+    /mission\.mode === "strike"/.test(line) && /mission\.mode === "transfer"/.test(line));
+  eq("both mission doors have an aim-arming guard", guards.length, 2);
+  for (const guard of guards) {
+    if (!/mission\.mode === "bomb"/.test(guard)) {
+      fail("a mission door arms strike and transfer but not bomb, so that panel fires at the plane's own cell: " + guard.trim());
+    }
+  }
+  eq("both doors hand the player the map", (APP.match(/pendingMission = mission\.mode;/g) || []).length, 2);
 }
