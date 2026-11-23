@@ -78,8 +78,18 @@ function servedMatches(version) {
   // The full commit is the witness whenever the host publishes one, and a disagreeing commit is not
   // rescued by a short that happens to share its first 7 characters: EXPECT must be a prefix of the
   // commit, or a longer form of it (a gate caller may pass the full sha; the host may answer with it).
-  if (commit) return commit.startsWith(want) || want.startsWith(commit);
-  return Boolean(short) && (short === want || short.startsWith(want) || want.startsWith(short));
+  // A prefix test only identifies a commit at 7 characters or more (the shortest git short sha); a
+  // 1-3 char EXPECT matches every sha and would pass a wrong build (frodo 8452 §2).
+  const PREFIX_MIN = 7;
+  if (commit) {
+    if (commit === want) return true;
+    if (want.length > commit.length) return want.startsWith(commit);
+    return want.length >= PREFIX_MIN && commit.startsWith(want);
+  }
+  if (!short) return false;
+  if (short === want) return true;
+  if (want.length > short.length) return want.startsWith(short);
+  return want.length >= PREFIX_MIN && short.startsWith(want);
 }
 
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb165")));

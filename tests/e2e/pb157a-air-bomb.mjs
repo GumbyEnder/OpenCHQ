@@ -252,6 +252,9 @@ try {
     // cells from the nearest port sits inside the bot's opening march line and the aircraft is lost
     // before the 8-round strike returns (measured on pb170's leg). Among the edge cells take the
     // eastern berth, away from the western blue cluster the bot marches toward.
+    // The literal 6 is the FIXTURE's circle, not the rule: it keeps the berth at the edge of the
+    // standoff so the aircraft survives the opening march. The rule is the aircraft brief's
+    // restrictedReach (config-derived) and it is what the refusal arms below sample.
     const inside = scored.filter((s) => s.near <= 6).sort((a, b) => b.near - a.near || b.c.x - a.c.x);
     const berth = inside[0] || scored.sort((a, b) => a.near - b.near)[0] || null;
     const pick = berth ? berth.c : null;

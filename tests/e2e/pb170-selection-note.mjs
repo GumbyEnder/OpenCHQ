@@ -237,6 +237,10 @@ try {
   //    the rule. Stand the plane at the EDGE of the circle (near == restricted) instead, and among
   //    those choose the eastern berth, which is the one away from the western blue cluster the bot
   //    marches toward.
+  // The literal 6 here is the FIXTURE's circle, not the rule: it is only the berth picker's
+  // standoff so the aircraft survives long enough to fly. The rule the page and the server enforce
+  // is read from the aircraft's own brief (restrictedReach, config-derived); the arm below samples
+  // that value, so a change to restrictedReach moves the arms without touching this line.
   const reachable = scored.filter((s) => s.near <= 6).sort((a, b) => b.near - a.near || b.c.x - a.c.x);
   const berth = reachable[0] || scored.sort((a, b) => a.near - b.near)[0] || null;
   const pick = berth ? berth.c : null;
