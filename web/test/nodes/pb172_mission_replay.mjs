@@ -14,17 +14,22 @@
 //      same before and after the duplicate.
 export const name = "pb172_mission_replay";
 
-function firstReadyCell(message) {
+function readyCells(message) {
   const binary = Buffer.from(String(message.mask), "base64");
   const width = Number(message.width);
   const height = Number(message.height);
+  const out = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const value = binary[y * width + x];
-      if (value === 1) return { x, y };
+      if (binary[y * width + x] === 1) out.push({ x, y });
     }
   }
-  return null;
+  return out;
+}
+
+function firstReadyCell(message) {
+  const cells = readyCells(message);
+  return cells.length ? cells[0] : null;
 }
 
 export async function run(ctx) {
@@ -42,7 +47,19 @@ export async function run(ctx) {
   sock.send({ op: "placement", kind: "aircraft" });
   const mask = await sock.wait((m) => m.op === "placement" && m.kind === "aircraft", "placement mask");
   if (mask.error || !mask.mask) fail("no aircraft placement mask: " + JSON.stringify(mask));
-  const cell = firstReadyCell(mask);
+  // PB-178: the plane is based where it is bought, so the berth is chosen for its REACH: the ready
+  // cell nearest an enemy city or base. The first cell in the mask can sit an ocean away from any
+  // target, and a bombing run is now refused outside the restricted air radius.
+  const width = Number(mask.width) || 320;
+  const ports = ((opening.room || {}).sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+  const dist = (a, b) => {
+    const dx = Math.abs(Number(a.x) - Number(b.x));
+    return Math.max(Math.min(dx, Math.abs(width - dx)), Math.abs(Number(a.y) - Number(b.y)));
+  };
+  const options = readyCells(mask).map((c) => ({
+    c, near: ports.length ? Math.min(...ports.map((s) => dist(c, s))) : 0,
+  })).sort((a, b) => a.near - b.near);
+  const cell = options.length ? options[0].c : null;
   if (!cell) fail("the aircraft placement mask offered no ready cell");
 
   const buyId = "pb172-buy-air-1";
@@ -51,12 +68,22 @@ export async function run(ctx) {
   const planeId = String(bought.piece || "");
   if (!planeId) fail("the bought frame names no piece: " + JSON.stringify(bought));
 
-  // ---- one mission, on the first enemy port the server accepts --------------------------------
+  // ---- one mission, on the nearest enemy port the server accepts -----------------------------
+  // PB-178: a bombing run's target must lie inside the restricted air radius (manual p.25), so the
+  // candidates are the enemy ports INSIDE that circle, nearest first, rather than the first eight in
+  // the view - a far port is now refused for distance and would test the radius, not the replay.
   const view = () => (sock.box.filter((m) => m.op === "room" && m.room && m.room.id === roomId).pop() || {}).room;
+  const briefing = (((view() || {}).seat && view().seat.air) || []).find((p) => String(p.id) === planeId) || {};
+  const cells = Math.floor(Number(briefing.restrictedReach)) || 0;
+  const away = (s) => {
+    const dx = Math.abs(Number(cell.x) - Number(s.x));
+    return Math.max(Math.min(dx, Math.abs(width - dx)), Math.abs(Number(cell.y) - Number(s.y)));
+  };
   const candidates = ((view() || {}).sites || [])
     .filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"))
-    .slice(0, 8);
-  if (!candidates.length) fail("the view carries no enemy city to aim at");
+    .filter((s) => cells <= 0 || away(s) <= cells)
+    .sort((a, b) => away(a) - away(b));
+  if (!candidates.length) fail("the view carries no enemy city inside the restricted air radius to aim at");
 
   let mission = null;
   let ack = null;

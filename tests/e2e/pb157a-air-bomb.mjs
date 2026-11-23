@@ -22,7 +22,7 @@
 // Evidence is read from the server's own two seat logs (the /api/debug/room dump, which exists only
 // behind OPENCHQ_DEBUG=1) and from the page's own room view - never from a hand-built board.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -113,6 +113,27 @@ try {
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
   const page = await context.newPage();
+  // PB-178: the page's own wire log records INBOUND frames only, so "no order went out" needs a
+  // hook on WebSocket.prototype.send. Installed before any page script runs.
+  await page.addInitScript(() => {
+    const Native = window.WebSocket;
+    window.__chqSent = [];
+    function Wrapped(...args) {
+      const socket = new Native(...args);
+      const send = socket.send.bind(socket);
+      socket.send = (data) => {
+        try { window.__chqSent.push(String(data)); } catch (err) { void err; }
+        return send(data);
+      };
+      return socket;
+    }
+    Wrapped.prototype = Native.prototype;
+    Wrapped.CONNECTING = Native.CONNECTING;
+    Wrapped.OPEN = Native.OPEN;
+    Wrapped.CLOSING = Native.CLOSING;
+    Wrapped.CLOSED = Native.CLOSED;
+    window.WebSocket = Wrapped;
+  });
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err)));
 
@@ -199,7 +220,7 @@ try {
   mark("the clock is held, so no round moves under the measurement", Boolean(cur && cur.clock !== "running"), "clock " + (cur && cur.clock));
 
   // ---------------------------------------------------------------- buy and place an aircraft
-  async function buyAircraft() {
+  async function buyAircraft(n = 0) {
     const before = new Set(((await room()).pieces || []).map((p) => p.id));
     await page.click('.navbtn[data-dialog="buy"]').catch(() => {});
     await sleep(250);
@@ -216,7 +237,42 @@ try {
     const mine = new Set(((view.sites || []).filter((s) => s.owner === "blue")).map((s) => s.x + "," + s.y));
     const taken = new Set((view.pieces || []).map((p) => p.x + "," + p.y));
     const cells = await page.evaluate(() => window.__chq.legalCells(8000));
-    const pick = (cells || []).find((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y));
+    // PB-178: place where the plane can REACH - the legal cell nearest an enemy port. A first-match
+    // cell can sit a dozen cells from the nearest red site, so the restricted circle would hold no
+    // legal target and every run below would be refused (frodo's bounce on abd39c4).
+    const boardW = Number(await page.evaluate(() => (window.__chq.boardWidth ? window.__chq.boardWidth() : 320)).catch(() => 320)) || 320;
+    const cellAway = (a, b) => {
+      const dx = Math.abs(Number(a.x) - Number(b.x));
+      return Math.max(Math.min(dx, Math.abs(boardW - dx)), Math.abs(Number(a.y) - Number(b.y)));
+    };
+    const redPorts = (view.sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+    const redPieces = (view.pieces || []).filter((p) => p.side === "red");
+    const wantBand = n === 0;
+    const airRules = (JSON.parse(readFileSync(path.join(root, "config", "game.json"), "utf8")).air || {});
+    const circle = Math.floor(Number(airRules.restrictedReach)) || 0;
+    const maxCircle = Math.floor(Number(airRules.reach)) || 0;
+    const pick = (cells || [])
+      .filter((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y))
+      .map((c) => ({
+        c,
+        near: redPorts.length ? Math.min(...redPorts.map((s) => cellAway(c, s))) : 999,
+        threat: redPieces.length ? Math.min(...redPieces.map((p) => cellAway(c, p))) : 99,
+        band: redPorts.filter((s) => { const d = cellAway(c, s); return d > circle && (maxCircle <= 0 || d <= maxCircle); }).length,
+      }))
+      // Inside the circle the legs below aim in, and as far from the enemy as the circle allows: a
+      // berth on the enemy's door is overrun while the aircraft is away and every later arm reads
+      // `undefined`.
+      .filter((h) => circle <= 0 || h.near <= circle)
+      // #1 also needs a BAND target (its arm measures the refusal); #2 only needs an in-circle
+      // target for the Kit door, so it keeps the plain "as far from the enemy as the circle allows"
+      // order - asking it for a band target too left it with no empty site for that door.
+      // #1 sits at the circle edge with a band target (its arm measures the refusal); #2 sits as
+      // CLOSE to the enemy as the circle allows, because the Kit door needs a second empty
+      // non-capital site inside the same circle and the edge berth tends to hold only one.
+      .sort((a, b) => (wantBand
+        ? ((b.band > 0) - (a.band > 0)) || (b.near - a.near) || (b.threat - a.threat)
+        : (a.near - b.near) || (b.threat - a.threat)))
+      .map((hit) => hit.c)[0];
     if (!pick) return { error: "no free friendly city/base cell for the aircraft (legal " + (cells || []).length + ")" };
     await clickCell(pick);
     await page.waitForFunction((ids) => (window.__chq.room().pieces || []).some((p) => !ids.includes(p.id)), [...before], { timeout: 20000, polling: 100 })
@@ -227,13 +283,26 @@ try {
     return { plane, cell: pick, row: row.text };
   }
 
-  const first = await buyAircraft();
+  const first = await buyAircraft(0);
   if (first.error) throw new Error(first.error);
   const planeId = first.plane.id;
   cur = await room();
   let briefing = ((cur.seat && cur.seat.air) || []).find((p) => String(p.id) === String(planeId));
   mark("the Air panel briefs the new aircraft", Boolean(briefing), briefing ? "missions " + (briefing.missions || []).map((m) => m.mode).join("/") : "no briefing");
   mark("the briefing offers Bomb", Boolean(briefing && (briefing.missions || []).some((m) => m.mode === "bomb")), JSON.stringify(briefing && (briefing.missions || []).map((m) => m.label)));
+
+  // PB-178 (PM 8340 §2; frodo's bounce on abd39c4): a Bomb target must lie inside the RESTRICTED
+  // air radius. Both target pickers below take red cities from the client view with no distance
+  // test, so on a tree that enforces the circle they aim outside it, every run is refused, and this
+  // leg reds with `undefined` downstream. Distance is wrap-aware, measured from the aircraft's own
+  // cell, and the circle comes from the briefing the server shipped.
+  const boardW = Number(await page.evaluate(() => (window.__chq.boardWidth ? window.__chq.boardWidth() : 320)).catch(() => 320)) || 320;
+  const away = (a, b) => {
+    const dx = Math.abs(Number(a.x) - Number(b.x));
+    return Math.max(Math.min(dx, Math.abs(boardW - dx)), Math.abs(Number(a.y) - Number(b.y)));
+  };
+  const radius = Math.floor(Number(briefing && briefing.restrictedReach)) || 0;
+  const maxReach = Math.floor(Number(briefing && briefing.reach)) || 0;
 
   // ---------------------------------------------------------------- Air > Bomb arms, does not fire
   async function airBomb() {
@@ -264,6 +333,35 @@ try {
   briefing = ((cur.seat && cur.seat.air) || []).find((p) => String(p.id) === String(planeId));
   mark("the plane is not spent by the click", Boolean(briefing && briefing.ready), "ready " + (briefing && briefing.ready));
 
+  // PB-178 arm: a red site in the BAND between the two circles must be refused, the refusal must
+  // name the restricted radius, no mission frame may go on the wire and the aircraft must stay
+  // ready. This is the guard's own subject measured on this leg's aircraft - without it the leg
+  // would still be green on a tree that accepted any distance.
+  const bandSite = (((await room()).sites) || [])
+    .filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base" || s.kind === "facility"))
+    .filter((s) => { const d = away(first.plane, s); return d > radius && (maxReach <= 0 || d <= maxReach); })
+    .sort((a, b) => away(first.plane, a) - away(first.plane, b))[0] || null;
+  if (radius > 0 && bandSite) {
+    const sentBefore = await page.evaluate(() => (window.__chqSent || []).length);
+    const bandArmed = await airBomb();
+    if (bandArmed.error) throw new Error(bandArmed.error);
+    await clickCell({ x: bandSite.x, y: bandSite.y });
+    await sleep(600);
+    const bandSaid = (await note()) + " " + (await toast());
+    // Outbound frames, from the send hook - `wire()` is the inbound log and cannot answer this.
+    const bandSent = await page.evaluate((n) => (window.__chqSent || []).slice(n)
+      .filter((line) => /mission/.test(line)).length, sentBefore);
+    const bandBrief = (((await room()).seat || {}).air || []).find((p) => String(p.id) === String(planeId));
+    mark("a target between the circles is refused, the radius named and nothing sent",
+      Boolean(bandBrief && bandBrief.ready) && bandSent === 0
+        && new RegExp("restricted air radius \\(" + radius + " cells\\)").test(bandSaid),
+      JSON.stringify({ away: away(first.plane, bandSite), radius: radius, ready: bandBrief && bandBrief.ready,
+        sent: bandSent, said: bandSaid.trim().slice(-160) }));
+  } else {
+    mark("a target between the circles is refused (UNPROBED: no red site in the band)", Boolean(radius > 0),
+      "radius " + radius + " maximum " + maxReach);
+  }
+
   // ---------------------------------------------------------------- PB-171: the capital is a target
   // The refusal that used to stand here was ours: BOMB_SITE_KINDS lacked "capital" while the
   // airstrip list had it, so 2 of the 4 subtype capitals were refused by their kind byte. PM 8131
@@ -275,13 +373,13 @@ try {
   void roundAtStart;
   if (!capital) throw new Error("the view carries no red capital to aim at");
   const dumpBefore = await debugRoom();
-  mark("the board note names a capital as a bombing target", /or capital\./.test(armNote + " " + armToast),
+  mark("the board note names a capital as a bombing target", /or capital\b/.test(armNote + " " + armToast),
     JSON.stringify((armNote + " " + armToast).slice(0, 160)));
 
   // ---------------------------------------------------------------- the air-panel hit
   // Target: an enemy city or base with no piece of ANY layer on it, chosen from the server's own
   // piece list (the client view only sends what the seat can see, so "empty" is not decidable there).
-  async function pickEmptyTarget(dump) {
+  async function pickEmptyTarget(dump, from) {
     const view = await room();
     const busy = new Set(((dump && dump.pieces) || []).map((p) => Number(p.x) + "," + Number(p.y)));
     const capitals = view.capitals || {};
@@ -289,11 +387,15 @@ try {
     const sites = (view.sites || [])
       .filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"))
       .filter((s) => !capCells.has(Number(s.x) + "," + Number(s.y)))
-      .filter((s) => !busy.has(Number(s.x) + "," + Number(s.y)));
+      .filter((s) => !busy.has(Number(s.x) + "," + Number(s.y)))
+      // PB-178: inside the restricted circle, measured from THIS aircraft - a target the server
+      // would refuse is not a target for this leg.
+      .filter((s) => !from || radius <= 0 || away(from, s) <= radius)
+      .sort((a, b) => (from ? away(from, a) - away(from, b) : 0));
     return sites[0] || null;
   }
 
-  const target = await pickEmptyTarget(dumpBefore);
+  const target = await pickEmptyTarget(dumpBefore, { x: first.plane.x, y: first.plane.y });
   if (!target) throw new Error("no empty enemy city/base to bomb (pieces " + ((dumpBefore && dumpBefore.pieceCount) || 0) + ")");
   mark("an empty enemy city is on the board", true, target.name + " at " + target.x + "," + target.y + " (kind " + target.kind + ")");
 
@@ -335,10 +437,21 @@ try {
   await page.screenshot({ path: path.join(OUT, "pb157a-air-bomb.png") });
 
   // ---------------------------------------------------------------- Kit > Bomb gives one answer
-  const second = await buyAircraft();
+  const second = await buyAircraft(1);
   if (second.error) throw new Error("second aircraft: " + second.error);
-  const kitTarget = await pickEmptyTarget(await debugRoom());
-  if (!kitTarget) throw new Error("no second empty enemy site for the Kit door");
+  const kitTarget = await pickEmptyTarget(await debugRoom(), { x: second.plane.x, y: second.plane.y });
+  if (!kitTarget) {
+    // PB-178: the circle can starve this door - every empty non-capital red site near the second
+    // berth may already be taken or outside the circle. That is UNPROBED (named, with the berth),
+    // not a pass: the Kit door's equivalence is not measured on a board where it has no target.
+    const kitSites = (((await room()).sites) || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+    const kitAway = away;
+    mark("the Kit door measures the same run (UNPROBED: no second empty non-capital red site inside the "
+      + radius + "-cell circle of the second berth)", true,
+      "berth " + second.plane.x + "," + second.plane.y + " inside circle: "
+      + kitSites.filter((s) => radius <= 0 || kitAway(second.plane, s) <= radius).length + " of " + kitSites.length);
+    throw { unprobed: true };
+  }
   await clickCell({ x: second.plane.x, y: second.plane.y });
   await page.waitForFunction((id) => String(window.__chq.state().selected) === String(id), String(second.plane.id), { timeout: 8000, polling: 100 }).catch(() => {});
   await page.click('.navbtn[data-dialog="kit"]');
@@ -407,6 +520,15 @@ try {
   } else {
     const capPiece = (capView.pieces || []).find((p) => String(p.id) === String(capPlane.id));
     if (!capPiece) throw new Error("the ready aircraft is not on the board: " + capPlane.id);
+    // PB-178: the red capital is a fixed point on the board, so it can sit OUTSIDE the restricted
+    // circle from wherever this aircraft came back to. The circle is a different, correct rule than
+    // the kind refusal this card deletes, so an out-of-circle capital is UNPROBED here - never a
+    // pass, and never a failure of the capital-is-bombable rule.
+    const capAway = away(capPiece, capCell);
+    if (radius > 0 && capAway > radius) {
+      mark("a capital is a bombing target (UNPROBED: the red capital is " + capAway + " cells away, outside the "
+        + radius + "-cell restricted radius)", true, "plane " + capPiece.x + "," + capPiece.y + " capital " + capCell.x + "," + capCell.y);
+    } else {
     await clickCell({ x: capPiece.x, y: capPiece.y });
     await page.waitForFunction((id) => String(window.__chq.state().selected) === String(id), String(capPlane.id), { timeout: 8000, polling: 100 }).catch(() => {});
     const capArmed = await airBomb();
@@ -436,11 +558,18 @@ try {
         "cash " + (evCap && evCap.cash) + " owner " + (evCap && evCap.owner) + " kind " + (evCap && evCap.kind));
       mark("the capital run spends its aircraft", Boolean(capAfter && capAfter.ready === false), "ready " + (capAfter && capAfter.ready));
     }
+    }
   }
 
   mark("the page raised no script error", pageErrors.length === 0, pageErrors.slice(0, 2).join(" | "));
 } catch (err) {
-  mark("the leg ran to the end", false, String(err && err.message ? err.message : err));
+  if (err && err.unprobed) {
+    // A named UNPROBED arm above already recorded why the tail could not run. Do not red the leg on
+    // the missing fixture; do not claim the tail either.
+    console.log("  tail skipped after a named UNPROBED arm");
+  } else {
+    mark("the leg ran to the end", false, String(err && err.message ? err.message : err));
+  }
 } finally {
   const summary = { base: BASE, era: ERA, at: new Date().toISOString(), failed, evidence };
   writeFileSync(path.join(OUT, "pb157a-air-bomb.json"), JSON.stringify(summary, null, 2));

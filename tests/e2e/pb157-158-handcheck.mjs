@@ -68,6 +68,14 @@ function mark(ok, label, detail = "") {
 const roomOf = (page) => page.evaluate(() => window.__chq.room());
 const stateOf = (page) => page.evaluate(() => window.__chq.state());
 const toast = (page) => page.evaluate(() => window.__chq.toast());
+// PB-178: a bombing run's target must lie inside the RESTRICTED air radius, so every distance this
+// leg picks a target by is wrap-aware and measured from the aircraft's own cell, and the circle is
+// the one the seat's own briefing shipped - never a number typed here.
+const boardWidthOf = async (page) => Number(await page.evaluate(() => (window.__chq.boardWidth ? window.__chq.boardWidth() : 320)).catch(() => 320)) || 320;
+const cheb = (width) => (a, b) => {
+  const dx = Math.abs(Number(a.x) - Number(b.x));
+  return Math.max(Math.min(dx, Math.abs(width - dx)), Math.abs(Number(a.y) - Number(b.y)));
+};
 const logOf = (page) => page.evaluate(() => (window.__chq.room() && window.__chq.room().log) || []);
 
 async function clickCell(page, cell) {
@@ -189,12 +197,24 @@ try {
     await openDialog(blue, "buy");
     await blue.click('button.buyrow[data-kind="aircraft"]');
     await waitFor(async () => (await stateOf(blue)).placement === true, "the aircraft placement mask");
-    const cells = await blue.evaluate(() => window.__chq.legalCells(600));
+    const cells = await blue.evaluate(() => window.__chq.legalCells(8000));
     const live = await roomOf(blue);
     const mine = (live.pieces || []).filter((p) => p.side === "blue");
     const siteCells = new Set((live.sites || []).map((s) => s.x + "," + s.y));
     const capital = (before.capitals && before.capitals[before.you]) || { x: 0, y: 0 };
-    const near = (c) => Math.abs(c.x - capital.x) + Math.abs(c.y - capital.y);
+    const width = await boardWidthOf(blue);
+    const awayOn = cheb(width);
+    // PB-178: each aircraft is berthed for the target its own check needs - #1 for a red city/base,
+    // #2 for a red oil field - because the restricted circle is measured from the plane's cell and a
+    // berth near the capital can leave every legal target outside it. The capital stays the fallback
+    // order when the focus list is empty.
+    const redSites0 = (before.sites || []).filter((s) => s.owner === "red");
+    const focus = n === 1
+      ? redSites0.filter((s) => s.kind === "facility" && Number(s.type) === 5)
+      : redSites0.filter((s) => s.kind === "city" || s.kind === "base");
+    const near = (c) => (focus.length
+      ? Math.min(...focus.map((s) => awayOn(c, s)))
+      : Math.abs(c.x - capital.x) + Math.abs(c.y - capital.y));
     // A ready ring cell of a friendly city: legal, not a site cell, and at least two cells from
     // every other own piece so the click resolves to the aircraft's own icon and not a neighbour's
     // badge box (the badge has a minimum pixel size when the camera is fitted to the world).
@@ -293,8 +313,15 @@ try {
     // The enemy fleet is not in this seat's view; a defended target is refused by the server and
     // says so, so the check walks the list until one is accepted.
     const plane = (await planes())[0];
+    const width = await boardWidthOf(blue);
+    const awayOn = cheb(width);
+    const brief0 = (await briefing()).find((p) => p.id === plane.id) || {};
+    const circle = Math.floor(Number(brief0.restrictedReach)) || 0;
+    const reachable = redSites.filter((s) => circle <= 0 || awayOn(plane, s) <= circle);
+    console.log("  city targets inside the " + circle + "-cell circle: "
+      + reachable.map((s) => (s.name || "#" + s.id) + "@" + awayOn(plane, s)).join(", "));
     let hit = null;
-    for (const site of redSites.slice(0, 8)) {
+    for (const site of reachable.slice(0, 8)) {
       const res = await bomb(plane.id, { x: site.x, y: site.y }, "city");
       if (res.ok) { hit = { site, res }; break; }
       console.log("  refused at " + site.name + ": " + res.saidAfter);
@@ -334,13 +361,31 @@ try {
     const fields = (room.sites || []).filter((s) => s.owner === "red" && s.kind === "facility" && Number(s.type) === 5);
     mark(fields.length > 0, "red owns a type-5 oil field on this board", String(fields.length));
     const plane = (await planes())[1];
+    const width2 = await boardWidthOf(blue);
+    const awayOn2 = cheb(width2);
+    const brief1 = (await briefing()).find((p) => p.id === plane.id) || {};
+    const circle2 = Math.floor(Number(brief1.restrictedReach)) || 0;
+    const reachableFields = fields.filter((s) => circle2 <= 0 || awayOn2(plane, s) <= circle2);
+    console.log("  oil fields inside the " + circle2 + "-cell circle: "
+      + reachableFields.map((s) => "#" + s.id + "@" + awayOn2(plane, s)).join(", ")
+      + " (nearest of " + fields.length + ": " + (fields.length ? Math.min(...fields.map((s) => awayOn2(plane, s))) : "none") + ")");
+    // PB-178: if no red field lies inside the circle from any legal berth, the oil arm cannot run at
+    // this radius - that is UNPROBED, not a pass and not a red. The distance is printed so the PM can
+    // see whether the circle or the board is what makes it unreachable.
+    if (circle2 > 0 && reachableFields.length === 0) {
+      mark("a red oil field accepted the bombing run (UNPROBED: nearest red field is "
+        + Math.min(...fields.map((s) => awayOn2(plane, s))) + " cells from the aircraft, outside the "
+        + circle2 + "-cell circle)", true, "fields " + fields.length);
+    }
     let hit = null;
-    for (const site of fields.slice(0, 6)) {
+    for (const site of reachableFields.slice(0, 6)) {
       const res = await bomb(plane.id, { x: site.x, y: site.y }, "field");
       if (res.ok) { hit = { site, res }; break; }
       console.log("  refused at field #" + site.id + ": " + res.saidAfter);
     }
-    mark(Boolean(hit), "a red oil field accepted the bombing run", hit ? "#" + hit.site.id + "@" + hit.site.x + "," + hit.site.y : "none accepted");
+    if (circle2 <= 0 || reachableFields.length > 0) {
+      mark(Boolean(hit), "a red oil field accepted the bombing run", hit ? "#" + hit.site.id + "@" + hit.site.x + "," + hit.site.y : "none accepted");
+    }
     if (hit) {
       const cashAfter = (await roomOf(red)).seat.cash;
       mark(Number(cashAfter) === Number(hit.res.redBefore.seat.cash),

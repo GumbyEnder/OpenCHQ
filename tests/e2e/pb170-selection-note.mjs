@@ -12,7 +12,7 @@
 // one played round makes it 7; and after the countdown it reads "Ready to fly" at 0 with the same
 // selection still bound.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -103,6 +103,10 @@ try {
   await page.addInitScript(() => {
     const Native = window.WebSocket;
     window.__chqFrames = { room: [], delta: [] };
+    // PB-178: outbound frames are a different measurement from the frames this page receives.
+    // The page's own wire log records INBOUND frames only, so "no order went out" needs a hook on
+    // WebSocket.prototype.send - installed here, before any page script runs.
+    window.__chqSent = [];
     const record = (event) => {
       try {
         const message = JSON.parse(event.data);
@@ -114,6 +118,11 @@ try {
     function Wrapped(...args) {
       const socket = new Native(...args);
       socket.addEventListener("message", record);
+      const send = socket.send.bind(socket);
+      socket.send = (data) => {
+        try { window.__chqSent.push(String(data)); } catch (err) { void err; }
+        return send(data);
+      };
       return socket;
     }
     Wrapped.prototype = Native.prototype;
@@ -203,7 +212,46 @@ try {
   const mine = new Set(((cur.sites || []).filter((s) => s.owner === "blue")).map((s) => s.x + "," + s.y));
   const taken = new Set((cur.pieces || []).map((p) => p.x + "," + p.y));
   const cells = await page.evaluate(() => window.__chq.legalCells(8000));
-  const pick = (cells || []).find((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y));
+  // PB-178: the berth is where the plane flies FROM, so it is chosen for its reach - the legal cell
+  // nearest an enemy port. A first-match cell can sit a dozen cells from the nearest red site, and
+  // then the restricted circle contains no target at all and this leg measures nothing.
+  const boardW = Number(await page.evaluate(() => (window.__chq.boardWidth ? window.__chq.boardWidth() : 320)).catch(() => 320)) || 320;
+  const cellAway = (a, b) => {
+    const dx = Math.abs(Number(a.x) - Number(b.x));
+    return Math.max(Math.min(dx, Math.abs(boardW - dx)), Math.abs(Number(a.y) - Number(b.y)));
+  };
+  const redPorts = (cur.sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+  const redPieces = (cur.pieces || []).filter((p) => p.side === "red");
+  // The circle this tree's server charges, read from the same config file it reads. The arms below
+  // still prefer the briefing (it is what the server actually shipped); this is only so a berth can
+  // be chosen before an aircraft exists to be briefed.
+  const airRules = (JSON.parse(readFileSync(path.join(root, "config", "game.json"), "utf8")).air || {});
+  const circle = Math.floor(Number(airRules.restrictedReach)) || 0;
+  const maxCircle = Math.floor(Number(airRules.reach)) || 0;
+  const pick = (cells || [])
+    .filter((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y))
+    .map((c) => ({
+      c,
+      near: redPorts.length ? Math.min(...redPorts.map((s) => cellAway(c, s))) : 999,
+      // How close the nearest enemy PIECE is: a berth on the front line can be overrun while the
+      // plane is away, which empties the selection this leg later reads.
+      threat: redPieces.length ? Math.min(...redPieces.map((p) => cellAway(c, p))) : 99,
+      // A berth that can see BOTH a legal target and a band target is the only one on which this
+      // leg can measure the rule from both sides, so that is what the sort prefers first.
+      band: redPorts.filter((s) => { const d = cellAway(c, s); return d > circle && (maxCircle <= 0 || d <= maxCircle); }).length,
+    }))
+    // A berth with no enemy port inside the circle would make every target below illegal. Among the
+    // berths that do have one, take the one FURTHEST from the enemy (near == the circle, not == 0):
+    // a berth right on the enemy's door is overrun while the plane is away and the selection this
+    // leg later reads is gone. `threat` breaks ties toward the safer cell.
+    .filter((h) => circle <= 0 || h.near <= circle)
+    .sort((a, b) => (b.band > 0) - (a.band > 0) || (b.near - a.near) || (b.threat - a.threat))
+    .map((hit) => hit.c)[0]
+    || (cells || [])
+      .filter((c) => mine.has(c.x + "," + c.y) && !taken.has(c.x + "," + c.y))
+      .map((c) => ({ c, near: redPorts.length ? Math.min(...redPorts.map((s) => cellAway(c, s))) : 999 }))
+      .sort((a, b) => a.near - b.near)
+      .map((hit) => hit.c)[0];
   if (!pick) throw new Error("no free friendly city/base cell for the aircraft");
   await clickCell(pick);
   await page.waitForFunction((ids) => (window.__chq.room().pieces || []).some((p) => !ids.includes(p.id)), [...before], { timeout: 20000, polling: 100 }).catch(() => {});
@@ -212,6 +260,16 @@ try {
   if (!plane) throw new Error("the aircraft never appeared on the board");
   const planeId = plane.id;
   mark("one aircraft is bought and placed", true, planeId);
+
+  // PB-178 (PM 8340 §2; frodo's bounce on abd39c4): a Bomb target must lie inside the RESTRICTED
+  // air radius, so a picker that takes the first red city on the board aims at a target the server
+  // rightly refuses and this leg dies on "no enemy city accepted the bombing run". Measure the
+  // distance wrap-aware from the plane's OWN cell and take the circle from the briefing the server
+  // shipped - never a number typed into the leg, so a corrected radius moves both sides together.
+  const away = (a, b) => cellAway(a, b);
+  const briefFor = (view, id) => (((view.seat || {}).air) || []).find((p) => String(p.id) === String(id)) || {};
+  const radius = Math.floor(Number(briefFor(cur, planeId).restrictedReach)) || 0;
+  const maxReach = Math.floor(Number(briefFor(cur, planeId).reach)) || 0;
 
   // Select it: the note must speak about THIS plane.
   await clickCell({ x: plane.x, y: plane.y });
@@ -233,7 +291,38 @@ try {
     await sleep(400);
   }
 
-  const candidates = ((await room()).sites || []).filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"));
+  const candidates = ((await room()).sites || [])
+    .filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"))
+    .filter((s) => radius <= 0 || away(plane, s) <= radius);
+
+  // PB-178 arm: a target in the BAND between the two circles must be refused and the refusal must
+  // name the restricted radius. Without this arm the leg would still pass on a server that accepted
+  // any distance - the picker above would simply find its own target - so the subject of the guard
+  // is measured here, on the same plane, before the run that spends it.
+  const busyCells = new Set((((await room()).pieces) || []).map((p) => Number(p.x) + "," + Number(p.y)));
+  const bandTarget = (((await room()).sites) || [])
+    .filter((s) => s.owner === "red" && (s.kind === "city" || s.kind === "base"))
+    .filter((s) => !busyCells.has(Number(s.x) + "," + Number(s.y)))
+    .filter((s) => { const d = away(plane, s); return d > radius && (maxReach <= 0 || d <= maxReach); })
+    .sort((a, b) => away(plane, a) - away(plane, b))[0] || null;
+  if (radius > 0 && bandTarget) {
+    const sentBefore = await page.evaluate(() => (window.__chqSent || []).length);
+    await airBomb();
+    await clickCell({ x: bandTarget.x, y: bandTarget.y });
+    await sleep(600);
+    const said = await page.evaluate(() => (window.__chq.toast() || "") + " "
+      + ((document.querySelector("#boardNote") || {}).textContent || ""));
+    const stillReady = Boolean(briefFor(await room(), planeId).ready);
+    const sentBand = await page.evaluate((n) => (window.__chqSent || []).slice(n)
+      .filter((line) => /mission/.test(line)).length, sentBefore);
+    mark("a target between the circles is refused, the radius named, nothing sent and the plane kept",
+      stillReady && sentBand === 0 && new RegExp("restricted air radius \\(" + radius + " cells\\)").test(said),
+      JSON.stringify({ away: away(plane, bandTarget), radius: radius, ready: stillReady, sent: sentBand, said: said.trim().slice(0, 180) }));
+  } else {
+    mark("a target between the circles is refused (UNPROBED: no red site in the band)", Boolean(radius > 0),
+      "radius " + radius + " maximum " + maxReach);
+  }
+
   let target = null;
   for (const candidate of candidates.slice(0, 6)) {
     await airBomb();
