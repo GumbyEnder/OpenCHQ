@@ -18,6 +18,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+// The full economy string the title must carry is the SAME function the page renders the dialogue
+// with — not a regex over a substring, so "the ledger is one hover away" is measured against the
+// seat the server actually sent (frodo 8327 §6).
+import { purseText } from "../../web/public/command.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -276,6 +280,15 @@ try {
     mark("#stripInfo shows its whole string at " + label,
       Boolean(info) && info.clientW > 0 && info.scrollW <= info.clientW,
       JSON.stringify({ text: info && info.text, scrollW: info && info.scrollW, clientW: info && info.clientW, w: info && info.w }));
+    // The FULL economy string, built by the page's own purseText from this match's own seat. The
+    // title has to contain it verbatim at every width — the summary replaces the strip's reading
+    // of it, never its existence.
+    const seat = await page.evaluate(() => (window.__chq.room() || {}).seat || null);
+    const full = seat ? purseText(seat, false) : "";
+    const titleHasFull = Boolean(full) && full.length > 40 && ((run.rows.purseChip || {}).title || "").includes(full);
+    mark("#purseChip title carries the full economy string at " + label,
+      titleHasFull,
+      JSON.stringify({ full, len: full.length, title: (run.rows.purseChip || {}).title || "" }));
     if (w > 1100) {
       const chip = run.rows.purseChip;
       // The fresh match opens on 50b; the card's own example is "116b +1.45b/rd", so the slot has to
