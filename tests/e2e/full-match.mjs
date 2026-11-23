@@ -20,6 +20,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback = "") => {
@@ -44,14 +45,6 @@ const CAP = Number(arg("cap", "0")) || 0;
 // A round at speed 6 is ~0.6 s; a minute without the round counter moving is not slow play.
 const STALL_MS = Number(arg("stall-ms", "45000")) || 45000;
 const OUT = path.join(here, "t010-full-match-" + ERA + "-s" + WANT_SPEED + "-" + new Date().toISOString().replace(/[:.]/g, "-"));
-
-async function loadPlaywright() {
-  for (const c of [process.env.PLAYWRIGHT_MODULE, "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs"].filter(Boolean)) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch { /* next */ }
-  }
-  return import("playwright");
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rows = [];

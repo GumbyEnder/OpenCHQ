@@ -15,6 +15,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback = "") => {
@@ -28,13 +29,6 @@ if (!BASE) { console.error("usage: node backlog-shots.mjs --url=<live base>"); p
 const ERA = arg("era", "1918");
 const OUT = path.join(here, "t010-backlog-" + new Date().toISOString().replace(/[:.]/g, "-"));
 
-async function loadPlaywright() {
-  for (const c of [process.env.PLAYWRIGHT_MODULE, "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs"].filter(Boolean)) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch { /* next */ }
-  }
-  return import("playwright");
-}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rows = [];
 const summary = { base: BASE, era: ERA, startedAt: new Date().toISOString() };

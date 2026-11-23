@@ -18,6 +18,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback = "") => {
@@ -30,18 +31,6 @@ const BASE = (arg("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 if (!BASE) { console.error("usage: node pb143-speed-row.mjs --url=<base>"); process.exit(2); }
 const ERA = arg("era", "1942");
 const OUT = path.join(here, "pb143-speed-row-" + new Date().toISOString().replace(/[:.]/g, "-"));
-
-async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
-  ].filter(Boolean);
-  for (const c of candidates) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch {}
-  }
-  return await import("playwright");
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rows = [];

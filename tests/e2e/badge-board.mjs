@@ -5,6 +5,7 @@
 //   node badge-board.mjs --url=http://127.0.0.1:8107 --out=/mnt/nas/projects/OpenCHQ/local/t014-shots
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { loadPlaywright } from "./playwright.mjs";
 
 const arg = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
@@ -14,7 +15,7 @@ const BASE = (arg("url", "") || "").replace(/\/+$/, "");
 const OUT = arg("out", "/mnt/nas/projects/OpenCHQ/local/t014-shots");
 if (!BASE) { console.error("usage: node badge-board.mjs --url=<base> [--out=dir]"); process.exit(2); }
 
-const { chromium } = await import("playwright");
+const { chromium } = await loadPlaywright();
 mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: 1500, height: 1000 }, deviceScaleFactor: 1 })).newPage();

@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -55,24 +56,6 @@ function mark(step, ok, detail) {
   evidence.push({ step, ok: Boolean(ok), detail });
   console.log((ok ? "OK   " : "FAIL ") + step + " :: " + JSON.stringify(detail));
   writeFileSync(path.join(OUT, "combat-handcheck.json"), JSON.stringify(evidence, null, 2));
-}
-
-async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    path.join(here, "node_modules", "playwright", "index.mjs"),
-    path.join(root, "node_modules", "playwright", "index.mjs"),
-    "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    if (candidate !== "playwright" && !existsSync(candidate)) continue;
-    try {
-      return await import(pathToFileURL(candidate).href);
-    } catch (err) {
-      void err;
-    }
-  }
-  return import("playwright");
 }
 
 const { chromium } = await loadPlaywright();
