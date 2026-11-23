@@ -131,8 +131,34 @@ export async function run() {
   must(onPair[0].text.includes("Port Alpha"), "a sighting must name the nearest own city: " + onPair[0].text);
   must(/\beast\b/.test(onPair[0].text), "a sighting east of the city must say east: " + onPair[0].text);
   must(!/\d+\s*,\s*\d+/.test(onPair[0].text), "a sighting line must carry no map coordinates: " + onPair[0].text);
+  // PB-196: a sighting is NEWS, not a heartbeat. The same two units on the same cell, next round,
+  // must be silent - that repeat is what buried every other line.
   const again = logLines(match, "blue", [], 38).filter((line) => line.key === onPair[0].key);
-  must(again.length === 1, "the sighting key must be the cell, so the page says it once: " + JSON.stringify(again));
+  must(again.length === 0,
+    "a stationary enemy must not re-report the same sighting every round: " + JSON.stringify(again.map((line) => line.text)));
+  // It MOVES one cell: reported again, on the new cell, and the vacated cell goes quiet.
+  const movedTo = (Number(redPiece.x) + 1) % 320;
+  redPiece.x = movedTo;
+  pair.x = movedTo;
+  const moved = logLines(match, "blue", [], 39).filter((line) => /in sight/.test(line.text));
+  must(moved.length === 1 && moved[0].key === "sight:" + movedTo + "," + redPiece.y,
+    "a move must re-report the sighting on its new cell: " + JSON.stringify(moved.map((line) => line.text)));
+  must(!moved.some((line) => line.key === onPair[0].key), "the vacated cell must not be re-reported");
+  // Held again: silent again.
+  const held = logLines(match, "blue", [], 40).filter((line) => /in sight/.test(line.text));
+  must(held.length === 0, "a held cell stays quiet after the move line: " + JSON.stringify(held.map((line) => line.text)));
+  // LOST from sight: no line, and the memory is cleared.
+  const hidAt = (blueScout.x + radius * 5) % 320;
+  redPiece.x = hidAt;
+  pair.x = hidAt;
+  const lost = logLines(match, "blue", [], 41).filter((line) => /in sight/.test(line.text));
+  must(lost.length === 0, "an enemy out of sight must not be reported: " + JSON.stringify(lost.map((line) => line.text)));
+  // Seen again on the cell it was lost on: reported again - "lost from sight" is a new sighting.
+  redPiece.x = movedTo;
+  pair.x = movedTo;
+  const redetected = logLines(match, "blue", [], 42).filter((line) => /in sight/.test(line.text));
+  must(redetected.length === 1 && redetected[0].key === "sight:" + movedTo + "," + redPiece.y,
+    "a sighting that was lost must be reported again when it returns: " + JSON.stringify(redetected.map((line) => line.text)));
 
   // The concealed era withholds the enemy until its capital is seen: contact must not leak it.
   const concealed = openMatch("9999", boardPayload().sites || []);

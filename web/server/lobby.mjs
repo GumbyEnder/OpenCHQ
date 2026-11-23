@@ -1070,14 +1070,14 @@ export function createLobby() {
       if (result.events && result.events.length) events.push({ roomId: room.id, events: result.events });
       // The clock is dead time without a log. Each human seat gets the round as it could see it,
       // which is the view's own sight rule applied to events instead of pieces.
-      if (result.events && result.events.length) {
-        for (const side of ["blue", "red"]) {
-          const seat = room.seats[side];
-          if (!seat || seat.kind !== "human") continue;
-          const peer = sockets.get(seat.username);
-          if (!peer) continue;
-          const lines = logLines(room.match, side, result.events, room.match.round);
-          if (!lines.length) continue;
+      // PB-196: this loop runs EVERY round, including one with no events, because logLines
+      // refreshes the seat's sight memory inside the builder; a skipped call would make a
+      // stationary unit's cell look "lost from sight" and re-report it next round.
+      for (const side of ["blue", "red"]) {
+        const seat = room.seats[side];
+        if (!seat || seat.kind !== "human") continue;
+        const lines = logLines(room.match, side, result.events || [], room.match.round);
+        if (lines.length) {
           // The log outlives the socket: it is part of the room, so a reload shows the match
           // that has been happening instead of an empty window.
           if (!room.log) room.log = { blue: [], red: [] };
@@ -1087,8 +1087,10 @@ export function createLobby() {
           // contact lines, so a 60-line buffer held only the newest round; keep enough for six
           // (PB-121) and keep this figure equal to the page's LOG_KEEP.
           if (room.log[side].length > 240) room.log[side] = room.log[side].slice(-240);
-          peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
         }
+        const peer = sockets.get(seat.username);
+        if (!peer || !lines.length) continue;
+        peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
       }
       if (room.match.over) {
         room.clock = "held";

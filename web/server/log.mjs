@@ -347,6 +347,16 @@ export function logLines(match, side, events, round) {
   // One line per held CELL, not per piece: two enemy units on one cell are one sighting, and the
   // line says how many. The key is the cell, so the page says it once while the enemy stays
   // there instead of repeating the same line every round.
+  //
+  // PB-196: a sighting is news, not a heartbeat. The same cell is reported once, and again only
+  // when the enemy MOVES to another cell or is LOST from sight and seen again. The memory is the
+  // previous round's visible enemy cells per seat, kept ON THE MATCH: room.match is replaced by
+  // tickMatch's copy every round, so a module-level Set would be discarded. It is refreshed on
+  // every round, including a round with no events (the caller runs this builder for the clock,
+  // not only for events), so "absent last round" really does mean "out of sight last round".
+  if (!match.sightSeen || typeof match.sightSeen !== "object") match.sightSeen = {};
+  const reported = Array.isArray(match.sightSeen[side]) ? match.sightSeen[side] : [];
+  const reportedCells = new Set(reported);
   const seenCells = new Set();
   const visible = forSeat(match, side).pieces || [];
   for (const unit of visible) {
@@ -359,11 +369,13 @@ export function logLines(match, side, events, round) {
     const id = cell.x + "," + cell.y;
     if (seenCells.has(id)) continue;
     seenCells.add(id);
+    if (reportedCells.has(id)) continue;
     const count = visible.filter(
       (other) => other.side !== side && wrapX(other.x) === cell.x && Number(other.y) === cell.y
     ).length;
     lines.push({ round: turn, key: "sight:" + id, text: sightText(match, side, cell, count) });
   }
+  match.sightSeen[side] = [...seenCells];
 
   return lines;
 }
