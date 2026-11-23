@@ -26,6 +26,8 @@ import {
   routeRequest,
   selectionNote,
   selectionToast,
+  siteAtCell,
+  siteInspectText,
   snapPlacementCell,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
@@ -910,6 +912,14 @@ board.addEventListener("click", (event) => {
     return;
   }
   if (!selected) {
+    // PB-163: outside Buy mode a click on a city names it and its readiness, read from the site
+    // record the server sent. Nothing is bought here: the buy arm above is the only path that
+    // sends a buy, so an inspect click on a ready city costs no money.
+    const site = siteAtCell(room.sites, cell);
+    if (site) {
+      say(siteInspectText(site, room.round));
+      return;
+    }
     say(PICK_HINT);
     return;
   }
@@ -1311,13 +1321,42 @@ function roomSpeed() {
   return Number.isFinite(value) ? value : 1;
 }
 
+// PB-164: the speed pair and the hold button are two different things, and the header has to say
+// so. A held clock is paused; speed 0 is a pause the number itself carries (Manual p.34-35). The
+// defect the card names - "- does nothing while paused" - was read off a header that showed a bare
+// "Speed 1" over a paused board, with both arrows live but no sentence saying a step still applies.
+// So: the readout names the hold, the arrows keep working at a hold (the server applies the step
+// and the clock stays held), and each arrow's title says what it will do and why it is disabled at
+// an end of the range. The readout stays within the fixed slot's longest string ("Speed 0 ·
+// paused"): "· held" is shorter, so the strip's geometry - measured by the e2e row leg - does not
+// move.
+function roomHeld() {
+  return Boolean(room) && !room.over && String(room.clock || "running") !== "running";
+}
+
 function syncSpeed() {
   const speed = roomSpeed();
+  const held = roomHeld();
   if (speedReadout) {
-    speedReadout.textContent = "Speed " + speed + (speed === 0 ? " \u00b7 paused" : "");
+    const suffix = speed === 0 ? " \u00b7 paused" : held ? " \u00b7 held" : "";
+    speedReadout.textContent = "Speed " + speed + suffix;
   }
   if (speedDown) speedDown.disabled = !room || speed <= 0;
   if (speedUp) speedUp.disabled = !room || speed >= 6;
+  if (speedDown) {
+    speedDown.title = !room || speed <= 0
+      ? "Slower (speed -): already at 0, the slowest. Press + to raise it."
+      : held
+        ? "Slower (speed -): applies now, and is the speed it runs at when you press Play"
+        : "Slower (speed -)";
+  }
+  if (speedUp) {
+    speedUp.title = !room || speed >= 6
+      ? "Faster (speed +): already at 6, the fastest. Press - to lower it."
+      : held
+        ? "Faster (speed +): applies now, and is the speed it runs at when you press Play"
+        : "Faster (speed +)";
+  }
 }
 
 function syncGameButtons() {
