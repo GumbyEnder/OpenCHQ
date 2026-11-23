@@ -43,7 +43,11 @@ try {
 
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const ERA = argOf("era", "1986");
-const EXPECT = argOf("expect", HEAD_SHA ? HEAD_SHA.slice(0, 7) : "");
+// Do NOT default the served-sha pin to this worktree's HEAD. A tests-only branch's HEAD is never the
+// sha Railway serves, so the default reds a correct page (measured: 3/3 runs on a fixed leg at
+// 2d43a1d, 20 passed / 1 failed, the single FAIL this arm). Gate callers pass --expect=<live sha>;
+// with no flag the arm still prints the served version and passes as "any sha".
+const EXPECT = argOf("expect", "");
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb182")));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
