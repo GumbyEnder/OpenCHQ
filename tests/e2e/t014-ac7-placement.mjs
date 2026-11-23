@@ -8,6 +8,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const arg = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
@@ -19,13 +20,6 @@ const TAG = arg("tag", "ac7");
 const ERA = arg("era", "1942");
 if (!BASE) { console.error("usage: node t014-ac7-placement.mjs --url=<base> --out=<dir> [--tag=ac7]"); process.exit(2); }
 
-async function loadPlaywright() {
-  for (const c of [process.env.PLAYWRIGHT_MODULE, "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs"].filter(Boolean)) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch {}
-  }
-  return await import("playwright");
-}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Grab the whole canvas, so the same pixel can be read again after a state change. The camera does

@@ -28,16 +28,21 @@
 // (Chromium in every gate run) or need a skip hook. Every other tracked page leg (pb169, pb170,
 // pb172, pb179) lives here. Tracked either way, so a re-base costs a re-run.
 //
+// Playwright comes from ./playwright.mjs (PB-176), not a private candidate list: this leg was
+// written before that resolver existed and carried the same search order inline. One resolver, so
+// a fresh host has one place to set PLAYWRIGHT_MODULE and one PLAYWRIGHT_MISSING line to read.
+//
 // The server is pinned: OPENCHQ_COMMIT is set from this tree's HEAD (main.mjs versionInfo precedence
 // env > railway > build.json > git), so /api/version reports the sha being graded, not the stamp
 // left in web/data/build.json by whoever built the tree last.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -98,21 +103,6 @@ function startServer(port, dataDir) {
       reject(new Error("server exited " + code + ": " + log));
     });
   });
-}
-
-async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    path.join(here, "node_modules", "playwright", "index.mjs"),
-    path.join(here, "..", "..", "node_modules", "playwright", "index.mjs"),
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    if (candidate !== "playwright" && !existsSync(candidate)) continue;
-    try {
-      return await import(pathToFileURL(candidate).href);
-    } catch (err) { void err; }
-  }
-  return import("playwright");
 }
 
 const evidence = [];

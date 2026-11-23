@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -101,34 +102,6 @@ function harnessIdentity() {
   return { md5, bytes, git, path: here };
 }
 
-
-async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    path.join(here, "node_modules", "playwright", "index.mjs"),
-    path.join(here, "..", "..", "node_modules", "playwright", "index.mjs"),
-    "/home/gumbyender/agents/agent-relay-local/node_modules/playwright/index.mjs",
-    "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
-  ].filter(Boolean);
-  const tried = [];
-  for (const candidate of candidates) {
-    if (candidate !== "playwright" && !existsSync(candidate)) {
-      tried.push(candidate + " (missing)");
-      continue;
-    }
-    try {
-      return await import(pathToFileURL(candidate).href);
-    } catch (err) {
-      tried.push(candidate + " (" + (err && err.message) + ")");
-    }
-  }
-  try {
-    return await import("playwright");
-  } catch (err) {
-    tried.push("playwright (" + (err && err.message) + ")");
-  }
-  throw new Error("no Playwright module found:\n  " + tried.join("\n  "));
-}
 
 // ---------------------------------------------------------------- page helpers
 

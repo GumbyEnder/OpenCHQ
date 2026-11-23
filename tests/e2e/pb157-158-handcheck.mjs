@@ -33,6 +33,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,17 +53,6 @@ const ERA = argOf("era", "1986");
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb157")));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-async function loadPlaywright() {
-  for (const c of [process.env.PLAYWRIGHT_MODULE,
-    path.join(here, "node_modules", "playwright", "index.mjs"),
-    "/home/gumbyender/agents/agent-relay-lanes/node_modules/playwright/index.mjs",
-    "/home/gumbyender/agents/agent-relay-local/node_modules/playwright/index.mjs"].filter(Boolean)) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch { /* next */ }
-  }
-  return import("playwright");
-}
 
 const rows = [];
 let failed = 0;
