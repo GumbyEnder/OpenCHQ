@@ -259,48 +259,49 @@ export function clickIntent(pieces, view, px, py, opts = {}) {
   const cell = opts.cell || pixelToCell(px, py, view);
   const boardW = Number(view.boardW) || 320;
   let hits = piecesAtPoint(pieces, view, px, py, opts);
-  // The selected piece's own badge is a selection surface, not a destination map (T-030 AC8 item 1).
-  // At the world fit a badge is 14 px over 4.4 px cells: 85% of the badge area used to fall on a
-  // NEIGHBOURING cell, so a click a couple of pixels off the badge's centre ordered a march the
-  // player read as "select this again" - its ack then cleared the selection and overwrote the clear
-  // the player had just asked for.
+  // The selected piece's own cell is a selection surface, not a destination map (T-030 AC8 item 1).
+  // The exception is the pointer's own cell being the selected piece's cell - there the click can
+  // only mean "this piece again" (or the next piece of a same-cell stack), and an order to a cell
+  // the unit already stands on is nothing.
   //
-  // The reserved radius is the badge's own half, capped at 0.6 of a cell (PM ruling, room 5765).
-  // The cap is what decides which way a sub-pixel miss resolves. It is also capped by `scale - 1`:
-  // a pointer reports whole CSS pixels, so a click aimed at the neighbouring cell's icon centre can
-  // land up to one pixel short of it, and a ring that reaches that close swallows the move. The
-  // earlier `Math.max(1, ...)` floor broke both at once - one whole pixel is more than 0.6 of a cell
-  // below scale 1.667, and with the pointer's own one-pixel error the one-cell move only survived
-  // from scale 2.5 up. Measured before the fix (room 5969): scale 1 ring 1.000 against a pointer
-  // 0.000 px out, scale 2 ring 1.200 against a pointer 1.000 px out - both reselected. Reachable
-  // scales 1 and 2 are exactly where a cell is what the player clicked, so the ring collapses there
-  // and the pointer's cell decides: at scale 1 the cap is 0 and any click on another cell is a move;
-  // at scale 2 it is 1 px, which the one-pixel error cannot get strictly inside. From scale 4.4124
-  // (the world fit) the 0.6 cap is the smaller one again, so the 2.65 px forgiveness there is
-  // unchanged.
+  // Two rules decide that cell and both are needed:
+  //   * the pointer's own cell must be the piece's cell - a pointer on another cell is a
+  //     destination, whatever its distance to the icon (PB-146: a surface that crosses the cell
+  //     edge leaves a selected unit with no one-cell move anywhere);
+  //   * the cell is measured in the pointer's OWN units, with the one whole CSS pixel a mouse event
+  //     can lose counted inside the surface (PB-191). `ownCellSlop` is that pixel converted to
+  //     canvas pixels by the caller. Measured on c1233c1 at 1280x800, dpr 1, world fit: a click 2
+  //     CSS px off the icon centre is 1.78 canvas px off a 3 px cell's centre, the cell edge is at
+  //     1.50, and the integer client coordinate the browser reports put the click on the cell
+  //     above-left - so the page answered "Order sent. 1 round to walk. Selection cleared." for a
+  //     cell the piece was standing on. The reserved radius (0.6 of a cell) never covered the
+  //     cell's corner either, so the distance clause cannot be the whole decision.
+  //
+  // The reach is capped strictly below one whole cell, so absorbing the pointer's own pixel error
+  // can never make a neighbouring cell unreachable: at scale 1 the neighbour's centre is still a
+  // move. Another own piece's badge still wins - clicking a friend selects that friend (T-030 AC2,
+  // PB-052) - because the stack partner is the nearest hit.
   if (hasSelection) {
     const scale = Math.max(1, Number(view.scale) || 1);
-    const badgeHalf = badgePx(scale, Number(opts.badgeMinPx) || BADGE_MIN_PX) / 2;
-    const reserved = Math.min(badgeHalf, Math.max(0, Math.min(scale * 0.6, scale - 1)));
-    const own = hits.find((hit) => String(hit.piece.id) === String(selectedId));
-    // PB-146: the ring is a selection surface INSIDE the selected piece's own cell. The badge box
-    // is wider than its cell at every zoom past the fit, so a radius alone reaches over the cell
-    // boundary (0.6 of a 4.41 css cell = 2.65, half a cell is 2.21) and the near band of the
-    // adjacent cell re-selected instead of ordering: the page said "Click to send the order" and
-    // the click kept the unit. A pointer whose cell is another cell is a destination, whatever its
-    // distance to this icon - the ring must never cross the cell edge.
-    const ownCell = Boolean(own) && wrapX(Number(own.piece.x), boardW) === cell.x
-      && Number(own.piece.y) === cell.y;
-    // Another own piece's badge always wins: clicking a friend selects that friend (T-030 AC2,
-    // PB-052), so the reserved ring only applies when the selected piece is the only thing the
-    // pointer could mean.
-    const others = hits.filter((hit) => String(hit.piece.id) !== String(selectedId));
-    if (own && others.length === 0 && ownCell && own.distance < reserved - 1e-9) {
-      // On its own cell or in the ring around it: a selection gesture, and a stack cycles the way a
-      // second click on the same cell does.
-      return { kind: "piece", piece: pieceFromHits(hits, selectedId) };
+    const slop = Math.max(0, Number(opts.ownCellSlop) || 0);
+    const own = (Array.isArray(pieces) ? pieces : [])
+      .find((piece) => piece && String(piece.id) === String(selectedId));
+    if (own) {
+      const centre = cellToPixel(wrapX(Number(own.x), boardW), Number(own.y), view);
+      const reach = Math.min(scale / 2 + slop, scale - 1e-6);
+      const ownCell = wrapX(Number(own.x), boardW) === cell.x && Number(own.y) === Number(cell.y);
+      const withinReach = Math.abs(Number(px) - centre.x) <= reach
+        && Math.abs(Number(py) - centre.y) <= reach;
+      // With no tolerance expressed, the pointer's own cell decides and nothing else: that is the
+      // PB-146 pin, and it is what the node suite measures without passing `ownCellSlop`. The page
+      // always passes one CSS pixel, and then a click that is inside the own cell's rectangle plus
+      // that pixel is the piece even when the floored cell fell over the edge (PB-191).
+      if (ownCell || (slop > 0 && withinReach)) {
+        return { kind: "piece", piece: pieceFromHits(hits, selectedId) || own };
+      }
     }
   }
+
   if (hasSelection) {
     hits = hits.filter((hit) => String(hit.piece.id) !== String(selectedId)
       || (wrapX(Number(hit.piece.x), boardW) === cell.x && Number(hit.piece.y) === cell.y));

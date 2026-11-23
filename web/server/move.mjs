@@ -344,6 +344,17 @@ export function planOrder(match, side, pieceId, toX, toY) {
   if (!Number.isInteger(x) || !Number.isInteger(y)) return { error: "An order needs whole cells." };
   if (y < 0 || y >= CELL_H) return { error: "The destination is off the map." };
 
+  // PB-191: an order whose destination is the cell the piece already stands on is not an order.
+  // walkLine returns path [] for from == to, so this used to come back ACKED as "Order sent. That
+  // piece is already on that cell." AFTER issueOrder had already cleared entrench, repair, pin and
+  // the still/fight counters - a click that spent no round still cost the player state, and at the
+  // fit a two-pixel miss on a piece's own cell was enough to reach it. Refused here, before any
+  // write, so the page's own guard has a server-side twin that cannot drift. The wrap is the seam's:
+  // 319 and 0 are the same column.
+  if (wrapX(piece.x) === wrapX(x) && Number(piece.y) === y) {
+    return { error: "That piece is already on that cell." };
+  }
+
   // A ship sails the recovered lane graph, never a straight line. The land walker below is
   // deliberately not consulted: it does not know where water is.
   // A preview writes nothing: entrench, repair and pin are cleared by a real order in issueOrder,
