@@ -44,11 +44,27 @@ export function createFlashLine(options = {}) {
     if (resultElement) resultElement.textContent = "";
   }
 
+  // PB-169: the line can be read back and cleared. A late-order warning must come down when the ack
+  // arrives instead of sitting out the rest of its timer, and only the order that WROTE it may clear
+  // it — hence `text()` to compare before `clear()`.
+  function text() {
+    return element ? String(element.textContent || "") : "";
+  }
+  function clear() {
+    if (timer !== null) {
+      clearTimer(timer);
+      timer = null;
+    }
+    if (element) element.textContent = "";
+  }
+
   return {
     ms,
     say,
     result,
     clearResult,
+    text,
+    clear,
     pending: () => timer !== null,
   };
 }

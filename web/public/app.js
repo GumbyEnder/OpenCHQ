@@ -53,7 +53,7 @@ import {
 // player picks a unit by the shape they will see on the map. (T-014 gate, room 4035.)
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
 import { formatBillions, formatWholeBillions, purchaseText } from "./command.mjs";
-import { createOrderWatch, queuedText } from "./orderwatch.mjs";
+import { createLateOrders, createOrderWatch, queuedText } from "./orderwatch.mjs";
 // How long the page waits to reconnect, and how long one attempt may hang before it is a failure.
 // Both numbers are bounded so a 10 s outage cannot cost a minute (PB-025).
 import {
@@ -108,7 +108,11 @@ let orderSeq = 0;
 let orderQueue = [];
 // An order that gets no ack is not "sent": after ~2 s the page says so. The order is still
 // queued and resent, and the server applies one id at most once.
-const orderWatch = createOrderWatch({ onLate: (order) => say(queuedText(order.kind || "order")) });
+// PB-169: remember WHICH order went unanswered, so its answer can take the line back down. The
+// sentence is a warning about one order; leaving it up after the answer arrives tells the player the
+// opposite of what just happened.
+const lateOrders = createLateOrders(queuedText);
+const orderWatch = createOrderWatch({ onLate: (order) => say(lateOrders.note(order)) });
 function sendOrder(payload) {
   const message = { ...payload, id: "o" + Date.now().toString(36) + "-" + (++orderSeq) };
   orderQueue.push({ roomId: room && room.id ? String(room.id) : "", message });
@@ -126,6 +130,10 @@ function sendOrder(payload) {
 function settleOrder(id) {
   if (id === undefined || id === null) return;
   orderWatch.settle(id);
+  const lateLine = lateOrders.settle(id);
+  // Only the line THIS order wrote comes down: a newer, unrelated flash stays, and a line that has
+  // already timed out clears nothing.
+  if (lateLine && flashLine.text() === lateLine) flashLine.clear();
   orderQueue = orderQueue.filter((entry) => entry.message.id !== id);
 }
 function flushOrders() {

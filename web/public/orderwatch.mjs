@@ -15,6 +15,30 @@ export function queuedText(kind) {
   return "No answer yet for your " + what + ". It is queued and will be applied when the server answers.";
 }
 
+// PB-169: the two facts a late order leaves behind — the sentence that went on screen and the id it
+// belongs to. `note(order)` records the order and returns the line to say; `settle(id)` returns the
+// line that order wrote (or "" if it never ran late), so the caller can clear the flash ONLY when it
+// still shows that exact sentence.
+export function createLateOrders(textOf = queuedText) {
+  const late = new Map();
+  return {
+    note(order) {
+      if (!order || order.id === undefined || order.id === null) return "";
+      late.set(order.id, order);
+      return textOf(order.kind || "order");
+    },
+    settle(id) {
+      const order = late.get(id);
+      if (!order) return "";
+      late.delete(id);
+      return textOf(order.kind || "order");
+    },
+    size() {
+      return late.size;
+    },
+  };
+}
+
 // watch(order, onLate) with settle(id). Timers are injected so a test can run the deadline
 // without waiting for it.
 export function createOrderWatch({
