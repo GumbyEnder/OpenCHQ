@@ -704,16 +704,30 @@ body.in-match .nav {
 }
 
 body.in-match #strip > .brand {
-  flex: 1 1 0;
+  /* PB-187: `flex: 1 1 0` made the brand's flex basis 0, so the row computed "free space" the
+     brand's own contents were already using and the brand grew only to the leftover — 5.9 px short
+     of `#stripInfo + gap + #purseChip` at 1280x800, which put the chip's right edge under #clockBtn.
+     `flex-basis: auto` measures the contents, and `flex-shrink: 0` keeps the readouts whole: the
+     account line is the item that gives way (see .whoami below). */
+  flex: 1 0 auto;
   min-width: 0;
   overflow: hidden;
 }
 
 body.in-match #strip > .gamebtns,
-body.in-match #strip > .whoami,
 body.in-match #strip > .speedctl,
 body.in-match #strip > .clockbtn {
   flex: 0 0 auto;
+}
+
+/* PB-187: the account line is the row's spare tyre, not the purse's. `.whoami` used to be
+   `flex: 0 0 auto`, so a long username took its full width out of the brand box and the purse chip
+   (the one elastic box, PB-180) was squeezed past the brand's right edge — where `overflow: hidden`
+   clipped the tail of the cash figure and the box laid itself under #clockBtn. The name ellipsizes
+   (`text-overflow` on #account) before the purse loses a pixel. */
+body.in-match #strip > .whoami {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 body.in-match .account {
@@ -721,6 +735,9 @@ body.in-match .account {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 22vw;
+  /* PB-187: a flex item's automatic minimum is min-content, which is the whole username — so
+     `flex-shrink` on .whoami did nothing and the brand's readouts lost the pixels instead. */
+  min-width: 0;
 }
 
 /* At 1024x768 the strip's commands alone fill the row, so the wordmark and the account line give
@@ -729,16 +746,24 @@ body.in-match .account {
 @media (max-width: 1100px) {
   body.in-match .mark { display: none; }
   body.in-match #account { display: none; }
-  /* The row is narrower than the two readouts together at this width: the purse keeps a legible
-     floor and ellipsizes, the round/clock readout keeps its own width (PB-173). 30 px is the widest
-     floor that does not overlap the clock at 1024x768 (60 px overlapped it by 29.15 px). */
+  /* PB-187: at this width the two readouts must both be whole, so the brand is CONTENT-SIZED
+     (`flex: 0 0 auto`) instead of a leftover bucket. As `flex: 1 1 120px` the brand box was ~200 px
+     while its contents were ~218 px once the round number reached three digits, so #purseChip was
+     laid out past the brand's edge: `overflow: hidden` cut "234b" down to "2" and the box overlapped
+     #clockBtn by 12.5 px (PM 8353 on live 25ba20d). The 8 px gaps and 6 px padding below buy the
+     18 px the content-sized brand needs; the row still ends inside the window at 1024x768. */
+  body.in-match #strip { padding: 0 6px; gap: 8px; }
+  body.in-match .nav { gap: 2px; }
+  /* The purse keeps a legible floor; the round/clock readout keeps its own width (PB-173). 30 px is
+     the widest floor that does not push the chip past the row at 1024x768; with the brand
+     content-sized the chip's own box is what holds "999b" (26.7 px) whole. */
   body.in-match .pursechip { min-width: 30px; }
   /* PB-180 (a): at 1024 the row has no pixel for the income leg. It moves into the chip's title —
      the cash figure, which the original shows on the main display, is never clipped. */
   body.in-match .pursechip .inc { display: none; }
   body.in-match #strip > .brand {
-    flex: 1 1 120px;
-    min-width: 120px;
+    flex: 0 0 auto;
+    min-width: 0;
   }
 }
 

@@ -82,6 +82,7 @@ let BASE = GIVEN;
 const series = [];
 
 const BOXES = [
+  ["brand", "#strip > .brand"],
   ["stripInfo", "#stripInfo"],
   ["phase", "#stripInfo .phase"],
   ["purseChip", "#purseChip"],
@@ -182,6 +183,53 @@ try {
     return pairs;
   };
 
+  // PB-187: the purse's cash leg at one width and one balance. It writes a synthetic balance into
+  // the chip's own .cash span (the node paintPurse writes), measures, and restores the live string.
+  // The leg only ever saw the fresh match's two-digit "50b" at 1024, so a chip that held two digits
+  // passed while 234b/999b ran under #clockBtn and the brand's `overflow: hidden` cut the figure to
+  // "2" (PM 8353 on live 25ba20d). `brand` is measured too: a box laid out past its own clip box can
+  // read whole by its own scrollWidth while half the ink is invisible.
+  const cashProbe = (cash, round = null) => page.evaluate(({ cash, round, row }) => {
+    const el = document.getElementById("purseChip");
+    const span = el.querySelector(".cash");
+    const before = span ? span.textContent : null;
+    if (span) span.textContent = cash;
+    // The live failing report was a saved match at round 217, not a fresh one: a three-digit round
+    // grows #stripInfo by one digit and slides the purse further right. Same technique — write it,
+    // measure before the next room frame can repaint, restore.
+    const info = document.getElementById("stripInfo");
+    const infoBefore = info.innerHTML;
+    if (round != null) {
+      const bump = (nodes) => {
+        for (const n of nodes) {
+          if (n.nodeType === 3) n.textContent = n.textContent.replace(/round \d+/, "round " + round);
+          else bump(n.childNodes);
+        }
+      };
+      bump(info.childNodes);
+    }
+    const rect = (sel) => {
+      const n = document.querySelector(sel);
+      if (!n) return null;
+      const r = n.getBoundingClientRect();
+      return { sel, x: +r.x.toFixed(2), right: +(r.x + r.width).toFixed(2), w: +r.width.toFixed(2),
+        scrollW: n.scrollWidth, clientW: n.clientWidth, text: (n.textContent || "").trim() };
+    };
+    const chip = rect("#purseChip"), cashBox = rect("#purseChip .cash"), brand = rect("#strip > .brand");
+    const items = [];
+    for (const [key, sel] of row) {
+      const n = document.querySelector(sel);
+      if (!n) continue;
+      const r = n.getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      items.push({ label: key, x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2) });
+    }
+    const strip = document.getElementById("strip");
+    if (span) span.textContent = before;
+    info.innerHTML = infoBefore;
+    return { cash, chip, cashBox, brand, items, strip: { scrollW: strip.scrollWidth, clientW: strip.clientWidth } };
+  }, { cash, round, row: ROW });
+
   for (const { w, h, label } of WIDTHS) {
     await page.setViewportSize({ width: w, height: h });
     await sleep(500);
@@ -250,10 +298,33 @@ try {
           && LEDGER.test(chip ? chip.title : ""),
         JSON.stringify({ cash: cash && cash.text, scrollW: cash && cash.scrollW, clientW: cash && cash.clientW,
           chipText: chip && chip.text, titleHasIncome: Boolean(chip && /b\/rd/.test(chip.title)) }));
+      // PB-187 (a): the 1024 arms this leg never ran. 50b, 234b and 999b (the last two synthetic: the
+      // fresh match opens on two digits) must each show the cash span whole, keep the chip inside the
+      // brand's clip box, overlap nothing in the row — #clockBtn first — and leave the strip fitting
+      // the window. The cash span's own scrollWidth is not enough: the old chip measured 30 px of
+      // content while the brand cut it at 11 px.
+      for (const value of ["50b", "234b", "999b"]) {
+        const probe = await cashProbe(value, 217);
+        const cashPairs = overlapPairs(probe.items);
+        mark("#purseChip shows " + value + " whole and clear at " + label,
+          Boolean(probe.cashBox) && probe.cashBox.clientW > 0 && probe.cashBox.scrollW <= probe.cashBox.clientW
+            && probe.cashBox.text === value
+            && probe.chip.right <= probe.brand.right + 0.5
+            && cashPairs.length === 0 && probe.strip.scrollW <= probe.strip.clientW,
+          JSON.stringify({ cash: probe.cashBox, chip: probe.chip, brandRight: probe.brand.right,
+            overlaps: cashPairs, strip: probe.strip }));
+      }
     }
     // PB-179's floor: nothing overlaps and nothing runs past the window.
     const pairs = overlapPairs(run.items);
     mark("no strip control overlaps at " + label, pairs.length === 0, JSON.stringify(pairs));
+    // PB-187: the brand clips (`overflow: hidden`), so a readout laid out past its right edge is
+    // invisible ink that no overlap test sees. The chip has to end inside the box that clips it.
+    const chipBox = run.rows.purseChip, brandBox = run.rows.brand;
+    mark("#purseChip sits inside the brand box at " + label,
+      Boolean(chipBox && brandBox) && chipBox.x + chipBox.w <= brandBox.x + brandBox.w + 0.5,
+      JSON.stringify({ chipRight: chipBox && +(chipBox.x + chipBox.w).toFixed(2),
+        brandRight: brandBox && +(brandBox.x + brandBox.w).toFixed(2) }));
     mark("no strip control runs past the window at " + label,
       Math.max(...run.items.map((it) => it.x + it.w)) <= w + 0.5,
       "rightmost=" + Math.max(...run.items.map((it) => it.x + it.w)).toFixed(1) + " window=" + w);
