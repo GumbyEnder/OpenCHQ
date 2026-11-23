@@ -483,6 +483,10 @@ export function combatRules() {
     damageMatrix,
     damageKind,
     kindNine,
+    // PB-202: the damage-table row a transport is read as. A land piece in water keeps its land
+    // kind, and that kind's column in a submarine's row is 0, so the fight never fired. The sea
+    // cargo class (0x194c class 1) is what the table has rows for.
+    transportDamageKind: Math.max(0, Math.floor(finiteNumber(combatValue("transportDamageKind"), 5))),
     flankMultiplier: Math.max(1, finiteNumber(combatValue("flankMultiplier"), 1)),
     rearMultiplier: Math.max(1, finiteNumber(combatValue("rearMultiplier"), 1)),
     entrenchDamageFactor: finiteNumber(combatValue("entrenchDamageFactor"), 1),

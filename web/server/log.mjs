@@ -9,7 +9,7 @@
 
 import { CELL_W } from "./board.mjs";
 import { millionsPerBillion, payEvery, sightCells } from "./rules.mjs";
-import { unitPhrase } from "../public/units.mjs";
+import { unitNoun, unitPhrase } from "../public/units.mjs";
 import { resourceSpec } from "./resources.mjs";
 import { forSeat } from "./view.mjs";
 
@@ -31,6 +31,13 @@ function cellOf(event) {
 // with a count, and a future caller that hands logLines a multi-round events array cannot aggregate
 // two rounds into one count. The production caller (lobby.mjs:970) passes one tick's events, so the
 // round term is inert today and pins the contract for tomorrow.
+// PB-202: a shot pair's identity - the two pieces and the round - so a round's exchange is one
+// line and a second round is a second line.
+function shotKey(event) {
+  return String((event && event.side) || "?") + ":" + String(event && event.pieceId) + ":" +
+    String(event && event.target) + ":" + String(event && event.round);
+}
+
 function overrunKey(event) {
   const cell = cellOf(event);
   const round = Number.isFinite(Number(event.round)) ? Number(event.round) : "?";
@@ -105,6 +112,20 @@ export function logLines(match, side, events, round) {
     overruns.set(key, row);
   }
   const overrunDone = new Set();
+
+  // PB-202 AC3: every shot used to be dropped, so a fight left no line at all. One line per pair
+  // per round, with the shots counted and the strength the target is left on.
+  const shots = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    if (!event || event.type !== "shot" || event.militia === true) continue;
+    const key = shotKey(event);
+    const row = shots.get(key) || { event, count: 0, amount: 0, strength: event.strength };
+    row.count += 1;
+    row.amount += Number(event.amount) || 0;
+    row.strength = event.strength;
+    shots.set(key, row);
+  }
+  const shotDone = new Set();
 
   for (const event of Array.isArray(events) ? events : []) {
     if (!event || !event.type) continue;
@@ -205,10 +226,28 @@ export function logLines(match, side, events, round) {
         }
         break;
       }
-      case "shot":
-        // A shot is noise on its own: a fight is worth a line only when the seat can see it,
-        // and the fight's result arrives as destroyed/overrun.
+      case "shot": {
+        // PB-202 AC3: the line names both sides and the strength the target is left on. Before
+        // this every shot was dropped, so a fight read as silence.
+        if (event.militia === true) break;
+        const key = shotKey(event);
+        if (shotDone.has(key)) break;
+        const row = shots.get(key);
+        if (!row) break;
+        shotDone.add(key);
+        if (!mine && !legible(match, side, row.event)) break;
+        const attackNoun = unitNoun(row.event.attackerKind);
+        const targetNoun = unitNoun(row.event.targetKind);
+        const who = mine ? "your " + attackNoun : "an enemy " + attackNoun;
+        const whom = mine ? "an enemy " + targetNoun : "your " + targetNoun;
+        const hits = row.count === 1 ? "a hit" : row.count + " hits";
+        const amount = Math.round(row.amount * 100) / 100;
+        const left = Number.isFinite(Number(row.strength))
+          ? " (" + Math.round(Number(row.strength)) + " left)"
+          : "";
+        push(who + " landed " + hits + " on " + whom + " for " + amount + left);
         break;
+      }
       case "escort": {
         // Your own escort always reads; the enemy's only when one of your pieces can see the spot.
         if (!mine) break;

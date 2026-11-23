@@ -58,9 +58,16 @@ export async function run() {
   const ownLoss = logLines(match, "blue", [{ type: "destroyed", side: "blue", x: 200, y: 120 }], 33);
   must(ownLoss.length === 1 && /lost a unit/.test(ownLoss[0].text), "your own loss must always be reported");
 
-  // ---- a shot on its own is noise; a win is not -------------------------------------------
-  const shots = logLines(match, "blue", [{ type: "shot", side: "red", x: blue.x, y: blue.y }], 34);
-  must(shots.length === 0, "a single shot must not fill the log");
+  // ---- a fight line names both sides; one pair is one line ---------------------------------
+  // PB-202 AC3: a shot used to be dropped entirely, so a fight read as silence. The line names
+  // both sides, and a round's exchange between the same pair is one line, not one per shot.
+  const pairShot = (x, y) => ({ type: "shot", side: "red", pieceId: "red:1", target: "blue:1", attackerKind: "submarine", targetKind: "cruiser", amount: 25, strength: 75, round: 34, at: { x, y } });
+  const shots = logLines(match, "blue", [pairShot(blue.x, blue.y), pairShot(blue.x, blue.y)], 34);
+  must(shots.length === 1, "two shots from one pair in one round must be one line: " + JSON.stringify(shots));
+  must(/submarine/.test(shots[0].text) && /cruiser/.test(shots[0].text),
+    "the fight line must name both sides: " + shots[0].text);
+  const unseenFight = logLines(match, "blue", [pairShot((blue.x + radius * 5) % 320, blue.y)], 35);
+  must(unseenFight.length === 0, "a fight out of sight must stay unknown");
 
   // The win line reports the era's whole set, not two seats: 1986 has four capitals and 1918 has
   // three, so a fixed "both capitals" would be false for every era this port plays.

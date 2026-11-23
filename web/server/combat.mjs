@@ -156,10 +156,13 @@ const OPPOSITE = { n: "s", s: "n", e: "w", w: "e" };
 // transport). `baseDamage` is read only for a kind the table has no row for.
 export function baseDamageFor(attackerKind, defender, combat = null) {
   const block = combat || combatRules();
-  const attacker = Number(block.damageKind[String(attackerKind)] ?? 0);
+  const attacker = Number(block.damageKind[String(attackerKind)] ?? (Number(attackerKind) || 0));
   let targetKind = defender && defender.kind;
+  // PB-202: a transport is a land piece at sea, so its own kind is infantry/tank and the sea rows
+  // in the table were never read. The sea cargo class is the row the original indexes for cargo.
+  if (defender && defender.transport === true) targetKind = block.transportDamageKind;
   if (defender && defender.entrenched === true && String(defender.kind) === "infantry") targetKind = "entrenched infantry";
-  const target = Number(block.damageKind[String(targetKind)] ?? 0);
+  const target = Number(block.damageKind[String(targetKind)] ?? (Number(targetKind) || 0));
   if (attacker > 0 && target === 9) return Number(block.kindNine[attacker] ?? 0);
   if (attacker > 0 && target > 0 && Array.isArray(block.damageMatrix[attacker])) {
     return Number(block.damageMatrix[attacker][target]) || 0;
@@ -222,7 +225,9 @@ export function coverDamage(base, defender) {
 // be the attacker.
 export function damageFor(attacker, defender, combat = null) {
   const block = combat || combatRules();
-  const base = baseDamageFor(attacker.kind, defender, block);
+  // PB-202: cargo fires with the sea class's row, not its land kind's row (see the config entry).
+  const attackerKind = attacker.transport === true ? block.transportDamageKind : attacker.kind;
+  const base = baseDamageFor(attackerKind, defender, block);
   let amount = coverDamage(base, defender);
   let flank = false;
   let rear = false;
@@ -409,10 +414,10 @@ export function resolve(match) {
       const attacker = pieces[i];
       const target = targets[i];
       if (!target) continue;
-      // A transport is cargo: it does not fire, and it does not survive the exchange.
-      if (attacker.transport === true) continue;
-      // The pairing decides whether a shot exists at all: the matrix zeroes a submarine against
-      // land and a sub's kind-7 column of 0 is not a damage number, it is "no engagement".
+      // PB-202: cargo is not silent any more. Its row in the table is the sea cargo row (row 5:
+      // [0,18,16,14,0,10,10,5,5] over columns 0-8), so a transport fires 5 at a submarine, 10 at
+      // another transport and 18 at infantry ashore - numbers the table supplies, not a blanket
+      // skip. It still does not survive the exchange (:427).
       const hit = { attacker, target, ...damageFor(attacker, target, combat) };
       if (!(Number(hit.base) > 0)) continue;
       hits.push(hit);
@@ -426,11 +431,18 @@ export function resolve(match) {
       // Cargo is lost on the first hit, whatever the numbers are.
       const amount = target.transport === true ? Math.max(hit.amount, ensureStrength(target, max)) : hit.amount;
       const result = applyDamage(target, amount, max);
+      // PB-202: the status line reads `shots` and nothing ever wrote it, so a resolved fight and a
+      // dead one both said 0. Count the shot that landed, on the piece that fired it.
+      attacker.shots = Number(attacker.shots || 0) + 1;
       log.push({
         type: "shot",
         side: attacker.side,
         pieceId: attacker.id,
         target: target.id,
+        // The log names both sides by noun, and the target may already be off the board when the
+        // line is written, so the nouns ride the event rather than a post-hoc lookup (PB-202 AC3).
+        attackerKind: attacker.transport === true ? "transport" : attacker.kind,
+        targetKind: target.transport === true ? "transport" : target.kind,
         amount: Number(Number(amount).toFixed(2)),
         strength: result.after,
         flank: hit.flank,

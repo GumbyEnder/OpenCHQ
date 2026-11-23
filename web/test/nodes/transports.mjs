@@ -2,8 +2,9 @@
 //
 // What breaks if this node is removed: a land unit walks across an ocean at the slow land
 // pace and is indistinguishable from an escort, so sea control means nothing - there is no
-// cargo to catch. Here a land piece in water is a transport (it does not fight back and the
-// first exchange sinks it), and stepping onto land puts it back on foot.
+// cargo to catch. Here a land piece in water is a transport (it fires with the sea cargo row,
+// 5 at a hull, and the first exchange sinks it - PB-202), and stepping onto land puts it back
+// on foot.
 
 import { boardPayload, CELL_W, matchSites, resolveDataRoot } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
@@ -88,7 +89,15 @@ export async function run(ctx) {
   seaMatch.pieces = [sea, hunter];
   const fight = resolve(seaMatch);
   const shots = fight.filter((event) => event.type === "shot");
-  if (shots.some((event) => event.side === "blue")) fail("a transport returned fire: " + JSON.stringify(shots));
+  // PB-202: cargo is not silent. Its row in the damage table is the sea cargo row (row 5), so a
+  // transport fires 5 at a hull - far less than the 100+ it takes - and it still does not survive
+  // the exchange (combat.mjs:427). The old pin here asserted no return fire at all, which is the
+  // shape that left four transports "fighting" a submarine for nine rounds with 0 shots.
+  const returned = shots.filter((event) => event.side === "blue");
+  if (returned.length !== 1) fail("a transport did not fire exactly once: " + JSON.stringify(shots));
+  if (Number(returned[0].amount) !== 5) {
+    fail("a transport hit a hull for " + returned[0].amount + ", not the row 5 column 8 value of 5");
+  }
   if (!shots.some((event) => event.side === "red")) fail("the hunter did not fire on the transport");
   const sunk = fight.find((event) => event.type === "destroyed");
   if (!sunk || sunk.pieceId !== "blue:land") fail("the transport survived being caught: " + JSON.stringify(fight));

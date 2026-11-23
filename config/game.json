@@ -390,6 +390,11 @@
       "evidenceRef": "docs/re/t009b/militia-2026-11-13.txt (enemy 100->98 = 2; unowned 100->80 = 20; own site 0 damage); docs/re/COMBAT.md s11"
     },
     "pinRounds": { "value": 4, "source": "STAND-IN, UNMEASURED, and with no original counterpart: contact is re-evaluated every pass, so the original pins only while an enemy is in range and has no duration to measure (docs/re/COMBAT.md s7)." },
+    "transportDamageKind": {
+      "value": 5,
+      "source": "DISASSEMBLY (T-009): DS:0x194c maps kinds 5-6 to range class 1, the sea cargo class (docs/re/COMBAT.md s3). A land piece at sea keeps its land kind (move.mjs syncTransport), so combat.mjs indexed it as infantry/tank and a submarine's row 7 columns 1 and 2 read 0 - PB-202's fight that never fires. Against a submarine both candidate rows agree: row 7 col 5 and col 6 are 100, row 5 and row 6 col 7 are 5 (the rows are 9 bytes, columns 1-8, column 0 being the stale byte). Kind 5 is used and the pairing is identical under kind 6. Which of 5/6 a transport is, and the land columns where the two rows differ (0,18,16,14 vs 5,9,8,7), stay UNVERIFIED.",
+      "evidenceRef": "docs/re/COMBAT.md s3 (0x194c class map); config combat.measured.value.damageMatrix rows 5/6/7; web/test/nodes/pb202_transport_fight.mjs"
+    },
     "measured": {
       "value": {
         "damageMatrix": {
