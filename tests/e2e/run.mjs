@@ -10,8 +10,9 @@
 // environment (so a reviewer can watch a real account) or registers a throwaway account named
 // from E2E_PREFIX (default "e2e") and a random password.
 //
-// Playwright is resolved from, in order: PLAYWRIGHT_MODULE, ./node_modules, the path printed by
-// tests/e2e/package.json's own note, then the agent-relay install on this machine. See README.md.
+// Playwright is resolved from, in order: PLAYWRIGHT_MODULE, ./node_modules, the parent
+// node_modules, then the agent-relay installs on this machine (agent-relay-local first: it is the
+// one that exists here, and a missing candidate is only a note in `tried`, not a failure).
 
 import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -106,6 +107,7 @@ async function loadPlaywright() {
     process.env.PLAYWRIGHT_MODULE,
     path.join(here, "node_modules", "playwright", "index.mjs"),
     path.join(here, "..", "..", "node_modules", "playwright", "index.mjs"),
+    "/home/gumbyender/agents/agent-relay-local/node_modules/playwright/index.mjs",
     "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
   ].filter(Boolean);
   const tried = [];

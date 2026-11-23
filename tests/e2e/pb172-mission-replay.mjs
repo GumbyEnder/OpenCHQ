@@ -82,6 +82,7 @@ async function loadPlaywright() {
   const candidates = [
     process.env.PLAYWRIGHT_MODULE,
     path.join(here, "node_modules", "playwright", "index.mjs"),
+    "/home/gumbyender/agents/agent-relay-local/node_modules/playwright/index.mjs",
     "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
   ].filter(Boolean);
   for (const candidate of candidates) {
