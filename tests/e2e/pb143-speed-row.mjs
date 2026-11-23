@@ -8,6 +8,12 @@
 // `+` left 599.63 -> 620.38 (delta +20.75). This leg prints the delta and exits 1 while it is
 // non-zero, which is the red half of the fix.
 //
+// PB-174: the leg red-flagged itself, not the row. `setSpeed` clicked `#speedDown` after the room
+// read said 1 while the click had already reached 0, so Playwright waited 30 s on a disabled button
+// and the run died on a timeout instead of an assertion; and the speed-1 check asserted the
+// pre-PB-164 string, so the shipped `Speed 1 · held` read red. Both are fixed here: every click is
+// guarded on `.disabled` and a refused click re-reads the room, and speed 1 accepts either spelling.
+//
 // It drives the real page as a player: throwaway sign-in, Play a bot, the speed buttons.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -84,30 +90,59 @@ async function main() {
       ERA, { timeout: 30000, polling: 100 });
     await page.waitForSelector("#speedUp", { state: "visible", timeout: 15000 });
 
+    // PB-174: `#speedDown`/`#speedUp` go `disabled` at the rail, and the room read can lag a click
+    // that already reached it. `page.click` on a disabled button waits out its 30 s timeout instead
+    // of failing an assertion, so every click is guarded and a guarded miss re-reads the room
+    // instead of looping on a dead button.
+    const roomSpeed = () => page.evaluate(() => {
+      const r = window.__chq.room();
+      return r ? Number(r.speed) : null;
+    });
+    const disabled = (sel) => page.evaluate((s) => {
+      const b = document.querySelector(s);
+      return !b || b.disabled;
+    }, sel);
     const setSpeed = async (want) => {
-      for (let i = 0; i < 12; i++) {
-        const r = await page.evaluate(() => window.__chq.room());
-        if (!r) return null;
-        if (Number(r.speed) === want) return r;
-        await page.click(Number(r.speed) < want ? "#speedUp" : "#speedDown");
-        await sleep(300);
+      for (let i = 0; i < 20; i++) {
+        const got = await roomSpeed();
+        if (got === null) return null;
+        if (got === want) return got;
+        const id = got < want ? "#speedUp" : "#speedDown";
+        const clicked = await page.evaluate((sel) => {
+          const b = document.querySelector(sel);
+          if (!b || b.disabled) return false;
+          b.click();
+          return true;
+        }, id);
+        if (clicked) { await sleep(300); continue; }
+        // The button refused the click: either the read is behind a click that already arrived, or
+        // this speed is the rail. Settle, re-read, and hand the settled value to the assertions.
+        await sleep(400);
+        const settled = await roomSpeed();
+        if (settled === want) return settled;
+        if (await disabled(id)) return settled;
       }
-      return await page.evaluate(() => window.__chq.room());
+      return await roomSpeed();
     };
 
-    await setSpeed(1);
+    const s1 = await setSpeed(1);
     await sleep(250);
     const one = await page.evaluate(boxes);
-    await setSpeed(0);
+    const s0 = await setSpeed(0);
     await sleep(250);
     const zero = await page.evaluate(boxes);
+    const settled = { one: s1, zero: s0 };
 
     const dDown = +(zero.down.left - one.down.left).toFixed(2);
     const dUp = +(zero.up.left - one.up.left).toFixed(2);
     const dWidth = +(zero.readout.width - one.readout.width).toFixed(2);
 
-    check(one.text === "Speed 1", "speed 1 reads `Speed 1`", one.text);
-    check(zero.text.indexOf("paused") >= 0, "speed 0 reads the paused text", zero.text);
+    check(settled.one === 1, "the room settled at speed 1 before the box read", "speed " + settled.one);
+    // PB-164 gave speed 1 an optional ` · held` suffix (app.js:1341): both spellings are the
+    // speed-1 readout, and the leg must accept the shipped wording instead of pre-PB-164 text.
+    check(one.text === "Speed 1" || one.text === "Speed 1 · held",
+      "speed 1 reads `Speed 1` (PB-164's ` · held` suffix allowed)", one.text);
+    check(zero.text === "Speed 0 · paused", "speed 0 reads `Speed 0 · paused`", zero.text);
     check(dDown === 0, "`-` does not move between speed 1 and speed 0", "delta " + dDown);
     check(dUp === 0, "`+` does not move between speed 1 and speed 0", "delta " + dUp);
     check(dWidth === 0, "the readout slot is the same width at both speeds", "delta " + dWidth);
@@ -115,7 +150,7 @@ async function main() {
 
     const summary = {
       base: BASE, era: ERA, viewport: "1440x900",
-      speed1: one, speed0: zero,
+      settledSpeed: settled, speed1: one, speed0: zero,
       delta: { down: dDown, up: dUp, readoutWidth: dWidth },
       checks: rows,
     };
