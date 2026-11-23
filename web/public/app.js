@@ -22,6 +22,7 @@ import {
   previewLine,
   oilWarning,
   purseText,
+  refreshSelection,
   refusalText,
   routeRequest,
   selectionNote,
@@ -2497,10 +2498,17 @@ function connect() {
         scanAddPieces(scan, room.pieces, room.you);
       }
       if (message.reason) say(message.reason);
-      if (selected && (!room || !(room.pieces || []).some((piece) => piece.id === selected.id))) {
-        selected = null;
-        preview = null;
-        hoverKey = "";
+      // PB-170: re-point the selection at THIS frame's own piece object. `selected` is a snapshot
+      // taken from the frame the click landed on, and a later frame replaces room.pieces, so the
+      // old object kept the old `inactive` count and the board note went on saying "Away ... 8
+      // rounds" after the aircraft was ready again. Find the piece by id; no piece under that id
+      // means nothing is selected any more.
+      if (selected) {
+        selected = refreshSelection(room && room.pieces, selected);
+        if (!selected) {
+          preview = null;
+          hoverKey = "";
+        }
       }
       // A reload shows the match that has been happening: the room carries its own log. This is also
       // the `sync` frame (15 lines per side): it MERGES into the buffer, deduped, instead of replacing

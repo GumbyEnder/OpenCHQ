@@ -410,6 +410,17 @@ export function cargoNote(piece) {
   return "At sea as a transport: it cannot fight back, and an enemy ship that catches it sinks it.";
 }
 
+// PB-170: the page holds the selected piece as an OBJECT taken from the room frame the click
+// landed on. A later frame replaces `room.pieces`, so that object stops moving: the board note went
+// on saying "Away on a mission: 8 rounds" after the plane was ready again. Re-point the selection at
+// the piece of the CURRENT frame by id; no piece under that id means nothing is selected any more.
+export function refreshSelection(pieces, selected) {
+  if (!selected || selected.id === undefined || selected.id === null) return null;
+  const id = String(selected.id);
+  const fresh = (Array.isArray(pieces) ? pieces : []).find((piece) => piece && String(piece.id) === id);
+  return fresh || null;
+}
+
 // An aircraft on a mission is absent for a known number of rounds. Say the number: "inactive" as a
 // word costs the player nothing to read and tells them nothing.
 export function airNote(piece) {
