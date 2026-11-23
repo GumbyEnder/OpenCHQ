@@ -329,7 +329,10 @@ try {
           && /^\d+b$/.test(cash.text) && /b\/rd/.test(chip ? chip.title : "")
           && LEDGER.test(chip ? chip.title : ""),
         JSON.stringify({ cash: cash && cash.text, scrollW: cash && cash.scrollW, clientW: cash && cash.clientW,
-          chipText: chip && chip.text, titleHasIncome: Boolean(chip && /b\/rd/.test(chip.title)) }));
+          chipText: chip && chip.text, titleHasIncome: Boolean(chip && /b\/rd/.test(chip.title)),
+          // frodo 8343 §2: the PASS condition asserts the full LEDGER on the title, so the detail
+          // prints that same field. `titleHasIncome` alone under-reports what the mark requires.
+          titleHasLedger: LEDGER.test((chip && chip.title) || "") }));
       // PB-187 (a): the 1024 arms this leg never ran. 50b, 234b and 999b (the last two synthetic: the
       // fresh match opens on two digits) must each show the cash span whole, keep the chip inside the
       // brand's clip box, overlap nothing in the row — #clockBtn first — and leave the strip fitting

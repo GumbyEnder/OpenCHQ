@@ -43,6 +43,11 @@ function plane(id, side, x, y) {
 // a number. PB-157a: the capital is its own site, because a bombing run must not be able to hit it
 // (the fixture used to park `capitals.red` on Kiev, which made "bomb an enemy city" and "bomb a
 // capital" the same click).
+//
+// PB-178: Red's sites live INSIDE the restricted air radius of Blue's strip (default 6 cells), as
+// the manual's rule (p.25) requires of a mission target. Before that rule the fixture could park
+// them 100 cells away because nothing measured distance at all; a fixture that aims outside the
+// circle now tests the radius refusal instead of the bombing rule each arm is named for.
 function board() {
   const match = openMatch("1986", []);
   match.clock = "running";
@@ -52,13 +57,13 @@ function board() {
   match.sides.red.fuel = 5000;
   match.sites = [
     { id: 10, name: "New York", x: 80, y: 40, kind: "city", type: 4, owner: "blue" },
-    { id: 63, name: "Moscow", x: 150, y: 22, kind: "capital", type: 2, owner: "red" },
-    { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", type: 4, owner: "red" },
-    { id: 30, name: "Minsk Base", x: 200, y: 40, kind: "base", type: 3, owner: "red" },
-    { id: 64, name: "Baku Field", x: 200, y: 60, kind: "facility", type: 5, owner: "red" },
+    { id: 63, name: "Moscow", x: 83, y: 38, kind: "capital", type: 2, owner: "red" },
+    { id: 12, name: "Kiev", x: 84, y: 41, kind: "city", type: 4, owner: "red" },
+    { id: 30, name: "Minsk Base", x: 80, y: 44, kind: "base", type: 3, owner: "red" },
+    { id: 64, name: "Baku Field", x: 76, y: 42, kind: "facility", type: 5, owner: "red" },
   ];
   match.pieces = [plane("blue:plane", "blue", 80, 40)];
-  match.capitals = { blue: { x: 80, y: 40 }, red: { x: 150, y: 22 } };
+  match.capitals = { blue: { x: 80, y: 40 }, red: { x: 83, y: 38 } };
   return match;
 }
 
@@ -71,7 +76,7 @@ export async function run() {
 
   // --- an empty enemy city loses 125 M and is unready 5 rounds ------------------------
   const city = board();
-  const sent = sendMission(city, "blue", "blue:plane", "bomb", { x: 180, y: 22 });
+  const sent = sendMission(city, "blue", "blue:plane", "bomb", { x: 84, y: 41 });
   if (sent.error) fail("an empty enemy city refused a bombing run: " + sent.error);
   eq("the city's owner lost 125 M", city.sides.red.cash, 50000 - 125);
   eq("the city is unready for 5 rounds", city.sites.find((s) => s.id === 12).readyRound, 15);
@@ -88,15 +93,15 @@ export async function run() {
   // --- the floor is 0, not a negative pool -------------------------------------------
   const poor = board();
   poor.sides.red.cash = 100;
-  const broke = sendMission(poor, "blue", "blue:plane", "bomb", { x: 180, y: 22 });
+  const broke = sendMission(poor, "blue", "blue:plane", "bomb", { x: 84, y: 41 });
   if (broke.error) fail("a poor owner refused a bombing run: " + broke.error);
   eq("the owner's pool stops at 0", poor.sides.red.cash, 0);
   eq("the event reports what was actually taken", broke.events.find((e) => e.type === "bomb_hit").cash, 100);
 
   // --- a defended target is refused, and the aircraft is not spent -------------------
   const held = board();
-  held.pieces.push({ id: "red:inf", side: "red", domain: "land", kind: "infantry", x: 180, y: 22, path: [], pace: 1, strength: 100 });
-  const refused = sendMission(held, "blue", "blue:plane", "bomb", { x: 180, y: 22 });
+  held.pieces.push({ id: "red:inf", side: "red", domain: "land", kind: "infantry", x: 84, y: 41, path: [], pace: 1, strength: 100 });
+  const refused = sendMission(held, "blue", "blue:plane", "bomb", { x: 84, y: 41 });
   if (!refused.error) fail("a defended city accepted a bombing run");
   if (!/defended/.test(refused.error)) fail("the refusal does not say the target is defended: " + refused.error);
   eq("a refused run leaves the owner's cash alone", held.sides.red.cash, 50000);
@@ -104,24 +109,24 @@ export async function run() {
 
   // An aircraft based there is on the air layer and does not shield the site (T-021).
   const airOnly = board();
-  airOnly.pieces.push({ id: "red:based", side: "red", domain: "air", kind: "aircraft", x: 180, y: 22, path: [], pace: 1, inactiveUntil: 0 });
-  const throughAir = sendMission(airOnly, "blue", "blue:plane", "bomb", { x: 180, y: 22 });
+  airOnly.pieces.push({ id: "red:based", side: "red", domain: "air", kind: "aircraft", x: 84, y: 41, path: [], pace: 1, inactiveUntil: 0 });
+  const throughAir = sendMission(airOnly, "blue", "blue:plane", "bomb", { x: 84, y: 41 });
   if (throughAir.error) fail("a based aircraft shielded its city from a bombing run: " + throughAir.error);
 
   // --- a base is a legal target; a neutral or friendly site is not -------------------
   const baseHit = board();
-  const onBase = sendMission(baseHit, "blue", "blue:plane", "bomb", { x: 200, y: 40 });
+  const onBase = sendMission(baseHit, "blue", "blue:plane", "bomb", { x: 80, y: 44 });
   if (onBase.error) fail("an empty enemy base refused a bombing run: " + onBase.error);
   eq("a bombed base is unready 5 rounds", baseHit.sites.find((s) => s.id === 30).readyRound, 15);
 
   const neutral = board();
   neutral.sites.find((s) => s.id === 12).owner = null;
-  if (!sendMission(neutral, "blue", "blue:plane", "bomb", { x: 180, y: 22 }).error) {
+  if (!sendMission(neutral, "blue", "blue:plane", "bomb", { x: 84, y: 41 }).error) {
     fail("a neutral city accepted a bombing run");
   }
   const own = board();
   own.sites.find((s) => s.id === 12).owner = "blue";
-  if (!sendMission(own, "blue", "blue:plane", "bomb", { x: 180, y: 22 }).error) {
+  if (!sendMission(own, "blue", "blue:plane", "bomb", { x: 84, y: 41 }).error) {
     fail("a friendly city accepted a bombing run");
   }
   const nowhere = board();
@@ -136,7 +141,7 @@ export async function run() {
   // removed from BOMB_SITE_KINDS at web/server/air.mjs. Ruling is PROVISIONAL pending DOSBox: the
   // archive's own target test (8768-8782) was never recovered.
   const cap = board();
-  const onCapital = sendMission(cap, "blue", "blue:plane", "bomb", { x: 150, y: 22 });
+  const onCapital = sendMission(cap, "blue", "blue:plane", "bomb", { x: 83, y: 38 });
   if (onCapital.error) fail("an empty enemy capital refused a bombing run: " + onCapital.error);
   eq("the capital's owner lost 125 M", cap.sides.red.cash, 50000 - 125);
   eq("the capital is unready for 5 rounds", cap.sites.find((s) => s.id === 63).readyRound, 15);
@@ -154,13 +159,13 @@ export async function run() {
   // Tokyo accepted, Washington and Moscow refused) is what PB-171 deletes.
   const drawnAsCity = board();
   drawnAsCity.sites.find((s) => s.id === 12).type = 1;
-  const onSubtype = sendMission(drawnAsCity, "blue", "blue:plane", "bomb", { x: 180, y: 22 });
+  const onSubtype = sendMission(drawnAsCity, "blue", "blue:plane", "bomb", { x: 84, y: 41 });
   if (onSubtype.error) fail("a subtype-1 city refused a bombing run: " + onSubtype.error);
   eq("a subtype-1 capital drawn as a city takes the city branch", drawnAsCity.sides.red.cash, 50000 - 125);
 
   // --- an oil field queues 1000, and T-033's NEXT settle consumes it -----------------
   const field = board();
-  const raided = sendMission(field, "blue", "blue:plane", "bomb", { x: 200, y: 60 });
+  const raided = sendMission(field, "blue", "blue:plane", "bomb", { x: 76, y: 42 });
   if (raided.error) fail("an empty enemy oil field refused a bombing run: " + raided.error);
   eq("the oil field took no cash", field.sides.red.cash, 50000);
   const meter = meterOf(field, "red", "fuel");
