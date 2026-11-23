@@ -51,13 +51,35 @@ bash tools/fire.sh            # WEB_OK -> mark done -> commit -> push origin/web
 
 A push to `origin/web` created Railway deployments, but both of the 2026-11-10 evening pushes
 (21:43 and 21:48) came back `REMOVED` and the live build stayed at `84eff0b` while `origin/web`
-moved through `6a74a49` to `27aa2fb`. `/api/version` is the check that matters: it reads
-`build.json`, so it names the commit actually serving, and it did not move for a push.
+moved through `6a74a49` to `27aa2fb`. `/api/version` is the check that matters: it read
+`build.json` at the time, so it named the commit actually serving, and it did not move for a push.
+(As of 2026-11-23 the service is repo-connected and /api/version reports `RAILWAY_GIT_COMMIT_SHA`
+with `"source":"railway"` — see the build-stamp section below. This paragraph is the history of
+why the check is a curl and not a push receipt.)
 
 What worked, and is now the deploy lane: `railway up -y -d --service openchq-web` from the repo
 root, after `railway status` confirms the project link. That shipped `27aa2fb`/`3e2eba3` in about
 90 seconds. Treat a push as "code is in the branch", never as "code is live"; confirm with
 `curl -s https://openchq-web-production.up.railway.app/api/version`.
+
+### Build stamp: which commit an upload names (measured 2026-11-23)
+
+`/api/version` resolves the served commit in this order: `OPENCHQ_COMMIT`, then
+`RAILWAY_GIT_COMMIT_SHA` (the repo-connected builder), then `web/data/build.json`, then
+`git rev-parse`. Measured live: `{"commit":"cb83906...","source":"railway"}` — so on a push the
+env wins and `build.json` is inert.
+
+`build.json` is therefore only the truth on the `railway up` path, where the builder keeps no
+`.git`. That makes a stale stamp a lie with nothing to correct it:
+
+    node tools/stamp_build.mjs           # write the stamp for this tree
+    node tools/stamp_build.mjs --check   # exit 1, naming the ships behind, if it disagrees
+
+The committed file is expected to be behind HEAD — it is restored after every fire, on purpose.
+The rule is about uploads, not trees: `tools/fire.sh` re-stamps immediately before `railway up`,
+runs `--check`, and exits 5 (`LOOP_EXIT_STAMP_STALE`) without uploading if the two disagree. Any
+hand upload that is not a fire must run the stamp first, or set `OPENCHQ_COMMIT`; there is no
+runtime check that can catch it later, because the bundle has neither git nor env.
 
 ## First deploy, in order (what actually worked)
 
