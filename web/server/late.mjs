@@ -20,7 +20,18 @@ const LATE_ERAS = new Set(["1986", "2023", "9999"]);
 // ("three fired or three absorbed without reply") counted one side's total and an intercept count;
 // PB-156 replaces it with the difference. The number is config's `nukes.launchLead` (DECODED).
 
-export const INTEL_NOTE = "Intel. Every unit is revealed, and the other side is told.";
+// PB-160: the banner is the transcript line the ack's note becomes (app.js `say(event.note)`).
+// It says what the scan actually does - the bar reveals units as it passes, bar-local (Q51, T-022) -
+// and carries the price the event charged, so the copy cannot drift from `prices.intelScan`.
+export const INTEL_NOTE = "Intel: the scan bar reveals enemy units as it passes; the other side is told.";
+export function intelNote(cost) {
+  const per = Number(millionsPerBillion()) || 1000;
+  const value = Number(cost);
+  const billions = Number.isFinite(value)
+    ? (value / per).toFixed(3).replace(/\.?0+$/, "")
+    : "";
+  return INTEL_NOTE + " " + (billions === "" || billions === "-0" ? "0" : billions) + "b";
+}
 export const SATELLITE_NOTE = "Satellite overhead. Its pass is quiet.";
 export const AID_NOTE = "Foreign aid. The city changed hands.";
 export const CEASEFIRE_NOTE = "Cease fire accepted.";
@@ -207,7 +218,7 @@ export function useTool(match, side, tool, target) {
       round,
       reveals: foes.length,
       cost: paid.price,
-      note: name === "intel" ? INTEL_NOTE : SATELLITE_NOTE,
+      note: name === "intel" ? intelNote(paid.price) : SATELLITE_NOTE,
     });
     if (name === "intel") {
       // Intel tells the opponent it was read. The satellite pass is quiet.

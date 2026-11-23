@@ -9,7 +9,7 @@ import { openMatch } from "../../server/match.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { rules } from "../../server/rules.mjs";
 import { scanSpec } from "../../public/scan.mjs";
-import { nukeStatus, launchEdge, toolsForEra, useTool, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
+import { nukeStatus, launchEdge, toolsForEra, useTool, intelNote, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
 
 export const name = "late_kit";
 
@@ -60,9 +60,16 @@ export async function run(ctx) {
   }
   const intel = useTool(match, "blue", "intel");
   if (intel.error) fail("intel was refused in 1986: " + intel.error);
-  if (!intel.events.some((event) => event.type === "intel" && event.note === INTEL_NOTE)) {
+  if (!intel.events.some((event) => event.type === "intel" && event.note === intelNote(event.cost))) {
     fail("intel did not report itself: " + JSON.stringify(intel.events));
   }
+  // PB-160: the banner says what the bar does and shows the price the event charged.
+  const intelEvent = intel.events.find((event) => event.type === "intel");
+  if (!intelEvent || !intelEvent.note.startsWith(INTEL_NOTE)) {
+    fail("the intel banner lost its copy: " + JSON.stringify(intelEvent && intelEvent.note));
+  }
+  if (!/\b10b$/.test(intelEvent.note)) fail("the intel banner does not show the config price: " + intelEvent.note);
+  if (/Every unit is revealed/i.test(intelEvent.note)) fail("the intel banner still overstates the reveal");
   if (!intel.events.some((event) => event.type === "intel_seen" && event.side === "red")) {
     fail("intel did not tell the opponent");
   }

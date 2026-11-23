@@ -1927,31 +1927,37 @@ export function paintScanShade(ctx, view) {
 }
 
 // The bar is not clamped to the board: it enters from off the left edge and leaves past the right,
-// so the first and last columns get the same dwell as the middle. It is blitted at -width, 0 and
-// +width like the route polyline, because the board's X wraps.
+// so the first and last columns get the same dwell as the middle. It is painted ONCE and clipped to
+// the board rect (PB-159, Q51). An earlier version also blitted copies at -width and +width, as the
+// route polyline does: near trail 0 the +width copy landed on the right edge and near the seam the
+// -width copy landed on the left, which is the edge pair the original never shows. Klondike does not
+// wrap a pass; the seam is a map edge, not a doorway.
 export function paintScanBar(ctx, state, view) {
   if (!state || !state.spec) return 0;
   const rect = boardRect(view);
   if (rect.width <= 0 || rect.height <= 0) return 0;
   const scale = Math.max(1, Number(view.scale) || 1);
   const barPx = state.spec.barCells * scale;
-  const boardPx = state.spec.boardW * scale;
   const originX = cellToPixel(0, 0, view).x;
-  let drawn = 0;
+  const x = originX + state.trail * scale;
+  // The bar body is what decides whether the frame has a bar. At lead 0 the body is still fully off
+  // the left edge, as the capture shows; the soft edge is only drawn as part of a visible bar.
+  const edge = Math.max(1, scale);
+  const left = Math.max(0, rect.x);
+  const right = left + rect.width;
+  if (x + barPx <= left || x >= right) return 0;
   ctx.save();
-  for (const shift of [-boardPx, 0, boardPx]) {
-    const x = originX + state.trail * scale + shift;
-    if (x + barPx <= 0 || x >= view.viewW) continue;
-    ctx.fillStyle = SCAN.barInk;
-    ctx.fillRect(x, rect.y, barPx, rect.height);
-    // A soft edge each side, so the bar reads as light on the map rather than a pasted rectangle.
-    ctx.fillStyle = SCAN.barEdge;
-    ctx.fillRect(x - Math.max(1, scale), rect.y, Math.max(1, scale), rect.height);
-    ctx.fillRect(x + barPx, rect.y, Math.max(1, scale), rect.height);
-    drawn += 1;
-  }
+  ctx.beginPath();
+  ctx.rect(left, rect.y, rect.width, rect.height);
+  ctx.clip();
+  ctx.fillStyle = SCAN.barInk;
+  ctx.fillRect(x, rect.y, barPx, rect.height);
+  // A soft edge each side, so the bar reads as light on the map rather than a pasted rectangle.
+  ctx.fillStyle = SCAN.barEdge;
+  ctx.fillRect(x - edge, rect.y, edge, rect.height);
+  ctx.fillRect(x + barPx, rect.y, edge, rect.height);
   ctx.restore();
-  return drawn;
+  return 1;
 }
 
 // Which pieces the board draws while a scan is armed. Own pieces and anything the seat can see by

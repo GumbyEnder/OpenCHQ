@@ -9,8 +9,9 @@ import {
 } from "../../public/render.mjs";
 import { SCAN, scanAddPieces, scanCovers, scanKeepsAcrossRound, scanSpec, scanState } from "../../public/scan.mjs";
 import { openMatch } from "../../server/match.mjs";
-import { toolsForEra, useTool } from "../../server/late.mjs";
+import { toolsForEra, useTool, intelNote } from "../../server/late.mjs";
 import { millionsPerBillion, priceOf, rules } from "../../server/rules.mjs";
+import { formatBillions, shopLabel } from "../../public/command.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -252,4 +253,18 @@ export async function run() {
   ok(owners() === ownersBefore, "the intel scan changed an owner");
   ok(tool.pieces.filter((p) => p.side === "red").every((p) => p.revealedRound === tool.round),
     "the intel scan did not mark the enemy pieces for its own round");
+
+  // --- PB-160: the banner names the bar-local reveal and carries the config price -------------
+  const intelEvent = scanUse.events.find((event) => event.type === "intel");
+  ok(intelEvent, "the intel use did not emit an intel event");
+  ok(intelEvent.note === intelNote(priceOf("intelScan")),
+    "the banner is not the copy plus the price from prices.intelScan (" + intelEvent.note + ")");
+  ok(intelEvent.note.endsWith(" " + formatBillions(priceOf("intelScan")) + "b"),
+    "the banner price is not the charged price: " + intelEvent.note);
+  ok(!/Every unit is revealed/i.test(intelEvent.note), "the banner still overstates the reveal");
+  ok(shopLabel({ kind: "intelScan", price: priceOf("intelScan") })
+      === "Intel scan " + formatBillions(priceOf("intelScan")) + "b",
+    "the shop row and the banner do not price the scan the same way");
+  ok(intelEvent.note.endsWith(shopLabel({ kind: "intelScan", price: priceOf("intelScan") }).split(" ").pop()),
+    "the banner's price token disagrees with the shop row's");
 }
