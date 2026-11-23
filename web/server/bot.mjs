@@ -13,7 +13,7 @@
 
 import { CELL_H, CELL_W, boardPayload, resolveDataRoot } from "./board.mjs";
 import { laneGraph, seaRoute } from "./lanes.mjs";
-import { issueOrder, wrapDelta, wrapX } from "./move.mjs";
+import { issueOrder, wrapDelta, wrapX, HOLD_STALL_ROUNDS } from "./move.mjs";
 import { isRefused, priceOf } from "./rules.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { placementMask } from "./placement.mjs";
@@ -501,10 +501,26 @@ export function ordersFor(match, side) {
 
   // The army marches on the player's capital. A piece already on a path keeps it; the army is
   // re-ordered only once it has arrived, so an order is not re-issued every round.
+  //
+  // PB-197: "already on a path" is not the same as "making progress". A unit held for more than
+  // HOLD_STALL_ROUNDS rounds - the per-step counter advance() keeps - is re-planned onto a fresh
+  // goal instead of reporting "moving" forever. marchOne picks the nearest free approach cell, so a
+  // destination that is still held is skipped and another one is chosen.
   for (const piece of mine) {
     if (piece.domain !== "land") continue;
-    if (hasPath(piece)) continue;
     if (claimed.has(piece.id)) continue;
+    if (hasPath(piece)) {
+      if (Number(piece.holdRounds || 0) <= HOLD_STALL_ROUNDS) continue;
+      piece.holdRounds = 0;
+      piece.path = [];
+      events.push({
+        type: "bot_replan",
+        side,
+        pieceId: piece.id,
+        round: Number(match.round) || 0,
+        reason: "held for more than " + HOLD_STALL_ROUNDS + " rounds",
+      });
+    }
     // The capital's own dug-in garrison holds its cell; see holdsOwnCapital.
     if (holdsOwnCapital(match, side, piece, garrisonCells)) continue;
     marchOne(match, side, piece, focus, events);

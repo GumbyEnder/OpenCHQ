@@ -458,6 +458,7 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   piece.detours = 0;
   piece.heldBy = null;
   piece.heldCell = null;
+  piece.holdRounds = 0;
   return { ok: true, path: plan.path.map((step) => ({ ...step })), rounds: plan.rounds };
 }
 
@@ -701,8 +702,8 @@ function noteHold(piece, occupant, x, y, events) {
 // into a friend is legal only when the same round carries the walker off that cell again; otherwise
 // the walker would end the round co-located with the friend for good (the held destination freezes
 // it there). Predict the rest of this round from the credit left after the step, and refuse the
-// entry when the walk cannot leave. `blockedStep` mirrors the per-step rules used below.
-function canStepInto(piece, match, path, credit) {
+// entry when the walk cannot leave.
+function canStepInto(piece, match, path, credit, seen = new Set([piece.id])) {
   if (!Array.isArray(path) || path.length === 0) return false;
   const next = path[0];
   const pace = Math.max(1, Number(next.pace) || 1);
@@ -713,10 +714,46 @@ function canStepInto(piece, match, path, credit) {
   if (occupant.side === piece.side) {
     // Another friend on the next cell: only a walk that can leave BOTH this round is a crossing.
     if (path.length === 1) return false;
-    return canStepInto(piece, match, path.slice(1), credit - pace);
+    return canStepInto(piece, match, path.slice(1), credit - pace, seen);
   }
   return false;
 }
+
+// PB-197 (PB-197 deadlock at 78,45 / 77,45): a friend that will LEAVE its cell during this same
+// round is not a wall. Two adjacent walkers whose paths cross (A west through B's cell, B east
+// through A's) both failed PB-122's per-round test, because neither could get off the friend's
+// cell inside the round, so neither took the first step and both reported "moving" forever. The
+// step is safe when the friend vacates: the round ends with each on the other's start cell.
+// The prediction follows only the friend's immediate step, bounded, and treats the mutual swap
+// (each walking into the other's cell) as vacating. A friend already walked this round, or one
+// held by a third piece or by an enemy, is not predicted to move: its credit has been settled and
+// its chance to step has passed (`walked` carries the ids advance() has already processed).
+function willVacate(match, unit, seen, walked) {
+  if (!unit || unit.pinned === true) return false;
+  if (walked && walked.has(unit.id)) return false;
+  if (!Array.isArray(unit.path) || unit.path.length === 0) return false;
+  if (inactiveRounds(unit, match.round) > 0) return false;
+  const next = unit.path[0];
+  const pace = Math.max(1, Number(next.pace) || 1);
+  if ((Number(unit.credit) || 0) + cellsPerRound(unit) < pace) return false;
+  const nx = wrapX(next.x);
+  const ny = Number(next.y);
+  if (nx === wrapX(unit.x) && ny === Number(unit.y)) return false; // an order never ends where it starts
+  const occupant = pieceAt(match, nx, ny, unit.id);
+  if (!occupant) return true;
+  if (occupant.side !== unit.side) return false; // contact, not a crossing
+  if (seen.has(occupant.id)) return true; // the swap: each is leaving for the other's cell
+  if (seen.size >= 4) return false; // a long chain is not worth predicting; the round will show it
+  const nextSeen = new Set(seen);
+  nextSeen.add(unit.id);
+  return willVacate(match, occupant, nextSeen, walked);
+}
+
+// PB-197: a walker held out of a cell round after round is not making progress. This is the number
+// of consecutive blocked rounds after which the BOT re-plans that unit onto a fresh goal (bot.mjs).
+// The movement layer itself keeps the order (PB-097b / move_massed): a human order is the human's
+// to change, and the walker already stops one cell short, which is all Manual p.10 permits.
+export const HOLD_STALL_ROUNDS = 3;
 
 // PB-122 AC6 (PM 6699, 6740): a walker whose next step is held by a STATIONARY friend re-plans
 // around that cell when a free land route exists, keeps its order and arrives; it holds only when
@@ -874,6 +911,9 @@ export function advance(match) {
     }
     return Boolean(blocked[side]);
   };
+  // PB-197: pieces already processed this round. The crossing prediction may only trust a friend
+  // that has not had its turn yet; once its credit is settled, "it will vacate" is no longer true.
+  const walked = new Set();
   for (const piece of match.pieces) {
     if (!Array.isArray(piece.path) || piece.path.length === 0) continue;
     if (isBlocked(piece.side)) continue;
@@ -882,6 +922,7 @@ export function advance(match) {
     // Pinned (p.22): a heavily engaged land unit stands until it is re-ordered, and issueOrder
     // is what clears the flag.
     if (piece.pinned === true) continue;
+    walked.add(piece.id);
 
     // Cells per round (T-004; Manual p.9, p.21). The credit is the walking a piece has in hand:
     // an infantry gains 1 a round, a tank 2, a hull 3. Slow ground still costs a beat, so a
@@ -917,10 +958,15 @@ export function advance(match) {
       // stood wherever the first of them arrived.
       const friendly = Boolean(occupant) && occupant.side === piece.side;
       const atDestination = piece.path.length === 1;
-      // A friend on the destination holds the walker short. A friend mid-path may be crossed, but
-      // only when this round carries the walker off that cell again (PB-122): otherwise the step
-      // would end the round co-located with the friend and the order would freeze it there.
-      if (occupant && friendly && (atDestination || !canStepInto(piece, match, piece.path.slice(1), credit - pace))) {
+      // A friend on the destination holds the walker short. A friend mid-path may be crossed when
+      // either this round carries the walker off that cell again (PB-122), or the friend is itself
+      // walking out of it this round (PB-197: crossing paths, A west through B while B east through
+      // A, must not deadlock). Otherwise the step would end the round co-located with the friend.
+      const leaves = !atDestination &&
+        canStepInto(piece, match, piece.path.slice(1), credit - pace, new Set([piece.id]));
+      const friendLeaves = occupant && friendly && !atDestination && !leaves &&
+        willVacate(match, occupant, new Set([piece.id]), walked);
+      if (occupant && friendly && (atDestination || (!leaves && !friendLeaves))) {
         // AC6: a stopped friend holding the next cell is a cell to walk AROUND when the ground
         // allows it. The detour re-plans from where the piece stands onto the same destination and
         // is capped, so a piece that keeps meeting friends cannot search every round forever.
@@ -943,6 +989,11 @@ export function advance(match) {
             continue; // walk the new path with the credit still in hand
           }
         }
+        // PB-097b / move_massed: a FRIENDLY-held destination keeps the order and the walker is
+        // held one cell short of it (it may not stop on the friend's cell, Manual p.10). The unit
+        // is not stuck mid-map: it is as far as the rule allows. The bot is the side that re-plans
+        // after HOLD_STALL_ROUNDS of this (bot.mjs); a human order is the human's to change.
+        piece.holdRounds = Number(piece.holdRounds || 0) + 1;
         noteHold(piece, occupant, nx, ny, events);
         stopped = true;
         break;
@@ -963,6 +1014,9 @@ export function advance(match) {
           // where it happened to meet the enemy.
           piece.overrunBy = null;
           piece.overrunCell = null;
+          // PB-197: the bot reads this counter to re-plan; a unit held by an enemy is still held,
+          // exactly as before (AC4), it just no longer counts as a unit that is making progress.
+          piece.holdRounds = Number(piece.holdRounds || 0) + 1;
           noteHold(piece, occupant, nx, ny, events);
           stopped = true;
           break;
@@ -1098,6 +1152,7 @@ export function advance(match) {
       // exactly those rounds and re-emitted the line on pace-2 ground (live e6f12ab r23, r25, r27).
       piece.heldBy = null;
       piece.heldCell = null;
+      piece.holdRounds = 0;
       credit -= pace;
       spent += 1;
       piece.pace = piece.path.length > 0 ? Math.max(1, Number(piece.path[0].pace) || 1) : 1;
