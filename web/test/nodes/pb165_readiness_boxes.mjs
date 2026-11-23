@@ -41,9 +41,9 @@ function view(scale) {
 export async function run(ctx) {
   const { fail } = ctx;
 
-  // 1. The three branches, on the timer the original reads. 0x15 (21) is the boundary: the
-  //    original compares against the raw byte and the byte tops out at 20 from a pooled build, so
-  //    21 is the "long wait" floor.
+  // 1. The three branches, on the timer the original reads. 0x15 (21) is the boundary because the
+  //    original branches on the raw 0x10ae byte against 0x15. Nothing caps that byte near 20: per-kind
+  //    maxima measure 33/66 blue and 66/133 red, so 21 is the original's own threshold, not a ceiling.
   const round = 5;
   const at = (timer) => placementBoxState({ readyRound: timer === 0 ? 0 : round + timer }, round);
   const cases = [[0, 1], [1, 2], [20, 2], [21, 3], [40, 3]];
