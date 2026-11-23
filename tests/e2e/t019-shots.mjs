@@ -21,6 +21,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,23 +38,6 @@ if (!BASE) {
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "t019", "shots")));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    path.join(here, "node_modules", "playwright", "index.mjs"),
-    "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    if (candidate !== "playwright" && !existsSync(candidate)) continue;
-    try {
-      return await import(pathToFileURL(candidate).href);
-    } catch (err) {
-      void err;
-    }
-  }
-  return import("playwright");
-}
 
 const THEMES = [
   { id: "C", label: "Dark tactical" },

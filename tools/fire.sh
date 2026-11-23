@@ -138,6 +138,13 @@ else
   # Fallback for a fire that never reached origin (OPENCHQ_LOOP_NOPUSH=1 or a failed
   # push). An upload carries no .git, so the commit has to be stamped into the tree.
   node tools/stamp_build.mjs >>"$LOG" 2>&1 || echo "LOOP_STAMP_FAILED: build.json was not written"
+  # And prove the stamp names the tree being uploaded before anything is built: a stamp that is
+  # one ship behind is /api/version naming a commit that is not running, with no env to correct it.
+  if ! node tools/stamp_build.mjs --check >>"$LOG" 2>&1; then
+    tail -n 1 "$LOG"
+    echo "LOOP_EXIT_STAMP_STALE: build.json does not name $(git rev-parse --short HEAD); nothing uploaded"
+    exit 5
+  fi
   RAILWAY_BIN=$(command -v railway || true)
   if [ -z "$RAILWAY_BIN" ] && [ -x "$HOME/.railway/bin/railway" ]; then
     RAILWAY_BIN="$HOME/.railway/bin/railway"

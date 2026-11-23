@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argOf = (name, fallback = "") => {
@@ -31,15 +32,6 @@ const OUT = path.resolve(argOf("out", "/mnt/nas/projects/OpenCHQ/local/t015-shot
 const CAPITAL = argOf("capital", "");           // default: the first enemy-held capital
 const MAX_ROUNDS = Number(argOf("rounds", "60")) || 60;
 const SPEED = Number(argOf("speed", "6")) || 6;
-
-async function loadPlaywright() {
-  for (const c of [process.env.PLAYWRIGHT_MODULE, path.join(here, "node_modules", "playwright", "index.mjs"),
-    "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs"].filter(Boolean)) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch { /* next */ }
-  }
-  return import("playwright");
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });

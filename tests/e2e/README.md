@@ -26,8 +26,27 @@ Install it here, not at the repo root:
 
     cd tests/e2e && npm install && npx playwright install chromium
 
-If it is not installed, `run.mjs` falls back to `PLAYWRIGHT_MODULE`, then the machine's
-agent-relay install, so a reviewer with Playwright already on the box can run the suite as is.
+If it is not installed, the leg falls back to `PLAYWRIGHT_MODULE` and then to a bare package
+import, so a reviewer with Playwright already on the box can run the suite as is — set
+`PLAYWRIGHT_MODULE` to that install's `index.mjs`.
+
+## Playwright resolution (PB-176) — every leg, one order
+
+Each leg imports `loadPlaywright()` from `tests/e2e/playwright.mjs` instead of carrying its own
+candidate list. The search order is, in this order:
+
+1. `PLAYWRIGHT_MODULE` — an explicit path to a `.../playwright/index.mjs`;
+2. `tests/e2e/node_modules/playwright` — a local `npm install`;
+3. `<repo>/node_modules/playwright` — a root `npm install`;
+4. the bare `playwright` package import.
+
+There are no absolute machine paths in the search. If none resolves the leg prints one line,
+`PLAYWRIGHT_MISSING: ...` naming every candidate it tried, and exits 1 — so a fresh host fails on
+the instrument in the first line instead of in a stack trace three calls later. To point a leg at
+a Playwright install that is already on the box:
+
+    PLAYWRIGHT_MODULE=~/path/to/node_modules/playwright/index.mjs node tests/e2e/pb179-header-boxes.mjs --url=...
+
 
 ## What it proves
 

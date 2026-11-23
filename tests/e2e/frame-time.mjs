@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback = "") => {
@@ -27,18 +28,6 @@ const SAMPLES = Math.max(5, Number(arg("samples", "25")) || 25);
 const ERA = arg("era", "1942");
 const ZOOM_STEPS = Math.max(1, Number(arg("zoom", "3")) || 3);
 const OUT = path.join(here, "t014-frame-time-" + new Date().toISOString().replace(/[:.]/g, "-"));
-
-async function loadPlaywright() {
-  const candidates = [
-    process.env.PLAYWRIGHT_MODULE,
-    "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs",
-  ].filter(Boolean);
-  for (const c of candidates) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch {}
-  }
-  return await import("playwright");
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import dns from "node:dns/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback = "") => {
@@ -26,13 +27,6 @@ const ERA = arg("era", "1942");
 const DROP_SOCKET = process.argv.includes("--drop-socket");
 const OUT = path.join(here, "t010-drop-buy-" + new Date().toISOString().replace(/[:.]/g, "-"));
 
-async function loadPlaywright() {
-  for (const c of [process.env.PLAYWRIGHT_MODULE, "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs"].filter(Boolean)) {
-    if (c !== "playwright" && !existsSync(c)) continue;
-    try { return await import(pathToFileURL(c).href); } catch { /* next */ }
-  }
-  return import("playwright");
-}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rows = [];
 const summary = { base: BASE, era: ERA, startedAt: new Date().toISOString(), buy: {} };
