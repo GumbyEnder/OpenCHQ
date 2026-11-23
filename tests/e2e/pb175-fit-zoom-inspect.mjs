@@ -45,7 +45,31 @@ const SELF = path.basename(fileURLToPath(import.meta.url));
 const SELF_MD5 = createHash("md5").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex");
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const ERA = argOf("era", "1986");
-const EXPECT = argOf("expect", HEAD_SHA ? HEAD_SHA.slice(0, 7) : "");
+// PB-190b: this leg was the third survivor of the PB-190 species. PB-190 swept pb165:255 and
+// pb182:220; this arm still compared `version.short === EXPECT`, so a gate caller passing the
+// correct full 40-char sha redded a correct build (measured on live 6f41ade: 10/1/11 exit 1,
+// the only FAIL "the page is served 6f41ade1c7…", detail quoting that exact commit).
+// The default also has to stay EMPTY: a worktree's HEAD is never the sha Railway serves, so
+// defaulting to HEAD.slice(0,7) pins a tests-only branch to a page that cannot match.
+const EXPECT = argOf("expect", "");
+// A prefix names a commit only at 7 characters; the full commit is the witness when the host
+// publishes one (PB-190 / frodo 8452 §2). Same helper as pb165/pb182 at this sha.
+function servedMatches(version) {
+  const want = String(EXPECT || "").toLowerCase();
+  if (!want) return true;
+  const commit = String((version && version.commit) || "").toLowerCase();
+  const short = String((version && version.short) || "").toLowerCase();
+  const PREFIX_MIN = 7;
+  if (commit) {
+    if (commit === want) return true;
+    if (want.length > commit.length) return want.startsWith(commit);
+    return want.length >= PREFIX_MIN && commit.startsWith(want);
+  }
+  if (!short) return false;
+  if (short === want) return true;
+  if (want.length > short.length) return want.startsWith(short);
+  return want.length >= PREFIX_MIN && short.startsWith(want);
+}
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb175")));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -157,7 +181,7 @@ try {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 20000 });
   const version = await page.evaluate(() => fetch("/api/version").then((r) => r.json()).catch(() => null));
-  mark("the page is served " + (EXPECT || "any sha"), Boolean(version) && (!EXPECT || version.short === EXPECT),
+  mark("the page is served " + (EXPECT || "any sha"), Boolean(version) && servedMatches(version),
     JSON.stringify(version));
 
   if (!(await page.evaluate(() => Boolean(window.__chq && window.__chq.me())))) {
