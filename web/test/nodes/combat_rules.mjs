@@ -261,19 +261,20 @@ export async function run(ctx) {
   {
     const city = { id: 10, name: "Home", x: 80, y: 40, kind: "city", owner: "blue" };
     const plane = { id: "blue:air:1", side: "blue", domain: "air", kind: "aircraft", x: 80, y: 40, path: [], pace: 1 };
-    const land = unit("red:l", "red", "infantry", 90, 44);
+    // PB-188: the restricted air radius (6 cells) gates a strike, so the target sits inside it.
+    const land = unit("red:l", "red", "infantry", 85, 44);
     const landMatch = matchOf([plane, land], { sites: [city] });
-    const strike = sendMission(landMatch, "blue", "blue:air:1", "strike", { x: 90, y: 44 });
+    const strike = sendMission(landMatch, "blue", "blue:air:1", "strike", { x: 85, y: 44 });
     if (strike.error) fail("the strike was refused: " + strike.error);
     if (!near(land.strength, cfg.maxStrength * cfg.airStrikeLandFactor)) {
       fail("an air strike did not halve a land unit: " + land.strength);
     }
-    const sea = ship("red:s", "red", "cruiser", 90, 44);
+    const sea = ship("red:s", "red", "cruiser", 85, 44);
     const seaMatch = matchOf([plane, sea], { sites: [city] });
     for (let i = 0; i < 3; i++) {
       plane.inactiveUntil = 0;
       seaMatch.round = i + 1;
-      const result = sendMission(seaMatch, "blue", "blue:air:1", "strike", { x: 90, y: 44 });
+      const result = sendMission(seaMatch, "blue", "blue:air:1", "strike", { x: 85, y: 44 });
       if (result.error) fail("strike " + (i + 1) + " was refused: " + result.error);
     }
     if (seaMatch.pieces.some((piece) => piece.id === "red:s")) fail("three strikes did not sink the ship");

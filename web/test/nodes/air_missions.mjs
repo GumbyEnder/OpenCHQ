@@ -117,10 +117,39 @@ export async function run() {
   // --- a strike is logged too -----------------------------------------------------------------
   {
     const m = match([plane("p1", "blue", 80, 44)]);
-    const result = sendMission(m, "blue", "p1", "strike", { x: 90, y: 44 });
+    // PB-188: a strike is gated by the restricted air radius, so this arm aims inside it.
+    const result = sendMission(m, "blue", "p1", "strike", { x: 85, y: 44 });
+    if (result.error) fail("the strike was refused: " + result.error);
     const lines = logLines(m, "blue", [result.events[0]], 1);
     if (!lines.length) fail("a strike produced no log line");
     if (!/strike/i.test(lines[0].text)) fail("the log does not name the strike: " + lines[0].text);
+  }
+
+  // --- PB-188: this node measures the restricted circle, not just air.mjs ----------------------
+  // The strike arm above was re-aimed inside the circle when the rule landed, so these two arms
+  // are what keeps this node measuring the radius it is named for: the band reds on the boundary
+  // and the edge proves the boundary is inclusive.
+  {
+    const restricted = Math.floor(Number(air.restrictedReach));
+    if (!(restricted > 0)) fail("config has no restricted air radius");
+
+    const band = match([plane("band", "blue", 80, 44)]);
+    const over = sendMission(band, "blue", "band", "strike", { x: 80 + restricted + 1, y: 44 });
+    if (!over.error) fail("a strike one cell past the restricted radius was accepted");
+    if (!/air strike must be inside the restricted air radius \(\d+ cells\)/.test(over.error)) {
+      fail("the refusal does not name the circle as a strike: " + over.error);
+    }
+    eq("a refused strike costs the plane nothing", band.pieces[0].inactiveUntil ?? null, null);
+
+    const edge = match([plane("edge", "blue", 80, 44)]);
+    const atEdge = sendMission(edge, "blue", "edge", "strike", { x: 80 + restricted, y: 44 });
+    if (atEdge.error) fail("a strike exactly at the restricted radius was refused: " + atEdge.error);
+    eq("the edge strike costs the config's strike rounds", edge.pieces[0].inactiveUntil, 1 + strikeRounds);
+
+    // Patrol keeps the open range: a decision, pinned so a later change has to red here.
+    const cap = match([plane("cap", "blue", 80, 44)]);
+    const far = sendMission(cap, "blue", "cap", "patrol", { x: 80 + Number(air.reach), y: 44 });
+    if (far.error) fail("a patrol is supposed to keep the open range: " + far.error);
   }
 
   // --- unknown modes are still refused --------------------------------------------------------

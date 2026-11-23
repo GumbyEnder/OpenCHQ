@@ -959,13 +959,14 @@ board.addEventListener("click", (event) => {
   // cell, where no enemy ever stands (T-003 hand check 4).
   if (selected.kind === "aircraft" || selected.domain === "air") {
     const mode = pendingMission === "transfer" || pendingMission === "bomb" ? pendingMission : "strike";
-    // PB-178: a bombing run's target must lie inside the restricted air radius (manual p.25).
+    // PB-178 + PB-188: a mission's target must lie inside the restricted air radius (manual p.25),
+    // and the circle belongs to the air layer, not to the Bomb button: a strike is a mission too.
     // Refused here, with the circle named, so the click never becomes an order at all - the
     // server would refuse it too, but a refusal the player can see before the wire is the point.
-    if (mode === "bomb") {
+    if (mode === "bomb" || mode === "strike") {
       const briefing = ((room && room.seat && room.seat.air) || []).find((plane) => plane.id === selected.id);
       const refusal = briefing
-        ? restrictedTargetRefusal(selected, cell, briefing.restrictedReach, briefing.reach, BOARD_W)
+        ? restrictedTargetRefusal(selected, cell, briefing.restrictedReach, briefing.reach, BOARD_W, mode)
         : null;
       if (refusal) {
         say(refusal);
@@ -1723,7 +1724,9 @@ function toolRow(room) {
           : needsBase && !briefing.canFly
             ? "No friendly city, dock or ship in reach."
             : mission.mode === "strike"
-              ? "Pick the target cell on the map; the aircraft flies there for " + mission.rounds + " rounds."
+              ? "Pick the target cell on the map inside the restricted air radius ("
+                + (briefing.restrictedReach || "?") + " cells); the aircraft flies there for "
+                + mission.rounds + " rounds."
               : mission.mode === "bomb"
                 ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius (" + (briefing.restrictedReach || "?") + " cells); the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
@@ -1739,7 +1742,8 @@ function toolRow(room) {
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : mission.mode === "bomb"
                 ? "Bomb: pick an empty enemy city, base, oil field or capital."
-                : "Strike: pick the target cell on the map.");
+                : "Strike: pick the target cell inside the restricted air radius ("
+                  + (briefing.restrictedReach || "?") + " cells).");
             closeDialog();
             return;
           }
@@ -2284,7 +2288,10 @@ const DIALOG_PAINTERS = {
           : mission.mode === "bomb"
             ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
               + (plane.restrictedReach || "?") + " cells); away for " + mission.rounds + " rounds."
-            : mission.rounds > 0
+            : mission.mode === "strike"
+              ? "Pick the target cell inside the restricted air radius ("
+                + (plane.restrictedReach || "?") + " cells); away for " + mission.rounds + " rounds."
+              : mission.rounds > 0
               ? "Away for " + mission.rounds + " rounds."
               : "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED.";
         button.disabled = !plane.ready;
@@ -2307,7 +2314,8 @@ const DIALOG_PAINTERS = {
               : mission.mode === "bomb"
                 ? "Bomb: pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
                   + (plane.restrictedReach || "?") + " cells)."
-                : "Strike: pick the target cell on the map.");
+                : "Strike: pick the target cell inside the restricted air radius ("
+                  + (plane.restrictedReach || "?") + " cells).");
             closeDialog();
             drawMatch();
             return;
