@@ -64,7 +64,9 @@ try {
 
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const ERA = argOf("era", "1986");
-const EXPECT = argOf("expect", HEAD_SHA ? HEAD_SHA.slice(0, 7) : "");
+// Same default as the pb182 leg: a tests-only branch's HEAD is never the served sha, so pinning it by
+// default reds a correct page. Gate callers pass --expect=<live sha>; no flag = "any sha" + prints it.
+const EXPECT = argOf("expect", "");
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb165")));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
