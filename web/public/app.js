@@ -911,6 +911,11 @@ board.addEventListener("click", (event) => {
     selectedId: selected ? selected.id : null,
     badgeMinPx: BADGE_MIN_PX * dpr(),
     cell,
+    // PB-191: one whole CSS pixel of pointer error, expressed in the canvas's own pixels. A mouse
+    // event reports whole CSS pixels, so a click aimed at the selected piece's own cell edge can
+    // arrive a pixel short of it; without this the click resolved to the neighbour and spent a
+    // round marching the unit to the cell it already stood on.
+    ownCellSlop: canvasScale(),
   });
   // PB-175: at the world fit a unit's badge is wider than its cell, so a city with a garrison could
   // never be inspected - every click on it resolved to the piece, and PB-163's site line only ran
@@ -922,8 +927,14 @@ board.addEventListener("click", (event) => {
   // The cell test is the piece's own cell, not the badge box, so a click on a neighbouring cell is
   // still a move order at every zoom (PB-146).
   if (intent && intent.kind === "piece") {
+    // PB-191: the site is looked up on the PIECE's own cell, not on the floored cell the event
+    // produced. Once clickIntent has said "this piece" the click is the piece's own cell by
+    // definition (the own-cell rule is the only branch that returns the selected piece), and the
+    // floored cell can be one cell over by the pointer's own pixel error - re-testing it here is
+    // what made a corner click reselect instead of naming the city it stands on.
     const reclickSite = selected && String(intent.piece.id) === String(selected.id)
-      ? siteUnderPiece(room.sites, intent.piece, cell, viewForCanvas().boardW)
+      ? siteUnderPiece(room.sites, intent.piece,
+        { x: Number(intent.piece.x), y: Number(intent.piece.y) }, viewForCanvas().boardW)
       : null;
     if (reclickSite) {
       say(siteInspectText(reclickSite, room.round));
@@ -983,6 +994,20 @@ board.addEventListener("click", (event) => {
     return;
   }
   const message = orderMessage(selected, cell);
+  // PB-191: the page never sends a march to the cell the piece already stands on. The own-cell
+  // rule in clickIntent decides the click, so this is the last guard on the wire: a resolved
+  // destination equal to the piece's own cell is the cell's own inspect/re-select, and the server
+  // refuses the order anyway ("That piece is already on that cell."). The wrap is the seam's.
+  if (selected && message && wrapX(Number(selected.x), BOARD_W) === wrapX(Number(cell.x), BOARD_W)
+    && Number(selected.y) === Number(cell.y)) {
+    const site = siteUnderPiece(room.sites, selected, cell, BOARD_W);
+    if (site) {
+      say(siteInspectText(site, room.round));
+      return;
+    }
+    say(selectionToast(selected));
+    return;
+  }
   if (message) sendOrder(message);
 });
 
