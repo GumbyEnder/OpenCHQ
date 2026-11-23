@@ -360,21 +360,56 @@ try {
   const series = [];
   let armStateBroken = null;
   const clicksAtDecayStart = boardClicks;
-  while ((Number((await room()).round) || 0) <= readyAt + 3) {
-    const r = Number((await room()).round) || 0;
-    const roomNow = await room();
-    const siteNow = (roomNow.sites || []).find((s) => s.name === (latest && latest.name));
-    const cells = await legal();
-    const hit = track ? cells.find((c) => c.x === track.x && c.y === track.y) : null;
-    const px = track ? await sample(track) : [0, 0, 0, 0];
-    const ink = await classify(px);
-    const st = await page.evaluate(() => window.__chq.state());
-    if (st.buying !== "infantry" || st.placement !== true) armStateBroken = { round: r, state: st };
-    series.push({ round: r, box: hit ? hit.box : null, ink: ink.ink, h: ink.h, rgba: px.join(","),
-      readyRound: siteNow ? Number(siteNow.readyRound) : null, clock: roomNow.clock, speed: roomNow.speed });
-    writeFileSync(path.join(OUT, "pb182-decay-series.json"), JSON.stringify({ track, readyAt, series }, null, 2));
-    if (r >= readyAt + 3) break;
-    await waitRound(r + 1, 60000);
+  // ONE evaluate per sample, so the round, the mask byte and the pixel are read at the same instant
+  // and the loop is cheap enough to see every round at speed 6 (0.6 s/round). Before PB-185 this was
+  // five separate evaluates per iteration; on the live host a single slow reply stretched an
+  // iteration past a round (measured: rounds 9 -> 24 in one step, 15 rounds unobserved), and the
+  // crossing check then red against a correct page because the sampler, not the page, had skipped.
+  const snapshot = () => page.evaluate(({ cell, name, activeName, width }) => {
+    const r = window.__chq.room();
+    const cells = window.__chq.legalCells(6000);
+    const hit = cell ? cells.find((c) => c.x === cell.x && c.y === cell.y) : null;
+    const st = window.__chq.state();
+    let px = [0, 0, 0, 0];
+    if (cell) {
+      const centre = window.__chq.cellToScreen(cell.x, cell.y);
+      const cv = document.getElementById("board");
+      const rect = cv.getBoundingClientRect();
+      const g = cv.getContext("2d");
+      let bestSat = -1;
+      for (let dx = -2; dx <= 2; dx += 1) {
+        for (let dy = -2; dy <= 2; dy += 1) {
+          const d = g.getImageData(
+            Math.round((centre.x + dx - rect.left) * (cv.width / rect.width)),
+            Math.round((centre.y + dy - rect.top) * (cv.height / rect.height)),
+            1, 1,
+          ).data;
+          const max = Math.max(d[0], d[1], d[2]);
+          const min = Math.min(d[0], d[1], d[2]);
+          const sat = max ? (max - min) / max : 0;
+          if (sat > bestSat && max > 40) { bestSat = sat; px = [d[0], d[1], d[2], d[3]]; }
+        }
+      }
+    }
+    const ink = window.__chqClassify(px);
+    const site = (r.sites || []).find((s) => s.name === (name || activeName));
+    return { round: Number(r.round) || 0, box: hit ? hit.box : null, ink: ink.ink, h: ink.h,
+      rgba: px.join(","), readyRound: site ? Number(site.readyRound) : null, clock: r.clock,
+      speed: r.speed, buying: st.buying, placement: st.placement };
+  }, { cell: track, name: latest && latest.name, activeName: latest && latest.name, width: 320 });
+
+  const deadline = Date.now() + 240000;
+  while (Date.now() < deadline) {
+    const s = await snapshot();
+    if (s.buying !== "infantry" || s.placement !== true) armStateBroken = { round: s.round, state: s };
+    const last = series[series.length - 1];
+    if (!last || s.round !== last.round) {
+      series.push({ round: s.round, box: s.box, ink: s.ink, h: s.h, rgba: s.rgba,
+        readyRound: s.readyRound, clock: s.clock, speed: s.speed });
+      writeFileSync(path.join(OUT, "pb182-decay-series.json"), JSON.stringify({ track, readyAt, series }, null, 2));
+    }
+    if (s.round >= readyAt + 3) break;
+    await sleep(60);
   }
 
   const firstBox = series.find((row) => row.box === 3)
