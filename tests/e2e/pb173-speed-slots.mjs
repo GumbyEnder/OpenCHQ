@@ -301,32 +301,44 @@ try {
       // ellipsis ate the button — 23.39 px inside the clip box, 42.65 px cut — so elementFromPoint on
       // its centre returned #debugToggle and the control was effectively gone. Measure the button:
       // inside #account, its own full width (not clipped), and the top element at its centre.
-      const acct = await page.evaluate(() => {
-        const a = document.getElementById("account");
-        const btn = a ? a.querySelector("button") : null;
-        const who = a ? a.querySelector(".who") : null;
-        const box = (n) => {
-          const r = n.getBoundingClientRect();
-          return { x: +r.x.toFixed(2), right: +(r.x + r.width).toFixed(2), w: +r.width.toFixed(2),
-            scrollW: n.scrollWidth, clientW: n.clientWidth };
-        };
-        let hit = null;
-        if (btn) {
+      //
+      // frodo 8422 §3: this arm used to require `(name).length >= 26` while the registration above
+      // always makes exactly 26 chars, so it could only ever describe one length. 17 and 24 are just
+      // as legal and are where the ellipsis wins, and the ticket ships on 17/24/26 — so every length
+      // runs the SAME assert. The handle text is set inside the page (the purse probe's own pattern)
+      // and restored after the measurement; the login handle itself is untouched.
+      for (const chars of [17, 24, 26]) {
+        const acct = await page.evaluate((chars) => {
+          const a = document.getElementById("account");
+          const btn = a ? a.querySelector("button") : null;
+          const who = a ? a.querySelector(".who") : null;
+          if (!who || !btn) return { name: null, account: null, signout: null, text: null, hit: null };
+          const before = who.textContent;
+          who.textContent = "e2e-pb173-" + "x".repeat(Math.max(0, chars - 10));
+          const box = (n) => {
+            const r = n.getBoundingClientRect();
+            return { x: +r.x.toFixed(2), right: +(r.x + r.width).toFixed(2), w: +r.width.toFixed(2),
+              scrollW: n.scrollWidth, clientW: n.clientWidth };
+          };
+          let hit = null;
           const r = btn.getBoundingClientRect();
           const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
           hit = el ? (el.id || el.tagName) : null;
-        }
-        return { name: who ? who.textContent : null, account: a ? box(a) : null,
-          signout: btn ? box(btn) : null, text: btn ? btn.textContent : null, hit };
-      });
-      signoutW[label] = acct.signout ? acct.signout.w : null;
-      mark("Sign out is whole and hittable beside a " + ((acct.name || "").length) + "-char handle at " + label,
-        Boolean(acct.signout) && (acct.name || "").length >= 26
-          && acct.signout.right <= acct.account.right + 0.5
-          && acct.signout.scrollW <= acct.signout.clientW
-          && acct.hit === "BUTTON" && acct.text === "Sign out"
-          && (label.indexOf("1280") !== 0 || signoutW["1440x900"] == null || near(acct.signout.w, signoutW["1440x900"])),
-        JSON.stringify(acct));
+          const out = { name: who.textContent, account: box(a), signout: box(btn),
+            text: btn.textContent, hit };
+          who.textContent = before;
+          return out;
+        }, chars);
+        signoutW[label + "/" + chars] = acct.signout ? acct.signout.w : null;
+        mark("Sign out is whole and hittable beside a " + chars + "-char handle at " + label,
+          Boolean(acct.signout) && (acct.name || "").length === chars
+            && acct.signout.right <= acct.account.right + 0.5
+            && acct.signout.scrollW <= acct.signout.clientW
+            && acct.hit === "BUTTON" && acct.text === "Sign out"
+            && (label.indexOf("1280") !== 0 || signoutW["1440x900/" + chars] == null
+              || near(acct.signout.w, signoutW["1440x900/" + chars])),
+          JSON.stringify(acct));
+      }
     } else {
       const cash = run.rows.purseCash;
       const chip = run.rows.purseChip;
