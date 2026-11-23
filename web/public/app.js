@@ -35,7 +35,7 @@ import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { scanAddPieces, scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
-import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo } from "./shell.mjs";
+import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfoParts } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
 import { NAV, buyRows, economyModel, navFor, oilLine, reserveLine, untypedCount } from "./dialogs.mjs";
 // The Log panel's buffer and scroll policy (PB-135): the panel paints every line the page retains
@@ -1208,6 +1208,27 @@ paintThemeControl();
 
 window.addEventListener("resize", () => refit());
 
+// PB-173: the strip's clock word goes in a slot of its own (see .stripinfo .phase in app.css), so
+// the painter builds the line out of nodes instead of assigning one string. textContent throughout —
+// these are room fields, and a name is not markup.
+function paintStripInfo(room) {
+  const info = document.getElementById("stripInfo");
+  if (!info) return;
+  const pieces = stripInfoParts(room);
+  info.textContent = "";
+  pieces.forEach((piece, i) => {
+    if (i) info.appendChild(document.createTextNode(" \u00b7 "));
+    if (piece.phase) {
+      const slot = document.createElement("span");
+      slot.className = "phase";
+      slot.textContent = piece.text;
+      info.appendChild(slot);
+    } else {
+      info.appendChild(document.createTextNode(piece.text));
+    }
+  });
+}
+
 document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1));
 document.getElementById("camOut")?.addEventListener("click", () => zoomStep(-1));
 document.getElementById("camFit")?.addEventListener("click", () => refit());
@@ -1424,8 +1445,7 @@ function syncShell() {
     document.body.classList.toggle("in-match", inMatch);
     refit();
   }
-  const info = document.getElementById("stripInfo");
-  if (info) info.textContent = stripInfo(room);
+  paintStripInfo(room);
   // The purse at a glance: the economy dialogue explains it, this is the number a player wants to
   // see without opening anything.
   const purse = document.getElementById("purseChip");
@@ -1477,8 +1497,7 @@ function renderRoom() {
   syncBuyNav();
   if (document.body.classList.contains("in-match") !== Boolean(room)) syncShell();
   else {
-    const info = document.getElementById("stripInfo");
-    if (info) info.textContent = stripInfo(room);
+    paintStripInfo(room);
     renderDebug();
   }
   if (room && room.over) {

@@ -33,31 +33,42 @@ export function fitCells(availW, availH, opts = {}) {
 
 // What the strip says while a match is up: who you are, what war this is, where the clock is.
 // Empty without a match, which is what tells the page to show the full header instead.
-export function stripInfo(room) {
-  if (!room) return "";
+//
+// PB-173: the pieces come back as objects, not as one string, because ONE of them — the clock word —
+// has to be laid out in a slot of its own. "running" (7), "paused" (6) and "held" (4) are three
+// different widths, and the strip is a flex row: the word alone moved the speed control 10.65 px
+// left on a Pause press, which is a button that walks out from under the pointer. The slot is CSS;
+// the split is here so it can exist without app.js parsing a sentence apart.
+export function stripInfoParts(room) {
+  if (!room) return [];
   const era = String(room.era) === "9999" ? "Concealed" : String(room.era || "");
   const side = room.you || (room.seat && room.seat.side) || "";
   const parts = [];
-  if (era) parts.push(era);
-  if (side) parts.push(side);
-  if (room.round !== undefined && room.round !== null) parts.push("round " + room.round);
+  if (era) parts.push({ text: era });
+  if (side) parts.push({ text: side });
+  if (room.round !== undefined && room.round !== null) parts.push({ text: "round " + room.round });
   if (room.clock) {
     // PB-142: speed 0 accepts orders and lets no time pass, and the server keeps the clock at
     // "running" for exactly that reason (lobby.mjs tickRooms skips the tick when speed is 0). So the
     // clock word alone is not the whole answer and the strip argued with the readout two pixels
     // away. Read the speed the room is at; a held clock is a different pause and keeps its word.
     const paused = room.clock === "running" && Number(room.speed) === 0;
-    parts.push(paused ? "paused" : room.clock);
+    parts.push({ text: paused ? "paused" : room.clock, phase: true });
   }
   if (room.over) {
     // The reason belongs in the strip too: the round bar stops for a resignation and for a capital
     // win alike, and "blue won" alone is the same sentence for both.
     const last = room.result && room.result.lastCapital;
-    parts.push(room.winner
+    parts.push({ text: room.winner
       ? room.winner + " won" + (last && last.name ? " (" + last.name + ", round " + last.round + ")" : "")
-      : "over");
+      : "over" });
   }
-  return parts.join(" · ");
+  return parts;
+}
+
+// The same line as one string, for the tests and for anything that only wants to read it.
+export function stripInfo(room) {
+  return stripInfoParts(room).map((part) => part.text).join(" · ");
 }
 
 // The debug window's rows, as [label, value] pairs. Pure so the test can assert them, and written
