@@ -49,6 +49,10 @@ const boxes = () => {
   return {
     text: (document.getElementById("speedReadout") || {}).textContent || "",
     down: box("speedDown"), readout: box("speedReadout"), up: box("speedUp"),
+    // PB-173: the phase word sits in its own fixed slot, so #stripInfo must not change width when
+    // the clock toggles held<->running, and #clockBtn must not change with its glyph.
+    stripInfo: box("stripInfo"), clockBtn: box("clockBtn"),
+    clock: (window.__chq.room() || {}).clock || null,
   };
 };
 
@@ -135,12 +139,67 @@ async function main() {
     check(dDown === 0, "`-` does not move between speed 1 and speed 0", "delta " + dDown);
     check(dUp === 0, "`+` does not move between speed 1 and speed 0", "delta " + dUp);
     check(dWidth === 0, "the readout slot is the same width at both speeds", "delta " + dWidth);
+
+    // PM 8245 §2: the geometry must hold with the clock HELD as well as running. PB-173 puts the
+    // phase word in its own slot, so toggling the clock must move nothing; this pass walks the same
+    // speed 1 -> speed 0 axis with the clock held and reports both deltas beside the running pair.
+    const toggleClock = async (want) => {
+      for (let i = 0; i < 8; i++) {
+        const got = await page.evaluate(() => (window.__chq.room() || {}).clock || null);
+        if (got === want) return got;
+        await page.evaluate(() => {
+          const b = document.getElementById("clockBtn");
+          if (b) b.click();
+        });
+        await sleep(350);
+      }
+      return await page.evaluate(() => (window.__chq.room() || {}).clock || null);
+    };
+
+    // Put the clock back on the speed-1 rail before toggling: at speed 0 the clock reads `paused`,
+    // and the held/running pair is only meaningful from a running clock.
+    await setSpeed(1);
+    await sleep(250);
+    const heldState = await toggleClock("held");
+    const h1 = await page.evaluate(() => {
+      const r = window.__chq.room();
+      return r ? Number(r.speed) : null;
+    });
+    await sleep(150);
+    const oneHeld = await page.evaluate(boxes);
+    const h0 = await setSpeed(0);
+    await sleep(250);
+    const zeroHeld = await page.evaluate(boxes);
+
+    const hDown = +(zeroHeld.down.left - oneHeld.down.left).toFixed(2);
+    const hUp = +(zeroHeld.up.left - oneHeld.up.left).toFixed(2);
+    const hWidth = +(zeroHeld.readout.width - oneHeld.readout.width).toFixed(2);
+    // Same speed, clock running vs held: nothing in the row may move either.
+    const cDown = +(oneHeld.down.left - one.down.left).toFixed(2);
+    const cUp = +(oneHeld.up.left - one.up.left).toFixed(2);
+    const cInfo = +(oneHeld.stripInfo.width - one.stripInfo.width).toFixed(2);
+    const cClock = +(oneHeld.clockBtn.width - one.clockBtn.width).toFixed(2);
+
+    check(heldState === "held", "the clock is held for the second pass", String(heldState));
+    check(h1 === 1 && h0 === 0, "the room settled at speed 1 then 0 with the clock held",
+      JSON.stringify({ one: h1, zero: h0 }));
+    check(hDown === 0, "`-` does not move between speed 1 and speed 0 while held", "delta " + hDown);
+    check(hUp === 0, "`+` does not move between speed 1 and speed 0 while held", "delta " + hUp);
+    check(hWidth === 0, "the readout slot is the same width at both speeds while held", "delta " + hWidth);
+    check(cDown === 0, "`-` does not move between running and held at speed 1", "delta " + cDown);
+    check(cUp === 0, "`+` does not move between running and held at speed 1", "delta " + cUp);
+    check(cInfo === 0, "#stripInfo keeps its width between running and held", "delta " + cInfo
+      + " " + JSON.stringify({ running: one.stripInfo && one.stripInfo.width, held: oneHeld.stripInfo && oneHeld.stripInfo.width }));
+    check(cClock === 0, "#clockBtn keeps its width between running and held", "delta " + cClock);
     check(errors.length === 0, "no page error during the run", errors.slice(0, 2).join(" | "));
 
     const summary = {
       base: BASE, era: ERA, viewport: "1440x900",
       settledSpeed: settled, speed1: one, speed0: zero,
-      delta: { down: dDown, up: dUp, readoutWidth: dWidth },
+      speed1Held: oneHeld, speed0Held: zeroHeld,
+      delta: { down: dDown, up: dUp, readoutWidth: dWidth,
+        held: { down: hDown, up: hUp, readoutWidth: hWidth },
+        clockToggle: { down: cDown, up: cUp, stripInfoWidth: cInfo, clockBtnWidth: cClock } },
       checks: rows,
     };
     writeFileSync(path.join(OUT, "pb143-speed-row.json"), JSON.stringify(summary, null, 2));
