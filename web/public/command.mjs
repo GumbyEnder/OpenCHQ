@@ -560,6 +560,20 @@ export function siteAtCell(sites, cell) {
   return sites.find((site) => site && Number(site.x) === x && Number(site.y) === y) || null;
 }
 
+// PB-175: the site a click on a PIECE's own cell is standing on. At the world fit a badge is wider
+// than its cell, so a garrisoned city could never be inspected: every click on it resolved to the
+// piece (PB-163's site line only ran when nothing was selected). The page cycles instead - the first
+// click selects the unit, a second click on the same cell asks this function what the piece stands
+// on. The cell test is the piece's own cell (wrapped, so a world seam is not a miss), never the
+// badge box: a click a cell away is still a move order (PB-146).
+export function siteUnderPiece(sites, piece, cell, boardW) {
+  if (!piece || !cell) return null;
+  const width = Number(boardW) || 320;
+  if (wrapX(Number(piece.x), width) !== Number(cell.x)) return null;
+  if (Number(piece.y) !== Number(cell.y)) return null;
+  return siteAtCell(sites, cell);
+}
+
 export function siteInspectText(site, round) {
   if (!site) return "";
   const name = String(site.name || "A site");

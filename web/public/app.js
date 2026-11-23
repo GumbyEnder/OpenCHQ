@@ -30,6 +30,7 @@ import {
   selectionToast,
   siteAtCell,
   siteInspectText,
+  siteUnderPiece,
   snapPlacementCell,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
@@ -907,7 +908,23 @@ board.addEventListener("click", (event) => {
     badgeMinPx: BADGE_MIN_PX * dpr(),
     cell,
   });
+  // PB-175: at the world fit a unit's badge is wider than its cell, so a city with a garrison could
+  // never be inspected - every click on it resolved to the piece, and PB-163's site line only ran
+  // when nothing was selected. The rule is a CYCLE, and it is chosen over "the city wins the first
+  // click" because that would take the unit's own click away (PB-143):
+  //   1st click on a friendly city cell: selects the unit exactly as before;
+  //   2nd click on that same cell with that same unit still selected: says the city's own inspect
+  //   line (Ready / "Unready - ready at round N") and keeps the unit selected.
+  // The cell test is the piece's own cell, not the badge box, so a click on a neighbouring cell is
+  // still a move order at every zoom (PB-146).
   if (intent && intent.kind === "piece") {
+    const reclickSite = selected && String(intent.piece.id) === String(selected.id)
+      ? siteUnderPiece(room.sites, intent.piece, cell, viewForCanvas().boardW)
+      : null;
+    if (reclickSite) {
+      say(siteInspectText(reclickSite, room.round));
+      return;
+    }
     selected = intent.piece;
     preview = null;
     hoverKey = selected.id + ":" + selected.x + "," + selected.y;
