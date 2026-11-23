@@ -326,7 +326,7 @@ export async function run(ctx) {
       match.clock = "running";
       match.seats = { blue: { kind: "human" }, red: { kind: "human" } };
       seedOwners(match);
-      const attacker = tankAt(pair.beside[0], pair.beside[1]);
+      const attacker = tankAt(pair.mountain[0], pair.mountain[1]);
       const garrison = dugInAt(pair.mountain[0], pair.mountain[1]);
       match.pieces = [attacker, garrison];
       const hits = [];

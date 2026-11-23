@@ -59,8 +59,9 @@ export async function run(ctx) {
   if (adjacent(null, { x: 1, y: 1 })) say("a null piece counted as adjacent", null);
   if (distance({ x: 319, y: 4 }, { x: 0, y: 4 }) !== 1) say("distance did not wrap X", distance({ x: 319, y: 4 }, { x: 0, y: 4 }));
 
-  // --- contact: two hostile pieces fire, and neither moves -------------------------------
-  const pair = [piece("blue:land", "blue", 10, 10), piece("red:land", "red", 11, 10)];
+  // --- contact: two hostile pieces that OVERLAP fire, and neither moves -------------------
+  // PB-195, Manual p.9: land units "must overlap to fight". The pair shares a cell.
+  const pair = [piece("blue:land", "blue", 10, 10), piece("red:land", "red", 10, 10)];
   const match = matchOf(pair, 1);
   const events = resolve(match);
   const shots = shotsOf(events);
@@ -69,9 +70,9 @@ export async function run(ctx) {
   const fromRed = shots.find((event) => event.side === "red");
   if (!fromBlue || fromBlue.pieceId !== "blue:land") say("blue shot event is wrong", shots);
   if (!fromRed || fromRed.pieceId !== "red:land") say("red shot event is wrong", shots);
-  if (fromBlue.at.x !== 11 || fromBlue.at.y !== 10) say("blue's shot did not land on the enemy cell", fromBlue.at);
+  if (fromBlue.at.x !== 10 || fromBlue.at.y !== 10) say("blue's shot did not land on the enemy cell", fromBlue.at);
   if (fromRed.at.x !== 10 || fromRed.at.y !== 10) say("red's shot did not land on the enemy cell", fromRed.at);
-  if (pair[0].x !== 10 || pair[0].y !== 10 || pair[1].x !== 11 || pair[1].y !== 10) {
+  if (pair[0].x !== 10 || pair[0].y !== 10 || pair[1].x !== 10 || pair[1].y !== 10) {
     say("resolve moved a piece; stopping one short is move.mjs's job and fighting stays put", pair);
   }
   if (match.foughtRound !== 1) say("foughtRound did not record the round the shot resolved", match.foughtRound);
@@ -87,7 +88,7 @@ export async function run(ctx) {
   if (pair[1].strength !== cfg.maxStrength - infantryCell) say("red's bar did not drop by the matrix cell", pair[1].strength);
 
   // --- one continuous fight: a shot every other round, never twice in a row --------------
-  const fight = [piece("blue:land", "blue", 40, 40), piece("red:land", "red", 41, 40)];
+  const fight = [piece("blue:land", "blue", 40, 40), piece("red:land", "red", 40, 40)];
   const fightMatch = matchOf(fight, 1);
   const firedOn = [];
   for (let round = 1; round <= 6; round++) {
@@ -105,7 +106,7 @@ export async function run(ctx) {
   if (fight[0].fighting !== "red:land" || fight[1].fighting !== "blue:land") say("pieces did not record who they are fighting", [fight[0].fighting, fight[1].fighting]);
 
   // --- a break ends the fight; a later meeting starts a new one --------------------------
-  const gap = matchOf([piece("blue:land", "blue", 40, 40), piece("red:land", "red", 41, 40)], 1);
+  const gap = matchOf([piece("blue:land", "blue", 40, 40), piece("red:land", "red", 40, 40)], 1);
   resolve(gap);
   gap.round = 2;
   gap.pieces[1].x = 60; // synthetic separation; move.mjs owns real movement
@@ -115,14 +116,14 @@ export async function run(ctx) {
     say("a broken fight kept its bookkeeping", gap.pieces[0]);
   }
   gap.round = 3;
-  gap.pieces[1].x = 41;
+  gap.pieces[1].x = 40;
   const again = shotsOf(resolve(gap));
   if (again.length !== 2) say("re-engaging did not fire", again);
 
   // --- a fight ends on strength, not on a shot count -------------------------------------
   // A tank (more damage) against infantry: the tank lands its killing hit first, so the duel has
   // a survivor to check. The archive's removal line is gone; strength decides.
-  const duel = [piece("blue:land", "blue", 40, 40, "tank"), piece("red:land", "red", 41, 40, "infantry")];
+  const duel = [piece("blue:land", "blue", 40, 40, "tank"), piece("red:land", "red", 40, 40, "infantry")];
   duel[0].movedRound = 7; // blue advanced into contact; red has been sitting there
   const duelMatch = matchOf(duel, 1);
   let killed = null;
@@ -155,9 +156,22 @@ export async function run(ctx) {
   const apartMatch = matchOf(apart, 1);
   if (resolve(apartMatch).length !== 0) say("enemies beyond the engagement range fired", apart);
   if (apart[0].fighting !== null) say("enemies beyond the engagement range recorded a fight", apart[0]);
+  // PB-195 AC1: two infantry 2 cells apart take no damage. That gap is INSIDE the measured
+  // contact scan (landEngageCells 2) and must still be silent, because land units overlap to fight.
+  const twoCells = [piece("blue:land", "blue", 10, 10), piece("red:land", "red", 10, 12)];
+  const twoCellsMatch = matchOf(twoCells, 1);
+  if (resolve(twoCellsMatch).length !== 0) say("enemies two cells apart fired (Manual p.9: overlap)", twoCells);
+  if (twoCells[0].fighting !== null || twoCells[1].fighting !== null) say("enemies two cells apart recorded a fight", twoCells);
+  const oneCell = [piece("blue:land", "blue", 14, 10), piece("red:land", "red", 15, 10)];
+  const oneCellMatch = matchOf(oneCell, 1);
+  if (resolve(oneCellMatch).length !== 0) say("enemies one cell apart fired (Manual p.9: overlap)", oneCell);
 
-  // --- the seam is a real front: 319 and 0 are adjacent ----------------------------------
-  const seam = matchOf([piece("blue:land", "blue", 319, 7), piece("red:land", "red", 0, 7)], 1);
+  // --- the seam is a real front: a hull keeps its range across 319/0 ---------------------
+  const seamBlue = piece("blue:sea", "blue", 319, 7, "cruiser");
+  seamBlue.domain = "sea";
+  const seamRed = piece("red:sea", "red", 0, 7, "cruiser");
+  seamRed.domain = "sea";
+  const seam = matchOf([seamBlue, seamRed], 1);
   const seamShots = shotsOf(resolve(seam));
   if (seamShots.length !== 2) say("enemies across the X seam did not fire", seamShots);
 

@@ -7,8 +7,8 @@
 // key in that block carries its own source string.
 //
 // The rules this file encodes, each with its manual line:
-//   - combat when the icons overlap: land engagement is `landEngageCells`, sea is the kind's range
-//     (p.22, p.24; sub 2, cruiser below carrier, p.42);
+//   - combat when the icons overlap: land-vs-land needs the same cell (`landOverlapOnly`, Manual
+//     p.9); sea is the kind's range and land fire on a hull keeps `landEngageCells` (p.24);
 //   - each unit damages one enemy every other round and keeps that target until it dies, moves off,
 //     or a closer enemy arrives (p.22);
 //   - a second friendly unit deals damage and takes none in return (p.22);
@@ -88,6 +88,19 @@ export function bearing(from, to) {
   return null;
 }
 
+// "Can this attacker damage this defender at this gap?" The measured contact range is not the whole
+// rule: land units must overlap to fight (Manual p.9), so two land pieces damage each other only
+// when they share a cell. A hull keeps its kind's range against everything, and a land piece
+// firing at a hull keeps the measured land contact range - only land-vs-land is overlap.
+export function engagesAt(attacker, defender, gap, combat = null) {
+  if (!attacker || !defender) return false;
+  if (onAirLayer(attacker) || onAirLayer(defender)) return false;
+  const block = combat || combatRules();
+  if (!block.landOverlapOnly) return true;
+  if (attacker.domain === "sea" || defender.domain === "sea") return true;
+  return Number(gap) === 0;
+}
+
 // The reach of one piece. An aircraft is a mission, not a board combatant: it never engages.
 // `combat` is the already-read block when a loop is about to ask for a thousand reaches: reading
 // it per piece cost 8 ms of a 1000-room round in the bench, because every read walks rules().
@@ -108,7 +121,8 @@ export function candidatesFor(piece, pieces) {
     if (!other || other.id === piece.id) continue;
     if (other.side === piece.side) continue;
     if (onAirLayer(other)) continue;
-    if (distance(piece, other) <= range) out.push(other);
+    const gap = distance(piece, other);
+    if (gap <= range && engagesAt(piece, other, gap)) out.push(other);
   }
   return out;
 }
@@ -133,7 +147,7 @@ export function chooseTarget(piece, pieces, combat = null) {
     const raw = Math.abs(px - Number(other.x));
     const dx = raw > CELL_W / 2 ? CELL_W - raw : raw;
     const distanceTo = Math.max(dx, Math.abs(py - Number(other.y)));
-    if (distanceTo > range) continue;
+    if (distanceTo > range || !engagesAt(piece, other, distanceTo, combat)) continue;
     if (other.id === piece.fighting) {
       held = other;
       heldDistance = distanceTo;
@@ -281,6 +295,7 @@ export function computeTargets(pieces) {
   const sides = new Uint8Array(n);
   const armed = new Uint8Array(n);
   const ranges = new Uint8Array(n);
+  const landOnly = new Uint8Array(n);
   // Per-side bounding box of the armed pieces, and how many each side has. A piece whose nearest
   // possible enemy is farther than its own reach cannot have a target, and one scan of the box
   // says so without walking the rest of the room: this is what keeps the pass cheap in a real
@@ -297,6 +312,7 @@ export function computeTargets(pieces) {
     ys[i] = Number(piece.y);
     sides[i] = piece.side === "blue" ? 1 : piece.side === "red" ? 2 : 0;
     armed[i] = onAirLayer(piece) ? 0 : 1;
+    landOnly[i] = armed[i] && piece.domain !== "sea" ? 1 : 0;
     ranges[i] = Math.min(255, Math.max(0, rangeOf(piece, combat)));
     const side = sides[i];
     if (!armed[i] || side === 0 || ranges[i] <= 0) continue;
@@ -340,6 +356,9 @@ export function computeTargets(pieces) {
       const dy = Math.abs(py - ys[j]);
       const distanceTo = dx > dy ? dx : dy;
       if (distanceTo > range) continue;
+      // Manual p.9: land units overlap to fight. Two land pieces are only a pair at the same cell;
+      // a hull keeps its range, and land fire on a hull keeps the measured contact range.
+      if (combat.landOverlapOnly && landOnly[i] && landOnly[j] && distanceTo !== 0) continue;
       const other = pieces[j];
       if (other.id === piece.fighting) {
         held = j;

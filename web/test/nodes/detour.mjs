@@ -154,15 +154,20 @@ export async function run(ctx) {
   foe.path = [];
   let sawBlocked = false;
   let sawDetour = false;
-  for (let round = 0; round < 3 && !sawBlocked; round++) {
+  let overlapped = false;
+  for (let round = 0; round < 3; round++) {
     for (const event of advance(match)) {
       if (event.pieceId !== walker.id) continue;
       if (event.type === "blocked") sawBlocked = true;
       if (event.type === "detour") sawDetour = true;
     }
+    if (wrapX(walker.x) === wrapX(foe.x) && walker.y === foe.y) overlapped = true;
   }
-  must(sawBlocked, "an enemy in the way must stop the walker (blocked), not be routed around");
+  // PB-195, Manual p.9: an enemy is not an obstacle to walk around, and not a wall to stop short
+  // of either - the walker PRESSES IN and the two icons overlap, which is where they fight.
+  must(overlapped, "an enemy in the way must be entered (overlap), not stopped short of");
+  must(!sawBlocked, "an enemy in the way was reported as a hold instead of an overlap");
   must(!sawDetour, "an enemy must never be treated as an obstacle to walk around");
 
-  console.log("detour: straight line " + expected.length + " steps; a friend on the line is passed through and never routed around; an enemy is contact");
+  console.log("detour: straight line " + expected.length + " steps; a friend on the line is passed through and never routed around; an enemy is entered and overlapped");
 }

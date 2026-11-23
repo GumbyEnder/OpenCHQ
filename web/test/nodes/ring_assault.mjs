@@ -140,7 +140,7 @@ export async function run(ctx) {
     const capital = match.capitals.red;
     const cell = ring(capital)[3];
     const defender = addPiece(match, "ring-defender", "red", cell.x, cell.y);
-    army.x = wrap(cell.x + 1);
+    army.x = wrap(cell.x);
     army.y = cell.y;
     match.pieces = [army, defender];
     match.round = 1;

@@ -940,13 +940,19 @@ export function advance(match) {
         // Overrun is the tank's (Manual p.9): a tank ordered into infantry fights through it,
         // taking losses, and carries on into the cell if the infantry is destroyed. The path is
         // never dropped here; a tank that is held keeps its order and tries again next round.
+        //
+        // PB-195: for every other land-vs-land order the walker PRESSES IN and the two icons share
+        // the cell - Manual p.9, "land units must overlap to fight", and attacking is "move your
+        // unit so the two icons overlap". Stopping one short is what made a two-cell exchange
+        // possible: the attacker shelled from outside the cell and died there, never overlapping.
+        // A hull, a transport and an aircraft keep the old stop-one-short: only land foot fights
+        // on the same cell.
+        const landClash = piece.domain === "land" && occupant.domain === "land" && occupant.transport !== true;
         const overrun =
           piece.kind === "tank" &&
-          piece.domain === "land" &&
-          occupant.domain === "land" &&
-          occupant.kind === "infantry" &&
-          occupant.transport !== true;
-        if (!overrun) {
+          landClash &&
+          occupant.kind === "infantry";
+        if (!overrun && !landClash) {
           // Stop one short: the walker never shares a cell, and the clash is combat's job. The
           // order is KEPT (PB-097b) so the unit presses again next round instead of standing
           // where it happened to meet the enemy.
@@ -956,6 +962,7 @@ export function advance(match) {
           stopped = true;
           break;
         }
+        if (overrun) {
         const onRound = Number(match.round) || 0;
         // Overrun is a MOVEMENT result (Manual p.9) but its damage is an exchange like any other:
         // one matrix cell, the defender's entrenchment and the defender's terrain cover, all from
@@ -1028,6 +1035,7 @@ export function advance(match) {
           stopped = true;
           break;
         }
+        } // overrun: the tank exchanges and either walks in or is held
       }
 
       const fromX = piece.x;

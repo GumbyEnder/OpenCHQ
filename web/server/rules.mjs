@@ -488,6 +488,10 @@ export function combatRules() {
     entrenchDamageFactor: finiteNumber(combatValue("entrenchDamageFactor"), 1),
     entrenchRounds: Math.max(0, Math.floor(finiteNumber(combatValue("entrenchRounds"), 0))),
     landEngageCells: Math.max(1, Math.floor(finiteNumber(combatValue("landEngageCells"), 1))),
+    // PB-195: land-vs-land damage needs the same cell (Manual p.9). The key defaults OFF so a
+    // fixture built before it keeps the contact-only rule it was written against; config/game.json
+    // is the one place that turns it on for the product.
+    landOverlapOnly: combatValue("landOverlapOnly") === true,
     seaRangeCells: Object.fromEntries(Object.entries(sea).map(([kind, value]) => [kind, Math.max(0, Math.floor(finiteNumber(value, 0)))])),
     attritionPerRound: Object.fromEntries(Object.entries(attrition).map(([terrain, value]) => [terrain, Math.max(0, finiteNumber(value, 0))])),
     attritionFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("attritionFloor"), 0))),

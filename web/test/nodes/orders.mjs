@@ -67,15 +67,13 @@ export async function run(ctx) {
   const negative = issueOrder(match, "blue", "blue:land", stepX, -1);
   if (!negative.error) fail("an order off the Y range (y=-1) was accepted");
 
-  // ---- an enemy-held cell is a target; a friendly-held cell is a plan-time refusal -----
-  // Two player-like sides used to stand eight cells apart for a thousand rounds because the order
-  // to close was refused as if it were a collision. An ENEMY cell is now accepted; the walk stops
-  // one short (advance reports `blocked`), which is where combat happens. A FRIEND-held cell is
-  // still refused by planOrder at its holder check (PM 6416, Manual p.10): units pass through
-  // friends on the route but may not stop in the same space, so that refusal keeps refusing the
-  // destination. It is pinned once, in order_wire's planted-mate leg - not here. (Named by symbol,
-  // not by line: the line number moved twice - 323 -> 328 -> past both - and a stale anchor reads
-  // as a different refusal.)
+  // ---- an enemy-held cell is entered: land units overlap to fight (PB-195, Manual p.9) -----
+  // An ENEMY cell is accepted by planOrder; the walker now PRESSES IN and shares the cell, which
+  // is the overlap the manual calls attacking. It used to stop one short and report `blocked`,
+  // which left it outside the cell trading fire from two cells away. A FRIEND-held cell is still
+  // refused by planOrder at its holder check (PM 6416, Manual p.10): units pass through friends on
+  // the route but may not stop in the same space, so that refusal keeps refusing the destination.
+  // It is pinned once, in order_wire's planted-mate leg - not here.
   const held = issueOrder(match, "blue", "blue:land", 183, 25);
   if (held.error) fail("an order onto red:land's cell was refused: " + held.error);
   if (!Array.isArray(held.path) || !held.path.length) fail("an attack order returned no path");
@@ -172,7 +170,10 @@ export async function run(ctx) {
   for (let i = 0; i < rounds; i++) tickMatch(wrapMatch2);
   if (walker2.x !== 0 || walker2.y !== 5) fail("the wrapping walk did not finish at 0,5: " + walker2.x + "," + walker2.y);
 
-  // ---- a piece stops one short of another piece's cell -------------------------------
+  // ---- a piece walks INTO another piece's cell when it is the enemy (PB-195) -----------
+  // Manual p.9: attacking is moving your unit so the two icons overlap. The order is fulfilled on
+  // arrival; there is no hold and no retry, because the walker is standing in the cell it was
+  // ordered to. (A friend's cell still cannot be a destination - planOrder refuses it.)
   const clash = openMatch("1986");
   const front = clash.pieces.find((unit) => unit.id === "blue:land");
   const wall = clash.pieces.find((unit) => unit.id === "red:land");
@@ -185,11 +186,9 @@ export async function run(ctx) {
   wall.path = [];
   const clashEvents = advance(clash);
   const stopped = clashEvents.find((event) => event.type === "blocked" && event.pieceId === "blue:land");
-  if (!stopped) fail("a walk into a held cell was not blocked: " + JSON.stringify(clashEvents));
-  if (stopped.by !== "red:land") fail("blocked event names " + JSON.stringify(stopped.by));
-  if (front.x !== 165 || front.y !== 8) fail("the walker shared the held cell: " + front.x + "," + front.y);
-  // PB-097b: contact keeps the order. It retries next round instead of standing where it met.
-  if (front.path.length !== 1) fail("the walker dropped its path after being blocked: " + JSON.stringify(front.path));
+  if (stopped) fail("a walk into an enemy-held cell was still held: " + JSON.stringify(clashEvents));
+  if (front.x !== 166 || front.y !== 8) fail("the walker did not overlap the enemy: " + front.x + "," + front.y);
+  if (front.path.length !== 0) fail("the walk did not finish on the enemy's cell: " + JSON.stringify(front.path));
 
   // ---- an empty roster is an error, not a crash --------------------------------------
   const empty = openMatch("2023");

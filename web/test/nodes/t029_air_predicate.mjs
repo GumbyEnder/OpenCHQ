@@ -71,7 +71,7 @@ export async function run(ctx) {
   }
 
   // --- 2. the separating shape, through all four combat call sites --------------------------
-  const enemyOf = (shape) => [piece("blue:subject", "blue", 10, 10, shape), piece("red:enemy", "red", 11, 10, { kind: "infantry", domain: "land" })];
+  const enemyOf = (shape) => [piece("blue:subject", "blue", 10, 10, shape), piece("red:enemy", "red", 10, 10, { kind: "infantry", domain: "land" })];
 
   const wide = { kind: "tank", domain: "air" };
   const widePair = enemyOf(wide);
@@ -109,7 +109,7 @@ export async function run(ctx) {
   const plainPair = enemyOf(plain);
   if (rangeOf(plainPair[0]) <= 0) fail("rangeOf: a plain tank has no reach, so section 2 proves nothing");
   if (candidatesFor(plainPair[0], plainPair).length !== 1) {
-    fail("candidatesFor: a plain tank at distance 1 found no target, so section 2 proves nothing");
+    fail("candidatesFor: a plain tank overlapping an enemy found no target, so section 2 proves nothing");
   }
   if (chooseTarget(plainPair[0], plainPair) === null) {
     fail("chooseTarget: a plain tank chose no target, so section 2 proves nothing");

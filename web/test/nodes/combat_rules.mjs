@@ -76,7 +76,7 @@ export async function run(ctx) {
 
   // --- AC2: alternation -------------------------------------------------------------------
   {
-    const match = matchOf([unit("blue:a", "blue", "infantry", 40, 40), unit("red:d", "red", "infantry", 41, 40)]);
+    const match = matchOf([unit("blue:a", "blue", "infantry", 40, 40), unit("red:d", "red", "infantry", 40, 40)]);
     const firedOn = [];
     for (let round = 1; round <= 6; round++) {
       match.round = round;
@@ -90,16 +90,16 @@ export async function run(ctx) {
       fail("shots did not land on r, r+2, r+4: " + JSON.stringify(firedOn));
     }
     if (match.foughtRound !== 5) fail("foughtRound is not the last round a shot landed: " + match.foughtRound);
-    if (distance(match.pieces[0], match.pieces[1]) !== 1) fail("the fight moved a piece");
+    if (distance(match.pieces[0], match.pieces[1]) !== 0) fail("the fight moved a piece");
   }
 
   // --- AC3: a second attacker deals damage and takes none ---------------------------------
   {
-    const alone = matchOf([unit("blue:a", "blue", "infantry", 40, 40), unit("red:d", "red", "infantry", 41, 40)]);
+    const alone = matchOf([unit("blue:a", "blue", "infantry", 40, 40), unit("red:d", "red", "infantry", 40, 40)]);
     const pair = matchOf([
       unit("blue:a", "blue", "infantry", 40, 40),
-      unit("blue:b", "blue", "infantry", 40, 41),
-      unit("red:d", "red", "infantry", 41, 40),
+      unit("blue:b", "blue", "infantry", 40, 40),
+      unit("red:d", "red", "infantry", 40, 40),
     ]);
     for (let round = 1; round <= 4; round++) {
       alone.round = round;
@@ -116,13 +116,15 @@ export async function run(ctx) {
   }
 
   // --- AC4: retarget when a closer enemy arrives ------------------------------------------
+  // Ships, because a hull keeps its kind's range: land-vs-land now needs the same cell, and
+  // "closer" has no meaning inside one cell (PB-195, Manual p.9).
   {
-    const d = unit("red:d", "red", "infantry", 50, 50);
-    const far = unit("blue:a", "blue", "infantry", 52, 50);
+    const d = ship("red:s", "red", "cruiser", 50, 50);
+    const far = ship("blue:a", "blue", "cruiser", 53, 50);
     const match = matchOf([d, far]);
     resolve(match);
     if (d.fighting !== "blue:a") fail("the piece did not engage the only enemy in reach: " + d.fighting);
-    const close = unit("blue:b", "blue", "infantry", 51, 50);
+    const close = ship("blue:b", "blue", "cruiser", 51, 50);
     match.pieces.push(close);
     match.round = 3;
     resolve(match);
@@ -132,8 +134,8 @@ export async function run(ctx) {
   // --- AC5: flank hits harder --------------------------------------------------------------
   {
     const d = unit("red:d", "red", "infantry", 60, 60, { facing: "e" });
-    const front = unit("blue:a", "blue", "infantry", 61, 60);
-    const side = unit("blue:b", "blue", "infantry", 60, 61);
+    const front = unit("blue:a", "blue", "infantry", 60, 60, { facing: "w" });
+    const side = unit("blue:b", "blue", "infantry", 60, 60, { facing: "n" });
     const match = matchOf([d, front, side]);
     const events = shotsOf(resolve(match));
     const fromFront = events.find((event) => event.pieceId === "blue:a");
@@ -165,7 +167,7 @@ export async function run(ctx) {
     }
     // A land piece in the same fight does pin, which is what makes the exclusion mean something.
     const foot = unit("red:f", "red", "infantry", 30, 30);
-    const attacker = unit("blue:f", "blue", "infantry", 31, 30);
+    const attacker = unit("blue:f", "blue", "infantry", 30, 30);
     const landMatch = matchOf([foot, attacker]);
     for (let round = 1; round <= Math.max(1, cfg.pinRounds); round++) {
       landMatch.round = round;
@@ -186,7 +188,7 @@ export async function run(ctx) {
 
     // Incoming damage is the matrix's kind-3 column; being attacked does not clear the state.
     // Cell 1->3 = 15, which is the 0.75 of 20 the old factor approximated.
-    const attacker = unit("red:a", "red", "infantry", 81, 40);
+    const attacker = unit("red:a", "red", "infantry", 80, 40);
     match.pieces.push(attacker);
     match.round = match.round + 2;
     const events = shotsOf(resolve(match));

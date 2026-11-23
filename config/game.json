@@ -351,6 +351,11 @@
       "source": "MEASURED (T-009): land engagement is dist^2 <= 5 in the 0x1956 matrix (FUN_188b_0216 squares the distance), which reaches (2,1) and not (2,2) - two cells.",
       "evidenceRef": "docs/re/COMBAT.md s3; live matrix dump 0x1956"
     },
+    "landOverlapOnly": {
+      "value": true,
+      "source": "MANUAL (p.9): land units 'must overlap to fight', and attacking means 'move your unit so the two icons overlap'. This sits ON TOP of the recovered contact scan: landEngageCells 2 stays the matrix threshold (dist^2 <= 5) and still governs a land piece firing at a hull, but land-vs-land damage needs the same cell. PB-195 (live r287-318, fb375a0): blue:infantry:5 was ordered onto red:infantry:4 two cells away, the walker stopped one short ('the way was held'), the two traded fire from 79,43 / 78,45 and blue died at 78,44 without ever entering the red cell.",
+      "evidenceRef": "Manual p.9 (overlap); docs/re/COMBAT.md s3 (the contact scan this layers over); PB-195 live trace r287-318, room 8484"
+    },
     "seaRangeCells": {
       "value": { "submarine": 2, "cruiser": 3, "carrier": 4 },
       "source": "MEASURED (T-009): the same matrix, classes 2/3/4 for kinds 7/8/9, thresholds 5/10/17 squared = 2/3/4 cells. Also matches Manual p.24 (sub 2) and p.42 (sub < cruiser < carrier). A submarine cannot engage land at all (0).",
