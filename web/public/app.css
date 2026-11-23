@@ -648,7 +648,44 @@ body.in-match .nav {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* PB-179: the strip is a single row of fixed-height controls, and `flex-shrink: 1` let this
+     container shrink UNDER its buttons: the buttons then overflowed their own box and the next
+     sibling (.gamebtns) started at the shrunken edge, so New painted on top of Log at 1280x800.
+     The brand is the one item that may give way (it ellipsizes); everything else keeps its width. */
+  flex: 0 0 auto;
   min-width: 0;
+}
+
+body.in-match #strip > .brand {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+body.in-match #strip > .gamebtns,
+body.in-match #strip > .whoami,
+body.in-match #strip > .speedctl,
+body.in-match #strip > .clockbtn {
+  flex: 0 0 auto;
+}
+
+body.in-match .account {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22vw;
+}
+
+/* At 1024x768 the strip's commands alone fill the row, so the wordmark and the account line give
+   way instead of squeezing the brand to nothing: the era/side/purse chip is game state and stays.
+   Sign out lives inside #account; Quit (in .gamebtns) still leaves the match. */
+@media (max-width: 1100px) {
+  body.in-match .mark { display: none; }
+  body.in-match #account { display: none; }
+  body.in-match #strip > .brand {
+    flex: 1 1 120px;
+    min-width: 120px;
+  }
 }
 
 .navbtn {
