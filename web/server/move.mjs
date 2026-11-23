@@ -13,7 +13,7 @@ import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostL
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
-import { applyDamage, damageFor, ensureStrength } from "./combat.mjs";
+import { applyDamage, damageFor, ensureStrength, distance, rangeOf } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -1009,9 +1009,46 @@ export function advance(match) {
           occupant.kind === "infantry" &&
           occupant.transport !== true;
         if (!overrun) {
-          // Stop one short: the walker never shares a cell, and the clash is combat's job. The
-          // order is KEPT (PB-097b) so the unit presses again next round instead of standing
-          // where it happened to meet the enemy.
+          // PB-097b: an ATTACK order completes as ENGAGE. The walk was ordered onto the cell this
+          // enemy holds, the walker has stopped one short of it (it may never share a cell, p.10),
+          // and it is inside its own engagement range - so the order is done. The fight is
+          // combat.resolve's, the path is cleared so there is nothing left to re-attempt, and the
+          // target is recorded the way p.22 records one ("keeps that target until it dies, moves
+          // off, or a closer enemy arrives"). Before this the path was KEPT and the step was
+          // re-attempted every round: the unit parked one cell short for the rest of the match,
+          // died at range, and the order never completed (PB-195's trace, the park-and-retry loop).
+          // A tank ordered into INFANTRY is the overrun arm above and never reaches here.
+          if (atDestination) {
+            const engageCombat = combatRules();
+            const reach = rangeOf(piece, engageCombat);
+            if (reach > 0 && distance(piece, occupant) <= reach) {
+              piece.overrunBy = null;
+              piece.overrunCell = null;
+              piece.path = [];
+              piece.fighting = occupant.id;
+              piece.holdRounds = 0;
+              piece.credit = 0;
+              events.push({
+                type: "engage",
+                side: piece.side,
+                pieceId: piece.id,
+                by: occupant.id,
+                target: occupant.id,
+                x: piece.x,
+                y: piece.y,
+                targetX: nx,
+                targetY: ny,
+                reach,
+                round: Number(match.round) || 0,
+                note: "Engaged.",
+              });
+              stopped = true;
+              break;
+            }
+          }
+          // PB-097b: only a MID-PATH enemy (not the ordered cell) still stops the walk and keeps
+          // the order for a retry - that destination may be reachable once the enemy moves. A
+          // walker hitting an enemy ON its destination engaged above and never reaches here.
           piece.overrunBy = null;
           piece.overrunCell = null;
           // PB-197: the bot reads this counter to re-plan; a unit held by an enemy is still held,

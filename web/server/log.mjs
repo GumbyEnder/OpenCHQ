@@ -234,6 +234,13 @@ export function logLines(match, side, events, round) {
       case "blocked":
         if (mine) push("a unit could not step: the way was held");
         break;
+      case "engage":
+        // PB-097b: an attack order that reached an enemy-held cell completes here. It is the
+        // player's own unit doing the closing, so only the owner reads it; the enemy arm needs
+        // sight, the same as any other enemy movement.
+        if (mine) push("a unit engaged the enemy at range");
+        else if (legible(match, side, event)) push("an enemy unit engaged ours at range");
+        break;
       case "ready":
         if (mine) push("an aircraft is ready for a mission");
         break;
