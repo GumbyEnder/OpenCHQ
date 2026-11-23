@@ -11,8 +11,9 @@
 // What is measured, on a real page, a real socket and a real server:
 //   1. one aircraft is bought and placed through the Buy panel and a canvas click;
 //   2. Air > Bomb sends NOTHING - the dialog closes and the board note hands the player the map
-//      ("Bomb: pick an empty enemy city, base or oil field."), and the plane is still ready;
-//   3. a capital target is REFUSED and costs the owner nothing (the refusal names the capital);
+//      ("Bomb: pick an empty enemy city, base, oil field or capital."), and the plane is still ready;
+//   3. PB-171: a capital IS a target - its run lands and takes the same 125 M (a defended or
+//      out-of-reach capital is reported UNPROBED, the kind refusal is a FAIL);
 //   4. the target click lands the run: the owner's own round log reads "bombed at <city>: lost
 //      0.125b, unready 5 rounds" and the raider's reads "0.125b taken";
 //   5. the site's readyRound is +5 and the plane is away for the strike's 8 rounds;
@@ -279,22 +280,19 @@ try {
   briefing = ((cur.seat && cur.seat.air) || []).find((p) => String(p.id) === String(planeId));
   mark("the plane is not spent by the click", Boolean(briefing && briefing.ready), "ready " + (briefing && briefing.ready));
 
-  // ---------------------------------------------------------------- a capital is refused
+  // ---------------------------------------------------------------- PB-171: the capital is a target
+  // The refusal that used to stand here was ours: BOMB_SITE_KINDS lacked "capital" while the
+  // airstrip list had it, so 2 of the 4 subtype capitals were refused by their kind byte. PM 8131
+  // ruled capitals bombable like any empty enemy city; the run itself is measured at the END of this
+  // leg, on its own aircraft, because it spends the plane the city target below needs. What is
+  // measured here is only the hand-off: the note now names a capital and nothing has fired yet.
   const capital = cur.capitals && cur.capitals.red;
   const roundAtStart = Number(cur.round) || 0;
+  void roundAtStart;
   if (!capital) throw new Error("the view carries no red capital to aim at");
   const dumpBefore = await debugRoom();
-  const redBefore = logText(dumpBefore, "red");
-  await clickCell({ x: capital.x, y: capital.y });
-  await sleep(1200);
-  const capitalSaid = (await note()) + " " + (await toast());
-  const dumpAfterCapital = await debugRoom();
-  const redAfterCapital = logText(dumpAfterCapital, "red");
-  mark("a capital target is refused", /not a capital/i.test(capitalSaid), JSON.stringify(capitalSaid.slice(-160)));
-  mark("the refused capital costs the owner nothing", redAfterCapital === redBefore, redBefore === redAfterCapital ? "owner log unchanged" : "owner log moved");
-  cur = await room();
-  briefing = ((cur.seat && cur.seat.air) || []).find((p) => String(p.id) === String(planeId));
-  mark("the refused run leaves the aircraft ready", Boolean(briefing && briefing.ready), "ready " + (briefing && briefing.ready));
+  mark("the board note names a capital as a bombing target", /or capital\./.test(armNote + " " + armToast),
+    JSON.stringify((armNote + " " + armToast).slice(0, 160)));
 
   // ---------------------------------------------------------------- the air-panel hit
   // Target: an enemy city or base with no piece of ANY layer on it, chosen from the server's own
@@ -311,8 +309,8 @@ try {
     return sites[0] || null;
   }
 
-  const target = await pickEmptyTarget(dumpAfterCapital);
-  if (!target) throw new Error("no empty enemy city/base to bomb (pieces " + (dumpAfterCapital.pieceCount || 0) + ")");
+  const target = await pickEmptyTarget(dumpBefore);
+  if (!target) throw new Error("no empty enemy city/base to bomb (pieces " + ((dumpBefore && dumpBefore.pieceCount) || 0) + ")");
   mark("an empty enemy city is on the board", true, target.name + " at " + target.x + "," + target.y + " (kind " + target.kind + ")");
 
   const roundBeforeAir = Number((await room()).round) || 0;
@@ -403,6 +401,58 @@ try {
   void redKit;
   const blueKit = logText(dumpKit, "blue");
   mark("the kit door's log reads the same take", /0\.125b taken/.test(blueKit), (blueKit.match(/[^\n]*0\.125b taken[^\n]*/) || [""])[0]);
+
+  // ---------------------------------------------------------------- PB-171: bomb the capital
+  // The run the deleted refusal used to block. It reuses an aircraft that has come back from its
+  // earlier mission rather than buying a third (the 1986 seat's cash runs out at two), so the leg
+  // waits the missed rounds out. Two outcomes are legitimate non-failures and are reported as
+  // UNPROBED, never as passes: a red piece on the capital (it is defended - a different, correct
+  // rule) and a capital out of the plane's stand-in reach. The kind refusal this card deletes is NOT
+  // one of them: if "not a capital" comes back, this leg fails.
+  let capPlane = null;
+  for (let i = 0; i < 10 && !capPlane; i += 1) {
+    const v = await room();
+    capPlane = ((v.seat && v.seat.air) || []).find((p) => p.ready) || null;
+    if (!capPlane) await advanceOneRound();
+  }
+  const capView = await room();
+  const capCell = capView.capitals && capView.capitals.red;
+  if (!capCell) throw new Error("the view carries no red capital to aim at");
+  if (!capPlane) {
+    mark("a capital is a bombing target (UNPROBED: no aircraft came back in 10 rounds)", true, "no ready aircraft");
+  } else {
+    const capPiece = (capView.pieces || []).find((p) => String(p.id) === String(capPlane.id));
+    if (!capPiece) throw new Error("the ready aircraft is not on the board: " + capPlane.id);
+    await clickCell({ x: capPiece.x, y: capPiece.y });
+    await page.waitForFunction((id) => String(window.__chq.state().selected) === String(id), String(capPlane.id), { timeout: 8000, polling: 100 }).catch(() => {});
+    const capArmed = await airBomb();
+    if (capArmed.error) throw new Error(capArmed.error);
+    const dumpCapBefore = await debugRoom();
+    const capOccupied = ((dumpCapBefore.pieces || []).some((p) => Number(p.x) === Number(capCell.x) && Number(p.y) === Number(capCell.y) && String(p.domain) !== "air"));
+    await clickCell({ x: capCell.x, y: capCell.y });
+    await page.waitForFunction((id) => {
+      const r = window.__chq.room();
+      const p = ((r.seat && r.seat.air) || []).find((x) => String(x.id) === String(id));
+      return p && p.ready === false;
+    }, String(capPlane.id), { timeout: 12000, polling: 100 }).catch(() => {});
+    const capSaid = (await note()) + " " + (await toast());
+    const dumpCap = await debugRoom();
+    const evCap = ((dumpCap && dumpCap.pendingEvents) || []).find((e) => e && e.type === "bomb_hit"
+      && Number(e.x) === Number(capCell.x) && Number(e.y) === Number(capCell.y));
+    const capAfter = ((await room()).seat && (await room()).seat.air || []).find((p) => String(p.id) === String(capPlane.id));
+    if (/not a capital/i.test(capSaid)) {
+      mark("a capital is a bombing target", false, "the kind refusal came back: " + JSON.stringify(capSaid.slice(-200)));
+    } else if (capOccupied) {
+      mark("a capital is a bombing target (UNPROBED: the capital is defended)", true, "a red piece stands on the capital");
+    } else if (!evCap && /reach/i.test(capSaid)) {
+      mark("a capital is a bombing target (UNPROBED: out of stand-in reach)", true, JSON.stringify(capSaid.slice(-200)));
+    } else {
+      mark("a capital is a bombing target", Boolean(evCap), JSON.stringify(evCap && { site: evCap.name, kind: evCap.kind, owner: evCap.owner, cash: evCap.cash, unready: evCap.unready }));
+      mark("the bombed capital takes the city's 125 M", Boolean(evCap) && Number(evCap.cash) === 125 && evCap.owner === "red",
+        "cash " + (evCap && evCap.cash) + " owner " + (evCap && evCap.owner) + " kind " + (evCap && evCap.kind));
+      mark("the capital run spends its aircraft", Boolean(capAfter && capAfter.ready === false), "ready " + (capAfter && capAfter.ready));
+    }
+  }
 
   mark("the page raised no script error", pageErrors.length === 0, pageErrors.slice(0, 2).join(" | "));
 } catch (err) {

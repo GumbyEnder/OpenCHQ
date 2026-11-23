@@ -2,9 +2,9 @@
 //
 // What breaks if this node is removed: a bombing run takes no money, a bombed city can still
 // produce next round, a bombed oil field costs the owner nothing, a defended target is accepted
-// (spending the aircraft on a site the strike mission already covers), a capital is accepted, a
-// refusal burns the plane or the mission's oil, or one of the two client doors (Kit, Air) stops
-// arming its Bomb button (see BOMB_SITE_KINDS and the capital rule in sendMission).
+// (spending the aircraft on a site the strike mission already covers), a capital is refused
+// (PB-171), a refusal burns the plane or the mission's oil, or one of the two client doors (Kit,
+// Air) stops arming its Bomb button (see BOMB_SITE_KINDS in sendMission).
 //
 // Rule, decoded (config `air.bomb*`): FUN_1ac5_0dbe @ 1ac5:0dbe, decompiled.c 8768-8782;
 // MANUAL p.25. An air mission on an unoccupied enemy city or base takes 5 of the original's money
@@ -129,19 +129,34 @@ export async function run() {
     fail("a cell with no enemy site accepted a bombing run");
   }
 
-  // --- a capital is refused (frodo m7) -------------------------------------------------------
-  // The refusal is the site-kind arm below the owner checks: BOMB_SITE_KINDS is city/base/facility
-  // while AIRSTRIP_KINDS adds "capital" (a plane may be based at a capital, p.22), so the two sets
-  // are one word apart and this assertion is the only thing pinning the difference. The mutant that
-  // must red this is "capital" added to BOMB_SITE_KINDS at web/server/air.mjs.
+  // --- PB-171: a capital is ACCEPTED, exactly like a city (PM 8131) --------------------------
+  // The refusal this arm used to pin was ours, not the archive's: BOMB_SITE_KINDS lacked "capital"
+  // while AIRSTRIP_KINDS had it. The kind test stays for kinds a run cannot reach (a dock, water);
+  // a capital now takes the same 125 M / +5 branch. The mutant that must red this arm is "capital"
+  // removed from BOMB_SITE_KINDS at web/server/air.mjs. Ruling is PROVISIONAL pending DOSBox: the
+  // archive's own target test (8768-8782) was never recovered.
   const cap = board();
   const onCapital = sendMission(cap, "blue", "blue:plane", "bomb", { x: 150, y: 22 });
-  if (!onCapital.error) fail("a capital accepted a bombing run");
-  eq("the capital refusal is the site-kind message", onCapital.error,
-    "A bombing run hits a city, a base or an oil field, not a capital.");
-  eq("a refused capital leaves the owner's cash alone", cap.sides.red.cash, 50000);
-  eq("a refused capital leaves the aircraft ready", cap.pieces[0].inactiveUntil, 0);
-  eq("a refused capital is not left unready", cap.sites.find((s) => s.id === 63).readyRound ?? null, null);
+  if (onCapital.error) fail("an empty enemy capital refused a bombing run: " + onCapital.error);
+  eq("the capital's owner lost 125 M", cap.sides.red.cash, 50000 - 125);
+  eq("the capital is unready for 5 rounds", cap.sites.find((s) => s.id === 63).readyRound, 15);
+  eq("the plane is inactive for the strike's 8 rounds on a capital", cap.pieces[0].inactiveUntil, 10 + 8);
+  const capEvent = onCapital.events.find((e) => e.type === "bomb_hit");
+  if (!capEvent) fail("the capital bombing run emitted no bomb event");
+  eq("the capital event names the site", capEvent.site, 63);
+  eq("the capital event names the kind", capEvent.kind, "capital");
+  eq("the capital event names the cash taken", capEvent.cash, 125);
+  const capOwnerLog = logLines(cap, "red", onCapital.events, cap.round).map((line) => line.text);
+  if (!capOwnerLog.some((line) => /bombed at Moscow: lost 0\.125b, unready 5 rounds/.test(line))) {
+    fail("the capital owner's round log does not read the loss: " + JSON.stringify(capOwnerLog));
+  }
+  // An era-subtype capital drawn as a city takes the same branch: the half-enforcement (London and
+  // Tokyo accepted, Washington and Moscow refused) is what PB-171 deletes.
+  const drawnAsCity = board();
+  drawnAsCity.sites.find((s) => s.id === 12).type = 1;
+  const onSubtype = sendMission(drawnAsCity, "blue", "blue:plane", "bomb", { x: 180, y: 22 });
+  if (onSubtype.error) fail("a subtype-1 city refused a bombing run: " + onSubtype.error);
+  eq("a subtype-1 capital drawn as a city takes the city branch", drawnAsCity.sides.red.cash, 50000 - 125);
 
   // --- an oil field queues 1000, and T-033's NEXT settle consumes it -----------------
   const field = board();

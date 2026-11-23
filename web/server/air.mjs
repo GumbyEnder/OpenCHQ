@@ -58,9 +58,12 @@ function bombRules() {
   };
 }
 
-// A bombing run names a city, base or oil field. A capital is not in the list: the brief names
-// city, base and facility.
-const BOMB_SITE_KINDS = new Set(["city", "base", "facility"]);
+// A bombing run names a city, base, oil field or capital. PB-171: "capital" is in the list because
+// the refusal that kept it out was ours, not the archive's - the manual's bombing text names "an
+// unoccupied enemy city, base, or oil field" with no capital exception, and FUN_1ac5_0dbe carries no
+// subtype 1/2 test (the 125 M / +5 branch is reached by capitals). The kind test itself stays: it is
+// what refuses water, a dock and a bare cell. PROVISIONAL, UNVERIFIED pending the DOSBox experiment.
+const BOMB_SITE_KINDS = new Set(["city", "base", "facility", "capital"]);
 
 export const STRIKE_NOTE = "Air strike.";
 export const BOMB_NOTE = "Bombing run.";
@@ -286,14 +289,13 @@ export function sendMission(match, side, pieceId, mode, target) {
       return { error: "A bombing run needs an enemy site, not a neutral one." };
     }
     if (site.owner === side) return { error: "That site is yours." };
-    // A capital is not a bombing target, and that rule is this set: BOMB_SITE_KINDS is
-    // city/base/facility while AIRSTRIP_KINDS (below) adds "capital" - a plane may be based at a
-    // capital (manual p.22), it may not bomb one. The two sets are one word apart, so nothing but
-    // this refusal pins the difference; the mutant that must red the pin is "capital" added to
-    // BOMB_SITE_KINDS. PORT DECISION: the original's own target test at 8768-8782 was never
-    // recovered (Open RE Questions).
+    // PB-171: a capital IS a bombing target, like any empty enemy city - the kind test below is
+    // kept only to refuse kinds a bombing run cannot reach (a dock, water, a bare cell). The
+    // mutant that must red `pb157_bomb`'s capital arm is "capital" removed from BOMB_SITE_KINDS.
+    // RULING (PM 8131): provisional, UNVERIFIED pending DOSBox; the archive's own target test at
+    // 8768-8782 was never recovered (Open RE Questions).
     if (!BOMB_SITE_KINDS.has(String(site.kind))) {
-      return { error: "A bombing run hits a city, a base or an oil field, not a " + String(site.kind || "site") + "." };
+      return { error: "A bombing run hits a city, a base, an oil field or a capital, not a " + String(site.kind || "site") + "." };
     }
     // "Empty" means no ground or sea defender. An aircraft based there is on the air layer and
     // does not shield the site from a bombing run (T-021's layer rule).

@@ -1633,7 +1633,7 @@ function toolRow(room) {
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : mission.mode === "bomb"
-                ? "Bomb: pick an empty enemy city, base or oil field."
+                ? "Bomb: pick an empty enemy city, base, oil field or capital."
                 : "Strike: pick the target cell on the map.");
             closeDialog();
             return;
@@ -2177,7 +2177,7 @@ const DIALOG_PAINTERS = {
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : mission.mode === "bomb"
-                ? "Bomb: pick an empty enemy city, base or oil field."
+                ? "Bomb: pick an empty enemy city, base, oil field or capital."
                 : "Strike: pick the target cell on the map.");
             closeDialog();
             drawMatch();
