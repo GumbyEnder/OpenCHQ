@@ -179,6 +179,26 @@ function nearestProducer(match, side, site) {
   return best;
 }
 
+// PB-165: the box the original draws around a friendly city while you are placing a purchase is
+// chosen from that site's own readiness timer (0x10ae) with THREE branches, not two:
+//   FUN_2c85_1022 @ 2c85:1022 (decompiled.c:24259-24267) and the second painter
+//   FUN_2c85_1254 @ 2c85:1254 (decompiled.c:24359-24367) both read:
+//     timer == 0        -> colour 10  (#55ff55, green)  - available now
+//     timer <  0x15 (21)-> colour 14  (#ffff55, yellow) - available soon
+//     timer >= 0x15     -> colour 12  (#ff5555, red)    - not for a long time
+// The palette is the default VGA 16, which is what the running game draws with (measured on the
+// 1942 war room: every ink is a default-VGA triple, e.g. ocean #55ffff, plains #00aa00).
+// 0x10ae decays by one per round, so its value at any moment is readyRound - round here.
+export const READY_SOON_LIMIT = 0x15;
+
+// 1 = ready (green), 2 = soon (yellow), 3 = not for a long time (red). These are the placement
+// mask's own byte values, so the page paints exactly what the server decided.
+export function placementBoxState(site, round) {
+  const timer = Math.max(0, readyRoundOf(site) - roundOf({ round }));
+  if (timer === 0) return 1;
+  return timer < READY_SOON_LIMIT ? 2 : 3;
+}
+
 // The sentence a refusal carries. AC4 asks for "ready at round N" verbatim; PB-044 (T-021 AC8)
 // asks for the site's name in front of it, so "Kharkov isn't ready: it will be ready at round 18"
 // rather than a guess about which city the player clicked.

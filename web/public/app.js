@@ -2854,7 +2854,8 @@ window.__chq = {
   },
   // The cells the server's own placement mask allows, as a list. `placement.mask` is already a
   // Uint8Array here (the socket's base64 is decoded on arrival), so index it directly. `ready` is
-  // the mask byte: 1 a ready city or base, 2 a friendly site that is still unready.
+  // the mask byte: 1 a ready city or base, 2 a friendly site that is ready soon, 3 one that is a
+  // long way off (PB-165: the original's three readiness box colours, manual p.14).
   legalCells(limit = 200) {
     if (!placement || !placement.mask) return [];
     const mask = placement.mask;
@@ -2862,7 +2863,7 @@ window.__chq = {
     const out = [];
     for (let i = 0; i < mask.length && out.length < limit; i++) {
       if (!mask[i]) continue;
-      out.push({ x: i % width, y: Math.floor(i / width), ready: mask[i] === 1, unready: mask[i] === 2 });
+      out.push({ x: i % width, y: Math.floor(i / width), ready: mask[i] === 1, unready: mask[i] > 1, box: mask[i] });
     }
     return out;
   },

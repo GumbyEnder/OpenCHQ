@@ -6,7 +6,7 @@ import { seedOwners } from "../../server/economy.mjs";
 import { buy } from "../../server/economy.mjs";
 import { priceOf } from "../../server/rules.mjs";
 import { canPlace, maskBase64, placementMask } from "../../server/placement.mjs";
-import { paintPlacement } from "../../public/render.mjs";
+import { PLACEMENT_FILL, paintPlacement } from "../../public/render.mjs";
 
 export const name = "placement_highlights";
 
@@ -138,14 +138,23 @@ export async function run(ctx) {
   const outside = buy(match, "blue", "infantry", 5, 130, board);
   if (!outside.error) fail("placement_highlights: an unhighlighted cell was accepted");
 
-  // Ready and unready are two colours (AC3). The purchase just marked its city and the friendly
-  // cities within the radius, so the next mask carries both bytes and the overlay paints both.
+  // PB-165: the original's three-way readiness box. A purchase tires the build site and its
+  // neighbours, so the next mask carries ready cells plus at least one not-ready cell; every cell
+  // must be painted in one of the three inks the original uses, and at least one of them must be a
+  // not-ready ink.
   const after = placementMask(match, "blue", "infantry", board);
   if (!after.unready) fail("placement_highlights: no cell went unready after a purchase");
   const two = recorder();
   paintPlacement(two.ctx, { width: after.width, height: after.height, mask: after.mask }, view(2));
   const colours = new Set(two.fills.map((fill) => fill.color));
-  if (colours.size !== 2) fail("placement_highlights: ready and unready painted in " + colours.size + " colour(s)");
+  const known = new Set([PLACEMENT_FILL.ready, PLACEMENT_FILL.soon, PLACEMENT_FILL.long]);
+  for (const colour of colours) {
+    if (!known.has(colour)) fail("placement_highlights: a cell is painted " + colour + ", which is not one of the three readiness inks");
+  }
+  if (!colours.has(PLACEMENT_FILL.ready)) fail("placement_highlights: no ready cell is painted green");
+  if (!colours.has(PLACEMENT_FILL.soon) && !colours.has(PLACEMENT_FILL.long)) {
+    fail("placement_highlights: no unready cell carries the yellow or red ink");
+  }
 
   // The page asks for the mask and paints it, rather than re-deriving the rule.
   const app = await (await fetch(ctx.base + "/app.js")).text();
