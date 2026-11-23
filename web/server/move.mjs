@@ -13,7 +13,7 @@ import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostL
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
-import { applyDamage, damageFor, ensureStrength } from "./combat.mjs";
+import { applyDamage, damageFor, ensureStrength, distance, rangeOf } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -38,6 +38,30 @@ export function wrapDelta(from, to) {
   if (d > CELL_W / 2) d -= CELL_W;
   else if (d < -CELL_W / 2) d += CELL_W;
   return d;
+}
+
+// PB-097b: a land ATTACK order completes as ENGAGE once the walker is inside its own engage range.
+// The measured threshold is a SQUARED distance - config/game.json:349 pins landEngageCells = 2 with
+// the trace note "dist^2 <= 5" - so the test is dx^2 + dy^2 <= 5, NOT combat.mjs's Chebyshev
+// `distance()` (max(|dx|,|dy|) <= 2, which admits a (2,2) offset at dist^2 = 8). frodo room 8626
+// §4a: do not express the completion rule through distance() unless that function is itself pinned
+// to the spec; it is not.
+const ENGAGE_DIST2 = 5;
+
+export function squaredDistance(a, b) {
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  const dx = wrapDelta(a.x, b.x);
+  const dy = Number(a.y) - Number(b.y);
+  return dx * dx + dy * dy;
+}
+
+// Land reads the measured squared threshold; sea keeps its kind's Chebyshev range (p.22, p.24);
+// anything with no reach (air, a transport's cargo) is never in range.
+export function inEngageRange(piece, foe, reach) {
+  const r = reach === undefined ? rangeOf(piece) : reach;
+  if (!piece || !foe || !(r > 0)) return false;
+  if (piece.domain === "sea") return distance(piece, foe) <= r;
+  return squaredDistance(piece, foe) <= ENGAGE_DIST2;
 }
 
 function terrainAt(x, y) {
@@ -687,6 +711,36 @@ export function attritionStep(match, lookup = null) {
   return events;
 }
 
+// PB-097b: the completion itself, shared by the two places an attack order can finish as ENGAGE -
+// a hostile blocker on the next cell, and an in-range enemy holding the ordered destination. The
+// order is done: the path is cleared so nothing re-attempts a step, the target is recorded the way
+// p.22 records one ("keeps that target until it dies, moves off, or a closer enemy arrives"), the
+// hold credit is zeroed and one event speaks. Before this the path was KEPT and the step was
+// re-attempted every round: the unit parked one cell short for the rest of the match, died at
+// range, and the order never completed (PB-195's trace, the park-and-retry loop).
+function completeAsEngage(piece, foe, x, y, events, match, reach) {
+  piece.overrunBy = null;
+  piece.overrunCell = null;
+  piece.path = [];
+  piece.fighting = foe.id;
+  piece.holdRounds = 0;
+  piece.credit = 0;
+  events.push({
+    type: "engage",
+    side: piece.side,
+    pieceId: piece.id,
+    by: foe.id,
+    target: foe.id,
+    x: piece.x,
+    y: piece.y,
+    targetX: Number(wrapX(x)),
+    targetY: Number(y),
+    reach,
+    round: Number(match.round) || 0,
+    note: "Engaged.",
+  });
+}
+
 // A hold is one fact, not one per round. The piece remembers who is holding it out and where; the
 // same blocker at the same cell on the next round is the same hold and stays silent (PB-121). A new
 // order or a real step clears the memory, so a second hold speaks again.
@@ -924,6 +978,25 @@ export function advance(match) {
     if (piece.pinned === true) continue;
     walked.add(piece.id);
 
+    // PB-097b: the ordered destination is HELD by an enemy and the walker is already inside its
+    // own engage range - the order completes NOW, without having to bump into the cell. frodo
+    // room 8626 §4b: the path.length gate is gone entirely, so a walker that is in range engages
+    // whether the enemy sits on the ordered cell or mid-path. A tank ordered into INFANTRY is
+    // still the overrun arm (p.9) and walks on to fight through it.
+    const destination = piece.path[piece.path.length - 1];
+    if (destination) {
+      const holder = pieceAt(match, wrapX(destination.x), Number(destination.y), piece.id);
+      const intoInfantry = Boolean(holder) && piece.kind === "tank" && piece.domain === "land" &&
+        holder.domain === "land" && holder.kind === "infantry" && holder.transport !== true;
+      if (holder && holder.side !== piece.side && !intoInfantry) {
+        const destReach = rangeOf(piece, combatRules());
+        if (inEngageRange(piece, holder, destReach)) {
+          completeAsEngage(piece, holder, destination.x, destination.y, events, match, destReach);
+          continue;
+        }
+      }
+    }
+
     // Cells per round (T-004; Manual p.9, p.21). The credit is the walking a piece has in hand:
     // an infantry gains 1 a round, a tank 2, a hull 3. Slow ground still costs a beat, so a
     // pace-2 cell takes two rounds of an infantry's credit and one round of a tank's.
@@ -1009,9 +1082,26 @@ export function advance(match) {
           occupant.kind === "infantry" &&
           occupant.transport !== true;
         if (!overrun) {
+          // PB-097b: an ATTACK order completes as ENGAGE. A walker may never share a cell (p.10),
+          // so the walk stops here; if the blocked cell IS the ordered cell and the enemy is inside
+          // the walker's own engage range, the order is DONE - path cleared, target recorded, one
+          // event - instead of parking one cell short and re-attempting the step every round.
+          //
+          // The in-range-but-not-adjacent case (frodo 8626 §4b: offset (2,2), one step to dist^2=5)
+          // is completed by the destination check at the top of this piece's turn, not here; a
+          // MID-PATH enemy keeps the hold below, because PB-197 AC4 and the detour leg both require
+          // that a unit blocked in the way still counts a hold and keeps its order.
+          // A tank ordered into INFANTRY is the overrun arm above and never reaches here.
+          const engageCombat = combatRules();
+          const reach = rangeOf(piece, engageCombat);
+          if (atDestination && inEngageRange(piece, occupant, reach)) {
+            completeAsEngage(piece, occupant, nx, ny, events, match, reach);
+            stopped = true;
+            break;
+          }
           // Stop one short: the walker never shares a cell, and the clash is combat's job. The
-          // order is KEPT (PB-097b) so the unit presses again next round instead of standing
-          // where it happened to meet the enemy.
+          // order is KEPT so the unit presses again next round instead of standing where it
+          // happened to meet the enemy.
           piece.overrunBy = null;
           piece.overrunCell = null;
           // PB-197: the bot reads this counter to re-plan; a unit held by an enemy is still held,

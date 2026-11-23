@@ -184,12 +184,22 @@ export async function run(ctx) {
   wall.y = 8;
   wall.path = [];
   const clashEvents = advance(clash);
-  const stopped = clashEvents.find((event) => event.type === "blocked" && event.pieceId === "blue:land");
-  if (!stopped) fail("a walk into a held cell was not blocked: " + JSON.stringify(clashEvents));
-  if (stopped.by !== "red:land") fail("blocked event names " + JSON.stringify(stopped.by));
   if (front.x !== 165 || front.y !== 8) fail("the walker shared the held cell: " + front.x + "," + front.y);
-  // PB-097b: contact keeps the order. It retries next round instead of standing where it met.
-  if (front.path.length !== 1) fail("the walker dropped its path after being blocked: " + JSON.stringify(front.path));
+  // PB-097b (PM 8574 §2): an attack order onto an enemy-held cell COMPLETES as ENGAGE once the
+  // walker is inside engage range. The path is cleared (nothing to retry) and the target is
+  // recorded; the fight itself is combat.resolve's. The old arm kept the path, emitted a `blocked`
+  // retry and re-attempted every round, which parked the unit one cell short for the whole match.
+  const engaged = clashEvents.find((event) => event.type === "engage" && event.pieceId === "blue:land");
+  if (!engaged) fail("contact on the ordered cell did not complete as ENGAGE: " + JSON.stringify(clashEvents));
+  if (engaged.target !== "red:land" || engaged.by !== "red:land") {
+    fail("engage event names " + JSON.stringify(engaged.target) + " by " + JSON.stringify(engaged.by));
+  }
+  if (clashEvents.some((event) => event.type === "blocked" && event.pieceId === "blue:land")) {
+    fail("an engaging walker still emitted a blocked retry: " + JSON.stringify(clashEvents));
+  }
+  if (front.path.length !== 0) fail("the walker kept a path after engaging: " + JSON.stringify(front.path));
+  if (front.fighting !== "red:land") fail("the engaged walker recorded no target: " + JSON.stringify(front.fighting));
+  if (Number(front.holdRounds || 0) !== 0) fail("an engaged walker still counts a hold: " + front.holdRounds);
 
   // ---- an empty roster is an error, not a crash --------------------------------------
   const empty = openMatch("2023");
