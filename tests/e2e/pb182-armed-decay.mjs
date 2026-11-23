@@ -259,9 +259,15 @@ try {
   // --- place one infantry. The purchase ends the arm (the server's ack clears it), so re-arm ONCE
   // here; that is the snapshot the decay read starts from, and it is the last arm click in the leg. ---
   const before = ((await room()).pieces || []).length;
-  if (placeCell) await clickCell(placeCell);
-  await sleep(1200);
-  const bought = ((await room()).pieces || []).length;
+  let bought = before;
+  for (let attempt = 1; attempt <= 3 && bought !== before + 1; attempt += 1) {
+    if (placeCell) await clickCell(placeCell);
+    await sleep(1200);
+    bought = ((await room()).pieces || []).length;
+    // PB-185: a loaded live host can swallow the first placement click (measured: pieces 2 -> 2,
+    // arm still true). Retry on the SAME cell — a board click, not a re-arm.
+    if (bought !== before + 1) await sleep(500);
+  }
   mark("a ready cell places the piece", bought === before + 1, "pieces " + before + " -> " + bought);
   const armedAfterBuy = await page.evaluate(() => window.__chq.state());
   mark("the purchase ends the arm, so the snapshot is re-taken once", armedAfterBuy.buying === null && armedAfterBuy.placement === false,
@@ -342,12 +348,13 @@ try {
     await page.click("#clockBtn");
     await sleep(400);
   }
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < 24; i += 1) {
     if (Number((await room()).speed) >= 6) break;
     // A disabled #speedUp makes Playwright wait out its actionability timeout (30 s of rounds);
-    // cap it so a leg failure is a check, not half a minute of unwatched clock.
-    await page.click("#speedUp", { timeout: 1000 }).catch(() => {});
-    await sleep(120);
+    // cap it so a leg failure is a check, not half a minute of unwatched clock. PB-185: the ramp
+    // also gets more attempts — a loaded live host dropped clicks and left the clock at speed 2.
+    await page.click("#speedUp", { timeout: 800 }).catch(() => {});
+    await sleep(180);
   }
   await sleep(400);
   const speedState = await room();
@@ -430,20 +437,35 @@ try {
     && Math.abs(Number(green.h) - 120) <= 20,
     green ? "round " + green.round + " h" + green.h + " rgba " + green.rgba : "no green in " + series.length + " rounds");
 
-  // AC (b): the crossing round IS the server's readyRound, read in the same sample.
-  mark("the crossing round is the server's readyRound in the same read",
-    Boolean(firstReady) && Number(firstReady.round) === Number(firstReady.readyRound)
-      && Number(firstReady.readyRound) === readyAt,
-    firstReady ? "box 1 at round " + firstReady.round + ", server readyRound " + firstReady.readyRound
-      + ", card " + readyAt : "no crossing read");
+  // AC (b): no read may paint ready before the server's readyRound, none may still paint soon after
+  // it, and the first ready read carries that readyRound in the SAME read. PB-185: the old form also
+  // demanded firstReady.round === readyAt, which is a property of the sampler, not of the page — on a
+  // loaded live host a stalled iteration skips rounds (measured: rounds 9 -> 24 in one step), so the
+  // first sight of box 1 can legitimately land at 24 on a page that turned at 22.
+  const earlyReady = series.filter((row) => row.box === 1 && Number(row.round) < readyAt);
+  // The boundary round itself may still carry byte 2: the mask is re-requested on the round delta, so
+  // a read taken at round 22 before that delta lands sees round 22 with round-21's mask. Past the
+  // boundary round, a 2 is a real disagreement.
+  const lateSoon = series.filter((row) => row.box === 2 && Number(row.round) > readyAt);
+  mark("no read paints ready before the server's readyRound, and the first ready read carries it",
+    Boolean(firstReady) && Number(firstReady.readyRound) === readyAt
+      && Number(firstReady.round) >= readyAt && earlyReady.length === 0 && lateSoon.length === 0,
+    firstReady ? "first box 1 at round " + firstReady.round + ", server readyRound " + firstReady.readyRound
+      + ", card " + readyAt + "; ready-painted before the mask " + earlyReady.length
+      + " times, soon-painted after it " + lateSoon.length + " times"
+      : "no crossing read");
 
   // AC (c): the reference is the cell's OWN green at the moment it turns, not a different cell and
-  // not a dark pixel (rgba 17,32,30 was the wrong instrument once already).
+  // not a dark pixel (rgba 17,32,30 was the wrong instrument once already). The exact rgba is not
+  // pinned: the ready ink reads 61,185,65 on an idle board and 74,223,76 under a live cursor, both
+  // h121-122 and both lit, so the assertion is the green family on this coordinate.
   const ownGreen = firstReady ? series.find((row) => row.round === firstReady.round) : null;
+  const ownGreenPx = ownGreen ? ownGreen.rgba.split(",").map(Number) : [];
+  const ownGreenLit = ownGreenPx.length === 4 && Math.max(ownGreenPx[0], ownGreenPx[1], ownGreenPx[2]) >= 100;
   const hueGap = Boolean(yellow && ownGreen) ? Math.abs(Number(yellow.h) - Number(ownGreen.h)) : 0;
   mark("the YELLOW is measured against the cell's own green at the crossing",
-    Boolean(yellow && ownGreen) && hueGap >= 30 && /^61,185,65/.test(ownGreen.rgba)
-      && Math.abs(Number(ownGreen.h) - 120) <= 20,
+    Boolean(yellow && ownGreen) && hueGap >= 30 && ownGreenLit
+      && Number(ownGreen.h) >= 100 && Number(ownGreen.h) <= 140,
     ownGreen ? "yellow h" + (yellow && yellow.h) + " vs own green h" + ownGreen.h
       + " rgba " + ownGreen.rgba + ", gap " + hueGap : "no own-green read");
 
