@@ -590,6 +590,16 @@ body.in-match .pursechip {
   min-width: 84px;
 }
 
+/* PB-180 (PM 8316 §1, option (a)): the strip's purse is a SUMMARY — cash in whole billions, then
+   income per round. Each leg is its own box so the narrowest width can drop the income leg into the
+   title while the balance — the one figure the original's main display shows — stays whole. */
+body.in-match .pursechip .cash,
+body.in-match .pursechip .inc {
+  display: inline-block;
+  white-space: nowrap;
+}
+body.in-match .pursechip .inc { color: #7fc9b0; }
+
 /* The chip row above the map was the whole interface before the dialogues existed. Seats, the clock
    and the purse are in the strip; buying, the kit and the log have their own dialogues; so the row
    itself is gone and the map gets its height.
@@ -723,6 +733,9 @@ body.in-match .account {
      floor and ellipsizes, the round/clock readout keeps its own width (PB-173). 30 px is the widest
      floor that does not overlap the clock at 1024x768 (60 px overlapped it by 29.15 px). */
   body.in-match .pursechip { min-width: 30px; }
+  /* PB-180 (a): at 1024 the row has no pixel for the income leg. It moves into the chip's title —
+     the cash figure, which the original shows on the main display, is never clipped. */
+  body.in-match .pursechip .inc { display: none; }
   body.in-match #strip > .brand {
     flex: 1 1 120px;
     min-width: 120px;

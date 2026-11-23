@@ -21,6 +21,7 @@ import {
   ownPieceAt,
   previewLine,
   oilWarning,
+  purseSummaryParts,
   purseText,
   refreshSelection,
   refusalText,
@@ -1449,7 +1450,7 @@ function syncShell() {
   // The purse at a glance: the economy dialogue explains it, this is the number a player wants to
   // see without opening anything.
   const purse = document.getElementById("purseChip");
-  if (purse) paintPurse(purse, room && room.seat ? room.seat : null);
+  if (purse) paintPurse(purse, room && room.seat ? room.seat : null, "strip");
   syncGameButtons();
   renderDebug();
   paintDialog();
@@ -1460,14 +1461,48 @@ function syncShell() {
 // opponent's In/Out/reserve is one key away and never silently replaces the player's own numbers.
 let oilFoe = false;
 
-function paintPurse(el, seat) {
+// PB-180 (PM 8316 §1, option (a)): the strip draws a two-leg SUMMARY — the player's cash in whole
+// billions, then income per round — because that is what the original's main display shows (p.27).
+// The long economy string (oil in/out, reserves, the payday countdown) moves into the chip's TITLE,
+// and the Economy dialogue keeps printing the same numbers. `mode` is "strip" for #purseChip and
+// "full" for the room panel's paragraph, which has the height for the long line.
+function paintPurse(el, seat, mode = "full") {
   if (!el) return;
-  el.textContent = seat ? purseText(seat, oilFoe) : "";
+  const full = seat ? purseText(seat, oilFoe) : "";
+  const summary = seat
+    ? purseSummaryParts(seat, oilFoe && room && room.opponent ? room.opponent.income : null)
+    : null;
+  if (mode === "strip" && summary) {
+    el.textContent = "";
+    if (summary.cash) {
+      const cash = document.createElement("span");
+      cash.className = "cash";
+      cash.textContent = summary.cash;
+      el.append(cash);
+    }
+    if (summary.income) {
+      const inc = document.createElement("span");
+      inc.className = "inc";
+      inc.textContent = summary.income;
+      el.append(inc);
+    }
+  } else {
+    el.textContent = full;
+  }
   const budget = seat ? (oilFoe ? seat.foeOil : seat.oil) : null;
   el.classList.toggle("oilshort", Boolean(budget && budget.short === true));
-  el.title = oilFoe
+  const hint = oilFoe
     ? "Alternate Function (manual p.27): the opponent's oil. Click or Ctrl+V to show your own."
     : "Click, or press Ctrl+V, for the opponent's oil (manual p.27 Alternate Function).";
+  // PB-180: the full economy string is one hover/long-press away, and the income leg is always in the
+  // title even when the narrow strip drops it — so the summary is never the only place a number
+  // lives. The opponent's cash is never in either string: `full` and `summary` are built from this
+  // seat's own cash field.
+  const titleParts = [];
+  if (summary) titleParts.push((summary.cash + summary.income).trim());
+  if (full) titleParts.push(full);
+  titleParts.push(hint);
+  el.title = titleParts.filter(Boolean).join(" · ");
   el.setAttribute("data-oil-side", oilFoe ? "foe" : "own");
   const warn = oilWarning(budget);
   if (warn) el.setAttribute("aria-label", el.textContent + " — " + warn);
@@ -1478,7 +1513,7 @@ function paintPurse(el, seat) {
 function toggleOilAlternate() {
   oilFoe = !oilFoe;
   const purse = document.getElementById("purseChip");
-  if (purse) paintPurse(purse, room && room.seat ? room.seat : null);
+  if (purse) paintPurse(purse, room && room.seat ? room.seat : null, "strip");
 }
 
 function seatRow(label, seat, yours) {

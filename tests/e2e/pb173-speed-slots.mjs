@@ -32,6 +32,9 @@ const WIDTHS = (argOf("widths", "1440x900,1280x800,1024x768")).split(",").map((s
   return { w, h, label: s };
 });
 const TOL = 0.05;
+// The ledger the strip no longer prints has to be one hover away at EVERY width (frodo 8327): the
+// oil budget line and the payday countdown, not just the income leg.
+const LEDGER = /oil in \d+ \/ out \d+ \/ reserve \d+/;
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -82,6 +85,8 @@ const BOXES = [
   ["stripInfo", "#stripInfo"],
   ["phase", "#stripInfo .phase"],
   ["purseChip", "#purseChip"],
+  ["purseCash", "#purseChip .cash"],
+  ["purseInc", "#purseChip .inc"],
   ["clockBtn", "#clockBtn"],
   ["speedctl", ".speedctl"],
   ["speedDown", "#speedDown"],
@@ -133,7 +138,8 @@ try {
       if (!el) { rows[key] = null; continue; }
       const r = el.getBoundingClientRect();
       rows[key] = { x: +r.x.toFixed(2), y: +r.y.toFixed(2), w: +r.width.toFixed(2), h: +r.height.toFixed(2),
-        scrollW: el.scrollWidth, clientW: el.clientWidth, text: (el.textContent || "").trim() };
+        scrollW: el.scrollWidth, clientW: el.clientWidth, text: (el.textContent || "").trim(),
+        title: el.getAttribute("title") || "" };
     }
     const items = [];
     for (const [key, sel] of row) {
@@ -207,12 +213,43 @@ try {
         JSON.stringify({ running: a && a.x, held: b && b.x, dL: a && b ? d2(a.x, b.x) : null }));
     }
 
-    // PB-180: both readouts show their whole string, no ellipsis.
-    for (const key of ["stripInfo", "purseChip"]) {
-      const el = run.rows[key];
-      mark("#" + key + " shows its whole string at " + label,
-        Boolean(el) && el.clientW > 0 && el.scrollW <= el.clientW,
-        JSON.stringify({ text: el && el.text, scrollW: el && el.scrollW, clientW: el && el.clientW, w: el && el.w }));
+    // PB-180 (PM 8316 §1, option (a)): #stripInfo shows its whole string at every named width; the
+    // purse is a SUMMARY ("116b +1.45b/rd") — whole at 1440/1280, and at 1024 the income leg may drop
+    // into the title while the cash figure stays whole. This is the arm that was three reds before
+    // the summary: the full 412 px economy string could not fit a 88 px slot by any CSS.
+    const info = run.rows.stripInfo;
+    mark("#stripInfo shows its whole string at " + label,
+      Boolean(info) && info.clientW > 0 && info.scrollW <= info.clientW,
+      JSON.stringify({ text: info && info.text, scrollW: info && info.scrollW, clientW: info && info.clientW, w: info && info.w }));
+    if (w > 1100) {
+      const chip = run.rows.purseChip;
+      // The fresh match opens on 50b; the card's own example is "116b +1.45b/rd", so the slot has to
+      // hold a three-digit balance too. Same chip, same width, one synthetic string, restored after.
+      const wide = await page.evaluate(() => {
+        const el = document.getElementById("purseChip");
+        const before = el.innerHTML;
+        el.innerHTML = '<span class="cash">116b</span><span class="inc"> +1.45b/rd</span>';
+        const detail = { w: +el.getBoundingClientRect().width.toFixed(2), scrollW: el.scrollWidth, clientW: el.clientWidth };
+        const fits = el.clientWidth > 0 && el.scrollWidth <= el.clientWidth;
+        el.innerHTML = before;
+        return { fits, detail };
+      });
+      mark("#purseChip shows its whole summary at " + label,
+        Boolean(chip) && chip.clientW > 0 && chip.scrollW <= chip.clientW
+          && /\db \+.*b\/rd/.test(chip.text) && wide.fits && LEDGER.test(chip.title),
+        JSON.stringify({ text: chip && chip.text, scrollW: chip && chip.scrollW, clientW: chip && chip.clientW,
+          w: chip && chip.w, textOk: /\db \+.*b\/rd/.test((chip && chip.text) || ""),
+          nat: Boolean(chip) && chip.scrollW <= chip.clientW, wide: wide.fits, at116b: wide.detail,
+          titleHasLedger: LEDGER.test((chip && chip.title) || "") }));
+    } else {
+      const cash = run.rows.purseCash;
+      const chip = run.rows.purseChip;
+      mark("#purseChip keeps the cash figure whole at " + label,
+        Boolean(cash) && cash.clientW > 0 && cash.scrollW <= cash.clientW
+          && /^\d+b$/.test(cash.text) && /b\/rd/.test(chip ? chip.title : "")
+          && LEDGER.test(chip ? chip.title : ""),
+        JSON.stringify({ cash: cash && cash.text, scrollW: cash && cash.scrollW, clientW: cash && cash.clientW,
+          chipText: chip && chip.text, titleHasIncome: Boolean(chip && /b\/rd/.test(chip.title)) }));
     }
     // PB-179's floor: nothing overlaps and nothing runs past the window.
     const pairs = overlapPairs(run.items);
