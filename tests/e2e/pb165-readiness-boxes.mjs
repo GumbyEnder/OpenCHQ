@@ -67,6 +67,31 @@ const ERA = argOf("era", "1986");
 // Same default as the pb182 leg: a tests-only branch's HEAD is never the served sha, so pinning it by
 // default reds a correct page. Gate callers pass --expect=<live sha>; no flag = "any sha" + prints it.
 const EXPECT = argOf("expect", "");
+// PB-190 (PM 8441 §1): the served sha may be quoted as the full commit, the 7-char short, or any
+// prefix of either. Comparing `short === EXPECT` alone reds a CORRECT build when the caller passes
+// the full sha, which is what the first run of this pin did.
+function servedMatches(version) {
+  const want = String(EXPECT || "").toLowerCase();
+  if (!want) return true;
+  const commit = String((version && version.commit) || "").toLowerCase();
+  const short = String((version && version.short) || "").toLowerCase();
+  // The full commit is the witness whenever the host publishes one, and a disagreeing commit is not
+  // rescued by a short that happens to share its first 7 characters: EXPECT must be a prefix of the
+  // commit, or a longer form of it (a gate caller may pass the full sha; the host may answer with it).
+  // A prefix test only identifies a commit at 7 characters or more (the shortest git short sha); a
+  // 1-3 char EXPECT matches every sha and would pass a wrong build (frodo 8452 §2).
+  const PREFIX_MIN = 7;
+  if (commit) {
+    if (commit === want) return true;
+    if (want.length > commit.length) return want.startsWith(commit);
+    return want.length >= PREFIX_MIN && commit.startsWith(want);
+  }
+  if (!short) return false;
+  if (short === want) return true;
+  if (want.length > short.length) return want.startsWith(short);
+  return want.length >= PREFIX_MIN && short.startsWith(want);
+}
+
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb165")));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -252,7 +277,7 @@ try {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 20000 });
   const version = await page.evaluate(() => fetch("/api/version").then((r) => r.json()).catch(() => null));
-  mark("the page is served " + (EXPECT || "any sha"), Boolean(version) && (!EXPECT || version.short === EXPECT),
+  mark("the page is served " + (EXPECT || "any sha"), Boolean(version) && servedMatches(version),
     JSON.stringify(version));
 
   if (!(await page.evaluate(() => Boolean(window.__chq && window.__chq.me())))) {
