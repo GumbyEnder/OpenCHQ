@@ -1638,7 +1638,9 @@ function toolRow(room) {
             closeDialog();
             return;
           }
-          send({ op: "mission", piece: selected.id, mode: mission.mode, to: { x: selected.x, y: selected.y } });
+          // PB-172: a panel mission is an order too, so it takes an id and can be settled and deduped
+          // exactly like a board-click mission.
+          sendOrder({ op: "mission", kind: "mission", piece: selected.id, mode: mission.mode, to: { x: selected.x, y: selected.y } });
         });
         row.append(button);
       }
@@ -2183,7 +2185,7 @@ const DIALOG_PAINTERS = {
             drawMatch();
             return;
           }
-          send({ op: "mission", piece: plane.id, mode: mission.mode, to: { x: plane.x, y: plane.y } });
+          sendOrder({ op: "mission", kind: "mission", piece: plane.id, mode: mission.mode, to: { x: plane.x, y: plane.y } });
           say(plane.id + ": " + mission.label + " ordered.");
           closeDialog();
         });

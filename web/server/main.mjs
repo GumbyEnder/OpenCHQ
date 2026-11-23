@@ -315,8 +315,19 @@ server.on("upgrade", (req, socket) => {
         return;
       }
       const result = lobby.handle(user.username, message);
-      if (result && result.error) {
+      // PB-172: a duplicate order was already answered by the lobby from its memory of the first
+      // reply. Sending anything else here would put a second answer on the wire for one order.
+      const answered = Boolean(result && result.answered);
+      if (answered) {
+        // nothing more to send for this frame
+      } else if (result && result.error) {
         peer.send({ op: "error", id: message.id ?? null, error: result.error });
+      } else if (result && message.op === "mission" && message.id !== undefined && message.id !== null) {
+        // PB-172: the mission ack names the order it answers. The page settles an order BY ID, and a
+        // mission ack without one left the mission in the page's queue until the next socket open
+        // replayed it as a refusal. A mission with no events still gets its ack, because the id is
+        // the answer's whole job here.
+        peer.send({ op: "ack", id: message.id, events: Array.isArray(result.events) ? result.events : [] });
       } else if (result && Array.isArray(result.events) && result.events.length) {
         // A tool that changes the board but says nothing is a decision with no feedback: the
         // player pressed a button and has to guess what happened.

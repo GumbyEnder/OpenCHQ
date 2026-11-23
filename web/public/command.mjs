@@ -325,7 +325,9 @@ export function orderMessage(piece, target) {
 export function missionMessage(piece, mode, target) {
   const to = cell(target);
   if (!piece || !to || !mode) return null;
-  return { op: "mission", piece: piece.id, mode: String(mode), to };
+  // PB-172: `kind` names the order in the page's own late-answer sentence ("No answer yet for your
+  // mission"), and the id is stamped by sendOrder.
+  return { op: "mission", kind: "mission", piece: piece.id, mode: String(mode), to };
 }
 
 export function routeRequest(piece, target) {

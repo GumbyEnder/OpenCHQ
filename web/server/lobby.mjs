@@ -1184,6 +1184,13 @@ export function createLobby() {
   // only "duplicate", so the purchase landed with no confirmation on screen (PB-025).
   const seenOrderIds = new Map();
   const orderReplies = new Map();
+  // PB-172: a mission is an order too. The page stamps every order with an id, and the mission ack
+  // used to carry none, so a mission was never settled and its id stayed in the page's queue until
+  // the next socket open replayed it — where the server, seeing the plane already away, answered
+  // "That aircraft is inactive for N more rounds." and the page painted that as a refusal. A
+  // replayed buy or move is idempotent; a replayed mission is not, so "mission" joins the set and a
+  // replay is answered from orderReplies with the ack the first copy earned.
+  const DEDUPE_OPS = new Set(["buy", "order", "mission"]);
   function rememberReply(username, id, reply) {
     if (id === undefined || id === null) return;
     const key = username + "|" + String(id);
@@ -1192,7 +1199,7 @@ export function createLobby() {
   }
   function handle(username, message) {
     const op = String(message.op ?? "");
-    const dedupe = (op === "buy" || op === "order") && message.id !== undefined && message.id !== null;
+    const dedupe = DEDUPE_OPS.has(op) && message.id !== undefined && message.id !== null;
     const key = dedupe ? username + "|" + String(message.id) : "";
     if (dedupe && seenOrderIds.has(key)) {
       const peer = sockets.get(username);
@@ -1200,11 +1207,18 @@ export function createLobby() {
         const reply = orderReplies.get(key);
         peer.send(reply ? { ...reply, duplicate: true } : { op: "ack", id: message.id, duplicate: true });
       }
-      return { ok: true };
+      // main.mjs sends nothing more for this one: the replay's answer is the one already sent.
+      return { ok: true, answered: true };
     }
     const result = dispatch(username, message);
-    if (dedupe) {
+    if (dedupe && result && !result.error) {
       seenOrderIds.set(key, Date.now());
+      // A mission's reply is the ack main.mjs writes, so the memory has to be the ack itself —
+      // otherwise a replay is answered with a bare `{op:"ack", duplicate}` that says nothing
+      // about the run that landed.
+      if (op === "mission") {
+        rememberReply(username, message.id, { op: "ack", id: message.id, events: Array.isArray(result.events) ? result.events : [] });
+      }
       if (seenOrderIds.size > 1000) {
         const oldest = seenOrderIds.keys().next().value;
         seenOrderIds.delete(oldest);

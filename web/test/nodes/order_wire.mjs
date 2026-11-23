@@ -150,6 +150,8 @@ export async function run(ctx) {
   const plane = { id: "blue:air:1", side: "blue", domain: "air", kind: "aircraft", x: 80, y: 46 };
   eq(fail, "the strike the page sends", missionMessage(plane, "strike", { x: 81, y: 44 }), {
     op: "mission",
+    // PB-172: the order names itself, so a late-answer line reads "your mission".
+    kind: "mission",
     piece: "blue:air:1",
     mode: "strike",
     to: { x: 81, y: 44 },
