@@ -23,10 +23,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const argOf = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
-  return hit ? hit.slice(name.length + 3) : fallback;
+  if (hit) return hit.slice(name.length + 3);
+  const index = process.argv.indexOf("--" + name);
+  if (index >= 0 && process.argv[index + 1] && !process.argv[index + 1].startsWith("--")) {
+    return process.argv[index + 1];
+  }
+  return fallback;
 };
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb173")));
+console.log("out dir: " + OUT + " (pass --out=<dir> or --out <dir> to move it)");
 const WIDTHS = (argOf("widths", "1440x900,1280x800,1024x768")).split(",").map((s) => {
   const [w, h] = s.split("x").map(Number);
   return { w, h, label: s };

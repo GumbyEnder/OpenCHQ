@@ -54,7 +54,12 @@ const root = path.resolve(here, "..", "..");
 
 function argOf(name, fallback = "") {
   const hit = process.argv.find((value) => value.startsWith("--" + name + "="));
-  return hit ? hit.slice(name.length + 3) : fallback;
+  if (hit) return hit.slice(name.length + 3);
+  const index = process.argv.indexOf("--" + name);
+  if (index >= 0 && process.argv[index + 1] && !process.argv[index + 1].startsWith("--")) {
+    return process.argv[index + 1];
+  }
+  return fallback;
 }
 
 let HEAD_SHA = "";
@@ -93,6 +98,7 @@ function servedMatches(version) {
 }
 
 const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb165")));
+console.log("out dir: " + OUT + " (pass --out=<dir> or --out <dir> to move it)");
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
