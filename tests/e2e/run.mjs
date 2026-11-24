@@ -315,11 +315,61 @@ async function moveOrder(page) {
   check(Boolean(accepted), "the server accepts a move preview from the selected piece");
   if (!accepted) return null;
   const before = await page.evaluate(() => window.__chq.wire().length);
+  // PB-238 AC2: an intermittent whose FAIL prints nothing cannot be graded later. Arm a toast
+  // sampler BEFORE the click, because a flash lives 6000 ms (FLASH_MS) and the wire wait below is
+  // 15000 ms - the acknowledgement text is gone by construction when the check finally reads it.
+  // The queued sentences are the discriminator: "Connection is down. Your order is queued..." is
+  // written by sendOrder() when the socket is down (app.js:130) and "No answer yet for your order.
+  // It is queued and will be applied when the server answers." by the 2000 ms order watch
+  // (orderwatch.mjs:8/15). Either one proves the click reached sendOrder(); an empty sampler proves
+  // it did not, which is the launch/page-state path and not the order path.
+  const at = await page.evaluate((cell) => {
+    const state = window.__chq.state();
+    const flash = document.getElementById("flash");
+    window.__chqE2E = window.__chqE2E || { toasts: [], timer: null };
+    window.__chqE2E.toasts = [];
+    const seen = (text) => {
+      const line = String(text == null ? "" : text).trim();
+      if (line && window.__chqE2E.toasts[window.__chqE2E.toasts.length - 1] !== line) {
+        window.__chqE2E.toasts.push(line);
+      }
+    };
+    seen(flash ? flash.textContent : "");
+    if (window.__chqE2E.timer) clearInterval(window.__chqE2E.timer);
+    window.__chqE2E.timer = setInterval(() => seen(flash ? flash.textContent : ""), 50);
+    return {
+      piece: state.selected == null ? null : state.selected,
+      cell: cell,
+      round: state.round == null ? null : state.round,
+      flashPresent: Boolean(flash),
+    };
+  }, accepted);
   await clickCell(page, accepted);
   const ordered = await page.waitForFunction((from) => window.__chq.wire().slice(from).some((line) => /^ordered/.test(line)),
     before, { timeout: 15000 }).then(() => true).catch(() => false);
   const said = await toast(page);
-  check(ordered || /Order sent/.test(said), "the move order is accepted by the server", said);
+  const evidence = await page.evaluate(() => {
+    if (window.__chqE2E && window.__chqE2E.timer) clearInterval(window.__chqE2E.timer);
+    const toasts = (window.__chqE2E && window.__chqE2E.toasts) || [];
+    return {
+      toasts,
+      lastWire: window.__chq.wire().slice(-5),
+      roundAtCheck: window.__chq.state().round == null ? null : window.__chq.state().round,
+    };
+  });
+  const queued = evidence.toasts.filter((text) => /queued and will (be sent|be applied)/.test(text));
+  const detail = JSON.stringify({
+    click: at,
+    toastAtCheck: said,
+    queuedSentenceInWindow: queued,
+    flashTextsInWindow: evidence.toasts,
+    lastWireLines: evidence.lastWire,
+    roundAtCheck: evidence.roundAtCheck,
+    verdict: queued.length
+      ? "the click reached sendOrder (a queued sentence was on the flash); the miss is the ack"
+      : "no queued sentence ever reached the flash: the click did not reach sendOrder (launch/page state)",
+  });
+  check(ordered || /Order sent/.test(said), "the move order is accepted by the server", detail);
   return accepted;
 }
 
@@ -328,7 +378,14 @@ async function flashExpiry(page) {
   // timer with no input, and the match-over line is a separate element the flash cannot touch.
   await page.waitForFunction(() => window.__chq.toast() !== "", null, { timeout: 5000 }).catch(() => {});
   const said = await toast(page);
-  check(said.length > 0, "an acknowledgement is on the flash after the order", said);
+  // PB-238 AC2: the same sampler the order check armed, so this FAIL also says whether the order
+  // was ever acknowledged or the flash was simply never written.
+  const sampled = await page.evaluate(() => ({
+    toasts: (window.__chqE2E && window.__chqE2E.toasts) || [],
+    lastWire: window.__chq.wire().slice(-5),
+  }));
+  check(said.length > 0, "an acknowledgement is on the flash after the order",
+    JSON.stringify({ toastAtCheck: said, flashTextsInWindow: sampled.toasts, lastWireLines: sampled.lastWire }));
   const shape = await page.evaluate(() => {
     const flash = document.getElementById("flash");
     const result = document.getElementById("result");
