@@ -37,6 +37,11 @@ export async function run() {
   must(Number.isInteger(radius) && radius >= 1, "config blast.radius must be an integer >= 1, got " + radius);
   must(rules().blast && String(rules().blast.source || "").includes(STAND_IN),
     "config blast.source must name the radius a " + STAND_IN);
+  // The binding itself, not the module's own answer re-read: a hardcoded 6 must red as soon as
+  // config says 7 (gate 8951 §4, m1b).
+  must(blastRadius() === Number(rules().blast.radius),
+    "blastRadius must return config blast.radius: config " + rules().blast.radius
+      + ", module " + blastRadius());
 
   // AC: the square radius is inclusive at the edge and one cell beyond it is outside.
   const at = { x: 50, y: 50 };
@@ -57,6 +62,18 @@ export async function run() {
   must(all.killed.length === 3, "three pieces sit inside the radius, got " + all.killed.length);
   must(all.killed.map((p) => p.id).join(",") === "1,2,3", "kills are ordered by id, got " + all.killed.map((p) => p.id).join(","));
   must(all.survivors.length === 1 && all.survivors[0].id === 4, "the piece outside survives");
+
+  // AC: the killed list is ordered by id, not by the order the board happens to sit in. The board
+  // above is already ascending, so insertion order alone would pass it (gate 8951 §4, m7).
+  const shuffled = [
+    piece(3, "red", "tank", 52, 52),
+    piece(1, "red", "sat", 50, 50),
+    piece(2, "blue", "sat", 51, 49),
+  ];
+  const ordered = blastHits(shuffled, at);
+  must(ordered.ok, "a blast on an out-of-order board must resolve: " + ordered.error);
+  must(ordered.killed.map((p) => p.id).join(",") === "1,2,3",
+    "kills are ordered by id even when the board is not, got " + ordered.killed.map((p) => p.id).join(","));
 
   // AC: a kind filter catches satellites only, both sides, and still honours the radius.
   const sats = blastHits(board, at, { kinds: ["sat"] });
