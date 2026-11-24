@@ -243,7 +243,9 @@ export function kitBriefing(match, side) {
     // said "deals no damage" would be the one place in the build where the player is told the old
     // stand-in was the rule.
     const zone = killRadius();
-    const zoneText = `The blast levels everything within ${zone} cells of the aim point — both sides' units, cities, bases and oil fields — and leaves wasteland, where attrition can kill. ${zone} is a ${STAND_IN}: the manual says "within three spaces" and the shape is read as a square.`;
+    const zoneText = zone === null
+      ? "This build's nuke has no kill radius configured, so a launch is refused."
+      : `The blast levels everything within ${zone} cells of the aim point — both sides' units, cities, bases and oil fields — and leaves wasteland, where attrition can kill. ${zone} is a ${STAND_IN}: the manual says "within three spaces" and the shape is read as a square.`;
     const homeText = "Your own home country cannot be targeted, even where it has been invaded.";
     // PB-156: the global count is not decoration. Every launch feeds it, and it is what turns the
     // sky on both sides: income can be skipped from the first detonation, the warning comes at 5,

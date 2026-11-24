@@ -28,10 +28,13 @@ import { priceOf, resetRules, rules } from "../../server/rules.mjs";
 import { kitBriefing, useTool } from "../../server/late.mjs";
 import { attritionStep, issueOrder } from "../../server/move.mjs";
 import {
-  NUKE_CAPITAL, NUKE_HOME_COUNTRY, NUKE_NEEDS_CELL, NUKE_OFF_MAP,
-  cellCountry, homeCountriesOf, killRadius, nukeTarget, wastelandCells, wastelandTerrain,
+  NUKE_HOME_COUNTRY, NUKE_HOME_UNKNOWN, NUKE_NEEDS_CELL, NUKE_OFF_MAP, NUKE_RADIUS_UNKNOWN, capitalText,
+  cellCountry, homeCountriesOf, killRadius, nukeTarget, resolvedCapitals, wastelandCells,
+  wastelandTerrain,
 } from "../../server/nukestrike.mjs";
-import { STAND_IN } from "../../server/blast.mjs";
+import { blastRadius, STAND_IN } from "../../server/blast.mjs";
+import { forSeat } from "../../server/view.mjs";
+import { NO_REGION, regionAt, regionSites } from "../../server/territory.mjs";
 
 export const name = "pb230_nuke_strike";
 
@@ -53,9 +56,14 @@ function must(ok, message) {
 
 // The same config swap pb156_nuke uses: the shipped file keeps nukes off, so a test that fires one
 // has to turn the block on and must put the file back.
-function withNukes(on) {
+function withNukes(on, patch = {}) {
   const custom = JSON.parse(JSON.stringify(rules()));
   custom.nukes = { ...(custom.nukes || {}), enabled: on };
+  // A null in the patch DELETES the key, so "the config lost killRadius" is testable.
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete custom.nukes[key];
+    else custom.nukes[key] = value;
+  }
   const dir = mkdtempSync(path.join(tmpdir(), "pb230-"));
   const file = path.join(dir, "game.json");
   writeFileSync(file, JSON.stringify(custom, null, 2));
@@ -89,20 +97,22 @@ function fixture() {
 // A land cell, in a country, far enough from both capitals for a full 7x7 blast, and not inside
 // Blue's own home country. Scanned from the board rather than typed in, so a board change moves the
 // target with it.
-function pickTarget(match, payload, { excludeHome = true, margin = 3 } = {}) {
+function pickTarget(match, payload, { excludeHome = true, margin = 3, radius = killRadius() ?? 3 } = {}) {
   const home = homeCountriesOf(match, "blue") || new Set();
+  const capitals = resolvedCapitals(match).list;
   for (let y = margin; y < 136 - margin; y += 1) {
     for (let x = margin; x < 320 - margin; x += 1) {
       const t = terrainAt(payload.cells, x, y);
       if (!t || WATER.has(t)) continue;
-      for (const side of ["blue", "red"]) {
-        const cap = match.capitals[side];
-        if (Math.abs(cap.x - x) <= margin + 0 && Math.abs(cap.y - y) <= margin + 0) continue;
+      let nearCapitalCell = false;
+      for (const cap of capitals) {
+        if (Math.abs(cap.x - x) <= margin && Math.abs(cap.y - y) <= margin) nearCapitalCell = true;
       }
+      if (nearCapitalCell) continue;
       const here = cellCountry(match, x, y);
       if (!here || here.country === null) continue;
       if (excludeHome && home.has(here.country)) continue;
-      if (wastelandCells(match, { x, y }, killRadius()).length < 45) continue;
+      if (wastelandCells(match, { x, y }, radius).length < 45) continue;
       return { x, y, terrain: t, country: here.country };
     }
   }
@@ -124,6 +134,13 @@ export async function run(ctx) {
     "config nukes.killRadiusSource must name the decision and the gap");
   eq("the manual's count is stored", Number(rules().nukes.killRadius), 3);
 
+  // Both directions (PM 8963, from frodo 8962 §2b): the nuke's zone is nukes.killRadius 3 while the
+  // satellite blast is still blast.radius 6. A nuke arm that compares against blastRadius() would go
+  // green with the wrong number, so both values are pinned here and they must differ.
+  eq("the satellite blast keeps its own 6", blastRadius(), 6);
+  eq("the nuke's kill zone is its own config value", killRadius(), 3);
+  must(blastRadius() !== killRadius(), "the nuke and the satellite blast read one number");
+
   const restore = withNukes(true);
   try {
     let payload;
@@ -132,6 +149,55 @@ export async function run(ctx) {
       must(Boolean(payload && payload.cells), "the board has no terrain grid");
     } catch (err) {
       ctx.skip("no extracted board on this host (set OPENCHQ_DATA / OPENCHQ_EXTRACT)");
+    }
+
+    // --- a(ii). both directions, with the config MOVED ---------------------------------------
+    // frodo's PB-230 card finding 2: a hardcoded 3 inside killRadius() is invisible while config
+    // says 3. Move nukes.killRadius to 4 and blast.radius stays 6: the nuke must follow config, the
+    // satellite must not, and a literal dies here.
+    {
+      const restoreOverlay = withNukes(true, { killRadius: 4 });
+      try {
+        eq("the nuke radius follows config", killRadius(), 4);
+        eq("the satellite radius does not move with it", blastRadius(), 6);
+        const { match } = fixture();
+        const target = pickTarget(match, payload, { margin: 4 });
+        must(Boolean(target), "no target cell for the overlay arm");
+        const at = { x: target.x, y: target.y };
+        match.pieces = [
+          piece("in-4", "red", "tank", at.x + 4, at.y), // Chebyshev 4: inside a 4-square
+          piece("out-5", "red", "tank", at.x + 5, at.y), // Chebyshev 5: outside it
+        ];
+        const result = useTool(match, "blue", "nuke", at);
+        if (result.error) fail("the overlay launch was refused: " + result.error);
+        eq("a radius-4 blast kills at 4 and spares 5", match.pieces.map((p) => p.id), ["out-5"]);
+        const event = (result.events || []).find((e) => e.type === "nuke");
+        eq("the event carries the config radius, not the shipped 3", event.radius, 4);
+        const wasteland = match.wasteland || [];
+        // The paint must reach 4 rows out (and no further): a radius-3 path would stop at 3.
+        const maxDy = Math.max(...wasteland.map((key) => Math.abs(Number(key.split(",")[1]) - at.y)));
+        eq("the radius-4 blast painted out to 4 rows", maxDy, 4);
+      } finally {
+        restoreOverlay();
+      }
+    }
+
+    // --- a(iii). a config that lost its nuke radius refuses instead of guessing 3 --------------
+    // frodo's PB-230 card finding 9: "refuses rather than picking a number" sat above code that
+    // picked one. With the key gone the tool must refuse and charge 0.
+    {
+      const restoreGone = withNukes(true, { killRadius: null });
+      try {
+        eq("a missing nuke radius answers null", killRadius(), null);
+        const { match } = fixture();
+        const target = pickTarget(match, payload);
+        const cash = match.sides.blue.cash;
+        const refused = useTool(match, "blue", "nuke", target);
+        eq("a missing nuke radius refuses", refused.error, NUKE_RADIUS_UNKNOWN);
+        eq("a missing-radius refusal costs nothing", match.sides.blue.cash, cash);
+      } finally {
+        restoreGone();
+      }
     }
 
     // --- a. the price, and a refusal that costs nothing ------------------------------------
@@ -153,42 +219,82 @@ export async function run(ctx) {
       eq("a refused aim costs nothing", refusedMatch.sides.blue.cash, cash);
     }
 
-    // --- b(i). the aim itself ---------------------------------------------------------------
+    // --- b(0). the aim itself ----------------------------------------------------------------
     {
       const { match } = fixture();
       eq("an aim with no cell is refused", nukeTarget(match, "blue", null).error, NUKE_NEEDS_CELL);
       eq("an off-map aim is refused", nukeTarget(match, "blue", { x: 40, y: 200 }).error, NUKE_OFF_MAP);
       eq("a non-integer aim is refused", nukeTarget(match, "blue", { x: 40.5, y: 40 }).error, NUKE_OFF_MAP);
+      const cash = match.sides.blue.cash;
+      useTool(match, "blue", "nuke", null);
+      eq("an aim with no cell costs nothing", match.sides.blue.cash, cash);
     }
 
-    // --- b(ii). the capital ring, and it says it is a stand-in --------------------------------
+    // --- b(i). the capital-distance / SDI ring, and it says it is a stand-in ------------------
     {
       const { match } = fixture();
       const cap = match.capitals.red;
       const ring = Number(rules().nukes.exclusion);
       const inside = nukeTarget(match, "blue", { x: cap.x + ring, y: cap.y });
-      eq("the ring cell is refused", inside.error, NUKE_CAPITAL);
+      eq("the ring cell is refused", inside.error, capitalText());
       must(String(inside.error).includes(STAND_IN), "the capital refusal does not call its radius a " + STAND_IN);
       const outside = nukeTarget(match, "blue", { x: cap.x + ring + 1, y: cap.y });
       must(!outside.error, "one cell past the ring was refused: " + outside.error);
       // Blue's own capital as well: the guard is home ground, not one side's.
       const ownCap = match.capitals.blue;
-      eq("the firer's own capital ring is refused too", nukeTarget(match, "blue", { x: ownCap.x, y: ownCap.y }).error, NUKE_CAPITAL);
+      eq("the firer's own capital ring is refused too", nukeTarget(match, "blue", { x: ownCap.x, y: ownCap.y }).error, capitalText());
+      // PM 8963: every refusal arm also proves the refusal charged nothing.
+      const cash = match.sides.blue.cash;
+      const throughTool = useTool(match, "blue", "nuke", { x: cap.x + ring, y: cap.y });
+      eq("the ring is the same sentence through useTool", throughTool.error, capitalText());
+      eq("a capital-ring refusal costs nothing", match.sides.blue.cash, cash);
     }
 
-    // --- b(iii). the firer's own home country, even when it has been invaded -----------------
+    // --- b(i) reads the RESOLVED set, not just the seat pair ----------------------------------
+    // frodo 8962 §4: with the ring on `match.capitals[side]` and the home country on the capital
+    // set, a set that lost a capital moves one refusal and not the other. 1986 Blue holds London,
+    // Tokyo and Washington; only Washington is the seat pair, so London is the discriminating arm.
+    {
+      const { match } = fixture();
+      const capitals = resolvedCapitals(match);
+      eq("the resolved set is the era's whole capital list", capitals.list.map((c) => c.siteId).sort((a, b) => a - b),
+        [10, 35, 62, 63]);
+      must(capitals.complete, "the 1986 capital set did not resolve completely");
+      const ring = Number(rules().nukes.exclusion);
+      const london = capitals.list.find((c) => c.siteId === 10);
+      const seat = match.capitals.blue;
+      must(Math.abs(london.x - seat.x) > ring || Math.abs(london.y - seat.y) > ring,
+        "London sits on the seat capital, so this arm would prove nothing");
+      // Red fires: London is BLUE's capital, so b(ii) (the FIRER's home country) cannot be what
+      // refuses this cell - only the ring can.
+      eq("a non-seat capital's ring still refuses", nukeTarget(match, "red", { x: london.x + ring, y: london.y }).error, capitalText());
+      const cash = match.sides.red.cash;
+      const throughTool = useTool(match, "red", "nuke", { x: london.x + ring, y: london.y });
+      eq("the non-seat ring refuses through useTool too", throughTool.error, capitalText());
+      eq("a non-seat ring refusal costs nothing", match.sides.red.cash, cash);
+      // The exclude-one-past-the-ring direction on the same capital.
+      must(!nukeTarget(match, "red", { x: london.x + ring + 1, y: london.y }).error,
+        "one cell past London's ring was refused");
+    }
+
+    // --- b(ii). the firer's own home country, even when it has been invaded --------------------
     {
       const { match } = fixture();
       const home = homeCountriesOf(match, "blue");
       must(home && home.size, "Blue's home country did not resolve from the capital set");
+      // frodo 8962 §4: home ground is EVERY country Blue's capitals stand in, not just the seat.
+      const blueCapitals = resolvedCapitals(match).list.filter((c) => c.side === "blue");
+      eq("Blue's home ground is every country its capitals stand in",
+        [...home].sort((a, b) => a - b), blueCapitals.map((c) => c.country).sort((a, b) => a - b));
+      must(home.size >= 2, "1986 Blue answered one home country; London and Tokyo were dropped");
+      const capitals = resolvedCapitals(match).list;
       let homeCell = null;
       for (let y = 3; y < 133 && !homeCell; y += 1) {
         for (let x = 3; x < 317 && !homeCell; x += 1) {
           const t = terrainAt(payload.cells, x, y);
           if (!t || WATER.has(t)) continue;
           let near = false;
-          for (const side of ["blue", "red"]) {
-            const cap = match.capitals[side];
+          for (const cap of capitals) {
             if (Math.abs(cap.x - x) <= 3 && Math.abs(cap.y - y) <= 3) near = true;
           }
           if (near) continue;
@@ -232,7 +338,79 @@ export async function run(ctx) {
       }
     }
 
-    // --- b(iv). the three-nuke lead keeps its own sentence -----------------------------------
+    // --- b(ii) fails closed: an unnameable map never becomes foreign ground -------------------
+    // PM 8963: the region, the country or the capital set missing must refuse and charge 0. Each arm
+    // below removes ONE answer and checks both the sentence and the wallet.
+    {
+      // (1) a set that reported a missing row (the PB-228 shape).
+      const incomplete = fixture().match;
+      incomplete.capitalSet = { ...incomplete.capitalSet, missing: [63] };
+      const cashIncomplete = incomplete.sides.blue.cash;
+      const refusedIncomplete = useTool(incomplete, "blue", "nuke", { x: 100, y: 100 });
+      eq("an incomplete capital set refuses", refusedIncomplete.error, NUKE_HOME_UNKNOWN);
+      eq("an incomplete-set refusal costs nothing", incomplete.sides.blue.cash, cashIncomplete);
+
+      // (2) no capital set at all: the seat pair cannot name a home country on its own.
+      const absent = fixture().match;
+      absent.capitalSet = null;
+      const cashAbsent = absent.sides.blue.cash;
+      const refusedAbsent = useTool(absent, "blue", "nuke", { x: 100, y: 100 });
+      eq("a missing capital set refuses", refusedAbsent.error, NUKE_HOME_UNKNOWN);
+      eq("a missing-set refusal costs nothing", absent.sides.blue.cash, cashAbsent);
+
+      // (3) a cell the territory map leaves unassigned (NO_REGION).
+      const noRegion = fixture().match;
+      let blank = null;
+      for (let y = 3; y < 133 && !blank; y += 1) {
+        for (let x = 3; x < 317 && !blank; x += 1) {
+          if (regionAt(x, y) !== NO_REGION) continue;
+          let near = false;
+          for (const cap of resolvedCapitals(noRegion).list) {
+            if (Math.abs(cap.x - x) <= Number(rules().nukes.exclusion) && Math.abs(cap.y - y) <= Number(rules().nukes.exclusion)) near = true;
+          }
+          if (!near) blank = { x, y };
+        }
+      }
+      must(Boolean(blank), "the board has no unassigned cell outside every capital ring");
+      const cashBlank = noRegion.sides.blue.cash;
+      const refusedBlank = useTool(noRegion, "blue", "nuke", blank);
+      eq("an unassigned cell refuses instead of reading as foreign ground", refusedBlank.error, NUKE_HOME_UNKNOWN);
+      eq("an unassigned-cell refusal costs nothing", noRegion.sides.blue.cash, cashBlank);
+
+      // (4) a resolved region whose site carries no country byte.
+      const noCountry = fixture().match;
+      const spot = pickTarget(noCountry, payload);
+      must(Boolean(spot), "no target cell for the no-country arm");
+      const region = regionAt(spot.x, spot.y);
+      const wantedId = regionSites("1986")[region];
+      let site = (noCountry.sites || []).find((place) => String(place.id) === String(wantedId));
+      if (!site) {
+        site = { id: wantedId, kind: "city", name: "no-country fixture", x: spot.x, y: spot.y, owner: "red", country_id: null };
+        noCountry.sites.push(site);
+      } else {
+        site.country_id = null;
+      }
+      must(cellCountry(noCountry, spot.x, spot.y).country === null, "the no-country fixture still answers a country");
+      const cashNoCountry = noCountry.sides.blue.cash;
+      const refusedNoCountry = useTool(noCountry, "blue", "nuke", spot);
+      eq("a site with no country byte refuses", refusedNoCountry.error, NUKE_HOME_UNKNOWN);
+      eq("a no-country refusal costs nothing", noCountry.sides.blue.cash, cashNoCountry);
+
+      // (5) a FIRER'S capital whose country byte is gone: the home set is unknowable, not smaller.
+      const unnamed = fixture().match;
+      must(homeCountriesOf(unnamed, "blue") !== null, "the control home set did not resolve");
+      const wash = (unnamed.sites || []).find((place) => Number(place.x) === Number(unnamed.capitals.blue.x)
+        && Number(place.y) === Number(unnamed.capitals.blue.y));
+      must(Boolean(wash), "Blue's capital site did not resolve");
+      wash.country_id = null;
+      eq("one unnamed capital makes the home set unknowable", homeCountriesOf(unnamed, "blue"), null);
+      const cashUnnamed = unnamed.sides.blue.cash;
+      const refusedUnnamed = useTool(unnamed, "blue", "nuke", { x: 100, y: 100 });
+      eq("an unnamed capital refuses the launch", refusedUnnamed.error, NUKE_HOME_UNKNOWN);
+      eq("an unnamed-capital refusal costs nothing", unnamed.sides.blue.cash, cashUnnamed);
+    }
+
+    // --- b(iii). the three-nuke lead keeps its own sentence -----------------------------------
     {
       const { match } = fixture();
       const target = pickTarget(match, payload);
@@ -266,6 +444,11 @@ export async function run(ctx) {
       eq("the event names the radius", event.radius, radius);
       must(String(event.note).includes(STAND_IN), "the launch line does not call the radius a " + STAND_IN);
       must(/wasteland/.test(String(event.note)), "the launch line does not say what it leaves");
+      // PM 8963 / frodo 8962 §6: the retired sentence must not survive anywhere in the events.
+      must(!(result.events || []).some((e) => /paints nothing|deals no damage/.test(String(e.note || ""))),
+        "an event still carries the retired 'paints nothing and deals no damage' note");
+      must(!(result.events || []).some((e) => String(e.note || "") === "Stand-in nuke. It paints nothing and deals no damage."),
+        "an event still carries the retired stand-in nuke note verbatim");
 
       // Every unit death gets its own line, so the round log can speak for it.
       const destroyed = (result.events || []).filter((e) => e.type === "destroyed").map((e) => e.pieceId).sort();
@@ -308,9 +491,19 @@ export async function run(ctx) {
         { id: "sat-blue", side: "blue", x: target.x, y: target.y, fuel: 2 },
         { id: "sat-red", side: "red", x: target.x + 1, y: target.y },
       ];
+      // PM 8963 / frodo 8962 §6: "satellites unaffected" is free only by construction today. Pin the
+      // whole view.satellites array (fuel and position included) so the day a satellite becomes a
+      // piece, this reds instead of the AC inverting silently. frodo's PB-230 finding 8: the SOURCE
+      // array is not enough - the seat frame is what a player reads, so compare forSeat().
+      const sourceBefore = JSON.stringify(match.satellites);
+      const frameBefore = JSON.stringify(forSeat(match, "blue").satellites);
       const result = useTool(match, "blue", "nuke", { x: target.x, y: target.y });
       if (result.error) fail("the launch was refused: " + result.error);
       eq("satellites are untouched by a launch", match.satellites.map((s) => s.id), ["sat-blue", "sat-red"]);
+      eq("view.satellites is byte-identical across a blast", JSON.stringify(match.satellites), sourceBefore);
+      eq("the blue seat frame's satellites are unchanged", JSON.stringify(forSeat(match, "blue").satellites), frameBefore);
+      must(!(match.pieces || []).some((p) => p.id === "sat-blue" || p.id === "sat-red"),
+        "a satellite appeared in the piece list after a blast");
     }
 
     // --- d. wasteland: every land cell in the square, water untouched -----------------------

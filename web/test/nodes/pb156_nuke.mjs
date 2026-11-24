@@ -39,14 +39,33 @@ function eq(message, actual, expected) {
 
 // A 1986 board with both capitals parked at the far corners, so a launch at (100,100) is never
 // "home ground" and the exclusion guard does not decide this test.
+//
+// PB-229+230 (PM 8963): the nuke's home-country guard now FAILS CLOSED, so a match that cannot name
+// its capitals refuses every launch. This fixture therefore carries a real capital set - two site
+// rows at the corners, in countries 900/901 that no real cell belongs to - instead of a bare
+// `capitals` pair. The board's own roster is what names (100,100)'s country, so it stays foreign
+// ground; nothing about PB-156's rules changed.
 function match(extra = {}) {
+  const sites = [
+    { id: 1, kind: "capital", name: "Corner Blue", x: 0, y: 0, owner: "blue", country_id: 900 },
+    { id: 2, kind: "capital", name: "Corner Red", x: 300, y: 135, owner: "red", country_id: 901 },
+  ];
   return {
     era: "1986",
     round: 6,
     capitalSeed: 11,
     sides: { blue: { cash: 50000 }, red: { cash: 50000 } },
     pieces: [],
-    sites: [],
+    sites,
+    capitalSet: {
+      era: "1986",
+      source: "fixture",
+      list: [
+        { siteId: 1, name: "Corner Blue", x: 0, y: 0, owner: "blue" },
+        { siteId: 2, name: "Corner Red", x: 300, y: 135, owner: "red" },
+      ],
+      missing: [],
+    },
     capitals: { blue: { x: 0, y: 0 }, red: { x: 300, y: 135 } },
     ...extra,
   };
