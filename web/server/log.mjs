@@ -376,8 +376,13 @@ export function logLines(match, side, events, round) {
         if (mine) push("cease fire accepted; nothing changes");
         break;
       case "aid":
-        if (mine) push("aid reached " + (event.name || "a city"));
-        else if (legible(match, side, event)) push("enemy aid reached a city");
+        // PB-228: a gift buys a step for the city's nation, and it can be banked without turning
+        // anything, so the line names the step it bought instead of implying a flip.
+        if (mine) {
+          const step = event.turned === "neutral" ? " (its nation went neutral)"
+            : event.turned === "allied" ? " (its nation came over)" : "";
+          push("aid reached " + (event.name || "a city") + step);
+        } else if (legible(match, side, event)) push("enemy aid reached a city");
         break;
       case "bomb_hit": {
         // PB-157: the raider reads what it took; the owner reads the loss. The owner's branch is

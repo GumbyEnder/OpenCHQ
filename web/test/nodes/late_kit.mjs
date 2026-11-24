@@ -29,6 +29,10 @@ function fresh(era = "1986") {
     { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", owner: "red" },
     { id: 13, name: "Riyadh", x: 200, y: 60, kind: "city", owner: null },
   ];
+  // PB-228 (PM 8872 §2b): aid fails closed on a capital set that did not fully resolve, and the
+  // set openMatch() computed belongs to the opening board this fixture replaces. These three sites
+  // carry no capitals, so the fixture says so instead of inheriting the opening board's misses.
+  match.capitalSet = { era, source: "fixture", list: [], missing: [] };
   match.round = 4;
   return match;
 }
@@ -113,18 +117,27 @@ export async function run(ctx) {
     fail("the satellite pass stamped a submarine: " + String(quietSub.revealedRound));
   }
 
-  // --- foreign aid flips the city it is aimed at ----------------------------------------
+  // --- foreign aid moves the nation of the city it is aimed at ---------------------------
   const aid = fresh();
   aid.pieces = [];
   // PB-226: aid names its city. The target is Kiev's cell, not a hidden lowest-id pick.
+  // PB-228: a gift moves the picked city's NATION one step. These three sites carry no
+  // country_id, so each is its own one-city nation: one gift neutral, the second allied.
   const given = useTool(aid, "blue", "aid", { x: 180, y: 22 });
   if (given.error) fail("foreign aid was refused: " + given.error);
   const flipped = given.events.find((event) => event.type === "aid");
   if (!flipped) fail("aid produced no event");
-  if (aid.sites.find((site) => site.id === flipped.site).owner !== "blue") {
-    fail("aid did not flip the city it named");
+  if (aid.sites.find((site) => site.id === flipped.site).owner !== null) {
+    fail("aid did not move the nation of the city it named: "
+      + aid.sites.find((site) => site.id === flipped.site).owner);
   }
+  if (flipped.turned !== "neutral") fail("the first gift did not land on the neutral step: " + String(flipped.turned));
   if (flipped.from !== "red") fail("aid did not name the side that lost the city: " + flipped.from);
+  const again = useTool(aid, "blue", "aid", { x: 180, y: 22 });
+  if (again.error) fail("the second gift was refused: " + again.error);
+  if (aid.sites.find((site) => site.id === flipped.site).owner !== "blue") {
+    fail("the second gift did not bring the city over");
+  }
 
   // --- cease-fire is accepted and changes nothing --------------------------------------
   const truce = fresh();

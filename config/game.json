@@ -216,6 +216,11 @@
     "foreignAid": 10,
     "intelScan": 10
   },
+  "loyalty": {
+    "giftsPerCity": 1,
+    "counterAid": true,
+    "note": "PB-228, TWO STAND-INS. Manual p.30: aid moves a NATION one step, hostile -> neutral -> allied; a nation with more cities takes more gifts; and \"your opponent can give foreign aid to the same targets you do, thus negating your efforts\". The archive printed neither the gifts-per-city count nor HOW a rival's gift cancels, so giftsPerCity (the multiplier) and counterAid (one-for-one: a gift from the other side to the same nation cancels one gift the payer had banked there, BEFORE the new gift banks) are both labelled stand-ins, not decoded values (Open RE Q52: UNVERIFIED, needs disassembly/DOSBox). counterAid false is the arms-race reading, where each side's campaign runs on its own."
+  },
   "rosters": {
     "1918": ["infantry", "cruiser", "submarine"],
     "1942": ["infantry", "tank", "submarine", "cruiser", "carrier", "aircraft"],
@@ -239,6 +244,7 @@
     },
     "payEvery": "Manual p.27",
     "cityIncome": "Manual p.27",
+    "loyalty": "Manual p.30 (hostile -> neutral -> allied, per nation, more cities = more gifts; and a rival may aid the same target, negating the payer's efforts). giftsPerCity and the one-for-one counterAid cancel are both STAND-INS: the archive printed neither the count nor the mechanism (Open RE Q52, UNVERIFIED). Nation NAMES come from the extract game_meta.json countries[] list, baked to web/data/countries.json by tools/bake_countries.mjs.",
     "payingCount": "FUN_2dfc_1246 @ 2dfc:1246 (decompiled.c 25571-25586): count(type 4) + max(0, count(type 1) + count(type 2) - 1) over the sites a side owns. Type 3 (base) and type 5 (oil field) never pay; a side's first capital is free and every extra one pays like a city.",
     "sites": {
       "oilField": "DERIVED three ways (PB-153, audit row 21; confirmed or refuted by RE-E6): oil production counts type 5 (FUN_15f4_0664 4695-4701; setup 13133); bombing a type-5 site costs oil, not cash (FUN_1ac5_0dbe 8768-8782); and records 64-83 sit outside the 64-record city loops. So the 20 `facility` sites (ids 64-83) are the original's oil fields. The 38 `wells` in world.json are a hand-placed sketch (modern/docs/RESOURCES.md:19), not original data, and drive no rule."

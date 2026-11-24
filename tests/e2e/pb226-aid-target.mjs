@@ -12,14 +12,15 @@
 //   1. the Aid button arms a PICKER: the board note says so, no {op:"tool"} frame goes out, and
 //      the seat's pool has not moved;
 //   2. clicking an enemy city sends that cell as the target, the city changes hands, the note is
-//      the aid line, the log names the city, and the pool drops by exactly the config price;
+//      the aid line and NAMES THE CITY AND THE NATION (PM 8866 §2a), the log names the city, and
+//      the pool drops by exactly the config price;
 //   3. Escape disarms: an armed aid is dropped and the next click is an ordinary map click;
 //   4. a refused pick (a cell with no city) says the server's sentence and charges 0.
 //
 // Evidence: the page's own room view (window.__chq.room/note), the frames the page actually wrote
 // (WebSocket.send is wrapped before the app runs), and the server's debug dump for the site row.
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -262,22 +263,38 @@ try {
   }
   if (!empty) throw new Error("no empty cell to aim a refused aid at");
 
+  // PB-228: a gift moves the picked city's NATION one step, and the nation's city count sets how
+  // many gifts a step costs. The leg derives both from the room's own site table instead of
+  // assuming one gift per city: `nationSize` cities at the config multiplier.
+  const nationSize = (view.sites || []).filter((site) => site.kind === "city"
+    && Number(site.country_id) === Number(target.country_id)).length;
+  const needed = Math.max(1, nationSize);
+
+  // The clock is running, so a round can pay the seat between two clicks. The purse delta is
+  // therefore price(s) MINUS the round's own pay lines, and those lines state their own amounts:
+  // measure the income from the page's log instead of assuming the pool only falls.
+  const payLines = async () => {
+    const rows = await page.evaluate(() => window.__chq.log() || []);
+    return rows.map((line) => String(line.text || "")).filter((text) => /^paid [0-9.]+b /.test(text));
+  };
+  const payBaseline = (await payLines()).length;
+
   await clickCell({ x: target.x, y: target.y });
   const frames2 = await toolFrames();
   const sent = frames2[frames2.length - 1];
   mark("the city click sends the cell as the aid's target",
     Boolean(sent) && sent.tool === "aid" && sent.to && Number(sent.to.x) === Number(target.x) && Number(sent.to.y) === Number(target.y),
     JSON.stringify(sent));
+  const firstNote = await said();
   await page.waitForFunction((siteId) => {
     const r = window.__chq.room();
     const site = r && (r.sites || []).find((row) => row.id === siteId);
-    return site && site.owner === "blue";
+    return site && site.owner === null;
   }, target.id, { timeout: 10000, polling: 100 }).catch(() => {});
   const after = await room();
   const turned = (after.sites || []).find((site) => site.id === target.id);
   const keptOut = untouched ? (after.sites || []).find((site) => site.id === untouched.id) : null;
   const cash2 = Number(after.seat.cash);
-  const aidNote = await said();
   // A tool's line belongs to the round that follows it (lobby.mjs pushes the events onto the
   // match's pendingEvents), so the log names the city on the next round frame, not on the ack.
   // The round log arrives as its own {op:"log"} frame per round, so it is the PAGE's log buffer
@@ -287,14 +304,58 @@ try {
   }, target.name, { timeout: 15000, polling: 200 }).then(() => true).catch(() => false);
   const logRows = await page.evaluate(() => window.__chq.log());
   const logText = logRows.map((line) => String(line.text || "")).join(" | ");
-  mark("the city the player picked changes hands", Boolean(turned && turned.owner === "blue"),
-    "site " + target.id + " " + target.name + " owner " + (turned && turned.owner));
+  mark("the first gift takes the picked city's nation one step", Boolean(turned && turned.owner === (needed === 1 ? null : "red")),
+    "site " + target.id + " " + target.name + " owner " + (turned && turned.owner) + ", nation of " + nationSize + " city/cities, needed " + needed);
+  // PM 8866 §2a: the toast names the city, and the nation's name is the archive's own country
+  // list (country_id indexes game_meta.json's countries[]), not a guess from the city's geography.
+  const bakedCountries = JSON.parse(readFileSync(path.join(root, "web", "data", "countries.json"), "utf8")).countries;
+  const nationName = bakedCountries[Number(target.country_id)];
+  const prefix = "Foreign aid to " + target.name + ": ";
+  mark("the note names the city and its nation",
+    String(firstNote).startsWith(prefix) && (!nationName || String(firstNote).startsWith(prefix + nationName + " ")),
+    "expected \"" + prefix + (nationName || "<nation>") + " ...\" got " + firstNote);
+  mark("the note reports the step the first gift bought",
+    needed === 1 ? /has gone neutral/.test(firstNote) : new RegExp("1 of " + needed + " gifts").test(firstNote), firstNote);
   mark("no other enemy city changed hands", !keptOut || keptOut.owner === "red",
     keptOut ? "site " + keptOut.id + " owner " + keptOut.owner : "no control city");
-  mark("the note is the aid line", /Foreign aid\. The city changed hands\./.test(aidNote), aidNote);
   mark("the log names the city the aid reached", logged,
     "lines=" + logRows.length + " aidLines=" + logRows.filter((line) => /aid/i.test(String(line.text || ""))).length + " tail=" + logText.slice(-260));
   mark("the pool paid exactly the aid price", cash2 === cash1 - price, "cash " + cash1 + " -> " + cash2);
+
+  // Gifts until the nation is allied: the count the ticket fixes is the nation's city count, so the
+  // leg spends exactly what the room's own site table says and checks each step's sentence.
+  let alliedRoom = await room();
+  let gifts = 1;
+  const notes = [firstNote];
+  while (gifts < 2 * needed + 1) {
+    const here = (alliedRoom.sites || []).find((site) => site.id === target.id);
+    if (here && here.owner === "blue") break;
+    await openKit();
+    await page.click("div.shop.tools button.buy:has-text('Foreign aid')");
+    await sleep(150);
+    await clickCell({ x: target.x, y: target.y });
+    await sleep(400);
+    notes.push(await said());
+    gifts += 1;
+    alliedRoom = await room();
+  }
+  const alliedSite = (alliedRoom.sites || []).find((site) => site.id === target.id);
+  mark("the nation comes over after its own gift count, not after one gift",
+    Boolean(alliedSite && alliedSite.owner === "blue") && gifts === 2 * needed,
+    "site " + target.id + " " + target.name + " owner " + (alliedSite && alliedSite.owner) + " after " + gifts + " gifts (nation of " + nationSize + ")");
+  mark("the allied step has its own sentence", /come over to your side/.test(notes[notes.length - 1]), notes[notes.length - 1]);
+  const pays = (await payLines()).slice(payBaseline);
+  const income = pays.reduce((sum, text) => {
+    const hit = /^paid ([0-9.]+)b /.exec(text);
+    return sum + (hit ? Number(hit[1]) * 1000 : 0);
+  }, 0);
+  const spent = cash1 - Number(alliedRoom.seat.cash) + income;
+  // Each printed pay line is rounded to 0.01b (10 units), so the fit allows half a unit of rounding
+  // per line plus one for the subtraction.
+  const slack = 5 * pays.length + 1;
+  mark("every gift cost the config price", Math.abs(spent - gifts * price) <= slack,
+    "cash " + cash1 + " -> " + Number(alliedRoom.seat.cash) + " over " + gifts + " gifts at " + price
+      + "; income " + income + " from " + pays.length + " pay line(s); net spend " + spent + " (slack " + slack + ")");
 
   // ---------------------------------------------------------------- 3. Escape disarms
   await openKit();

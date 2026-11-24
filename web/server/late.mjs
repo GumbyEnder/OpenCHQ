@@ -8,6 +8,7 @@
 // foreign aid, and the archive's own note says it flips a city's owner.
 
 import { millionsPerBillion, priceOf, rules } from "./rules.mjs";
+import { countryName } from "./countries.mjs";
 import { beginScan } from "./scan.mjs";
 import { siteAtCell } from "./siteindex.mjs";
 // PB-156: the launch gate is the DIFFERENCE of two counters, and one global detonation count drives
@@ -34,15 +35,41 @@ export function intelNote(cost) {
   return INTEL_NOTE + " " + (billions === "" || billions === "-0" ? "0" : billions) + "b";
 }
 export const SATELLITE_NOTE = "Satellite overhead. Its pass is quiet.";
-export const AID_NOTE = "Foreign aid. The city changed hands.";
+// PB-228: the aid line names the CITY, the NATION and the STEP it moved the nation to, or the
+// progress it banked. The manual's unit is the nation (L382 + p.30: "hostile ones become neutral,
+// or neutral ones become allied"), so a gift that has not yet turned the nation says so instead of
+// claiming a flip. PM 8866 §2a: "Foreign aid to Beijing: China is 1 of 3 gifts from turning."
+export function nationName(nation) {
+  const named = nation ? countryName(nation.country) : null;
+  return named || "that nation";
+}
+export function aidNote(name, nation, turned, gifts, needed, cancelled) {
+  const label = nationName(nation);
+  // PB-228 §3: a gift that cancelled one the other side had banked says so, because the player's
+  // own count is not the whole story that round.
+  const tail = cancelled ? " Your gift cancels one the other side had banked." : "";
+  if (turned === "neutral") return `Foreign aid to ${name}: ${label} has gone neutral.${tail}`;
+  if (turned === "allied") return `Foreign aid to ${name}: ${label} has come over to your side.${tail}`;
+  return `Foreign aid to ${name}: ${label} is ${gifts} of ${needed} gifts from turning; this gift is banked.${tail}`;
+}
 // PB-226: aid names its city, and every refusal has to be a sentence the player can act on.
 export const AID_NEEDS_CITY = "Aid needs a city: pick the one you want to sway.";
 export const AID_OFF_MAP = "The target is off the map.";
 export const AID_NO_CITY = "That cell holds no city.";
 export const AID_OWN_CITY = "That city is already yours.";
-// PB-227 (manual p.31, L988): "Cities within an opponent's home country can never be the target of
+// PB-227 (manual p.30, L988): "Cities within an opponent's home country can never be the target of
 // foreign aid." The refusal is about the country the city stands in, not who holds it.
 export const AID_HOME_COUNTRY = "That city is inside the opponent's home country; foreign aid cannot reach it.";
+// PB-228 (PM 8872 §2b, from frodo 8871 §7b): FAIL CLOSED on a partial capital set. `homeCountries`
+// joins the capital set to live sites and never reads `capitalSet.missing`, so a set that did not
+// fully resolve silently SHRINKS the home countries and lets aid into a country it could not
+// identify. Paying for a guess about which ground is home ground is worse than a refusal the
+// player can read, so an incomplete set refuses the tool outright, costs 0 and banks nothing.
+export const AID_HOME_UNKNOWN = "This match's capitals did not all resolve, so foreign aid cannot tell home ground from a target.";
+export function homeSetComplete(match) {
+  const set = match && match.capitalSet;
+  return !(set && Array.isArray(set.missing) && set.missing.length > 0);
+}
 // PB-226b: there is deliberately no neutral refusal. The manual (L986-987) says aid makes "hostile
 // ones become neutral, or neutral ones become allied", so a neutral pick is the second half of the
 // tool's job, not a mistake. The refusal that lived here until PM 8843 §2 was a stand-in that read
@@ -178,16 +205,24 @@ export function kitBriefing(match, side) {
     .filter((piece) => piece && piece.side !== side && piece.kind !== "submarine").length;
   // PB-226b: a neutral city (owner null) is a legal target too, so the gate is "not mine", not
   // "held by the other side" - counting only hostile cities disabled the row on a board of neutrals.
-  const turnable = (match && Array.isArray(match.sites) ? match.sites : [])
-    .filter((site) => site && site.kind === "city" && site.owner !== side).length;
+  // PB-227: a city inside the opponent's home country is refused by aidTarget, so it must not keep
+  // the row enabled either - a row that opens onto nothing but refusals is a lie.
+  const home = homeCountries(match, side === "blue" ? "red" : "blue");
+  // PB-228 (PM 8872 §2b): a partial capital set means every click is refused, so the row must not be
+  // offered either - the same lie the home-country filter above exists to prevent.
+  const homeKnown = homeSetComplete(match);
+  const turnable = homeKnown ? (match && Array.isArray(match.sites) ? match.sites : [])
+    .filter((site) => site && site.kind === "city" && site.owner !== side
+      && !(home && site.country_id !== undefined && site.country_id !== null && home.has(Number(site.country_id))))
+    .length : 0;
 
   add("intel", "Intel scan", "Every enemy unit is revealed for one round, and the other side is told it was read.",
     foes > 0, foes > 0 ? null : "There is nothing to reveal.");
   add("satellite", "Satellite pass",
     "The same reveal, and it is quiet: nobody is told. Submarines are left out of it.",
     surfaceFoes > 0, surfaceFoes > 0 ? null : "There is nothing above the water to reveal.");
-  add("aid", "Foreign aid", "Turns the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner; the manual says the player selects the city, and that a city inside the opponent's home country can never be a target (p.31).",
-    turnable > 0, turnable > 0 ? null : "There is no city to turn.");
+  add("aid", "Foreign aid", "Turns the nation of the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner; the manual says the player selects the city, that a city inside the opponent's home country can never be a target (p.30), and that a nation moves one step at a time, hostile to neutral and neutral to allied, with more gifts needed the more cities it has. It also says the other side can give aid to the same nation, negating your efforts: a gift from the other side to the same nation cancels one gift you had banked there. That arithmetic and the one-for-one cancel are a " + STAND_IN + ": the archive never printed either count.",
+    turnable > 0, turnable > 0 ? null : (homeKnown ? "There is no city to turn." : AID_HOME_UNKNOWN));
   add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
 
   if (eraHas(match && match.era, "nuke")) {
@@ -232,6 +267,73 @@ function homeCountries(match, side) {
   return out.size ? out : null;
 }
 
+// PB-228: staged loyalty per nation (Manual L382 + p.30). The unit that changes is the NATION, the
+// steps are hostile -> neutral -> allied, and a nation with more cities takes more gifts. The
+// number of gifts per city is UNVERIFIED (Open RE Q52), so it is config (`loyalty.giftsPerCity`)
+// rather than a constant here, and the player-facing copy says the arithmetic is a stand-in.
+export function giftsPerCity() {
+  const cfg = rules().loyalty || {};
+  const value = Number(cfg.giftsPerCity);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 1;
+}
+
+// PB-228 §3 (manual p.30: "Your opponent can give foreign aid to the same targets you do, thus
+// negating your efforts"). The manual says a rival's gift NEGATES the payer's, but it never says
+// how much it cancels, so this build cancels ONE banked gift for one (config `loyalty.counterAid`,
+// shipped true) and labels that one-for-one as a STAND-IN. Turning the key off is the arms-race
+// reading where each side's campaign runs independently.
+export function counterAid() {
+  const cfg = rules().loyalty || {};
+  return cfg.counterAid !== false;
+}
+
+// The nation a city belongs to. A site with no country has no nation to sway, so it is its own
+// one-city nation: the smallest nation the rule allows, never a silent no-op.
+export function nationOf(match, city) {
+  const sites = match && Array.isArray(match.sites) ? match.sites : [];
+  const country = city && city.country_id !== undefined && city.country_id !== null
+    ? Number(city.country_id)
+    : null;
+  if (country === null) return { key: "site:" + city.id, country: null, cities: [city] };
+  const cities = sites.filter((site) => site && site.kind === "city" && Number(site.country_id) === country);
+  return { key: String(country), country, cities: cities.length ? cities : [city] };
+}
+
+export function giftsNeeded(nation) {
+  return Math.max(1, nation.cities.length) * giftsPerCity();
+}
+
+// A nation's standing as the payer sees it. A split nation reads hostile: the first step is to
+// unseat the other side's hold on it.
+export function nationStanding(nation, side) {
+  const mine = nation.cities.filter((site) => site.owner === side).length;
+  if (mine === nation.cities.length) return "allied";
+  const unheld = nation.cities.filter((site) => site.owner !== "blue" && site.owner !== "red").length;
+  if (unheld === nation.cities.length) return "neutral";
+  return "hostile";
+}
+
+// The gift ledger: one count per (side, nation). It lives on the match so a reload keeps the
+// campaign a player has already paid for, and it is per side so counter-aid is its own campaign.
+function aidLedger(match, side) {
+  if (!match.aid || typeof match.aid !== "object") match.aid = {};
+  if (!match.aid[side] || typeof match.aid[side] !== "object") match.aid[side] = {};
+  return match.aid[side];
+}
+
+// The step itself. hostile -> neutral unseats the other side and leaves the payer's own cities
+// alone; neutral -> allied brings the WHOLE nation over at once, which is what "the whole nation
+// switches" means and why one gift after the threshold moves more than one city.
+function stepNation(nation, side, standing) {
+  for (const site of nation.cities) {
+    if (standing === "hostile") {
+      if (site.owner !== side) site.owner = null;
+    } else {
+      site.owner = side;
+    }
+  }
+}
+
 // PB-226: which city an aid is aimed at, or the sentence that says why it was refused.
 // `target` is the cell the page sent (`{op:"tool", tool:"aid", to:{x,y}}`), and the wire has
 // carried it all along - only this tool ignored it. A target-less call is refused rather than
@@ -249,6 +351,9 @@ function aidTarget(match, side, target) {
   const site = siteAtCell(match.sites, x, y);
   if (!site || site.kind !== "city") return { error: AID_NO_CITY };
   if (site.owner === side) return { error: AID_OWN_CITY };
+  // PB-228 (PM 8872 §2b): an incomplete capital set cannot say what home ground is, so the tool
+  // refuses rather than guess. Above charge(), like every other refusal here.
+  if (!homeSetComplete(match)) return { error: AID_HOME_UNKNOWN };
   // PB-227: the opponent's home country is closed to aid whatever the city's owner is, so this sits
   // before the turn and above charge() - a refused aid costs 0.
   const home = homeCountries(match, side === "blue" ? "red" : "blue");
@@ -256,8 +361,9 @@ function aidTarget(match, side, target) {
   if (home && country !== undefined && country !== null && home.has(Number(country))) {
     return { error: AID_HOME_COUNTRY };
   }
-  // A hostile city is turned and a neutral one becomes allied - the same one-step owner change
-  // until PB-228's staged loyalty lands, which is where the two cases split.
+  // PB-228: the pick names the CITY and the gift accrues to its NATION; which step that gift buys
+  // (hostile -> neutral, neutral -> allied) is decided in useTool, against the ledger, so a refused
+  // pick here costs nothing and banks nothing.
   return { site };
 }
 
@@ -307,7 +413,7 @@ export function useTool(match, side, tool, target) {
   }
 
   if (name === "aid") {
-    // PB-226: the player names the city (Manual L382 + p.31, "select a city within the nation you
+    // PB-226: the player names the city (Manual L382 + p.30, "select a city within the nation you
     // wish to sway"). The archive's stand-in picked the lowest-id enemy city, which ignored the
     // target the wire already carried (`lobby.mjs` passes `message.to`) and turned a city nobody
     // chose. Every refusal sits above `charge()`, so a refused aid costs 0.
@@ -317,8 +423,37 @@ export function useTool(match, side, tool, target) {
     const paid = charge(match, side, name);
     if (paid.error) return paid;
     const from = city.owner;
-    city.owner = side;
-    events.push({ type: "aid", side, site: city.id, name: city.name, x: city.x, y: city.y, from, round, cost: paid.price, note: AID_NOTE });
+    // PB-228: the gift buys a step for the nation the picked city stands in, not a flip of that one
+    // city. `giftsNeeded` scales with the nation's city count, so a nation with more cities takes
+    // more gifts; the threshold moves the WHOLE nation, and it moves one step per threshold.
+    const nation = nationOf(match, city);
+    const needed = giftsNeeded(nation);
+    const standing = nationStanding(nation, side);
+    const ledger = aidLedger(match, side);
+    // PB-228 §3: a gift from the other side to the same nation cancels ONE of the payer's banked
+    // gifts BEFORE this gift builds its own. The manual states the negation (p.30) and never says
+    // how it works, so one-for-one is a STAND-IN (`counterAid`, config `loyalty.counterAid`).
+    const rival = side === "blue" ? "red" : "blue";
+    const rivalLedger = aidLedger(match, rival);
+    const rivalBanked = Number(rivalLedger[nation.key]) || 0;
+    const cancelled = counterAid() && rivalBanked > 0 ? 1 : 0;
+    if (cancelled) rivalLedger[nation.key] = rivalBanked - cancelled;
+    const spent = (Number(ledger[nation.key]) || 0) + 1;
+    let turned = null;
+    if (spent >= needed) {
+      turned = standing === "hostile" ? "neutral" : "allied";
+      stepNation(nation, side, standing);
+      ledger[nation.key] = 0;
+    } else {
+      ledger[nation.key] = spent;
+    }
+    events.push({
+      type: "aid", side, site: city.id, name: city.name, x: city.x, y: city.y, from, round,
+      cost: paid.price, country: nation.country, stance: standing, turned,
+      gifts: Number(ledger[nation.key]) || 0, spent, needed, cities: nation.cities.length,
+      cancelled, cancelledSide: cancelled ? rival : null, rivalBanked,
+      note: aidNote(city.name, nation, turned, spent, needed, cancelled),
+    });
     return { ok: true, events };
   }
 

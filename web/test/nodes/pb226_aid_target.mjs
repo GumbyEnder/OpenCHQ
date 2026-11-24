@@ -1,4 +1,4 @@
-// Node test for `pb226_aid_target` — foreign aid names its city (Manual L382 + p.31).
+// Node test for `pb226_aid_target` — foreign aid names its city (Manual L382 + p.30).
 //
 // What breaks if this node is removed: the aid button spends the seat's pool on whatever city the
 // server felt like turning (the lowest id), ignores the cell the player picked, and a refused call
@@ -63,7 +63,10 @@ function fresh() {
 export async function run(ctx) {
   const { fail } = ctx;
 
-  // --- the pick wins: the city named is the city turned ---------------------------------
+  // --- the pick wins: the city named is the city TURNED ---------------------------------
+  // PB-228: a gift moves the picked city's NATION one step. Minsk is country 3 and the only
+  // country-3 city in this fixture, so one gift takes that nation hostile -> neutral and the second
+  // brings it over. The pick, the price and event.site are unchanged rules.
   const match = fresh();
   const price = priceOf("foreignAid");
   const cashBefore = match.sides.blue.cash;
@@ -74,7 +77,13 @@ export async function run(ctx) {
   if (event.site !== 14) {
     fail("aid did not turn the city the player picked: event.site=" + event.site + " (expected 14)");
   }
-  if (match.sites.find((site) => site.id === 14).owner !== "blue") fail("the picked city did not change hands");
+  if (event.turned !== "neutral") {
+    fail("the first gift of a hostile nation landed on " + JSON.stringify(event.turned) + ", not the neutral step");
+  }
+  if (match.sites.find((site) => site.id === 14).owner !== null) {
+    fail("the first gift did not take the picked city's nation to neutral: "
+      + match.sites.find((site) => site.id === 14).owner);
+  }
   // The lowest-id enemy city is the old hidden policy; it must be untouched.
   if (match.sites.find((site) => site.id === 12).owner !== "red") {
     fail("aid also turned the lowest-id enemy city; the pick must be the only target");
@@ -86,6 +95,16 @@ export async function run(ctx) {
   if (!Number.isFinite(price)) fail("the config has no foreignAid price");
   if (match.sides.blue.cash !== cashBefore - price) {
     fail("aid charged " + (cashBefore - match.sides.blue.cash) + ", not the config price " + price);
+  }
+  // The second gift completes the same campaign: the nation comes over, and the city is the seat's.
+  const given2 = useTool(match, "blue", "aid", { x: 190, y: 30 });
+  if (given2.error) fail("the second gift at the same city was refused: " + given2.error);
+  const event2 = (given2.events || []).find((row) => row.type === "aid");
+  if (!event2 || event2.site !== 14) fail("the second gift did not stay on the pick: " + JSON.stringify(event2));
+  if (event2.turned !== "allied") fail("the second gift landed on " + JSON.stringify(event2.turned) + ", not the allied step");
+  if (match.sites.find((site) => site.id === 14).owner !== "blue") fail("the picked city did not change hands");
+  if (match.sides.blue.cash !== cashBefore - 2 * price) {
+    fail("two gifts charged " + (cashBefore - match.sides.blue.cash) + ", not twice the config price " + price);
   }
 
   // --- every refusal names its reason and costs 0 ---------------------------------------

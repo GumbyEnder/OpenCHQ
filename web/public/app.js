@@ -839,7 +839,7 @@ let placement = null;
 // Which air order the next map click sends for a selected aircraft: "strike" (the default, and
 // what every pre-T-021 click meant) or "transfer", which rebases the plane on the cell clicked.
 let pendingMission = "strike";
-// PB-226: the tool whose picker is armed, or null. Foreign aid names its city (Manual p.31), so
+// PB-226: the tool whose picker is armed, or null. Foreign aid names its city (Manual p.30), so
 // its button arms this instead of spending blind; the next map click is the target and Escape
 // disarms. One slot for every picker tool, so two doors cannot arm different modes at once.
 let pendingTool = null;
@@ -1732,10 +1732,10 @@ const TOOL_WORDS = {
   oil: "Oil",
 };
 
-// PB-226: foreign aid names its city (Manual L382 + p.31), so its button arms a picker instead of
+// PB-226: foreign aid names its city (Manual L382 + p.30), so its button arms a picker instead of
 // spending blind. Both doors (the Kit row and the Buy table's tool row) go through this one
 // function, so the sentence and the armed mode cannot drift apart.
-const AID_PICK_HINT = "Foreign aid: pick the city you want to sway - an enemy's or a neutral one. Escape cancels.";
+const AID_PICK_HINT = "Foreign aid: pick the city you want to sway - an enemy's or a neutral one. It moves that city's nation one step, and a nation with more cities takes more gifts. Escape cancels.";
 
 function armTool(tool) {
   pendingTool = tool;
