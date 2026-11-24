@@ -1163,14 +1163,14 @@ export function advance(match) {
             // because the piece it names as the target can be gone before the line is built.
             targetSide: occupant.side, attackerKind: kindOf(piece), targetKind: kindOf(occupant),
             base: foot.base, amount: foot.amount, covered: foot.covered, entrenched: foot.entrenched,
-            flank: foot.flank, rear: foot.rear, after: footHit.after, strength: footHit.after,
+            flank: foot.flank, rear: foot.rear, strength: footHit.after,
             round: onRound, overrun: true,
           });
           events.push({
             type: "shot", side: occupant.side, pieceId: occupant.id, target: piece.id,
             targetSide: piece.side, attackerKind: kindOf(occupant), targetKind: kindOf(piece),
             base: hull.base, amount: hull.amount, covered: hull.covered, entrenched: hull.entrenched,
-            flank: hull.flank, rear: hull.rear, after: hullHit.after, strength: hullHit.after,
+            flank: hull.flank, rear: hull.rear, strength: hullHit.after,
             round: onRound, overrun: true,
           });
           if (footHit.dead) {
