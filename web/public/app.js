@@ -1322,8 +1322,9 @@ window.addEventListener("keydown", (event) => {
   // PB-226: an armed tool picker is a mode, and Escape disarms it. It sits ahead of the build
   // cursor because arming a tool clears the cursor: the player's Escape is for the mode on screen.
   if (event.key === "Escape" && pendingTool) {
+    const off = TOOL_PICK_OFF[pendingTool] || "Tool off.";
     clearCommand();
-    say("Foreign aid off.");
+    say(off);
     return;
   }
   // PB-047: an armed purchase is a mode, and Escape gets out of it even with no dialogue open.
@@ -1779,6 +1780,17 @@ const TOOL_WORDS = {
 // function, so the sentence and the armed mode cannot drift apart.
 const AID_PICK_HINT = "Foreign aid: pick the city you want to sway - an enemy's or a neutral one. It moves that city's nation one step, and a nation with more cities takes more gifts. Escape cancels.";
 
+// PB-229: a nuke is aimed the same way - arm, then click the ground. It is ONE click, not a purchase
+// then a spend: the 10b leaves the pool only when the launch is ACCEPTED, so an aim the player
+// abandons with Escape never spends and needs no refund path. The three refusals (a capital's ring,
+// the firer's own home country, the three-launch lead) come back as the server's own sentences.
+const NUKE_PICK_HINT = "Nuke: pick the ground you want to hit. The price leaves your pool only when the launch is accepted; a capital's ring, your own home country and the three-launch lead are refused. Escape cancels.";
+
+const TOOL_PICK_HINT = { aid: AID_PICK_HINT, nuke: NUKE_PICK_HINT };
+const TOOL_PICK_OFF = { aid: "Foreign aid off.", nuke: "Nuke off." };
+// Which tools name a cell on the wire. Everything else is spent on the button itself.
+const TOOL_PICKERS = new Set(["aid", "nuke"]);
+
 function armTool(tool) {
   pendingTool = tool;
   selected = null;
@@ -1786,7 +1798,7 @@ function armTool(tool) {
   placement = null;
   preview = null;
   hoverKey = "";
-  say(AID_PICK_HINT);
+  say(TOOL_PICK_HINT[tool] || "Pick a cell.");
   closeDialog();
   drawMatch();
 }
@@ -1815,13 +1827,13 @@ function toolRow(room) {
     }
     button.addEventListener("click", () => {
       // PB-226: a tool that names a cell arms the picker; everything else is spent on the click.
-      if (tool.name === "aid") return armTool("aid");
+      if (TOOL_PICKERS.has(tool.name)) return armTool(tool.name);
       send({ op: "tool", tool: tool.name });
     });
     row.append(button);
   }
   // The consequences of the kit, in text rather than in a tooltip: a player should be able to read
-  // that a nuke paints nothing before they fire one.
+  // the kill zone, the wasteland and the three refusals before they fire one (PB-230).
   const nuke = kit.find((entry) => entry.name === "nuke");
   if (nuke) {
     const note = document.createElement("p");

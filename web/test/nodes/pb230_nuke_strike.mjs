@@ -18,7 +18,7 @@
 // The fixture is the real 1986 board, so the home-country predicate runs through the era's own
 // region -> site rows instead of a hand-written country map.
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -383,6 +383,22 @@ export async function run(ctx) {
       match.pieces = [piece("mover", "blue", "infantry", wx + 2, wy)];
       const order = issueOrder(match, "blue", "mover", wx, wy);
       eq("an order onto wasteland is refused", order.error, "Wasteland is refused.");
+    }
+
+    // --- e(ii). the page ARMS a picker for the nuke instead of spending blind ---------------
+    // PB-229's door: before this the Nuke button sent {op:"tool",tool:"nuke"} with no cell, so the
+    // server answered "A nuke needs a target cell" every time and the tool was unreachable from the
+    // page. The pin reads the page source because the flow itself is a click (the live leg is owed
+    // at the deployed literal, the same shape PB-224 used).
+    {
+      const src = readFileSync(new URL("../../public/app.js", import.meta.url), "utf8");
+      must(/TOOL_PICKERS = new Set\(\["aid", "nuke"\]\)/.test(src),
+        "the Kit/Buy row does not arm a picker for the nuke");
+      must(/NUKE_PICK_HINT/.test(src), "the page has no aiming sentence for a nuke");
+      must(/send\(\{ op: "tool", tool, to: \{ x: cell\.x, y: cell\.y \} \}\)/.test(src),
+        "the armed click no longer sends the cell it was given");
+      must(/if \(event\.key === "Escape" && pendingTool\)/.test(src),
+        "Escape no longer disarms an armed tool");
     }
 
     // --- f. the briefing stops promising "no damage" ---------------------------------------
