@@ -8,7 +8,7 @@ import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
-import { nukeStatus, toolsForEra, useTool } from "./late.mjs";
+import { AID_HELD_MID_WAR, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
@@ -765,10 +765,15 @@ export function createLobby() {
     if (!room || !room.match) return { error: "You are not in a match." };
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
-    if (room.clock !== "running" && message.tool !== "satellite") {
-      // A held clock is not a reason to lose a satellite pass, but spending money while the game
-      // is paused is how a pause becomes a free turn.
-      return { error: "Start the clock first." };
+    if (room.clock !== "running" && !toolOpensWhileHeld(room.match, String(message.tool ?? ""))) {
+      // A held clock is not a reason to lose a satellite pass, and PB-235 lets aid into the pre-game
+      // (round 0, the clock not yet started; manual p.14). Every other tool stays refused while the
+      // clock is held: spending money into a mid-war pause is how a pause becomes a free turn. Aid
+      // gets its own sentence here (AC4): the generic clock line cannot tell a player why the one
+      // tool the manual puts in the pre-game is unavailable after the war has started.
+      return {
+        error: String(message.tool ?? "") === "aid" ? AID_HELD_MID_WAR : "Start the clock first.",
+      };
     }
     const result = useTool(room.match, mine, String(message.tool ?? ""), message.to || null);
     if (!result || result.error) return { error: (result && result.error) || "That tool was refused." };

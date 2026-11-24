@@ -79,6 +79,31 @@ export const NUKE_NOTE = "A nuke is refused.";
 
 export const TOOLS = Object.freeze(["buy", "entrench", "intel", "satellite", "aid", "ceasefire", "nuke", "oil"]);
 
+// PB-235 (manual p.14: foreign aid is "used mostly in the pre-game and cease-fire portions"): the
+// lobby's hold gate refuses every tool while the clock is not running, because spending into a pause
+// is how a pause becomes a free turn. That guard is right for a pause, but the PRE-GAME is not a
+// pause: it is round 0 with the clock not yet started, and aid is the one tool the manual places
+// there. So the gate asks this function instead of naming one exception itself: a satellite pass is
+// never lost to a hold (the old exception, kept), and aid opens at round 0 only. A hold after the
+// first round has run is still a pause and still refuses. A room whose round is missing fails closed.
+export function toolOpensWhileHeld(match, tool) {
+  if (tool === "satellite") return true;
+  if (tool !== "aid") return false;
+  // Fail closed: `Number(null)` is 0 and `Number(undefined)` is NaN, so a room that lost its match
+  // or its round must read as "not the pre-game" rather than as round 0.
+  if (!match || match.round === null || match.round === undefined || match.round === "") return false;
+  return Number(match.round) === 0;
+}
+
+// PB-235 AC4: the refusal a mid-war hold gives aid. "Start the clock first." is the right sentence
+// for the other tools and the wrong one here: the player has a clock, it is held, and the manual
+// (p.14) is why aid is the tool they are reaching for before it starts. The sentence names the state
+// the tool needs (the pre-game) and the state the room is in (a mid-war hold), and it deliberately
+// does NOT offer a cease-fire: this build has no cease-fire state (`CEASEFIRE_NOTE` says the tool
+// "changes nothing", config `notes.readiness` records no peace state), so naming one would promise a
+// state the player cannot enter. AC2 is the PM's ruling, not this string.
+export const AID_HELD_MID_WAR = "Foreign aid is used in the pre-game; the clock is held mid-war.";
+
 // Deduct a priced tool's cost from the seat's pool, in integer millions. Validation of whether a
 // tool would do anything happens before this call, so a refused no-op never spends.
 function charge(match, side, tool) {
