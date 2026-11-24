@@ -456,14 +456,22 @@ export function occupy(match) {
 
 // --- income ------------------------------------------------------------------------------
 
+// PB-150: the paying count is subtype 4 plus one per extra capital; a type-5 oil field pays
+// oil (resources.mjs), never cash, and is reported here for the dialog only.
+// PB-233 AC (b): there is NO production cut stacked on the payday. Frodo's ruling (room 8983 §4)
+// strikes the flat 25 per cent: FUN_1eb5_0eae has no multiply, so the decoded 5n gate IS the
+// manual's "25 per cent or more" and a second, invented cut would be arithmetic nobody measured.
+// What the ticket ships is legibility - the gate's skip names the cities it took (pay()).
 export function payoutFor(match, side) {
   const counts = incomeCounts(match);
   const row = counts[side] || { paying: 0, wells: 0 };
-  // PB-150: the paying count is subtype 4 plus one per extra capital; a type-5 oil field pays
-  // oil (resources.mjs), never cash, and is reported here for the dialog only.
   const cities = row.paying;
-  const amount = cities * cityIncome();
-  return { cities, wells: row.wells, cashWells: 0, amount };
+  const wells = row.wells;
+  const perCity = cityIncome();
+  const gross = cities * perCity;
+  return {
+    cities, wells, cashWells: 0, amount: gross, gross, perCity,
+  };
 }
 
 // Both sides' paying-site counts in one pass over the sites. pay() runs every round now, so a
@@ -510,14 +518,47 @@ function incomeCounts(match) {
 
 // PB-150 hook / PB-156 body: whether this side's payday happens at all. The original rolls rnd(100)
 // once per side per round and pays only if it is at least 5n, where n is the GLOBAL detonation
-// count (FUN_15f4_0664 4763). With nukes disabled the gate is not in play at all, so the default
+// count (FUN_15f4_0664 4763 - the line is 4772 in FUN_1eb5_0eae, corrected in PB-233: 4763 writes a
+// city's income into 0x144e, 4772 is the 0x148c*5 <= 0x1488 test). With nukes disabled the gate is not
+// in play at all, so the default
 // config behaves exactly as PB-150 shipped: always paid. The roll comes off the match's own seeded
 // stream, so a reload replays the same round instead of re-rolling it.
 export function incomeGate(match, side) {
-  if (!nukesEnabled()) return true;
+  return incomeGateDetail(match, side).paid;
+}
+
+// The same gate, with the numbers it drew. ONE roll, returned rather than re-rolled: PB-156 pinned
+// the match's draw order (a launch takes the winter draw first, the paydays the next two), so a
+// legibility read that drew a second time would move the decode it already passed.
+export function incomeGateDetail(match, side) {
+  if (!nukesEnabled()) return { paid: true, detonated: 0, percent: 0, roll: null };
   const n = detonatedCount(match);
-  if (n <= 0) return true;
-  return nukeRoll(match) >= incomeSkipPercent(n);
+  if (n <= 0) return { paid: true, detonated: n, percent: 0, roll: null };
+  const percent = incomeSkipPercent(n);
+  const roll = nukeRoll(match);
+  return { paid: roll >= percent, detonated: n, percent, roll };
+}
+
+// The paying sites of a side, by name - the cities whose payday the gate skipped. Same arithmetic
+// as incomeCounts (type-4 cities plus every capital after the first), but this one keeps the names
+// so the round log can say WHICH cities went unpaid instead of only how many. Sorted by id for a
+// stable line; a site with no usable name prints its coordinates.
+export function payingCities(match, side) {
+  const rows = [];
+  for (const site of match.sites) {
+    if (!site || site.owner !== side) continue;
+    const type = siteTypeOf(site);
+    if (type === 4) rows.push(site);
+    else if (type === 1 || type === 2) rows.push({ ...site, __capital: true });
+  }
+  rows.sort((a, b) => Number(a.id) - Number(b.id));
+  // The first capital is the free one: it pays only as a city when the side has several capitals.
+  const firstCapital = rows.findIndex((row) => row.__capital);
+  const paying = rows.filter((row, index) => !row.__capital || index !== firstCapital);
+  return paying.map((row) => {
+    const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : null;
+    return name || `${row.x},${row.y}`;
+  });
 }
 
 // PB-151: every CREDIT goes through here, so the original's 0..60000-unit clamp is one rule in
@@ -581,8 +622,26 @@ export function pay(match) {
       continue;
     }
     // PB-150's hook: PB-156 replaces the always-true body with the 5n% roll.
-    if (!incomeGate(match, side)) {
-      events.push({ type: "income_skipped", side, reason: "gate", round });
+    // PB-233 AC (b), legibility only: a skipped payday names the cities it took, and the gate's own
+    // numbers (the per cent it needed, the roll it got) so the player can see the rule instead of a
+    // purse that silently did not fill. No arithmetic is added here - the gate's percentage is the
+    // decoded 5n.
+    const gate = incomeGateDetail(match, side);
+    if (!gate.paid) {
+      const names = payingCities(match, side);
+      const shown = names.slice(0, 8);
+      const rest = names.length - shown.length;
+      events.push({
+        type: "income_skipped", side, reason: "gate", round,
+        detonated: gate.detonated, percent: gate.percent, roll: gate.roll,
+        cities: names.length, cityNames: names,
+        note: names.length
+          ? `No pay this round: the sky gate needs ${gate.percent} per cent after ${gate.detonated} `
+            + `detonations and rolled ${gate.roll}, so ${names.length === 1 ? "this city" : "these cities"} `
+            + `went unpaid: ${shown.join(", ")}${rest > 0 ? ` and ${rest} more` : ""}.`
+          : `No pay this round: the sky gate needs ${gate.percent} per cent after ${gate.detonated} `
+            + `detonations and rolled ${gate.roll}, and you hold no paying city.`,
+      });
       continue;
     }
     const row = tally[side];
@@ -599,7 +658,7 @@ export function pay(match) {
     const before = Number.isFinite(seat.cash) ? Number(seat.cash) : 0;
     const credited = credit(match, side, amount);
     const paid = Math.max(0, Number(credited) - before);
-    const event = { type: "income", side, round, cities, wells, cashWells: 0, amount: paid };
+    const event = { type: "income", side, round, cities, wells, cashWells: 0, amount: paid, gross: amount };
     if (oil.penalty > 0) {
       event.oilShort = true;
       event.oilPenalty = Number(oil.penalty.toFixed(4));

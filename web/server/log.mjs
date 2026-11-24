@@ -183,7 +183,13 @@ export function logLines(match, side, events, round) {
         // PB-156: two different reasons, two different lines. A pool that is short is the side's own
         // doing; a skipped payday after detonations is the sky's, and telling a player "the pool is
         // short" when their purse is full sends them looking in the wrong dialog.
-        push(event.reason === "gate" ? "no pay this round: nuclear winter" : "no pay this round: the pool is short");
+        // PB-233 AC (b): the gate's line NAMES the cities it took (economy.pay builds the note), so
+        // the player learns the rule from the log instead of only seeing a purse that did not fill.
+        push(event.reason === "gate"
+          ? (typeof event.note === "string" && event.note.trim()
+            ? event.note
+            : "no pay this round: the sky gate after " + (Number(event.detonated) || 0) + " detonations")
+          : "no pay this round: the pool is short");
         break;
       case "capture": {
         // A baked dock/facility is named after its own cell ("Dock 260,46"): that is a coordinate

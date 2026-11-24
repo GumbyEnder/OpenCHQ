@@ -37,10 +37,16 @@ export const NUKE_RADIUS_UNKNOWN = "This build's nuke has no kill radius configu
 
 export const NUKE_NEEDS_CELL = "A nuke needs a target cell: pick the ground you want to hit.";
 export const NUKE_OFF_MAP = "The target is off the map.";
+// PB-233 rider (frodo's M9, ruled on the PB-229/230 ship word): a missing ring key used to fall
+// back to a literal 2, and no arm could see it because the fallback equalled the shipped config.
+// The ring is config's (`nukes.exclusion`) and a config that lost it refuses ABOVE the charge,
+// exactly as a missing kill radius does, instead of inventing the archive's unprinted size.
+export const NUKE_EXCLUSION_UNKNOWN = "This build's capital ring has no radius configured, so a launch is refused.";
 // The ring's size is config, so the sentence reads it instead of printing a number that a config
 // move would leave lying (frodo's PB-230 card finding 6).
-export function capitalText() {
-  return "Too close to a capital. SDI/ABM keeps a ring around every capital; " + exclusionRadius() +
+export function capitalText(radius = exclusionRadius()) {
+  const cells = Number.isInteger(radius) ? radius : "?";
+  return "Too close to a capital. SDI/ABM keeps a ring around every capital; " + cells +
     " cells is a " + STAND_IN + " (the archive kept the guard but never printed its size).";
 }
 export const NUKE_HOME_COUNTRY = "That cell is in your own home country. A nuke may not be used on home ground, " +
@@ -66,7 +72,7 @@ export function killRadius() {
 
 export function exclusionRadius() {
   const value = Number((rules().nukes || {}).exclusion);
-  return Number.isInteger(value) && value >= 1 ? value : 2;
+  return Number.isInteger(value) && value >= 1 ? value : null;
 }
 
 function wrapX(x) {
@@ -235,12 +241,36 @@ export function cellCountry(match, x, y) {
   return { country, region, reason: country === null ? "no country byte" : null };
 }
 
+// Every country the blast touched, which is the set the after-effects (PB-233) read: the manual's
+// "cities in [the attacked country] switch", so the set has to be the ground the strike actually
+// covered, not the one cell it was aimed at. Cells the map cannot name (ocean, an unassigned
+// region) contribute nothing - a launch is not refused for them, they simply have no nation to
+// sway. A levelled site's own country byte is added too, so a city the blast destroyed still
+// counts as an attacked nation even where its cell's region row does not resolve.
+export function blastCountries(match, at, radius = killRadius(), sites = []) {
+  const out = new Set();
+  if (!Number.isInteger(radius) || radius < 1) return [];
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    const y = at.y + dy;
+    if (y < 0 || y > 135) continue;
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      const here = cellCountry(match, wrapX(at.x + dx), y);
+      if (here && here.country !== null) out.add(here.country);
+    }
+  }
+  for (const site of Array.isArray(sites) ? sites : []) {
+    const country = countryOfSite(site);
+    if (country !== null) out.add(country);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
 // Whether a capital's exclusion ring covers this cell. Every capital of the resolved set, both
 // sides: the archive's guard is around home ground, and a player may not use the other side's ring
 // to snipe a capital either. Reading the same set as the home-country refusal is the point - with
 // two sources, a set that lost a capital would move one refusal and not the other.
-export function nearCapital(match, cell) {
-  const radius = exclusionRadius();
+export function nearCapital(match, cell, radius = exclusionRadius()) {
+  if (!Number.isInteger(radius) || radius < 1) return null;
   for (const capital of resolvedCapitals(match).list) {
     if (Math.abs(capital.x - cell.x) <= radius && Math.abs(capital.y - cell.y) <= radius) return capital;
   }
@@ -258,8 +288,12 @@ export function nukeTarget(match, side, target) {
   // that bought a strike with no zone would be the one path that charges for nothing.
   const radius = killRadius();
   if (radius === null) return { error: NUKE_RADIUS_UNKNOWN };
-  const capital = nearCapital(match, cell);
-  if (capital) return { error: capitalText(), capital: { x: capital.x, y: capital.y, side: capital.side } };
+  // The ring is config too, and a config that lost it refuses rather than substituting the
+  // archive's unprinted size (PB-233 rider, frodo's M9). Above the charge, so it costs 0.
+  const ring = exclusionRadius();
+  if (ring === null) return { error: NUKE_EXCLUSION_UNKNOWN };
+  const capital = nearCapital(match, cell, ring);
+  if (capital) return { error: capitalText(ring), capital: { x: capital.x, y: capital.y, side: capital.side } };
   // b(ii) fails closed (PM 8963): a match that cannot name its capitals, a set that did not fully
   // resolve, a home-country set that came back empty, and a cell the territory map cannot name all
   // refuse and charge 0 rather than reading "I could not tell" as "not home ground". Every one of

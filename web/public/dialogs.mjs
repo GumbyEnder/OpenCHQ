@@ -114,6 +114,14 @@ export function economyModel(room) {
       wells: Number(seat.income.wells) || 0,
       cashWells: Number(seat.income.cashWells) || 0,
       amount: Number(seat.income.amount) || 0,
+      // PB-233 AC (b) ships legibility, not a second cut (frodo 8983 §4): the payday is worth the
+      // cities at the raw rate, and `perCity` is that rate read off the server.
+      // A frame that predates PB-233 carries neither; it is passed through unchanged rather than
+      // grown with zeroes.
+      ...(seat.income.gross === undefined ? {} : {
+        gross: Number(seat.income.gross) || 0,
+        perCity: Number.isFinite(Number(seat.income.perCity)) ? Number(seat.income.perCity) : null,
+      }),
     }
     : null;
   // T-033's oil budget, as the seat carries it: In / Out / the reserve. The dialogue's Stocks

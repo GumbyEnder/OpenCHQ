@@ -10,7 +10,8 @@
 //   - Manual p.30: at most 3 more launches than the opponent has fired: fired(mine) - fired(theirs) < 3.
 //   - FUN_1eb5_0eae: one global count (0x148c). From 5 a warning; from 10 winter if
 //     rnd(100) < 100 / (20 - n), ending the war as a loss for both.
-//   - Each round income is paid only if rnd(100) >= 5n (decompiled.c 4763).
+//   - Each round income is paid only if rnd(100) >= 5n (decompiled.c 4772; 4763 is the 0x144e
+//     income write, corrected in PB-233).
 
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

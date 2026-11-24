@@ -9,7 +9,8 @@
 // single number, not the per-side counters:
 //   - from 5, a warning;
 //   - from 10, nuclear winter if rnd(100) < 100 / (20 - n);
-//   - each round, income is paid only if rnd(100) >= 5n (decompiled.c 4763).
+//   - each round, income is paid only if rnd(100) >= 5n (decompiled.c 4772 - the 0x148c*5 <= 0x1488
+//     test; 4763 writes a city's income into 0x144e and is NOT the gate, corrected in PB-233).
 //
 // The numbers are decoded, so they live in config/game.json with a DECODED tag; the fallbacks here
 // are the same values and only apply to a config that predates the block. The roll is the match's

@@ -2411,7 +2411,11 @@ const DIALOG_PAINTERS = {
       body.append(label, list);
     }
     // The rate is read off the state the server sent, never typed here (prices node, grep guard).
-    const perCity = model.income && model.income.cities > 0 ? model.income.amount / model.income.cities : null;
+    // PB-233: the server sends the raw per-city rate, so the dialogue prints the rate rather than
+    // deriving one from a figure some other effect may have moved.
+    const rate = model.income && Number.isFinite(Number(model.income.perCity)) ? Number(model.income.perCity) : null;
+    const perCity = rate !== null ? rate
+      : (model.income && model.income.cities > 0 ? model.income.amount / model.income.cities : null);
     const every = model.payEvery === null || model.payEvery === undefined ? " every round" : (model.payEvery === 1 ? " every round" : " every " + model.payEvery + " rounds");
     body.append(note("Each city pays " + (perCity === null ? "its rate" : formatBillions(perCity) + " billion") + every +
       ". Your first capital is free, and each capital after the first pays like one city. Bases, docks and oil fields pay nothing."));

@@ -18,7 +18,13 @@ import { siteAtCell } from "./siteindex.mjs";
 import { launchLead, warnFrom, winterFrom, nukeState, nukeRoll, winterChancePercent } from "./nukes.mjs";
 // PB-230: the damage arm. Geometry and removal are blast.mjs's (PB-231); the aim checks, the
 // wasteland paint and the note live here beside the counters that describe a launch.
-import { killRadius, nukeNote, nukeStrike, nukeTarget } from "./nukestrike.mjs";
+import { blastCountries, killRadius, nukeNote, nukeStrike, nukeTarget } from "./nukestrike.mjs";
+// PB-233: what a strike does after the ground stops burning (manual p.30): world opinion and the
+// city switch. The manual's "production reduced by 25 per cent or more" is the 5n gate itself
+// (frodo 8983 §4) and is made legible in economy.pay, not multiplied here.
+import {
+  shiftAttitude, switchCities,
+} from "./aftermath.mjs";
 
 const LATE_ERAS = new Set(["1986", "2023", "9999"]);
 
@@ -514,6 +520,36 @@ export function useTool(match, side, tool, target) {
       wasteland: strike.wasteland,
       note: nukeNote(strike),
     });
+    // PB-233: the manual's p.30 after-effects. Both read the ground the blast actually covered
+    // (`blastCountries`), not the aim cell, because the manual's subject is "the attacked country".
+    // The attitude move is FUN_1eb5_0eae 12133-12166; the city switch is the manual's sentence with
+    // STAND-IN counts. The manual's third sentence (production down 25 per cent or more) is the
+    // decoded 5n gate, logged in economy.pay with the cities it skipped - no cut is applied here.
+    const countries = blastCountries(match, at, strike.radius, strike.sites);
+    const moved = shiftAttitude(match, countries);
+    if (moved.length) {
+      const names = moved.map((row) => countryName(row.country) || ("country " + row.country));
+      events.push({
+        type: "nuke_attitude", side, round, detonated, moved,
+        note: `World opinion turned against the launch: ${names.join(", ")}.`,
+      });
+    }
+    const cities = strike.sites.filter((site) => String(site.kind) === "city").length;
+    const losses = strike.pieces.filter((piece) => piece && piece.side === side).length;
+    const switched = switchCities(match, side, countries, { struckCities: cities, friendlyLosses: losses });
+    if (switched.wanted > 0) {
+      const names = switched.switched.map((row) => row.name || (row.x + "," + row.y));
+      events.push({
+        type: "nuke_switch", side, round, detonated,
+        roll: switched.roll, chance: switched.chance, first: switched.first,
+        wanted: switched.wanted, switched: switched.switched,
+        note: names.length
+          ? `${names.length} ${names.length === 1 ? "city" : "cities"} switched after the strike: ${names.join(", ")}.`
+          : "The strike turned no city: the nations it hit had none left to move.",
+      });
+    }
+    // The manual's "25 per cent or more" is the 5n gate itself (frodo 8983 §4): the gate's skip is
+    // logged in economy.pay with the cities it took. There is no second, multiplying effect here.
     // From 5, a warning. Both seats read it: the count is global, not the launcher's business.
     if (detonated >= warnFrom()) {
       events.push({
