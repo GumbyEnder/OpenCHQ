@@ -145,6 +145,11 @@ function viewPiece(unit, steps, round) {
     // How many rounds until an aircraft can fly again. `state` says "inactive"; the page needs the
     // number, or a mission is an unexplained absence rather than a cost.
     inactive: inactiveRounds(unit, round),
+    // PB-214: the arrival round in one boolean. `state` says "moving" for a unit that spent its last
+    // step this round, but its path is already empty, so the page's own badge reader had nothing to
+    // read and showed "idle" one round behind the unit list. Ship the server's word instead of
+    // letting the page re-derive it from the path.
+    moving: movedThisRound(unit, { round }),
     state: stateOf(unit, round),
   };
 }
