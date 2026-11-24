@@ -224,10 +224,25 @@ try {
   const view = await room();
   const redCities = (view.sites || []).filter((site) => site.owner === "red" && site.kind === "city");
   if (!redCities.length) throw new Error("the 1986 board has no red city to turn");
-  // The city the OLD code would have turned is the lowest id; picking another one proves the pick.
-  const lowest = redCities.slice().sort((a, b) => Number(a.id) - Number(b.id))[0];
-  const target = redCities.filter((site) => site.id !== lowest.id).sort((a, b) => Number(a.id) - Number(b.id))[0] || lowest;
+  // PB-227: red's home country is the country its own capital stands in (1986: Moscow, country 1),
+  // and a city inside it can never be an aid target. So the acceptance arm has to pick a red city
+  // OUTSIDE that set - Leningrad, which this leg used to turn, is inside it.
+  const byId = (a, b) => Number(a.id) - Number(b.id);
+  const redSeat = (view.capitals && view.capitals.red) || null;
+  const seatSite = redSeat
+    ? (view.sites || []).find((site) => Number(site.x) === Number(redSeat.x) && Number(site.y) === Number(redSeat.y))
+    : null;
+  const redHome = seatSite && seatSite.country_id !== undefined && seatSite.country_id !== null
+    ? Number(seatSite.country_id)
+    : null;
+  const inHome = (site) => redHome !== null && Number(site.country_id) === redHome;
+  // The city the OLD code would have turned is the lowest id; picking another legal one proves the pick.
+  const lowest = redCities.slice().sort(byId)[0];
+  const target = redCities.filter((site) => site.id !== lowest.id && !inHome(site)).sort(byId)[0]
+    || redCities.filter((site) => !inHome(site)).sort(byId)[0];
+  if (!target) throw new Error("every red city sits in red's home country (country " + redHome + "); no legal aid target to prove the pick");
   const untouched = redCities.find((site) => site.id !== target.id) || null;
+  const homeCity = redCities.filter(inHome).sort(byId)[0] || null;
   // The price the room itself sells aid at, so the pool delta is checked against the server's own
   // number; the config price (10 billion) is asserted separately as the figure the manual carried.
   const shopRow = ((view.shop || []).find((row) => row.tool === "aid")) || null;
@@ -306,6 +321,26 @@ try {
   const cash4 = Number((await room()).seat.cash);
   mark("a pick that holds no city is refused in the server's own sentence", /holds no city/i.test(refusedNote), refusedNote);
   mark("a refused aid charges 0", cash4 === cash3, "cash " + cash3 + " -> " + cash4);
+
+  // ---------------------------------------------------------------- 5. the home country is closed
+  if (!homeCity) throw new Error("the 1986 board names no red city inside red's home country");
+  const homeBefore = await room();
+  const cash5 = Number(homeBefore.seat.cash);
+  const homeOwner0 = (homeBefore.sites || []).find((site) => site.id === homeCity.id);
+  await openKit();
+  await page.click("div.shop.tools button.buy:has-text('Foreign aid')");
+  await sleep(150);
+  await clickCell({ x: homeCity.x, y: homeCity.y });
+  await sleep(400);
+  const homeNote = await said();
+  const homeAfter = await room();
+  const homeOwner1 = (homeAfter.sites || []).find((site) => site.id === homeCity.id);
+  mark("a city inside the opponent's home country is refused in the server's own sentence",
+    /home country/i.test(homeNote),
+    homeNote + " (site " + homeCity.id + " " + homeCity.name + ", country " + homeCity.country_id + "; red capital country " + redHome + ")");
+  mark("the home-country refusal charges 0 and moves nothing",
+    Number(homeAfter.seat.cash) === cash5 && Boolean(homeOwner1) && homeOwner1.owner === (homeOwner0 && homeOwner0.owner),
+    "cash " + cash5 + " -> " + Number(homeAfter.seat.cash) + ", owner " + (homeOwner0 && homeOwner0.owner) + " -> " + (homeOwner1 && homeOwner1.owner));
 
   mark("no page error during the run", pageErrors.length === 0, pageErrors.join(" | ").slice(0, 300));
 } finally {

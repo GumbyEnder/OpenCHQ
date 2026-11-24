@@ -40,6 +40,9 @@ export const AID_NEEDS_CITY = "Aid needs a city: pick the one you want to sway."
 export const AID_OFF_MAP = "The target is off the map.";
 export const AID_NO_CITY = "That cell holds no city.";
 export const AID_OWN_CITY = "That city is already yours.";
+// PB-227 (manual p.31, L988): "Cities within an opponent's home country can never be the target of
+// foreign aid." The refusal is about the country the city stands in, not who holds it.
+export const AID_HOME_COUNTRY = "That city is inside the opponent's home country; foreign aid cannot reach it.";
 // PB-226b: there is deliberately no neutral refusal. The manual (L986-987) says aid makes "hostile
 // ones become neutral, or neutral ones become allied", so a neutral pick is the second half of the
 // tool's job, not a mistake. The refusal that lived here until PM 8843 §2 was a stand-in that read
@@ -183,7 +186,7 @@ export function kitBriefing(match, side) {
   add("satellite", "Satellite pass",
     "The same reveal, and it is quiet: nobody is told. Submarines are left out of it.",
     surfaceFoes > 0, surfaceFoes > 0 ? null : "There is nothing above the water to reveal.");
-  add("aid", "Foreign aid", "Turns the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner, and the manual says the player selects the city (p.31).",
+  add("aid", "Foreign aid", "Turns the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner; the manual says the player selects the city, and that a city inside the opponent's home country can never be a target (p.31).",
     turnable > 0, turnable > 0 ? null : "There is no city to turn.");
   add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
 
@@ -206,6 +209,29 @@ export function kitBriefing(match, side) {
   return kit;
 }
 
+// PB-227: the countries the opponent's own capitals stand in. The 1986 file gives a side more than
+// one capital row - Washington (country 0), London (3) and Tokyo (14) for blue, Moscow (1) for red -
+// so "home country" is read as the SET of countries the opponent's held capitals sit in; a year with
+// one capital per side reduces to the manual's single sentence. A capital held by nobody (the
+// original's neutral capital) contributes nothing, because it is nobody's home.
+function homeCountries(match, side) {
+  const set = match && match.capitalSet;
+  const sites = (match && Array.isArray(match.sites)) ? match.sites : [];
+  if (!set || !Array.isArray(set.list) || !sites.length) return null;
+  const out = new Set();
+  for (const row of set.list) {
+    if (!row) continue;
+    const site = sites.find((place) => place && Number(place.id) === Number(row.siteId));
+    if (!site) continue;
+    const holder = site.owner === "blue" || site.owner === "red" ? site.owner : null;
+    if (holder !== side) continue;
+    const country = site.country_id;
+    if (country === undefined || country === null) continue;
+    out.add(Number(country));
+  }
+  return out.size ? out : null;
+}
+
 // PB-226: which city an aid is aimed at, or the sentence that says why it was refused.
 // `target` is the cell the page sent (`{op:"tool", tool:"aid", to:{x,y}}`), and the wire has
 // carried it all along - only this tool ignored it. A target-less call is refused rather than
@@ -223,6 +249,13 @@ function aidTarget(match, side, target) {
   const site = siteAtCell(match.sites, x, y);
   if (!site || site.kind !== "city") return { error: AID_NO_CITY };
   if (site.owner === side) return { error: AID_OWN_CITY };
+  // PB-227: the opponent's home country is closed to aid whatever the city's owner is, so this sits
+  // before the turn and above charge() - a refused aid costs 0.
+  const home = homeCountries(match, side === "blue" ? "red" : "blue");
+  const country = site.country_id;
+  if (home && country !== undefined && country !== null && home.has(Number(country))) {
+    return { error: AID_HOME_COUNTRY };
+  }
   // A hostile city is turned and a neutral one becomes allied - the same one-step owner change
   // until PB-228's staged loyalty lands, which is where the two cases split.
   return { site };

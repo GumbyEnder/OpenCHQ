@@ -17,6 +17,7 @@ import {
   AID_OFF_MAP,
   AID_NO_CITY,
   AID_OWN_CITY,
+  AID_HOME_COUNTRY,
 } from "../../server/late.mjs";
 
 export const name = "pb226_aid_target";
@@ -30,14 +31,31 @@ function fresh() {
   match.sides.red.cash = 50000;
   match.pieces = [];
   match.sites = [
-    // Two enemy cities, so "the lowest id" and "the city the player picked" are different answers.
-    { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", owner: "red" },
-    { id: 14, name: "Minsk", x: 190, y: 30, kind: "city", owner: "red" },
+    // Enemy cities, so "the lowest id" and "the city the player picked" are different answers.
+    // PB-227: countries matter now. Red's two capitals stand in country 1 and country 8, so the home
+    // countries are a SET and a hard-coded "1" is not the rule; Minsk (3) and Riyadh (2) sit outside
+    // it, which is what keeps an aid target reachable.
+    { id: 12, name: "Kiev", x: 180, y: 22, kind: "city", owner: "red", country_id: 1 },
+    { id: 16, name: "Budapest", x: 185, y: 40, kind: "city", owner: "red", country_id: 8 },
+    { id: 14, name: "Minsk", x: 190, y: 30, kind: "city", owner: "red", country_id: 3 },
+    { id: 15, name: "Tbilisi", x: 175, y: 35, kind: "city", owner: "red", country_id: 1 },
+    { id: 17, name: "Debrecen", x: 186, y: 45, kind: "city", owner: "red", country_id: 8 },
     // One of the seat's own cities, one neutral city, and a cell with no site at all.
-    { id: 10, name: "New York", x: 80, y: 40, kind: "city", owner: "blue" },
-    { id: 13, name: "Riyadh", x: 200, y: 60, kind: "city", owner: null },
+    { id: 10, name: "New York", x: 80, y: 40, kind: "city", owner: "blue", country_id: 0 },
+    { id: 13, name: "Riyadh", x: 200, y: 60, kind: "city", owner: null, country_id: 2 },
     { id: 20, name: "Empty Sea", x: 60, y: 90, kind: "water", owner: null },
   ];
+  match.capitals = { blue: { x: 80, y: 40 }, red: { x: 180, y: 22 } };
+  match.capitalSet = {
+    era: "1986",
+    source: "file",
+    list: [
+      { siteId: 10, name: "New York", x: 80, y: 40, owner: "blue" },
+      { siteId: 12, name: "Kiev", x: 180, y: 22, owner: "red" },
+      { siteId: 16, name: "Budapest", x: 185, y: 40, owner: "red" },
+    ],
+    missing: [],
+  };
   match.round = 4;
   return match;
 }
@@ -79,6 +97,10 @@ export async function run(ctx) {
     [{ x: -1, y: 10 }, AID_OFF_MAP, "an aid aimed at negative x"],
     [{ x: 60, y: 90 }, AID_NO_CITY, "an aid aimed at a cell with no city"],
     [{ x: 80, y: 40 }, AID_OWN_CITY, "an aid aimed at the seat's own city"],
+    // PB-227: a city inside the opponent's home country is refused whatever its owner is, and the
+    // two arms name different countries so a fixed "country 1" cannot pass this.
+    [{ x: 175, y: 35 }, AID_HOME_COUNTRY, "an aid aimed at a red city in red's country 1"],
+    [{ x: 186, y: 45 }, AID_HOME_COUNTRY, "an aid aimed at a red city in red's country 8"],
   ];
   for (const [target, expected, label] of refusals) {
     const refused = fresh();
