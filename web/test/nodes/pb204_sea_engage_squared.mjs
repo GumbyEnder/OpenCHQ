@@ -68,6 +68,16 @@ export async function run() {
     "PB-204: the matrix's engage columns are not the measured 5/10/17 for classes 2/3/4");
   must(block.rangeMatrix[2][5] === 17,
     "PB-204: column 5 is no longer the own-contact column; the reader's refusal of it needs re-checking");
+  // Pins for the three cells frodo's pin gate mutates (8676 §4): a land attacker against a carrier
+  // (row 0 col 4), a transport against a carrier (row 1 col 4), and land's own land column (row 0
+  // col 1). The const is what the assert below consumes, so the pin line is live code — deleting it
+  // reds the file instead of silently dropping a check. Values are the measured matrix, not cells
+  // squared: 2/2/5.
+  const engageRowPins = block.rangeMatrix[0][4] === 2 && block.rangeMatrix[1][4] === 2 && block.rangeMatrix[0][1] === 5;
+  must(engageRowPins,
+    "PB-204: the engage cells moved — classes[0][4]=" + block.rangeMatrix[0][4] +
+    " classes[1][4]=" + block.rangeMatrix[1][4] + " classes[0][1]=" + block.rangeMatrix[0][1] +
+    ", measured 2/2/5");
 
   // An open stretch of water away from both capitals, wide enough for a (4,4) offset.
   let sea = null;
