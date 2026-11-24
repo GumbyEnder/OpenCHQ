@@ -210,17 +210,24 @@ export async function run(ctx) {
     const bought = buySatellite(match, "blue", 20, 40);
     if (bought.error) fail("satellite: " + bought.error);
     const sat = bought.satellite;
-    let moves = 0;
     let down = null;
-    while (sat.orbit !== false && moves < 10) {
+    // Exactly fuelCapacity moves, and the REMOVAL is asserted directly. The old loop ran until
+    // `sat.orbit === false`, so a never-swept satellite redded on the next move's refusal ("move 4
+    // was refused early: That satellite has no booster fuel left.") instead of on the removal rule
+    // it is meant to pin - measured: mutant D at f8cec52. A refusal inside the tank's own budget is
+    // its own defect (the tank ran dry early), so it gets its own line.
+    for (let moves = 1; moves <= cfg.fuelCapacity; moves++) {
       const order = orderSatellite(match, "blue", sat.id, sat.x + 2, 40);
-      if (order.error) fail("move " + (moves + 1) + " was refused early: " + order.error);
-      moves += 1;
+      if (order.error) fail("move " + moves + " was refused with fuel still in the tank: " + order.error);
       eq("move " + moves + " spent exactly fuelPerMove", order.fuel, cfg.fuelCapacity - cfg.fuelPerMove * moves);
       const events = tickSatellites(match);
       down = events.find((event) => event.type === "satellite_down") || down;
+      if (moves < cfg.fuelCapacity && sat.orbit === false) {
+        fail("the satellite fell out of orbit after " + moves + " of " + cfg.fuelCapacity + " moves");
+      }
     }
-    eq("the satellite is removed after fuelCapacity moves", moves, cfg.fuelCapacity);
+    eq("the satellite is out of orbit after fuelCapacity moves", sat.orbit, false);
+    eq("the satellite is no longer in match.satellites", match.satellites.some((one) => one.id === sat.id), false);
     if (!down) fail("the satellite fell out of orbit with no event");
     eq("the down event names the piece", down.pieceId, bought.satellite.id);
     eq("the down event's reason", down.reason, "fuel");
