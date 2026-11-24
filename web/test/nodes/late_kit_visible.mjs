@@ -115,8 +115,8 @@ export async function run() {
     eq("a satellite tells nobody", logLines(m, "red", sat.events, 4).length, 0);
     if (!logLines(m, "blue", sat.events, 4).length) fail("a satellite produced no line for its owner");
 
-    // Aid moves a city and says which.
-    const aid = useTool(m, "blue", "aid", null);
+    // Aid moves a city and says which. PB-226: the city is the one the player names.
+    const aid = useTool(m, "blue", "aid", { x: 183, y: 25 });
     if (aid.error) fail("aid was refused: " + aid.error);
     const aidLine = logLines(m, "blue", aid.events, 4);
     if (!aidLine.length) fail("aid produced no log line");

@@ -839,6 +839,10 @@ let placement = null;
 // Which air order the next map click sends for a selected aircraft: "strike" (the default, and
 // what every pre-T-021 click meant) or "transfer", which rebases the plane on the cell clicked.
 let pendingMission = "strike";
+// PB-226: the tool whose picker is armed, or null. Foreign aid names its city (Manual p.31), so
+// its button arms this instead of spending blind; the next map click is the target and Escape
+// disarms. One slot for every picker tool, so two doors cannot arm different modes at once.
+let pendingTool = null;
 
 // The round log. A running clock is dead time unless it reports itself: every line here came
 // from the server already filtered to what this seat could see. LOG_KEEP matches the room's own
@@ -869,6 +873,8 @@ function clearCommand() {
   // PB-193: Escape and every other clear also disarm the door, so a bomb kept armed through a
   // refusal cannot outlive the selection that armed it.
   pendingMission = nextDoorMode(pendingMission, "cleared");
+  // PB-226: the tool picker answers to the same Escape, for the same reason.
+  pendingTool = null;
   drawMatch();
 }
 
@@ -899,6 +905,16 @@ board.addEventListener("click", (event) => {
   if (!room || !room.you || room.over) return;
   let cell = cellAtEvent(event, board, viewForCanvas());
   if (!cell) return;
+
+  // PB-226: an armed tool takes this click as its target and is spent either way - a refused
+  // cell clears the mode too, so one intent is never two clicks. The server answers with the
+  // sentence (the refusal or the aid's own line), and the page repeats it verbatim.
+  if (pendingTool) {
+    const tool = pendingTool;
+    pendingTool = null;
+    send({ op: "tool", tool, to: { x: cell.x, y: cell.y } });
+    return;
+  }
 
   // A unit on the build cursor claims the click: the cell has to be one of the seat's own
   // sites, and the server decides whether the purchase is legal.
@@ -1709,6 +1725,23 @@ const TOOL_WORDS = {
   oil: "Oil",
 };
 
+// PB-226: foreign aid names its city (Manual L382 + p.31), so its button arms a picker instead of
+// spending blind. Both doors (the Kit row and the Buy table's tool row) go through this one
+// function, so the sentence and the armed mode cannot drift apart.
+const AID_PICK_HINT = "Foreign aid: pick the enemy city you want to sway. Escape cancels.";
+
+function armTool(tool) {
+  pendingTool = tool;
+  selected = null;
+  buying = null;
+  placement = null;
+  preview = null;
+  hoverKey = "";
+  say(AID_PICK_HINT);
+  closeDialog();
+  drawMatch();
+}
+
 function toolRow(room) {
   const list = Array.isArray(room && room.tools) ? room.tools : [];
   const wanted = list.filter((tool) => TOOL_WORDS[tool.name]);
@@ -1731,7 +1764,11 @@ function toolRow(room) {
       // An aircraft on the ground is the other half of this row: a mission is a piece order.
       button.title = brief ? brief.text : "Send it now.";
     }
-    button.addEventListener("click", () => send({ op: "tool", tool: tool.name }));
+    button.addEventListener("click", () => {
+      // PB-226: a tool that names a cell arms the picker; everything else is spent on the click.
+      if (tool.name === "aid") return armTool("aid");
+      send({ op: "tool", tool: tool.name });
+    });
     row.append(button);
   }
   // The consequences of the kit, in text rather than in a tooltip: a player should be able to read
@@ -2163,6 +2200,8 @@ const DIALOG_PAINTERS = {
       } else if (row.domain === "tool") {
         line.title = "Use this now: the price is charged from the pool.";
         line.addEventListener("click", () => {
+          // PB-226: the same picker the Kit row arms, so the Buy table cannot spend aid blind.
+          if (row.tool === "aid") return armTool("aid");
           send({ op: "tool", tool: row.tool });
           say("Use " + row.kind + ".");
           closeDialog();

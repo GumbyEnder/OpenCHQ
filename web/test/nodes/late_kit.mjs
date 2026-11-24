@@ -113,10 +113,11 @@ export async function run(ctx) {
     fail("the satellite pass stamped a submarine: " + String(quietSub.revealedRound));
   }
 
-  // --- foreign aid flips a city --------------------------------------------------------
+  // --- foreign aid flips the city it is aimed at ----------------------------------------
   const aid = fresh();
   aid.pieces = [];
-  const given = useTool(aid, "blue", "aid");
+  // PB-226: aid names its city. The target is Kiev's cell, not a hidden lowest-id pick.
+  const given = useTool(aid, "blue", "aid", { x: 180, y: 22 });
   if (given.error) fail("foreign aid was refused: " + given.error);
   const flipped = given.events.find((event) => event.type === "aid");
   if (!flipped) fail("aid produced no event");

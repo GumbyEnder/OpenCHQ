@@ -9,6 +9,7 @@
 
 import { millionsPerBillion, priceOf, rules } from "./rules.mjs";
 import { beginScan } from "./scan.mjs";
+import { siteAtCell } from "./siteindex.mjs";
 // PB-156: the launch gate is the DIFFERENCE of two counters, and one global detonation count drives
 // the income roll and the winter check. Both live in nukes.mjs so economy.incomeGate reads the same
 // numbers this module writes.
@@ -34,6 +35,12 @@ export function intelNote(cost) {
 }
 export const SATELLITE_NOTE = "Satellite overhead. Its pass is quiet.";
 export const AID_NOTE = "Foreign aid. The city changed hands.";
+// PB-226: aid names its city, and every refusal has to be a sentence the player can act on.
+export const AID_NEEDS_CITY = "Aid needs a city: pick the one you want to sway.";
+export const AID_OFF_MAP = "The target is off the map.";
+export const AID_NO_CITY = "That cell holds no city.";
+export const AID_OWN_CITY = "That city is already yours.";
+export const AID_NEUTRAL_CITY = "That city is neutral; aid sways a city the other side holds.";
 export const CEASEFIRE_NOTE = "Cease fire accepted.";
 export const NUKE_NOTE = "A nuke is refused.";
 
@@ -171,7 +178,7 @@ export function kitBriefing(match, side) {
   add("satellite", "Satellite pass",
     "The same reveal, and it is quiet: nobody is told. Submarines are left out of it.",
     surfaceFoes > 0, surfaceFoes > 0 ? null : "There is nothing above the water to reveal.");
-  add("aid", "Foreign aid", "Turns one enemy city. The archive's own note says aid flips a city's owner.",
+  add("aid", "Foreign aid", "Turns the enemy city you pick. The archive's own note says aid flips a city's owner, and the manual says the player selects the city (p.31).",
     turnable > 0, turnable > 0 ? null : "There is no city to turn.");
   add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
 
@@ -192,6 +199,26 @@ export function kitBriefing(match, side) {
   }
 
   return kit;
+}
+
+// PB-226: which city an aid is aimed at, or the sentence that says why it was refused.
+// `target` is the cell the page sent (`{op:"tool", tool:"aid", to:{x,y}}`), and the wire has
+// carried it all along - only this tool ignored it. A target-less call is refused rather than
+// falling back to a hidden policy: the manual's rule is that the player selects the city.
+function aidTarget(match, side, target) {
+  if (!target || target.x === undefined || target.y === undefined) return { error: AID_NEEDS_CITY };
+  const x = Number(target.x);
+  const y = Number(target.y);
+  // The board wraps in x and is fixed in y (the same bound the nuke uses), so a cell that is not
+  // on the map is refused here instead of being searched for and reported as an empty cell.
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || y > 135) {
+    return { error: AID_OFF_MAP };
+  }
+  const site = siteAtCell(match.sites, x, y);
+  if (!site || site.kind !== "city") return { error: AID_NO_CITY };
+  if (site.owner === side) return { error: AID_OWN_CITY };
+  if (site.owner !== "blue" && site.owner !== "red") return { error: AID_NEUTRAL_CITY };
+  return { site };
 }
 
 // One tool use. Returns { ok, events } or { error }.
@@ -240,12 +267,13 @@ export function useTool(match, side, tool, target) {
   }
 
   if (name === "aid") {
-    // The archive's aid flips a city's owner. Pick the enemy city with the lowest id so the
-    // choice is deterministic rather than a hidden policy.
-    const city = (match.sites || [])
-      .filter((site) => site && site.kind === "city" && site.owner && site.owner !== side)
-      .sort((a, b) => Number(a.id) - Number(b.id))[0];
-    if (!city) return { error: "There is no city to turn." };
+    // PB-226: the player names the city (Manual L382 + p.31, "select a city within the nation you
+    // wish to sway"). The archive's stand-in picked the lowest-id enemy city, which ignored the
+    // target the wire already carried (`lobby.mjs` passes `message.to`) and turned a city nobody
+    // chose. Every refusal sits above `charge()`, so a refused aid costs 0.
+    const picked = aidTarget(match, side, target);
+    if (picked.error) return picked;
+    const city = picked.site;
     const paid = charge(match, side, name);
     if (paid.error) return paid;
     const from = city.owner;
