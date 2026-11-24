@@ -1281,6 +1281,13 @@ window.addEventListener("keydown", (event) => {
     closeDialog();
     return;
   }
+  // PB-226: an armed tool picker is a mode, and Escape disarms it. It sits ahead of the build
+  // cursor because arming a tool clears the cursor: the player's Escape is for the mode on screen.
+  if (event.key === "Escape" && pendingTool) {
+    clearCommand();
+    say("Foreign aid off.");
+    return;
+  }
   // PB-047: an armed purchase is a mode, and Escape gets out of it even with no dialogue open.
   // Before this, the only way off the build cursor was to open the Buy menu again and close it.
   if (event.key === "Escape" && buying) {
