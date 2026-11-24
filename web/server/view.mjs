@@ -106,7 +106,10 @@ function seatPieces(match, side) {
 }
 
 function visibleEnemy(unit, ownPieces, match, side, now) {
-  // Intel and a satellite pass reveal a piece for the round they were used, submarines included.
+  // Intel's p.31 bar stamps every enemy for the round it is used, and a stamped piece is sent.
+  // A satellite pass never stamps a submarine (L326 "except submarines, which remain hidden",
+  // L329 "always hidden from air and satellite scanning", L936 "all enemy units are exposed except
+  // submarines"), so the sub test below stays reachable for every enemy the pass does not touch.
   if (Number(unit.revealedRound) >= Number(match.round) && Number(unit.revealedRound) >= 0) {
     // PB-158: an intel reveal is only a reveal under the bar. `scanGate` returns null when the
     // active pass is not this unit's (a satellite, or no scan), true while the bar covers its

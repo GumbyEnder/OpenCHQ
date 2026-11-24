@@ -159,13 +159,18 @@ export function kitBriefing(match, side) {
 
   const foes = (match && Array.isArray(match.pieces) ? match.pieces : [])
     .filter((piece) => piece && piece.side !== side).length;
+  // PB-222: a submarine is never part of a satellite pass (L326/L329/L936), so a board whose only
+  // enemies are submerged has nothing for the pass to show and the row says so.
+  const surfaceFoes = (match && Array.isArray(match.pieces) ? match.pieces : [])
+    .filter((piece) => piece && piece.side !== side && piece.kind !== "submarine").length;
   const turnable = (match && Array.isArray(match.sites) ? match.sites : [])
     .filter((site) => site && site.kind === "city" && site.owner && site.owner !== side).length;
 
   add("intel", "Intel scan", "Every enemy unit is revealed for one round, and the other side is told it was read.",
     foes > 0, foes > 0 ? null : "There is nothing to reveal.");
-  add("satellite", "Satellite pass", "The same reveal, and it is quiet: nobody is told.",
-    foes > 0, foes > 0 ? null : "There is nothing to reveal.");
+  add("satellite", "Satellite pass",
+    "The same reveal, and it is quiet: nobody is told. Submarines are left out of it.",
+    surfaceFoes > 0, surfaceFoes > 0 ? null : "There is nothing above the water to reveal.");
   add("aid", "Foreign aid", "Turns one enemy city. The archive's own note says aid flips a city's owner.",
     turnable > 0, turnable > 0 ? null : "There is no city to turn.");
   add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
@@ -203,10 +208,17 @@ export function useTool(match, side, tool, target) {
 
   if (name === "intel" || name === "satellite") {
     const foes = (match.pieces || []).filter((piece) => piece && piece.side !== side);
-    if (name === "intel" && foes.length === 0) return { error: "There is nothing to reveal." };
+    // PB-222: a satellite pass is air/satellite scanning, and the manual keeps submarines out of it
+    // — L326 "except submarines, which remain hidden", L329 "Submarines are always hidden from air
+    // and satellite scanning", L936 "all enemy units are exposed except submarines". Intel keeps the
+    // p.31 bar and its own stamp, so the two tools stop sharing one unconditional write.
+    const shown = name === "satellite"
+      ? foes.filter((piece) => piece.kind !== "submarine")
+      : foes;
+    if (shown.length === 0) return { error: "There is nothing to reveal." };
     const paid = charge(match, side, name);
     if (paid.error) return paid;
-    for (const piece of foes) piece.revealedRound = round;
+    for (const piece of shown) piece.revealedRound = round;
     // PB-158: the reveal is the bar's, so the pass is armed on the server at the same instant.
     // `view.forSeat` then sends only the pieces whose column the bar covers, and stops sending
     // them once the trailing edge has passed (no lingering: Q51). A satellite pass stays a quiet
@@ -216,7 +228,7 @@ export function useTool(match, side, tool, target) {
       type: name === "intel" ? "intel" : "satellite",
       side,
       round,
-      reveals: foes.length,
+      reveals: shown.length,
       cost: paid.price,
       note: name === "intel" ? intelNote(paid.price) : SATELLITE_NOTE,
     });

@@ -86,14 +86,31 @@ export async function run(ctx) {
   }
   if (/radius/i.test(INTEL_NOTE)) fail("the intel note contains the banned word radius: " + INTEL_NOTE);
 
-  // --- the satellite pass is quiet -----------------------------------------------------
+  // --- the satellite pass is quiet, and a submarine is never part of it (PB-222) ----------
+  // The manual: L326 "except submarines, which remain hidden"; L329 "Submarines are always hidden
+  // from air and satellite scanning"; L936 "all enemy units are exposed except submarines".
   const quiet = fresh();
-  quiet.pieces = [sub("blue:sub", "blue", 0, 15), sub("red:sub", "red", 200, 100)];
+  const quietSub = sub("red:sub", "red", 200, 100);
+  const quietHull = {
+    id: "red:cruiser", side: "red", domain: "sea", kind: "cruiser", x: 240, y: 20,
+    path: [], pace: 1, facing: null, fighting: null, shots: 0, movedRound: -1,
+  };
+  quiet.pieces = [sub("blue:sub", "blue", 0, 15), quietHull, quietSub];
   const sat = useTool(quiet, "blue", "satellite");
   if (sat.error) fail("a satellite pass was refused: " + sat.error);
   if (sat.events.some((event) => event.type === "intel_seen")) fail("the satellite pass told the opponent");
-  if (!forSeat(quiet, "blue").pieces.some((piece) => piece.id === "red:sub")) {
-    fail("the satellite pass did not reveal the enemy");
+  const satEvent = sat.events.find((event) => event.type === "satellite");
+  if (!satEvent) fail("the satellite pass produced no event: " + JSON.stringify(sat.events));
+  if (satEvent.reveals !== 1) fail("the satellite count includes the submarine: " + satEvent.reveals);
+  const quietSeen = forSeat(quiet, "blue").pieces.map((piece) => piece.id);
+  if (!quietSeen.includes("red:cruiser")) {
+    fail("the satellite pass did not reveal a surface enemy: " + quietSeen.join(","));
+  }
+  if (quietSeen.includes("red:sub")) {
+    fail("the satellite pass revealed a submarine: " + quietSeen.join(","));
+  }
+  if (quietSub.revealedRound !== undefined) {
+    fail("the satellite pass stamped a submarine: " + String(quietSub.revealedRound));
   }
 
   // --- foreign aid flips a city --------------------------------------------------------
