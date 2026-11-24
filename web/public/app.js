@@ -1735,7 +1735,7 @@ const TOOL_WORDS = {
 // PB-226: foreign aid names its city (Manual L382 + p.31), so its button arms a picker instead of
 // spending blind. Both doors (the Kit row and the Buy table's tool row) go through this one
 // function, so the sentence and the armed mode cannot drift apart.
-const AID_PICK_HINT = "Foreign aid: pick the enemy city you want to sway. Escape cancels.";
+const AID_PICK_HINT = "Foreign aid: pick the city you want to sway - an enemy's or a neutral one. Escape cancels.";
 
 function armTool(tool) {
   pendingTool = tool;

@@ -40,7 +40,10 @@ export const AID_NEEDS_CITY = "Aid needs a city: pick the one you want to sway."
 export const AID_OFF_MAP = "The target is off the map.";
 export const AID_NO_CITY = "That cell holds no city.";
 export const AID_OWN_CITY = "That city is already yours.";
-export const AID_NEUTRAL_CITY = "That city is neutral; aid sways a city the other side holds.";
+// PB-226b: there is deliberately no neutral refusal. The manual (L986-987) says aid makes "hostile
+// ones become neutral, or neutral ones become allied", so a neutral pick is the second half of the
+// tool's job, not a mistake. The refusal that lived here until PM 8843 §2 was a stand-in that read
+// the one-sided half of the sentence.
 export const CEASEFIRE_NOTE = "Cease fire accepted.";
 export const NUKE_NOTE = "A nuke is refused.";
 
@@ -170,15 +173,17 @@ export function kitBriefing(match, side) {
   // enemies are submerged has nothing for the pass to show and the row says so.
   const surfaceFoes = (match && Array.isArray(match.pieces) ? match.pieces : [])
     .filter((piece) => piece && piece.side !== side && piece.kind !== "submarine").length;
+  // PB-226b: a neutral city (owner null) is a legal target too, so the gate is "not mine", not
+  // "held by the other side" - counting only hostile cities disabled the row on a board of neutrals.
   const turnable = (match && Array.isArray(match.sites) ? match.sites : [])
-    .filter((site) => site && site.kind === "city" && site.owner && site.owner !== side).length;
+    .filter((site) => site && site.kind === "city" && site.owner !== side).length;
 
   add("intel", "Intel scan", "Every enemy unit is revealed for one round, and the other side is told it was read.",
     foes > 0, foes > 0 ? null : "There is nothing to reveal.");
   add("satellite", "Satellite pass",
     "The same reveal, and it is quiet: nobody is told. Submarines are left out of it.",
     surfaceFoes > 0, surfaceFoes > 0 ? null : "There is nothing above the water to reveal.");
-  add("aid", "Foreign aid", "Turns the enemy city you pick. The archive's own note says aid flips a city's owner, and the manual says the player selects the city (p.31).",
+  add("aid", "Foreign aid", "Turns the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner, and the manual says the player selects the city (p.31).",
     turnable > 0, turnable > 0 ? null : "There is no city to turn.");
   add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
 
@@ -205,6 +210,7 @@ export function kitBriefing(match, side) {
 // `target` is the cell the page sent (`{op:"tool", tool:"aid", to:{x,y}}`), and the wire has
 // carried it all along - only this tool ignored it. A target-less call is refused rather than
 // falling back to a hidden policy: the manual's rule is that the player selects the city.
+// Nothing here refuses a neutral city: manual L986-987 makes one a legal target (PB-226b).
 function aidTarget(match, side, target) {
   if (!target || target.x === undefined || target.y === undefined) return { error: AID_NEEDS_CITY };
   const x = Number(target.x);
@@ -217,7 +223,8 @@ function aidTarget(match, side, target) {
   const site = siteAtCell(match.sites, x, y);
   if (!site || site.kind !== "city") return { error: AID_NO_CITY };
   if (site.owner === side) return { error: AID_OWN_CITY };
-  if (site.owner !== "blue" && site.owner !== "red") return { error: AID_NEUTRAL_CITY };
+  // A hostile city is turned and a neutral one becomes allied - the same one-step owner change
+  // until PB-228's staged loyalty lands, which is where the two cases split.
   return { site };
 }
 

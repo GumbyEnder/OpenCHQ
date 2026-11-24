@@ -216,7 +216,7 @@ try {
   const frames1 = (await toolFrames()).length;
   const cash1 = Number((await room()).seat.cash);
   mark("the Aid button arms a picker instead of spending: the note asks for a city",
-    /pick the enemy city/i.test(armedNote), armedNote);
+    /pick the city you want to sway/i.test(armedNote), armedNote);
   mark("arming sends no tool frame", frames1 === frames0, "tool frames " + frames0 + " -> " + frames1);
   mark("arming does not charge the pool", cash1 === cash0, "cash " + cash0 + " -> " + cash1);
 

@@ -17,7 +17,6 @@ import {
   AID_OFF_MAP,
   AID_NO_CITY,
   AID_OWN_CITY,
-  AID_NEUTRAL_CITY,
 } from "../../server/late.mjs";
 
 export const name = "pb226_aid_target";
@@ -80,7 +79,6 @@ export async function run(ctx) {
     [{ x: -1, y: 10 }, AID_OFF_MAP, "an aid aimed at negative x"],
     [{ x: 60, y: 90 }, AID_NO_CITY, "an aid aimed at a cell with no city"],
     [{ x: 80, y: 40 }, AID_OWN_CITY, "an aid aimed at the seat's own city"],
-    [{ x: 200, y: 60 }, AID_NEUTRAL_CITY, "an aid aimed at a neutral city"],
   ];
   for (const [target, expected, label] of refusals) {
     const refused = fresh();
@@ -97,8 +95,34 @@ export async function run(ctx) {
     }
   }
 
-  // --- the briefing tells the player they pick ------------------------------------------
+  // --- a NEUTRAL city is a legal target: manual L986-987 --------------------------------
+  // "hostile ones to become neutral, or neutral ones to become allied". Accepting only a hostile
+  // pick was the stand-in reading half the sentence; the mutant that puts the refusal back has to
+  // red the first line below.
+  const neutral = fresh();
+  const neutralBefore = neutral.sides.blue.cash;
+  const swayed = useTool(neutral, "blue", "aid", { x: 200, y: 60 });
+  if (swayed.error) fail("an aid aimed at a neutral city was refused: " + swayed.error);
+  const aidEvent = (swayed.events || []).find((row) => row.type === "aid");
+  if (!aidEvent) fail("aid at a neutral city produced no event");
+  if (aidEvent.site !== 13) {
+    fail("aid did not turn the neutral city the player picked: event.site=" + aidEvent.site + " (expected 13)");
+  }
+  if (neutral.sites.find((site) => site.id === 13).owner !== "blue") fail("the neutral city did not become allied");
+  if (neutral.sites.find((site) => site.id === 12).owner !== "red") fail("aid at a neutral city also moved a hostile city");
+  if (aidEvent.from !== null) fail("the aid line did not name the neutral city as neutral: from=" + String(aidEvent.from));
+  if (neutral.sides.blue.cash !== neutralBefore - price) {
+    fail("aid at a neutral city charged " + (neutralBefore - neutral.sides.blue.cash) + ", not the config price " + price);
+  }
+
+  // --- the briefing tells the player they pick, and offers the row when only neutrals are left --
   const brief = kitBriefing(fresh(), "blue").find((entry) => entry.name === "aid");
   if (!brief) fail("the kit briefing lost its aid row");
   if (!/you pick/i.test(brief.text)) fail("the aid briefing does not say the player picks the city: " + brief.text);
+  const neutralOnly = fresh();
+  neutralOnly.sites = neutralOnly.sites.filter((site) => site.owner === null);
+  const neutralBrief = kitBriefing(neutralOnly, "blue").find((entry) => entry.name === "aid");
+  if (!neutralBrief || !neutralBrief.allowed) {
+    fail("the kit refuses aid when the only cities left to sway are neutral: " + JSON.stringify(neutralBrief && neutralBrief.reason));
+  }
 }
