@@ -541,6 +541,19 @@ export function previewLine(preview) {
   return "Route: " + roundsText(rounds) + ". Click to send the order.";
 }
 
+// PB-177: the identity of one hovered destination. A route reply only speaks for the cell it was
+// asked about, and never for a cell that has since been refused - the page keys both the offer and
+// the refusal off this one string so a late reply cannot put "Click to send the order." back over an
+// order the server has already answered.
+export function hoverOfferKey(pieceId, cell) {
+  if (pieceId === undefined || pieceId === null || !cell) return "";
+  return String(pieceId) + ":" + Number(cell.x) + "," + Number(cell.y);
+}
+
+export function hoverOffersOrder(key, refusedKey) {
+  return Boolean(key) && key !== refusedKey;
+}
+
 // The two sentences that say a piece is selected. They live here, next to PICK_HINT, because the
 // toast and the board note used to disagree: after a selection the toast still read "Select one of
 // your pieces" while the note named a route (PB-053). One helper per surface, one phrase naming the
