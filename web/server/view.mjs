@@ -153,6 +153,12 @@ function stateOf(unit, round) {
   const until = Number(unit.inactiveUntil);
   if (Number.isFinite(until) && until > (Number(round) || 0)) return "inactive";
   if (Array.isArray(unit.path) && unit.path.length > 0) return "moving";
+  // PB-206: a unit that spent its LAST step this round has an empty path but did move, and it was
+  // published as "idle" for the one round in which its move is the fact a hand-check wants. The
+  // predicate is `movedThisRound()` — the same one `visibleEnemy()` uses, so "moved" keeps one
+  // definition. `movedRound` is stamped by the walker at move.mjs:1261 (its own comment: "the
+  // mover attacks"), and by air.mjs:493 for a flown mission.
+  if (movedThisRound(unit, { round })) return "moving";
   if (unit.pinned === true) return "pinned";
   if (unit.repairing === true) return "repairing";
   if (unit.entrenched === true) return "digging";
