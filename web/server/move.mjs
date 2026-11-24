@@ -13,7 +13,7 @@ import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostL
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
-import { applyDamage, damageFor, engageRange2, ensureStrength, rangeOf, squaredDistance } from "./combat.mjs";
+import { applyDamage, damageFor, engageRange2, ensureStrength, pairDue, rangeOf, squaredDistance, stampPair } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -1124,18 +1124,20 @@ export function advance(match) {
         const onRound = Number(match.round) || 0;
         // Overrun is a MOVEMENT result (Manual p.9) but its damage is an exchange like any other:
         // one matrix cell, the defender's entrenchment and the defender's terrain cover, all from
-        // damageFor (FUN_194c_000e). It is applied ONCE and the round's front beat is consumed
-        // (match.foughtRound), so combat.resolve does not fire the same pair again in this round -
-        // that double exchange is what let a lone tank kill a dug-in garrison on Paris
-        // (T-015, local/t015/duel-remake.txt).
+        // damageFor (FUN_194c_000e). It is applied ONCE and the pair's own beat is consumed
+        // (PB-211/D-030: both pieces stamp `lastShotRound`), so combat.resolve does not fire the
+        // same pair again in this round - that double exchange is what let a lone tank kill a
+        // dug-in garrison on Paris (T-015, local/t015/duel-remake.txt).
         //
-        // The same beat gates the overrun itself: an exchange is due when `shotEveryRounds` rounds
-        // have passed since the last one, not merely because this round has not fired yet. The
-        // earlier `foughtRound !== onRound` test fired on two consecutive rounds (the held tank
-        // re-tries every round), which no reading of the rule allows - T-015 cadence trace.
+        // The beat is per pair, not per front: an exchange is due when `shotEveryRounds` rounds
+        // have passed for BOTH this tank and this occupant. The earlier front-wide
+        // `match.foughtRound` gate let an exchange on any other front silence this one for a
+        // round (and the `!== onRound` test before it fired on two consecutive rounds - T-015
+        // cadence trace). `match.foughtRound` is still written below as the record
+        // docs/CONTRACTS.md:45 defines; it is no longer read as a gate.
         const combat = combatRules();
         const max = combat.maxStrength;
-        const beatDue = onRound - Number(match.foughtRound ?? -1) >= combat.shotEveryRounds;
+        const beatDue = pairDue(piece, occupant, onRound, combat.shotEveryRounds);
         if (beatDue) {
           const foot = damageFor(piece, occupant, combat);
           const hull = damageFor(occupant, piece, combat);
@@ -1143,6 +1145,7 @@ export function advance(match) {
           occupant.fighting = piece.id;
           piece.fightRounds = Number(piece.fightRounds || 0) + 1;
           occupant.fightRounds = Number(occupant.fightRounds || 0) + 1;
+          stampPair(piece, occupant, onRound);
           match.foughtRound = onRound;
           const footHit = applyDamage(occupant, foot.amount, max);
           const hullHit = applyDamage(piece, hull.amount, max);

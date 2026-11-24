@@ -119,6 +119,25 @@ export function applyDamage(piece, amount, max = combatRules().maxStrength) {
   return { before, dealt, after, dead: dealt >= before };
 }
 
+// PB-211 (D-030): the beat is per PAIR, not per front. Each piece carries the last round it
+// exchanged fire in `lastShotRound`; a pair is due only when BOTH of its members are due. The
+// `max` is load-bearing, not a detail: without it a piece that fired two rounds ago on another
+// front joins a fresh fight and fires at a partner that has never fired, and the partner answers
+// out of turn - a one-sided exchange, which is not what p.22's "damages a single enemy unit once
+// every other round" describes. `?? -1` covers a piece that has never fired and an older saved
+// row, so its first contact is due.
+export function pairDue(a, b, round, shotEveryRounds = combatRules().shotEveryRounds) {
+  const last = Math.max(Number(a?.lastShotRound ?? -1), Number(b?.lastShotRound ?? -1));
+  return Number(round) - last >= Number(shotEveryRounds);
+}
+
+// An exchange belongs to a pair, so both members move their clock - never just the shooter.
+export function stampPair(a, b, round) {
+  const at = Number(round) || 0;
+  if (a) a.lastShotRound = at;
+  if (b) b.lastShotRound = at;
+}
+
 // Which way a cell lies from a piece: the compass letter the walker already stamps in `facing`.
 export function bearing(from, to) {
   const raw = Number(to.x) - Number(from.x);
@@ -432,7 +451,6 @@ export function resolve(match) {
   // The numeric single pass, not chooseTarget per piece: same rule, one walk over the room.
   const targets = computeTargets(pieces);
 
-  const canFire = round - Number(match.foughtRound ?? -1) >= combat.shotEveryRounds;
 
   for (let i = 0; i < pieces.length; i++) {
     const piece = pieces[i];
@@ -461,12 +479,18 @@ export function resolve(match) {
     }
   }
 
-  if (canFire) {
+  // PB-211 (D-030): there is no front-wide beat any more. `match.foughtRound` is still written as
+  // the record docs/CONTRACTS.md:45 defines, but nothing reads it as a gate; each pair answers for
+  // its own clock, so an exchange on one front cannot silence a pair on another for a round.
+  {
     const hits = [];
     for (let i = 0; i < pieces.length; i++) {
       const attacker = pieces[i];
       const target = targets[i];
       if (!target) continue;
+      // The pair's own beat, and the one refinement the ruling carries: BOTH members must be due,
+      // so a piece that fired recently elsewhere cannot fire here while its partner stays silent.
+      if (!pairDue(attacker, target, round, combat.shotEveryRounds)) continue;
       // PB-202: cargo is not silent any more. Its row in the table is the sea cargo row (row 5:
       // [0,18,16,14,0,10,10,5,5] over columns 0-8), so a transport fires 5 at a submarine, 10 at
       // another transport and 18 at infantry ashore - numbers the table supplies, not a blanket
@@ -487,6 +511,9 @@ export function resolve(match) {
       // PB-202: the status line reads `shots` and nothing ever wrote it, so a resolved fight and a
       // dead one both said 0. Count the shot that landed, on the piece that fired it.
       attacker.shots = Number(attacker.shots || 0) + 1;
+      // PB-211 (D-030): both members of the pair move their clock on the exchange. The next due
+      // check for either of them - here or on another front - reads this stamp.
+      stampPair(attacker, target, round);
       log.push({
         type: "shot",
         side: attacker.side,
