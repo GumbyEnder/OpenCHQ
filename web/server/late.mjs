@@ -4,8 +4,9 @@
 // 1942 hide nuke, satellites, foreign aid, intel and cease-fire; 1986 and 2023 have them; the
 // concealed start has oil and the tools it already refuses. Where the original printed no
 // number - a radius, a cost, a damage figure - nothing is invented here: a nuke is refused by
-// default and, when enabled, still deals no damage. The only tool that changes the board is
-// foreign aid, and the archive's own note says it flips a city's owner.
+// default, and when enabled its kill zone is nukes.killRadius, flagged STAND-IN (PB-230). The nuke
+// and foreign aid are the tools that change the board; the archive's own note says aid flips a
+// city's owner.
 
 import { millionsPerBillion, priceOf, rules } from "./rules.mjs";
 import { countryName } from "./countries.mjs";
@@ -193,7 +194,7 @@ export function nukeStatus(match, side) {
 // What the kit does, said out loud, with every unascertained number labelled.
 //
 // The tools existed and the buttons existed; the consequences were only in this file. A player could
-// fire a nuke without being told it deals no damage, or wonder why a launch was refused. This
+// fire a nuke without being told what its blast does, or wonder why a launch was refused. This
 // briefing is the text: a label, a sentence, whether the tool is available right now, and for a
 // nuke the radius the config guards and how many launches are left. Anything the archive never
 // printed is called STAND-IN in the sentence itself, not in a comment.

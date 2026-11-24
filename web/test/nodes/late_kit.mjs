@@ -3,7 +3,7 @@
 // What breaks if this node is removed: 1918 would offer a nuke, intel would not reveal a
 // submarine, the satellite pass would announce itself to the enemy, foreign aid would not
 // flip a city, and a launch would not stop after three. Nothing here invents a radius, a cost
-// or a damage number - a nuke is refused by default and deals no damage when enabled.
+// or a damage number - a nuke is refused by default, and the blast it deals is PB-230's arm.
 
 import { openMatch } from "../../server/match.mjs";
 import { forSeat } from "../../server/view.mjs";
