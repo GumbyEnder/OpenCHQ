@@ -18,6 +18,8 @@ import {
   clickIntent,
   missionMessage,
   orderMessage,
+  hoverOfferKey,
+  hoverOffersOrder,
   ownPieceAt,
   previewLine,
   oilWarning,
@@ -171,6 +173,20 @@ function startSelectionPulse() {
   }, 90);
 }
 let preview = null;
+// PB-177: the destination the server (or the page's own circle test) has just refused. A reply that
+// was already in flight for that cell, and a fresh hover of it, must not put "Click to send the
+// order." back on the board note: a refused target offers no order. Cleared when another cell is
+// hovered or the selection changes.
+let refusedHover = "";
+
+// PB-177: an answered order is a spent offer, so the note has to re-derive rather than keep reading
+// the route that used to be under the pointer. Both the ack path and the two refusal paths call this;
+// nothing here writes element text, so the result line (PB-137 AC4) stays out of its reach.
+function dropHover() {
+  preview = null;
+  hoverKey = "";
+  drawMatch();
+}
 // The intel scan's sweep (T-022, Q51). `intelIds` are the enemy pieces that are on the board only
 // because the scan revealed them: those are bar-local, everything else is untouched. The pass runs
 // once per use, at the original's measured speed, and the round's server-side reveal is hidden
@@ -846,6 +862,7 @@ function clearCommand() {
   placement = null;
   preview = null;
   hoverKey = "";
+  refusedHover = "";
   fogSeen = null;
   fogKey = "";
   // PB-193: Escape and every other clear also disarm the door, so a bomb kept armed through a
@@ -856,9 +873,13 @@ function clearCommand() {
 
 function askRoute(cell) {
   if (!selected || !cell) return;
-  const key = selected.id + ":" + cell.x + "," + cell.y;
+  const key = hoverOfferKey(selected.id, cell);
   if (key === hoverKey) return;
+  // PB-177: a different cell is a new offer, so the refusal marker lapses; the refused cell itself
+  // stays silent - it already has its answer and the click it invites would be refused again.
+  if (refusedHover && key !== refusedHover) refusedHover = "";
   hoverKey = key;
+  if (!hoverOffersOrder(key, refusedHover)) return;
   send(routeRequest(selected, cell));
 }
 
@@ -942,6 +963,7 @@ board.addEventListener("click", (event) => {
     }
     selected = intent.piece;
     preview = null;
+    refusedHover = "";
     hoverKey = selected.id + ":" + selected.x + "," + selected.y;
     // Selecting a piece does not move the camera. It used to centre a zoomed view on the piece,
     // which read as the map jumping under the click that made the selection (T-007 AC10).
@@ -981,6 +1003,11 @@ board.addEventListener("click", (event) => {
         : null;
       if (refusal) {
         say(refusal);
+        // PB-177 item 4: same re-derive as a refusal from the server - the refused cell offers no
+        // order and no route on the board note, so the toast and the note cannot disagree about an
+        // order that never went.
+        refusedHover = hoverOfferKey(selected.id, cell);
+        dropHover();
         // PB-193: a refusal keeps the door armed for the order it refused - a bombing run is not a
         // strike, and the player has not asked for one.
         pendingMission = nextDoorMode(pendingMission, "refused");
@@ -2688,6 +2715,11 @@ function connect() {
         // instant reveal it already had -- the original's satellite did not shade the map.
         if (event.type === "intel" && room && event.side === room.you) startIntelScan();
       }
+      // PB-177 item 1: a mission answers {op:"ack"} rather than {op:"ordered"}, so without this the
+      // board note kept offering "Route: N rounds. Click to send the order." over the cell whose
+      // order had already gone, until the pointer happened to move. The order is spent: drop the
+      // offer and let the note re-derive.
+      if (preview) dropHover();
     } else if (message.op === "delta") {
       applyDelta(message.delta);
     } else if (message.op === "placement") {
@@ -2705,6 +2737,9 @@ function connect() {
     } else if (message.op === "route") {
       // Late replies for another piece are not this selection's route.
       if (!selected || message.piece !== selected.id) return;
+      // PB-177: a reply that was already in flight when the cell was refused (or when the order went)
+      // must not put that cell's offer back on the note. The page asked, the answer is stale.
+      if (!hoverOffersOrder(hoverOfferKey(selected.id, message.to), refusedHover)) return;
       preview = {
         from: { x: selected.x, y: selected.y },
         to: message.to,
@@ -2751,10 +2786,12 @@ function connect() {
       // stays in the console, where a developer can still trace a queued order.
       if (message.id) console.debug("[order " + message.id + "] " + refusal);
       say(refusal);
-      if (preview) {
-        preview = { ...preview, path: [], error: refusal };
-        drawMatch();
-      }
+      // PB-177 item 4: the refusal re-derives the note instead of leaving the previous offer up, and
+      // the hovered cell is remembered by key so a route reply still in flight cannot restore it.
+      refusedHover = hoverKey || (preview && preview.to
+        ? hoverOfferKey(selected && selected.id, preview.to)
+        : "");
+      dropHover();
     }
   });
   socket.addEventListener("close", (event) => {
