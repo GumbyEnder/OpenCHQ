@@ -357,17 +357,27 @@ async function moveOrder(page) {
       roundAtCheck: window.__chq.state().round == null ? null : window.__chq.state().round,
     };
   });
-  const queued = evidence.toasts.filter((text) => /queued and will (be sent|be applied)/.test(text));
+  // PB-238 AC2, three states not two: "Connection is down" is written INSIDE sendOrder() when the
+  // socket is not OPEN (app.js:130), so it proves the click reached sendOrder and the miss is the
+  // transport; "No answer yet" is the 2000 ms watch firing on a socket that WAS open, so the miss is
+  // the ack. Only an empty sampler is the launch/page-state path.
+  const queuedDown = evidence.toasts.filter((text) => /Connection is down/.test(text));
+  const queuedLate = evidence.toasts.filter((text) => /No answer yet/.test(text));
+  const queued = queuedDown.concat(queuedLate);
   const detail = JSON.stringify({
     click: at,
     toastAtCheck: said,
     queuedSentenceInWindow: queued,
+    queuedDownInWindow: queuedDown,
+    queuedLateInWindow: queuedLate,
     flashTextsInWindow: evidence.toasts,
     lastWireLines: evidence.lastWire,
     roundAtCheck: evidence.roundAtCheck,
-    verdict: queued.length
-      ? "the click reached sendOrder (a queued sentence was on the flash); the miss is the ack"
-      : "no queued sentence ever reached the flash: the click did not reach sendOrder (launch/page state)",
+    verdict: queuedDown.length
+      ? "the click reached sendOrder with the socket not OPEN (\"Connection is down\" was on the flash); the miss is the transport"
+      : queuedLate.length
+        ? "the click reached sendOrder on an OPEN socket (\"No answer yet\" was on the flash); the miss is the ack"
+        : "no queued sentence ever reached the flash: the click did not reach sendOrder (launch/page state)",
   });
   check(ordered || /Order sent/.test(said), "the move order is accepted by the server", detail);
   return accepted;
