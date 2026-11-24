@@ -43,13 +43,18 @@ export async function run(ctx) {
   eq(shopFor("1986").map((row) => row.kind), LATE, "the 1986 buy list");
   eq(shopFor("2023").map((row) => row.kind), LATE, "the 2023 buy list");
 
-  // A nuke is on the shelf but refused by default; every other late tool is buyable.
+  // A nuke is on the shelf but refused by default; every other late item is buyable.
   const late = Object.fromEntries(shopFor("1986").map((row) => [row.kind, row]));
   ok(late.nuke && late.nuke.refused, "the 1986 shop does not refuse a nuke by default");
-  for (const kind of ["reconSat", "foreignAid", "intelScan"]) {
+  for (const kind of ["foreignAid", "intelScan"]) {
     ok(late[kind] && !late[kind].refused, kind + " is not buyable in 1986: " + JSON.stringify(late[kind]));
     ok(late[kind].domain === "tool", kind + " is not routed as a tool");
   }
+  // PB-224 (PM 8905 §2): the recon satellite is a UNIT, not a tool. Its row is the shop's "sat"
+  // domain, which buys the piece at a picked point; it is not a one-shot reveal on the tool door.
+  ok(late.reconSat && !late.reconSat.refused, "reconSat is not buyable in 1986: " + JSON.stringify(late.reconSat));
+  ok(late.reconSat.domain === "sat", "reconSat is not routed as a satellite unit: " + JSON.stringify(late.reconSat));
+  ok(late.reconSat.tool === undefined, "reconSat still carries a tool door: " + JSON.stringify(late.reconSat));
   ok(late.killerSat && late.killerSat.refused, "killerSat must say its effect is not recovered");
 
   // 1918 has no late kit and no tanks/aircraft/carriers; 1942 has them but no satellites.

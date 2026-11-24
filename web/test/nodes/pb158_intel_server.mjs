@@ -17,6 +17,8 @@ import { forSeat } from "../../server/view.mjs";
 import { scanSpec, scanState } from "../../public/scan.mjs";
 import { scanActiveFor, scanAnyActive, scanGate, spanCovers } from "../../server/scan.mjs";
 import { rules } from "../../server/rules.mjs";
+// PB-224: the satellite is a piece now, so its reveal is produced by the piece's own round.
+import { buySatellite, tickSatellites } from "../../server/satellite.mjs";
 
 export const name = "pb158_intel_server";
 
@@ -127,14 +129,20 @@ export async function run() {
     fail("the server span wraps to the right edge at pass start");
   }
 
-  // --- the gate is null for a satellite, so that reveal keeps its old rule -----------
+  // --- a satellite's reveal arms no bar, and is anchored to the piece (PB-224) ----------
+  // The satellite used to be a worldwide tool; it is a unit with a radius now, so this arm proves
+  // the two halves that survive: the reveal arms no intel bar, and it reaches only the enemies
+  // inside the piece's own scan radius (the red tank it was placed over, not the three far ones).
   const quiet = board();
-  const sat = useTool(quiet, "blue", "satellite");
-  if (sat.error) fail("a satellite pass was refused: " + sat.error);
+  const bought = buySatellite(quiet, "blue", 100, 120);
+  if (bought.error) fail("a recon satellite was refused: " + bought.error);
+  const satEvents = tickSatellites(quiet);
   if (quiet.scan) fail("a satellite pass armed an intel bar");
-  eq("a satellite still reveals the whole enemy board",
-    forSeat(quiet, "blue", Date.now()).pieces.filter((p) => p.side === "red").length, 4);
+  if (!satEvents.some((event) => event.type === "satellite")) fail("the satellite revealed nothing: " + JSON.stringify(satEvents));
+  eq("a satellite reveals only the enemies inside its own radius",
+    forSeat(quiet, "blue", Date.now()).pieces.filter((p) => p.side === "red").map((p) => p.id), ["red:a"]);
   eq("no scan means no gate", scanGate(quiet, "blue", quiet.pieces[1], Date.now()), null);
+  eq("the retired satellite tool is not a door", Boolean(useTool(board(), "blue", "satellite").error), true);
 
   // --- the scanned side's own view is untouched --------------------------------------
   eq("the scanned seat still sees all four of its own pieces",

@@ -21,6 +21,9 @@ import { followEscorts } from "./escort.mjs";
 import { holderOf as capitalHolder } from "./capitals.mjs";
 import { CELL_W } from "./board.mjs";
 import { siteAtCell } from "./siteindex.mjs";
+// PB-224: the recon satellites fly, look and fall in their own pass. They never enter advance():
+// they are above the board, so no cell, no fight and no capture belongs to them.
+import { tickSatellites } from "./satellite.mjs";
 
 // The alarm speaks when enemy troops are this close to a capital. Eight cells is the sight rule's
 // own radius: inside it, the player can see them coming, so the log should not be quieter than the
@@ -112,7 +115,7 @@ export function tickMatch(match) {
   // Modules that are still stubs return [] (or nothing). A round does not depend on them
   // producing events; it only depends on them being called in this order: advance, attrition,
   // combat, entrench, repair, capture, air, upkeep, pay (T-003's order, from Manual p.20-25).
-  for (const step of [advance, attritionStep, resolve, tickEntrench, repairStep, occupy, tickAir, upkeep, pay]) {
+  for (const step of [advance, tickSatellites, attritionStep, resolve, tickEntrench, repairStep, occupy, tickAir, upkeep, pay]) {
     const produced = step(match);
     if (Array.isArray(produced)) events.push(...produced);
   }

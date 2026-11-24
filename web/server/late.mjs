@@ -77,17 +77,18 @@ export function homeSetComplete(match) {
 export const CEASEFIRE_NOTE = "Cease fire accepted.";
 export const NUKE_NOTE = "A nuke is refused.";
 
-export const TOOLS = Object.freeze(["buy", "entrench", "intel", "satellite", "aid", "ceasefire", "nuke", "oil"]);
+// PB-224 (PM 8905 §2): "satellite" is NOT a tool any more. A recon satellite is an owned unit with
+// a position, a radius and fuel (satellite.mjs), so the buy is the piece and the reveal is the
+// piece's, each round. The old door is gone rather than left as a second, worldwide answer.
+export const TOOLS = Object.freeze(["buy", "entrench", "intel", "aid", "ceasefire", "nuke", "oil"]);
 
 // PB-235 (manual p.14: foreign aid is "used mostly in the pre-game and cease-fire portions"): the
 // lobby's hold gate refuses every tool while the clock is not running, because spending into a pause
 // is how a pause becomes a free turn. That guard is right for a pause, but the PRE-GAME is not a
 // pause: it is round 0 with the clock not yet started, and aid is the one tool the manual places
-// there. So the gate asks this function instead of naming one exception itself: a satellite pass is
-// never lost to a hold (the old exception, kept), and aid opens at round 0 only. A hold after the
-// first round has run is still a pause and still refuses. A room whose round is missing fails closed.
+// there. A hold after the first round has run is still a pause and still refuses. A room whose round
+// is missing fails closed.
 export function toolOpensWhileHeld(match, tool) {
-  if (tool === "satellite") return true;
   if (tool !== "aid") return false;
   // Fail closed: `Number(null)` is 0 and `Number(undefined)` is NaN, so a room that lost its match
   // or its round must read as "not the pre-game" rather than as round 0.
@@ -130,7 +131,6 @@ const OIL_ERAS = new Set(["1986", "2023", "9999"]);
 // A tool with no price entry costs nothing; a tool with a price is charged from the seat's pool.
 const PRICE_KIND = Object.freeze({
   intel: "intelScan",
-  satellite: "reconSat",
   aid: "foreignAid",
   nuke: "nuke",
   ceasefire: null,
@@ -224,10 +224,6 @@ export function kitBriefing(match, side) {
 
   const foes = (match && Array.isArray(match.pieces) ? match.pieces : [])
     .filter((piece) => piece && piece.side !== side).length;
-  // PB-222: a submarine is never part of a satellite pass (L326/L329/L936), so a board whose only
-  // enemies are submerged has nothing for the pass to show and the row says so.
-  const surfaceFoes = (match && Array.isArray(match.pieces) ? match.pieces : [])
-    .filter((piece) => piece && piece.side !== side && piece.kind !== "submarine").length;
   // PB-226b: a neutral city (owner null) is a legal target too, so the gate is "not mine", not
   // "held by the other side" - counting only hostile cities disabled the row on a board of neutrals.
   // PB-227: a city inside the opponent's home country is refused by aidTarget, so it must not keep
@@ -243,9 +239,6 @@ export function kitBriefing(match, side) {
 
   add("intel", "Intel scan", "Every enemy unit is revealed for one round, and the other side is told it was read.",
     foes > 0, foes > 0 ? null : "There is nothing to reveal.");
-  add("satellite", "Satellite pass",
-    "The same reveal, and it is quiet: nobody is told. Submarines are left out of it.",
-    surfaceFoes > 0, surfaceFoes > 0 ? null : "There is nothing above the water to reveal.");
   add("aid", "Foreign aid", "Turns the nation of the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner; the manual says the player selects the city, that a city inside the opponent's home country can never be a target (p.30), and that a nation moves one step at a time, hostile to neutral and neutral to allied, with more gifts needed the more cities it has. It also says the other side can give aid to the same nation, negating your efforts: a gift from the other side to the same nation cancels one gift you had banked there. That arithmetic and the one-for-one cancel are a " + STAND_IN + ": the archive never printed either count.",
     turnable > 0, turnable > 0 ? null : (homeKnown ? "There is no city to turn." : AID_HOME_UNKNOWN));
   add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
@@ -404,36 +397,29 @@ export function useTool(match, side, tool, target) {
   const round = Number(match.round) || 0;
   const events = [];
 
-  if (name === "intel" || name === "satellite") {
-    const foes = (match.pieces || []).filter((piece) => piece && piece.side !== side);
-    // PB-222: a satellite pass is air/satellite scanning, and the manual keeps submarines out of it
-    // — L326 "except submarines, which remain hidden", L329 "Submarines are always hidden from air
-    // and satellite scanning", L936 "all enemy units are exposed except submarines". Intel keeps the
-    // p.31 bar and its own stamp, so the two tools stop sharing one unconditional write.
-    const shown = name === "satellite"
-      ? foes.filter((piece) => piece.kind !== "submarine")
-      : foes;
+  // PB-224: the intel scan stays a tool; the satellite's reveal is the PIECE's now (satellite.mjs)
+  // and is not reachable through this door. A call that still names "satellite" is refused by the
+  // TOOLS membership check above, so there is no second, worldwide reveal left in the kit.
+  if (name === "intel") {
+    const shown = (match.pieces || []).filter((piece) => piece && piece.side !== side);
     if (shown.length === 0) return { error: "There is nothing to reveal." };
     const paid = charge(match, side, name);
     if (paid.error) return paid;
     for (const piece of shown) piece.revealedRound = round;
     // PB-158: the reveal is the bar's, so the pass is armed on the server at the same instant.
     // `view.forSeat` then sends only the pieces whose column the bar covers, and stops sending
-    // them once the trailing edge has passed (no lingering: Q51). A satellite pass stays a quiet
-    // whole-round reveal and does not arm this.
-    if (name === "intel") beginScan(match, side, Date.now(), round);
+    // them once the trailing edge has passed (no lingering: Q51).
+    beginScan(match, side, Date.now(), round);
     events.push({
-      type: name === "intel" ? "intel" : "satellite",
+      type: "intel",
       side,
       round,
       reveals: shown.length,
       cost: paid.price,
-      note: name === "intel" ? intelNote(paid.price) : SATELLITE_NOTE,
+      note: intelNote(paid.price),
     });
-    if (name === "intel") {
-      // Intel tells the opponent it was read. The satellite pass is quiet.
-      events.push({ type: "intel_seen", side: side === "blue" ? "red" : "blue", by: side, round });
-    }
+    // Intel tells the opponent it was read.
+    events.push({ type: "intel_seen", side: side === "blue" ? "red" : "blue", by: side, round });
     return { ok: true, events };
   }
 

@@ -1,12 +1,16 @@
-// PB-222 clause 1: a satellite pass never carries an enemy submarine — pinned on the wire, not on
-// the engine's return.
+// PB-222 clause 1, moved onto the piece by PB-224: a satellite's recon radius never carries an enemy
+// submarine — pinned on the wire, not on the engine's return.
 //
-// What fails if this is removed: `useTool("satellite")` stamps every enemy piece, view.forSeat's
-// revealedRound branch then beats the sub rule in visibleEnemy, and the pass sends a submarine with
-// its id AND its position inside the seat's frame — the live playtest frame that listed all 8 red
-// units worldwide (match 238994d45b223bfa, red:sea at (79,74)). The manual keeps the sub out of it:
-// L326 "except submarines, which remain hidden", L329 "Submarines are always hidden from air and
-// satellite scanning", L936 "all enemy units are exposed except submarines".
+// What fails if this is removed: the satellite's per-round pass stamps every enemy piece inside its
+// radius, view.forSeat's revealedRound branch then beats the sub rule in visibleEnemy, and the pass
+// sends a submarine with its id AND its position inside the seat's frame. The manual keeps the sub
+// out of it: L326 "except submarines, which remain hidden", L329 "Submarines are always hidden from
+// air and satellite scanning", L936 "all enemy units are exposed except submarines".
+//
+// PB-224 (PM 8905 §2) changed the MECHANISM, not the rule: the reveal is no longer a worldwide tool
+// (`useTool("satellite")`, retired) but the per-round pass of an owned satellite piece with a radius.
+// The hull and the sub in this fixture sit INSIDE the same radius, so a correct build reveals exactly
+// one of them; a build that still stamps everything reds the count, the stamp and the wire together.
 //
 // The frame asserted here is `forSeat(match, "blue")` — the object the socket sends — so a fix that
 // only skips the sub in a count, or only filters in the page, still reds this node.
@@ -18,6 +22,7 @@ import { openMatch } from "../../server/match.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { scanSpec } from "../../public/scan.mjs";
 import { kitBriefing, useTool } from "../../server/late.mjs";
+import { buySatellite, satelliteRules, tickSatellites } from "../../server/satellite.mjs";
 
 export const name = "pb222_satellite_sub";
 
@@ -34,17 +39,20 @@ function piece(id, side, domain, kind, x, y) {
 
 // Era 1986, not 9999: the concealed start's capital gate would withhold the whole enemy loop and
 // the pass would look correct for the wrong reason (see PB-223).
+// The opening satellite pair (PM 8913 §2) is pinned in pb224_satellite_unit; this fixture starts
+// from an EMPTY orbit so "before one was bought" measures the buy and not the p.12 opening.
 function fresh() {
   const match = openMatch("1986", []);
   match.clock = "running";
   match.sides.blue.cash = 50000;
   match.sides.red.cash = 50000;
   match.round = 7;
+  match.satellites = [];
   return match;
 }
 
-const SUB_X = 200;
-const SUB_Y = 100;
+const SUB_X = 242;
+const SUB_Y = 22;
 const HULL_X = 240;
 const HULL_Y = 20;
 
@@ -55,18 +63,26 @@ export async function run() {
   const hull = piece("red:cruiser-4", "red", "sea", "cruiser", HULL_X, HULL_Y);
   match.pieces = [own, sub, hull];
 
+  // The fixture is only a fair test if the submarine is inside the radius: assert it, so a radius
+  // change cannot make this node pass by accident.
+  const radius = satelliteRules().scanRadius;
+  const subDistance = Math.max(Math.abs(SUB_X - HULL_X), Math.abs(SUB_Y - HULL_Y));
+  if (subDistance > radius) fail("the submarine sits outside the scan radius: " + subDistance + " > " + radius);
+
   // --- before the pass, neither enemy is on the wire ---------------------------------------
   const before = forSeat(match, "blue");
   const beforeIds = before.pieces.map((entry) => entry.id);
   if (beforeIds.includes("red:sub-9") || beforeIds.includes("red:cruiser-4")) {
     fail("an enemy was sent before any reveal: " + beforeIds.join(","));
   }
+  if ((before.satellites || []).length !== 0) fail("a satellite was in orbit before one was bought");
 
   // --- the pass shows the hull and never the sub -------------------------------------------
-  const pass = useTool(match, "blue", "satellite");
-  if (pass.error) fail("a satellite pass was refused with a hull on the board: " + pass.error);
-  const event = pass.events.find((entry) => entry.type === "satellite");
-  if (!event) fail("the pass produced no satellite event: " + JSON.stringify(pass.events));
+  const bought = buySatellite(match, "blue", HULL_X, HULL_Y);
+  if (bought.error) fail("a recon satellite was refused with a hull on the board: " + bought.error);
+  const events = tickSatellites(match);
+  const event = events.find((entry) => entry.type === "satellite");
+  if (!event) fail("the pass produced no satellite event: " + JSON.stringify(events));
 
   // The payload pin comes first: the frame the seat receives must not carry the sub at all. Any
   // engine-side leak (a missing kind test, or a stamp loop left over the unfiltered set) reds here.
@@ -89,6 +105,10 @@ export async function run() {
   }
   if (wire.routes && Object.prototype.hasOwnProperty.call(wire.routes, "red:sub-9")) {
     fail("the submarine's route is in the wire frame");
+  }
+  // PB-224 AC5: the satellite itself rides the frame, for the seat that bought it.
+  if (!(wire.satellites || []).some((sat) => sat.id === bought.satellite.id)) {
+    fail("the bought satellite is not in the seat's own frame");
   }
 
   // The mechanism, stated on the piece: the pass did not stamp the sub, and did stamp the hull.
@@ -114,20 +134,22 @@ export async function run() {
     fail("intel's bar never reached the submarine: " + scanned.join(","));
   }
 
-  // --- a board with only a submarine has nothing for a pass to show, and is not charged ------
+  // --- a pass over only a submarine reveals nothing, and says nothing -----------------------
   const submerged = fresh();
   submerged.pieces = [piece("blue:inf-2", "blue", "land", "infantry", 10, 10),
     piece("red:sub-2", "red", "sea", "submarine", 150, 90)];
-  const cashBefore = submerged.sides.blue.cash;
-  const empty = useTool(submerged, "blue", "satellite");
-  if (!empty.error) fail("a pass with only a submarine was accepted: " + JSON.stringify(empty));
-  if (submerged.sides.blue.cash !== cashBefore) {
-    fail("a refused pass charged the seat: " + cashBefore + " -> " + submerged.sides.blue.cash);
+  const satBought = buySatellite(submerged, "blue", 150, 90);
+  if (satBought.error) fail("a satellite over a submarine was refused: " + satBought.error);
+  const subEvents = tickSatellites(submerged);
+  if (subEvents.some((entry) => entry.type === "satellite")) {
+    fail("a pass over only a submarine produced a reveal: " + JSON.stringify(subEvents));
   }
-  const row = kitBriefing(submerged, "blue").find((entry) => entry.name === "satellite");
-  if (!row) fail("the kit lost its satellite row");
-  if (row.allowed !== false) fail("the kit offers a pass with only a submarine on the board: " + JSON.stringify(row));
-  if (!/submarine/i.test(row.text)) fail("the satellite row does not say submarines stay hidden: " + row.text);
+  if (submerged.pieces[1].revealedRound !== undefined) fail("a sub-only pass stamped the submarine");
   const shown = forSeat(submerged, "blue").pieces.map((entry) => entry.id);
-  if (shown.includes("red:sub-2")) fail("a refused pass still sent the submarine: " + shown.join(","));
+  if (shown.includes("red:sub-2")) fail("a sub-only pass still sent the submarine: " + shown.join(","));
+
+  // --- the retired tool is not a second door ------------------------------------------------
+  if (!useTool(fresh(), "blue", "satellite").error) fail("the retired satellite tool still runs");
+  const kitNames = kitBriefing(fresh(), "blue").map((entry) => entry.name);
+  if (kitNames.includes("satellite")) fail("the kit still offers the retired satellite tool");
 }

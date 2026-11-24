@@ -17,12 +17,22 @@ export const DOMAIN_BY_KIND = Object.freeze({
 });
 
 const TOOL_OF = Object.freeze({
-  reconSat: "satellite",
   killerSat: null,
   nuke: "nuke",
   foreignAid: "aid",
   intelScan: "intel",
 });
+
+// PB-224 (PM 8905 §2): reconSat is a UNIT, not a tool. Buying one creates an owned, persistent
+// satellite at the point the player picks (manual p.29 "purchased like any other unit"); it is not a
+// one-shot worldwide reveal any more. It is kept out of DOMAIN_BY_KIND on purpose: economy.buy's
+// placement rules are ground rules (a friendly city or base), and a satellite has neither. The shop
+// row is tagged domain "sat" and lobby.buyOp routes it to satellite.buySatellite().
+const SAT_KINDS = new Set(["reconSat"]);
+
+export function isSatelliteKind(kind) {
+  return SAT_KINDS.has(String(kind ?? ""));
+}
 
 export function shopFor(era, options = {}) {
   const key = String(era ?? "1986");
@@ -30,6 +40,10 @@ export function shopFor(era, options = {}) {
   for (const kind of rosterFor(key)) {
     const price = priceOf(kind);
     if (!Number.isFinite(price)) continue;
+    if (isSatelliteKind(kind)) {
+      shop.push({ kind, price, domain: "sat" });
+      continue;
+    }
     if (Object.hasOwn(DOMAIN_BY_KIND, kind)) {
       shop.push({ kind, price, domain: DOMAIN_BY_KIND[kind] });
       continue;

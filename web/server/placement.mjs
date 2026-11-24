@@ -59,6 +59,8 @@ import { readFileSync } from "node:fs";
 import { CELL_W } from "./board.mjs";
 import { placementRules, readinessRules } from "./rules.mjs";
 import { isSiteReady, placementBoxState, readyRoundOf, unreadyRefusal } from "./readiness.mjs";
+// PB-224: a satellite's legal aim is every cell, so this module needs to recognise the kind.
+import { isSatelliteKind } from "./shop.mjs";
 
 const SEA_KINDS = new Set(["cruiser", "carrier", "submarine"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
@@ -426,6 +428,21 @@ export function placementMask(match, side, kind, board) {
   const cells = board && Array.isArray(board.cells) ? board.cells : null;
   if (!cells || w <= 0 || h <= 0 || cells.length !== w * h) {
     return { error: "This host has no board, so there is nowhere to place a unit." };
+  }
+  // PB-224 (PM 8905 §2 AC1): a satellite is placed at the point the player picks on the map, not on
+  // a friendly city. Manual p.29: satellites are "purchased like any other unit" and you give one a
+  // destination, so every cell is a legal aim and there is no own-site rule to paint.
+  if (isSatelliteKind(kind)) {
+    const mask = new Uint8Array(w * h);
+    mask.fill(1);
+    return {
+      ok: true, width: w, height: h, mask, count: w * h, ready: w * h, unready: 0,
+      domain: "sat", layer: "orbit",
+      rule: "A satellite goes anywhere: click the point you want it over.",
+      radius: 0,
+      snap: { px: 0, cells: 0 },
+      box: { px: 0 },
+    };
   }
   const domain = domainOf(kind);
   const layer = layerOf(kind);

@@ -28,6 +28,9 @@ import { ownershipOf } from "./territory.mjs";
 // copy of the rule.
 import { payoutFor } from "./economy.mjs";
 import { scanGate } from "./scan.mjs";
+// PB-224: an orbiting satellite is public information - manual p.12 shows the blue one over the
+// Atlantic AND the red one over Europe - so both sides' satellites ride every seat's payload.
+import { satelliteView } from "./satellite.mjs";
 
 const SIDES = ["blue", "red"];
 const CONCEALED_ERA = "9999";
@@ -252,6 +255,7 @@ export function forSeat(match, side, now = Date.now()) {
       // Territory is public: both sides see the same ground and the same owners. It is a view of
       // the site table, so nothing here is a second source of truth (T-018).
       ownership: ownershipOf(match),
+      satellites: satelliteView(match),
       roundSeconds: roundLength(),
     };
   }
@@ -336,6 +340,9 @@ export function forSeat(match, side, now = Date.now()) {
     // One entry per region (184 of them), in region id order: "blue", "red" or null. The page
     // fills the ground from this and the geometry that came with the board.
     ownership: ownershipOf(match),
+    // PB-224: both sides' satellites, always. AC5's Show Satellites view reads this list; what a
+    // satellite SEES is still gated above by revealedRound, so this leaks no ground unit.
+    satellites: satelliteView(match),
     roundSeconds: roundLength(),
   };
 }

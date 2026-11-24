@@ -494,21 +494,44 @@ function cycleTheme() {
 // Terrain is the original's map; ownership is the original's other view (manual printed p.32):
 // countries filled in the owner's colour over the same grid, units still on top. The toggle only
 // changes what is drawn under the units, never the camera or the board.
+//
+// PB-224 AC5 adds the original's third view (manual p.29 L924): "Show Satellites" draws the orbital
+// picture - every satellite of BOTH sides with the circle it scans, and the insert box with its
+// fuel. p.12 shows both satellites at once, so this view hides nothing the board did not already
+// carry: the server ships both sides' satellites to both seats.
+const VIEW_MODES = ["terrain", "political", "satellites"];
+const VIEW_LABEL = { terrain: "Terrain", political: "Ownership", satellites: "Satellites" };
 let viewMode = "terrain";
 
 function setViewMode(next) {
-  viewMode = next === "political" ? "political" : "terrain";
+  viewMode = VIEW_MODES.includes(next) ? next : "terrain";
   const button = document.getElementById("viewToggle");
   if (button) {
-    button.classList.toggle("armed", viewMode === "political");
-    // PB-063: the label names the view that is ON, and the status line names the same thing. It used
-    // to name the view a click would switch to while the status line said "political".
-    button.textContent = viewMode === "political" ? "Ownership" : "Terrain";
-    button.setAttribute("aria-pressed", viewMode === "political" ? "true" : "false");
-    button.title = viewMode === "political" ? "Showing who holds what; click for terrain (P)"
-      : "Showing terrain; click for who holds what (P)";
+    button.classList.toggle("armed", viewMode !== "terrain");
+    // PB-063: the label names the view that is ON, and the status line names the same thing.
+    button.textContent = VIEW_LABEL[viewMode];
+    button.setAttribute("aria-pressed", viewMode !== "terrain" ? "true" : "false");
+    const order = VIEW_MODES[(VIEW_MODES.indexOf(viewMode) + 1) % VIEW_MODES.length];
+    button.title = viewMode === "terrain" ? "Showing terrain; click for who holds what (P)"
+      : viewMode === "political" ? "Showing who holds what; click for satellites (P)"
+        : "Showing satellites of both sides; click for terrain (P)";
+    button.setAttribute("data-next", order);
   }
   drawMatch();
+}
+
+function cycleViewMode() {
+  setViewMode(VIEW_MODES[(VIEW_MODES.indexOf(viewMode) + 1) % VIEW_MODES.length]);
+}
+
+// PB-224: a satellite flies ABOVE the board, so the server keeps it in `room.satellites` and it
+// never enters the ground piece list (it must not block a cell, capture a city or be shot at). The
+// page paints and selects it like any other piece, so one merge feeds every reader.
+function piecesOnScreen() {
+  const ground = room && Array.isArray(room.pieces) ? room.pieces : [];
+  const sats = room && Array.isArray(room.satellites) ? room.satellites : [];
+  if (!sats.length) return ground;
+  return ground.concat(sats.map((sat) => ({ ...sat, sat: true, strength: 1, maxStrength: 1 })));
 }
 
 let sawRoom = false;
@@ -754,9 +777,14 @@ function drawMatch() {
     camera = centerOn(selected, view);
     view = camera;
   }
-  const result = paintMatch(ctx, boardPayload, room, {
+  // PB-224: the orbital list is merged in for painting and hit-testing only; `room.satellites`
+  // stays the payload's own array so the Show Satellites box reads fuel and radius unmodified.
+  const screenPieces = piecesOnScreen();
+  const satellites = room && Array.isArray(room.satellites) ? room.satellites : [];
+  const result = paintMatch(ctx, boardPayload, room ? { ...room, pieces: screenPieces } : room, {
     view,
     own: room && room.you,
+    satellites,
     // The PM's floor is a screen size; the canvas draws in device pixels, so the floor is scaled by
     // the same ratio the cells are.
     badgeMinPx: BADGE_MIN_PX * dpr(),
@@ -787,6 +815,9 @@ function drawMatch() {
     political: result.political || 0,
     painted: result.painted || 0,
     tally: result.tally || null,
+    // PB-224 AC5: what the Show Satellites layer actually drew (rings, and rows in the insert box).
+    satelliteRings: result.satelliteRings || 0,
+    satellites: result.satellites || 0,
   };
   // While a unit is armed, the cells the server will accept are painted underneath everything else.
   if (placement) paintPlacement(ctx, placement, view);
@@ -810,12 +841,18 @@ function drawMatch() {
     ? "Ownership: blue holds " + result.tally.blue + ", red holds " + result.tally.red +
       ", neutral " + result.tally.neutral + "."
     : "";
+  // PB-224 AC5: in Show Satellites the note counts the orbital picture, from the same list the box
+  // and the rings read.
+  const satelliteNote = viewMode === "satellites"
+    ? "Satellites: blue " + satellites.filter((sat) => sat.side === "blue" && sat.orbit !== false).length +
+      ", red " + satellites.filter((sat) => sat.side === "red" && sat.orbit !== false).length + "."
+    : "";
   // While a piece is selected, the note keeps naming it (T-030 AC8 item 4). A route hover or a
   // refusal speaks first, because it is about the cell under the pointer; after that the selection
   // wins over the political tally, the crossing warning and the generic grid line, all of which used
   // to overwrite the selection while the ring was still on the board.
   const selectionLine = [selectionNote(selected), cargoNote(selected) || airNote(selected)].filter(Boolean).join(" ");
-  boardNote.textContent = previewLine(preview) || selectionLine || politicalNote || escortNote ||
+  boardNote.textContent = previewLine(preview) || selectionLine || satelliteNote || politicalNote || escortNote ||
     statusLine(boardPayload, room, result);
   // A capital under threat is the loudest thing on the page, and it stays up until the threat
   // passes: the last ten rounds of a match are not the time to be quiet.
@@ -944,7 +981,7 @@ board.addEventListener("click", (event) => {
   // that, the selected badge's box covers its neighbours and a selected unit has no one-cell move
   // anywhere (the regression T-028 shipped and the standing move-order leg caught).
   const point = screenPoint(event);
-  const intent = clickIntent(room.pieces, viewForCanvas(), point.x, point.y, {
+  const intent = clickIntent(piecesOnScreen(), viewForCanvas(), point.x, point.y, {
     side: room.you,
     selectedId: selected ? selected.id : null,
     badgeMinPx: BADGE_MIN_PX * dpr(),
@@ -1067,8 +1104,9 @@ function hideBadgeTip() {
 
 function hoverBadge(event) {
   if (!badgeTip) return;
-  const pieces = room && Array.isArray(room.pieces) ? room.pieces : null;
-  if (!pieces || !pieces.length) return hideBadgeTip();
+  // PB-224: a satellite is hoverable and selectable like any other badge.
+  const pieces = piecesOnScreen();
+  if (!pieces.length) return hideBadgeTip();
   const view = viewForCanvas();
   const at = screenPoint(event);
   const group = badgeAt(pieces, view, at.x, at.y, { badgeMinPx: BADGE_MIN_PX * dpr() });
@@ -1304,7 +1342,11 @@ window.addEventListener("keydown", (event) => {
   }
   if (event.key === "b" || event.key === "B") return openDialog("buy");
   if (event.key === "e" || event.key === "E") return openDialog("economy");
-  if (event.key === "p" || event.key === "P") return setViewMode(viewMode === "political" ? "terrain" : "political");
+  if (event.key === "p" || event.key === "P") return cycleViewMode();
+  // Manual p.12: "Press Satellite." One key, straight to the orbital view (PB-224 AC5).
+  if (event.key === "s" || event.key === "S") {
+    return setViewMode(viewMode === "satellites" ? "terrain" : "satellites");
+  }
   if (event.key === "t" || event.key === "T") return cycleTheme();
   if (event.key === "+" || event.key === "=") return zoomStep(1);
   if (event.key === "-" || event.key === "_") return zoomStep(-1);
@@ -1347,7 +1389,7 @@ function paintStripInfo(room) {
 document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1));
 document.getElementById("camOut")?.addEventListener("click", () => zoomStep(-1));
 document.getElementById("camFit")?.addEventListener("click", () => refit());
-document.getElementById("viewToggle")?.addEventListener("click", () => setViewMode(viewMode === "political" ? "terrain" : "political"));
+document.getElementById("viewToggle")?.addEventListener("click", () => cycleViewMode());
 document.getElementById("camFollow")?.addEventListener("click", () => setFollow(!following));
 document.getElementById("themeToggle")?.addEventListener("click", () => cycleTheme());
 
@@ -1958,6 +2000,9 @@ function applyDelta(delta) {
     // Who holds each region rides whole when the site table moves, so a capture recolours the
     // ground on the same frame the city changes hands (T-018 AC4).
     ownership: delta.ownership === undefined ? room.ownership : delta.ownership,
+    // PB-224: the orbital list rides every delta whole. It is at most a few rows, and a satellite
+    // that moved without its row would paint a ring in the wrong place for a whole frame window.
+    satellites: Array.isArray(delta.satellites) ? delta.satellites : room.satellites,
     // The end of a match is a one-round fact, and the delta is the frame most seats see it in. The
     // page used to learn "over" only from a whole frame, so a seat on deltas kept playing past the
     // end - the harness watched one do it for ten minutes.
@@ -1970,7 +2015,7 @@ function applyDelta(delta) {
   // click-time object, so its `inactive` count froze: the note read "Away ... 8 rounds" for every
   // delta-only round and only corrected itself when a full frame happened to land (the PM's live
   // read on 6d4ecd3, rounds 37-48). Re-point by id; a vanished id still clears the selection.
-  selected = refreshSelection(room.pieces, selected);
+  selected = refreshSelection(piecesOnScreen(), selected);
   if (!selected) {
     preview = null;
     hoverKey = "";
@@ -2216,9 +2261,13 @@ const DIALOG_PAINTERS = {
       } else {
         // PB-046: a hull is not placed on docks alone - D-025 added coastal cities and bases - and a
         // land unit goes on a city or a base, so the prompt names the cells the mask actually paints.
-        line.title = "Arm this, then click one of your " + (row.domain === "sea"
-          ? "highlighted docks, or a coastal city or base"
-          : "highlighted cities or bases") + ".";
+        // PB-224: a satellite is aimed anywhere on the map, not at a friendly site. The mask the
+        // server returns is the whole board, so the whole board is what the row promises.
+        line.title = row.domain === "sat"
+          ? "Arm this, then click any point on the map to put the satellite over it."
+          : "Arm this, then click one of your " + (row.domain === "sea"
+            ? "highlighted docks, or a coastal city or base"
+            : "highlighted cities or bases") + ".";
         line.addEventListener("click", () => {
           // PB-147: the over frame can land between the panel's paint and this click. Arming here
           // would put a placement frame on the wire for a match that takes none, so the row reads the
@@ -2233,9 +2282,11 @@ const DIALOG_PAINTERS = {
           // The sentence names the rule the server just enforced: a site cell this side owns,
           // not a radius and not coastal water (D-019).
           // PB-046: the prompt says what is highlighted, not one outdated word for it.
-          say("Buy " + row.kind + ": " + (row.domain === "sea"
-            ? "click one of the highlighted docks, or a coastal city or base, to place it."
-            : "click one of the highlighted cities or bases you hold to place it."));
+          say(row.domain === "sat"
+            ? "Buy " + row.kind + ": click the point on the map you want the satellite over."
+            : "Buy " + row.kind + ": " + (row.domain === "sea"
+              ? "click one of the highlighted docks, or a coastal city or base, to place it."
+              : "click one of the highlighted cities or bases you hold to place it."));
           closeDialog();
         });
       }
@@ -2736,7 +2787,7 @@ function connect() {
       // rounds" after the aircraft was ready again. Find the piece by id; no piece under that id
       // means nothing is selected any more.
       if (selected) {
-        selected = refreshSelection(room && room.pieces, selected);
+        selected = refreshSelection(room && piecesOnScreen(), selected);
         if (!selected) {
           preview = null;
           hoverKey = "";

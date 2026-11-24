@@ -4,11 +4,12 @@
 // into a pause is how a pause becomes a free turn. That is right for a mid-war hold and wrong for the
 // pre-game: manual p.14 says foreign aid is "used mostly in the pre-game and cease-fire portions",
 // and the pre-game is round 0 with the clock not yet started. So the gate asks
-// `toolOpensWhileHeld(match, tool)`: satellite is never lost to a hold (the old exception), aid opens
-// at round 0 only, and a hold after the first round has run is still a pause.
+// `toolOpensWhileHeld(match, tool)`: aid opens at round 0 only, and a hold after the first round has
+// run is still a pause. (PB-224 retired the satellite TOOL and with it the old never-lost exception;
+// a satellite is a unit now, and buying one is not a tool use at all.)
 //
 // Two arms, because each catches a different regression:
-//   - the module arm pins the predicate (round 0 vs round > 0, the satellite exception, fail-closed
+//   - the module arm pins the predicate (round 0 vs round > 0, the retired satellite tool, fail-closed
 //     on a room with no round);
 //   - the wire arm drives the real lobby over the suite's server: a bot room is held at round 0, an
 //     aid is accepted (an `ack` with an aid event, not the clock error), nuke still gets
@@ -73,8 +74,10 @@ export async function run(ctx) {
   equal(toolOpensWhileHeld(fixture(0), "aid"), true, "aid opens on a held clock at round 0");
   equal(toolOpensWhileHeld(fixture(1), "aid"), false, "aid is refused on a held clock after round 0");
   equal(toolOpensWhileHeld(fixture(6), "aid"), false, "aid is refused on a held clock at round 6");
-  equal(toolOpensWhileHeld(fixture(0), "satellite"), true, "the satellite pass still opens at round 0");
-  equal(toolOpensWhileHeld(fixture(6), "satellite"), true, "the satellite pass still opens mid-war");
+  // PB-224: there is no satellite TOOL any more - a recon satellite is a bought unit - so the old
+  // exception is gone with it. A held clock opens nothing but aid.
+  equal(toolOpensWhileHeld(fixture(0), "satellite"), false, "the retired satellite tool must not open at round 0");
+  equal(toolOpensWhileHeld(fixture(6), "satellite"), false, "the retired satellite tool must not open mid-war");
   for (const tool of ["nuke", "intel", "ceasefire", "buy", "oil"]) {
     equal(toolOpensWhileHeld(fixture(0), tool), false, tool + " stays refused on a held clock at round 0");
   }

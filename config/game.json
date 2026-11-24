@@ -221,6 +221,19 @@
     "counterAid": true,
     "note": "PB-228, TWO STAND-INS. Manual p.30: aid moves a NATION one step, hostile -> neutral -> allied; a nation with more cities takes more gifts; and \"your opponent can give foreign aid to the same targets you do, thus negating your efforts\". The archive printed neither the gifts-per-city count nor HOW a rival's gift cancels, so giftsPerCity (the multiplier) and counterAid (one-for-one: a gift from the other side to the same nation cancels one gift the payer had banked there, BEFORE the new gift banks) are both labelled stand-ins, not decoded values (Open RE Q52: UNVERIFIED, needs disassembly/DOSBox). counterAid false is the arms-race reading, where each side's campaign runs on its own."
   },
+  "satellite": {
+    "scanRadius": 6,
+    "speedCells": 12,
+    "fuelCapacity": 3,
+    "fuelPerMove": 1,
+    "startPerSide": { "1986": 1, "2023": 1 },
+    "startCells": {
+      "blue": { "x": 116, "y": 38 },
+      "red": { "x": 158, "y": 31 }
+    },
+    "killRadius": 6,
+    "note": "PB-224, EVERY NUMBER HERE IS A NAMED STAND-IN (PM 8905 §2 and PM 8913 §2, ruled 2026-11-24). Manual p.12 (L326-328) shows a blue satellite over the Atlantic and the red one over Europe, each side already up, selected and given a destination; p.29 (L924-937) says satellites are bought like any other unit, move much faster than ground units, spend booster fuel on each move, and sweeping eventually knocks one out of the sky; its recon radius exposes every enemy unit except submarines (L326, L329, L936). The archive prints NO number for the scan radius, the speed, the fuel capacity or the per-move burn, so scanRadius 6, speedCells 12, fuelCapacity 3 and fuelPerMove 1 are stand-ins, not decoded values. startPerSide follows PM 8913 §2: 1 for 1986 and 2023, the two eras p.16 L439 and p.29 L924 make satellites a feature of, and 0 for every other era; whether every non-tutorial start really ships a satellite is UNVERIFIED (the p.12 frame is a tutorial, Open RE Q-new, DOSBox experiment owed). startCells is that same p.12 frame as a stand-in: blue over the Atlantic at 116,38 (mid-Atlantic between New York 83,42 and Iberia 145,42) and red over Europe at 158,31 (on the London 148,30 - Berlin 161,30 line). killRadius 6 belongs to PB-231 and the manual only says 'about six'."
+  },
   "rosters": {
     "1918": ["infantry", "cruiser", "submarine"],
     "1942": ["infantry", "tank", "submarine", "cruiser", "carrier", "aircraft"],
@@ -245,6 +258,8 @@
     "payEvery": "Manual p.27",
     "cityIncome": "Manual p.27",
     "loyalty": "Manual p.30 (hostile -> neutral -> allied, per nation, more cities = more gifts; and a rival may aid the same target, negating the payer's efforts). giftsPerCity and the one-for-one counterAid cancel are both STAND-INS: the archive printed neither the count nor the mechanism (Open RE Q52, UNVERIFIED). Nation NAMES come from the extract game_meta.json countries[] list, baked to web/data/countries.json by tools/bake_countries.mjs.",
+    "satellite": "PB-224. Manual p.12 L326-328 (a satellite per side, visible to both, selected and given a destination), p.29 L924-937 (bought like any other unit, much faster than ground units, booster fuel per move, sweeping eventually knocks it down; its radius exposes every enemy unit except submarines), p.12 L344 + p.29 L932 (killer explodes over its destination). scanRadius, speedCells, fuelCapacity, fuelPerMove, startPerSide and killRadius are ALL STAND-INS: the archive prints none of them, and the p.12 tutorial's 'each side has one' is unverified for every 1986/2023 start (DOSBox experiment owed).",
+    "satelliteDown": "PB-224 AC4. The manual says sweeping 'ultimately knock[s] your satellite out of the sky' and never prints the fuel count, so the removal rule here is: an order spends fuelPerMove, and the satellite that spends its last unit of fuel still finishes that move and is then removed, with a log line.",
     "payingCount": "FUN_2dfc_1246 @ 2dfc:1246 (decompiled.c 25571-25586): count(type 4) + max(0, count(type 1) + count(type 2) - 1) over the sites a side owns. Type 3 (base) and type 5 (oil field) never pay; a side's first capital is free and every extra one pays like a city.",
     "sites": {
       "oilField": "DERIVED three ways (PB-153, audit row 21; confirmed or refuted by RE-E6): oil production counts type 5 (FUN_15f4_0664 4695-4701; setup 13133); bombing a type-5 site costs oil, not cash (FUN_1ac5_0dbe 8768-8782); and records 64-83 sit outside the 64-record city loops. So the 20 `facility` sites (ids 64-83) are the original's oil fields. The 38 `wells` in world.json are a hand-placed sketch (modern/docs/RESOURCES.md:19), not original data, and drive no rule."

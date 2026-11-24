@@ -10,6 +10,7 @@ import { forSeat } from "../../server/view.mjs";
 import { rules } from "../../server/rules.mjs";
 import { scanSpec } from "../../public/scan.mjs";
 import { nukeStatus, launchEdge, toolsForEra, useTool, intelNote, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
+import { buySatellite, tickSatellites } from "../../server/satellite.mjs";
 
 export const name = "late_kit";
 
@@ -42,13 +43,17 @@ export async function run(ctx) {
 
   // --- era gating ---------------------------------------------------------------------
   const early = toolsForEra("1918");
-  for (const tool of ["intel", "satellite", "aid", "ceasefire", "nuke", "oil"]) {
+  for (const tool of ["intel", "aid", "ceasefire", "nuke", "oil"]) {
     if (early.includes(tool)) fail("1918 offered the 1986 tool " + tool);
   }
   const late = toolsForEra("1986");
-  for (const tool of ["intel", "satellite", "aid", "ceasefire", "nuke"]) {
+  for (const tool of ["intel", "aid", "ceasefire", "nuke"]) {
     if (!late.includes(tool)) fail("1986 does not offer " + tool);
   }
+  // PB-224 (PM 8905 §2): the satellite is a UNIT, not a tool. The old worldwide pass is gone, and
+  // with it the tool door; the reveal is the piece's own round.
+  if (late.includes("satellite")) fail("1986 still offers the retired satellite tool");
+  if (!useTool(fresh(), "blue", "satellite").error) fail("the retired satellite tool still runs");
   const concealed = toolsForEra("9999");
   if (!concealed.includes("oil")) fail("the concealed start lost oil");
   if (!concealed.includes("nuke")) fail("the ???? era did not use the 1986 set");
@@ -90,21 +95,24 @@ export async function run(ctx) {
   }
   if (/radius/i.test(INTEL_NOTE)) fail("the intel note contains the banned word radius: " + INTEL_NOTE);
 
-  // --- the satellite pass is quiet, and a submarine is never part of it (PB-222) ----------
+  // --- the satellite is a piece, it is quiet, and a submarine is never part of it (PB-222/PB-224) --
   // The manual: L326 "except submarines, which remain hidden"; L329 "Submarines are always hidden
-  // from air and satellite scanning"; L936 "all enemy units are exposed except submarines".
+  // from air and satellite scanning"; L936 "all enemy units are exposed except submarines". PB-224
+  // moved that rule from the retired worldwide tool onto the planned piece: the hull and the sub sit
+  // inside the same radius, and only the hull is revealed.
   const quiet = fresh();
-  const quietSub = sub("red:sub", "red", 200, 100);
+  const quietSub = sub("red:sub", "red", 242, 22);
   const quietHull = {
     id: "red:cruiser", side: "red", domain: "sea", kind: "cruiser", x: 240, y: 20,
     path: [], pace: 1, facing: null, fighting: null, shots: 0, movedRound: -1,
   };
   quiet.pieces = [sub("blue:sub", "blue", 0, 15), quietHull, quietSub];
-  const sat = useTool(quiet, "blue", "satellite");
-  if (sat.error) fail("a satellite pass was refused: " + sat.error);
-  if (sat.events.some((event) => event.type === "intel_seen")) fail("the satellite pass told the opponent");
-  const satEvent = sat.events.find((event) => event.type === "satellite");
-  if (!satEvent) fail("the satellite pass produced no event: " + JSON.stringify(sat.events));
+  const bought = buySatellite(quiet, "blue", 240, 20);
+  if (bought.error) fail("a recon satellite was refused: " + bought.error);
+  const satEvents = tickSatellites(quiet);
+  if (satEvents.some((event) => event.type === "intel_seen")) fail("the satellite pass told the opponent");
+  const satEvent = satEvents.find((event) => event.type === "satellite");
+  if (!satEvent) fail("the satellite pass produced no event: " + JSON.stringify(satEvents));
   if (satEvent.reveals !== 1) fail("the satellite count includes the submarine: " + satEvent.reveals);
   const quietSeen = forSeat(quiet, "blue").pieces.map((piece) => piece.id);
   if (!quietSeen.includes("red:cruiser")) {

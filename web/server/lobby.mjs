@@ -14,7 +14,8 @@ import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
 import { scanActiveFor, scanAnyActive } from "./scan.mjs";
 import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
-import { shopFor } from "./shop.mjs";
+import { isSatelliteKind, shopFor } from "./shop.mjs";
+import { buySatellite, orderSatellite, planSatellite, satelliteById } from "./satellite.mjs";
 import { compatUnitKind } from "./migrate.mjs";
 import { TAKEOVER_CLOSE_CODE as TAKEOVER_CODE } from "./ws.mjs";
 import { displayNames, localName } from "./names.mjs";
@@ -130,6 +131,9 @@ export function deltaBetween(last, view) {
     gone,
     routes,
     sites,
+    // PB-224: satellites are not ground pieces (they fly above the board), so they ride the delta as
+    // their own whole list rather than through the piece diff.
+    satellites: view.satellites || [],
     unscreened: view.unscreened || [],
     seatChanged: last.seat !== signature(view.seat),
     capitalsChanged: last.capitals !== signature(view.capitals),
@@ -260,6 +264,10 @@ export function createLobby() {
       // cannot work this out for itself without keeping a second copy of the sight rule.
       unscreened: seen && Array.isArray(seen.unscreened) ? seen.unscreened : [],
       pieces: seen ? seen.pieces : piecesFor(room.match),
+      // PB-224: the orbital picture rides every frame and every delta. Both sides' satellites are
+      // public (manual p.12 shows the blue one over the Atlantic and the red one over Europe), so
+      // this is not filtered by seat; what a satellite SEES is still gated inside view.forSeat.
+      satellites: seen && Array.isArray(seen.satellites) ? seen.satellites : [],
       routes: seen ? seen.routes : {},
       sites: seen ? seen.sites : [],
       capitals: seen ? seen.capitals : null,
@@ -716,7 +724,10 @@ export function createLobby() {
     const pieceId = String(message.piece ?? message.pieceId ?? "");
     if (!pieceId) return { error: "A route needs a piece id." };
     const to = destinationOf(message);
-    const plan = planOrder(room.match, mine, pieceId, to.x, to.y);
+    // PB-224: a selected satellite previews its own flight, not a ground walk.
+    const plan = satelliteById(room.match, pieceId)
+      ? planSatellite(room.match, mine, pieceId, to.x, to.y)
+      : planOrder(room.match, mine, pieceId, to.x, to.y);
     const reply = plan && plan.error
       ? { op: "route", piece: pieceId, to, error: plan.error }
       : { op: "route", piece: pieceId, to, path: plan.path, rounds: plan.rounds };
@@ -845,7 +856,11 @@ export function createLobby() {
     const to = destinationOf(message);
     let result;
     try {
-      result = issueOrder(room.match, mine, pieceId, to.x, to.y);
+      // PB-224: a satellite is a unit with its own destination order (manual p.12). It never touches
+      // the ground walker: no terrain, no lanes, no collision.
+      result = satelliteById(room.match, pieceId)
+        ? orderSatellite(room.match, mine, pieceId, to.x, to.y)
+        : issueOrder(room.match, mine, pieceId, to.x, to.y);
     } catch (err) {
       return { error: err && err.message ? err.message : String(err) };
     }
@@ -1160,7 +1175,11 @@ export function createLobby() {
     const at = destinationOf(message);
     let result;
     try {
-      result = buy(room.match, mine, message.kind, at.x, at.y, boardPayload());
+      // PB-224 (PM 8905 §2): a recon satellite is bought at the point the player picks, not placed
+      // on a friendly city. Its own module owns the rule; everything else still goes through buy().
+      result = isSatelliteKind(message.kind)
+        ? buySatellite(room.match, mine, at.x, at.y)
+        : buy(room.match, mine, message.kind, at.x, at.y, boardPayload());
     } catch (err) {
       return { error: err && err.message ? err.message : String(err) };
     }
@@ -1176,6 +1195,7 @@ export function createLobby() {
         piece: result.piece.id,
         at: { x: result.piece.x, y: result.piece.y },
         // PB-044: the line names the site ("Bought an infantry at Kharkov"), never the cell.
+        // A satellite has no site; the page falls back to its point.
         site: result.label || null,
         cash: room.match.sides && room.match.sides[mine] ? room.match.sides[mine].cash : null,
       };

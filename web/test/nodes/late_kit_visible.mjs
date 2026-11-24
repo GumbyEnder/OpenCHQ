@@ -7,6 +7,7 @@ import { STAND_IN, kitBriefing, nukeStatus, useTool } from "../../server/late.mj
 import { logLines } from "../../server/log.mjs";
 import { rules } from "../../server/rules.mjs";
 import { forSeat } from "../../server/view.mjs";
+import { buySatellite, tickSatellites } from "../../server/satellite.mjs";
 
 function fail(message) {
   throw new Error(message);
@@ -47,9 +48,12 @@ export async function run() {
     const m = match();
     const kit = kitBriefing(m, "blue");
     const names = kit.map((entry) => entry.name);
-    for (const tool of ["intel", "satellite", "aid", "ceasefire", "nuke"]) {
+    for (const tool of ["intel", "aid", "ceasefire", "nuke"]) {
       if (!names.includes(tool)) fail("the kit does not describe " + tool);
     }
+    // PB-224: the satellite row is gone from the kit on purpose - a satellite is a unit, and its
+    // door is the Buy row, not a tool button that spends money and reveals the world.
+    if (names.includes("satellite")) fail("the kit still offers the retired satellite tool");
     for (const entry of kit) {
       if (!entry.text || entry.text.length < 20) fail(entry.name + " has no sentence to show");
       if (typeof entry.allowed !== "boolean") fail(entry.name + " does not say whether it is available");
@@ -109,11 +113,12 @@ export async function run() {
     if (!theirs.length) fail("the side that was read was not told");
     if (!/read your positions/i.test(theirs[0].text)) fail("the enemy line does not say what happened: " + theirs[0].text);
 
-    // A satellite is quiet: the other seat is not told.
-    const sat = useTool(m, "blue", "satellite", null);
-    if (sat.error) fail("the satellite was refused: " + sat.error);
-    eq("a satellite tells nobody", logLines(m, "red", sat.events, 4).length, 0);
-    if (!logLines(m, "blue", sat.events, 4).length) fail("a satellite produced no line for its owner");
+    // A satellite is quiet: the other seat is not told. PB-224: the pass is the piece's own round.
+    const satBought = buySatellite(m, "blue", 183, 25);
+    if (satBought.error) fail("the satellite was refused: " + satBought.error);
+    const satEvents = tickSatellites(m);
+    eq("a satellite tells nobody", logLines(m, "red", satEvents, 4).length, 0);
+    if (!logLines(m, "blue", satEvents, 4).length) fail("a satellite produced no line for its owner");
 
     // Aid moves a city and says which. PB-226: the city is the one the player names.
     const aid = useTool(m, "blue", "aid", { x: 183, y: 25 });

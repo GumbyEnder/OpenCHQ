@@ -154,7 +154,7 @@ export async function run(ctx) {
   // leaks nothing the sites do not already carry. opponent (PB-152) is the other side's payday
   // only - the manual's Alternate Function shows income and prints ??? for the balance - and it
   // carries no purse, so it is public in the same way.
-  expect(fail, topKeys === "alarm,capitalList,capitals,notes,opponent,over,ownership,pieces,result,roundSeconds,routes,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
+  expect(fail, topKeys === "alarm,capitalList,capitals,notes,opponent,over,ownership,pieces,result,roundSeconds,routes,satellites,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
   for (const piece of reachView.pieces) {
     for (const key of ["hidden", "visible", "concealed", "seen"]) {
       expect(fail, !(key in piece), "a piece carries a '" + key + "' flag: " + JSON.stringify(piece));

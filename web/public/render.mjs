@@ -2094,6 +2094,14 @@ export function paintMatch(ctx, board, room, opts = {}) {
   layers.push("pending");
   const preview = paintPreview(ctx, opts.preview, view, { ...opts, ink: theme.routeInk, casing: theme.routeCasing });
   layers.push("preview");
+  // PB-224: the satellite picture is a layer under the badges, and it is only drawn in the Show
+  // Satellites view. The badges themselves are in `room.pieces` because the page merges the orbital
+  // list into it before painting (app.js piecesOnScreen).
+  let satelliteRings = 0;
+  if (opts.viewMode === "satellites") {
+    satelliteRings = paintSatelliteRings(ctx, opts.satellites || (room && room.satellites) || [], view, opts);
+    layers.push("satellites");
+  }
   const groups = paintPieces(ctx, scanVisiblePieces(room && room.pieces, opts), view, opts);
   const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
   // A badge is never smaller than its floor, so one can cover the city square it stands on. The
@@ -2133,9 +2141,88 @@ export function paintMatch(ctx, board, room, opts = {}) {
   layers.push("labels");
   const selection = paintSelectionMark(ctx, groups, view, { ...opts, ink: theme.selectionInk });
   layers.push("selection");
+  // The insert box goes last: it is a panel over the map, not part of the ground.
+  let satellites = 0;
+  if (opts.viewMode === "satellites") {
+    satellites = paintSatelliteInset(ctx, opts.satellites || (room && room.satellites) || [], view, opts);
+    layers.push("satelliteInset");
+  }
   return { mode, painted, fogged, pieces, groups: groups.length, scanBar,
     siteTicks, capitals, labels: labelled,
-    political, tally, preview, pending, selection, layers, theme: theme.id, message: "", view };
+    political, tally, preview, pending, selection, layers, theme: theme.id, message: "", view,
+    satelliteRings, satellites };
+}
+
+// --- Show Satellites (PB-224 AC5, manual p.29 L924) -------------------------------------------
+//
+// The original's "Show Satellites" command draws the orbital picture: the insert box, and each
+// satellite with the circle it scans. This build keeps the satellites in `room.satellites` (they fly
+// above the board, so they never enter the ground piece list), and this layer draws the rings under
+// the badges plus one list box over everything. It is a VIEW: nothing here changes a rule, and the
+// page still paints terrain/ownership exactly as before underneath.
+const SAT_INK = Object.freeze({ blue: "#6bd0ff", red: "#ff6b6b", box: "rgba(6,12,20,0.82)", edge: "#cfe8ff", text: "#eaf4ff" });
+
+export function paintSatelliteRings(ctx, sats, view, opts = {}) {
+  if (!Array.isArray(sats) || !view) return 0;
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const width = Math.max(1, scale * 0.14);
+  let drawn = 0;
+  for (const sat of sats) {
+    if (!sat || !Number.isFinite(Number(sat.x)) || !Number.isFinite(Number(sat.y))) continue;
+    const radius = Math.max(1, Number(sat.radius) || 0);
+    const at = cellToPixel(wrapX(sat.x, view.boardW || BOARD_W), sat.y, view);
+    const ink = SAT_INK[sat.side === "red" ? "red" : "blue"];
+    ctx.save();
+    ctx.strokeStyle = ink;
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = width;
+    ctx.setLineDash([Math.max(2, scale * 0.6), Math.max(2, scale * 0.5)]);
+    ctx.beginPath();
+    // A circle of `radius` CELLS: centre on the cell, not the pixel corner.
+    ctx.arc(at.x + scale / 2, at.y + scale / 2, (radius + 0.5) * scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    drawn += 1;
+  }
+  return drawn;
+}
+
+// The insert box: who has a satellite up, where, and how much fuel is left. A player who can see a
+// radius on the map but not the fuel cannot tell which sweep is the last one.
+export function paintSatelliteInset(ctx, sats, view, opts = {}) {
+  const list = Array.isArray(sats) ? sats.filter((sat) => sat && sat.orbit !== false) : [];
+  const scale = Math.max(1, Number(view.scale) || 1);
+  const line = Math.max(9, Math.round(scale * 1.4));
+  const pad = Math.round(line * 0.6);
+  const rows = list.length ? list.length : 1;
+  const width = Math.round(Math.max(120, line * 15));
+  const height = Math.round(pad * 2 + line * (rows + 1));
+  const x = 6;
+  const y = Math.max(6, view.viewH - height - 6);
+  ctx.save();
+  ctx.fillStyle = SAT_INK.box;
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = SAT_INK.edge;
+  ctx.lineWidth = Math.max(1, scale * 0.1);
+  ctx.strokeRect(x, y, width, height);
+  ctx.fillStyle = SAT_INK.text;
+  ctx.font = line + "px monospace";
+  ctx.textBaseline = "top";
+  ctx.fillText("SATELLITES", x + pad, y + pad);
+  let row = 1;
+  if (!list.length) {
+    ctx.fillText("none in orbit", x + pad, y + pad + line * row);
+  } else {
+    for (const sat of list) {
+      ctx.fillStyle = SAT_INK[sat.side === "red" ? "red" : "blue"];
+      const where = Number(sat.x) + "," + Number(sat.y);
+      ctx.fillText(sat.side + " " + where + " fuel " + (Number(sat.fuel) || 0) + "/" + (Number(sat.fuelCapacity) || 0),
+        x + pad, y + pad + line * row);
+      row += 1;
+    }
+  }
+  ctx.restore();
+  return list.length;
 }
 
 // The badge boxes as screen rects: what a name must not be drawn over.

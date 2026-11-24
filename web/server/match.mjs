@@ -12,6 +12,9 @@ import { capitalRows, capitalSet, capitalsFromFile } from "./capitals.mjs";
 import { openingForce } from "./dispositions.mjs";
 import { combatRules, handicapDefault, opponentPool, rosterFor, roundSeconds, startPool } from "./rules.mjs";
 import { DOMAIN_BY_KIND } from "./shop.mjs";
+// The opening satellite pair is seeded from the same module that owns every other satellite write
+// (PB-224, PM 8913 §2: 1986/2023 open with one per side, every other era with none).
+import { startSatellites } from "./satellite.mjs";
 
 export const ERAS = ["1918", "1942", "1986", "2023", "9999"];
 
@@ -221,6 +224,9 @@ export function openMatch(era, sites = [], options = {}) {
     roundSeconds: roundSeconds(),
     clock: "held",
     pieces: openingPieces(year, seats),
+    // The satellites that are already in orbit at round 0 (PM 8913 §2). Outside `pieces` on
+    // purpose: they block no cell, take no fire and capture nothing (manual p.29 L924, L930).
+    satellites: startSatellites(year),
     // The two seats are what the page labels and what the player is told to defend. They are not
     // the win condition any more: `capitalSet` is (B-3b), and it is the era's whole list. T-013b:
     // they are the era's own capitals (eraSeats), so a 1942 red seat is Berlin, never blue Moscow.

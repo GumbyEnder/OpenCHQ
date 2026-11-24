@@ -31,9 +31,12 @@ export async function run(ctx) {
   // The room has to say what the era offers, or no player can use it.
   must(Array.isArray(room.tools) && room.tools.length > 0, "the room must carry the era's tools");
   const names = room.tools.map((tool) => tool.name);
-  for (const wanted of ["intel", "satellite", "aid", "ceasefire", "nuke"]) {
+  for (const wanted of ["intel", "aid", "ceasefire", "nuke"]) {
     must(names.includes(wanted), "1986 must offer " + wanted + ": " + names.join(","));
   }
+  // PB-224: the satellite is a unit now, so there is no tool row for it. The door is the Buy row,
+  // and the wire arm below buys the piece.
+  must(!names.includes("satellite"), "1986 still offers the retired satellite tool: " + names.join(","));
   const nuke = room.tools.find((tool) => tool.name === "nuke");
   must(nuke && nuke.allowed === false, "a nuke must carry its refusal with it: " + JSON.stringify(nuke));
 
@@ -46,10 +49,13 @@ export async function run(ctx) {
   sock.send({ op: "run" });
   await sock.wait((m) => m.op === "room" && m.room && m.room.clock === "running", "the clock running", mark);
 
+  // PB-224 AC1 over the wire: buying a recon satellite answers a `bought` frame naming the piece.
   mark = sock.box.length;
-  sock.send({ op: "tool", tool: "satellite" });
-  const sat = await sock.wait((m) => m.op === "error" || m.op === "room" || m.op === "log", "satellite reply", mark);
-  must(sat, "the satellite must be answered");
+  sock.send({ op: "buy", kind: "reconSat", to: { x: 100, y: 40 } });
+  const sat = await sock.wait((m) => m.op === "bought" || m.op === "error", "satellite buy reply", mark);
+  must(sat, "the satellite buy must be answered");
+  must(sat.op === "bought" && String(sat.kind) === "reconSat",
+    "buying a recon satellite must land a bought frame: " + JSON.stringify(sat));
 
   // Intel before contact has nothing to reveal, and says so instead of failing silently.
   mark = sock.box.length;

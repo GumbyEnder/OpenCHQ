@@ -372,6 +372,12 @@ export function logLines(match, side, events, round) {
       case "satellite":
         if (mine) push("a satellite pass revealed " + (Number(event.reveals) || 0) + " enemy unit(s)");
         break;
+      // PB-224 AC4: the satellite that spent its last booster fuel falls out of orbit, and the log
+      // says so - a unit that disappears with no line is the kind of absence a player cannot read.
+      case "satellite_down":
+        if (mine) push("a recon satellite has burned its last booster fuel and fallen out of orbit");
+        else if (legible(match, side, event)) push("an enemy satellite fell out of orbit");
+        break;
       case "ceasefire":
         if (mine) push("cease fire accepted; nothing changes");
         break;
