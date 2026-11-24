@@ -117,7 +117,10 @@ export function logLines(match, side, events, round) {
   // per round, with the shots counted and the strength the target is left on.
   const shots = new Map();
   for (const event of Array.isArray(events) ? events : []) {
-    if (!event || event.type !== "shot" || event.militia === true) continue;
+    // PB-211 (PM 8762 §1(b), card 8745 §2 AC1): the militia is a shot like any other and is
+    // aggregated here. The gate used to sit in this pass AND in the emit branch; both are out
+    // together, because either one alone keeps the city's owner from reading its own militia.
+    if (!event || event.type !== "shot") continue;
     const key = shotKey(event);
     const row = shots.get(key) || { event, count: 0, amount: 0, strength: event.strength };
     row.count += 1;
@@ -229,7 +232,6 @@ export function logLines(match, side, events, round) {
       case "shot": {
         // PB-202 AC3: the line names both sides and the strength the target is left on. Before
         // this every shot was dropped, so a fight read as silence.
-        if (event.militia === true) break;
         const key = shotKey(event);
         if (shotDone.has(key)) break;
         const row = shots.get(key);
@@ -242,7 +244,16 @@ export function logLines(match, side, events, round) {
         // was the one round with no fight line. The event carries `targetSide` (combat.mjs) so the
         // reader is known from the shot itself, not from a board the dead piece has left.
         const onMe = row.event.targetSide === side;
-        if (!mine && !onMe && !legible(match, side, row.event)) break;
+        // PB-211 (PM 8762 §1(b), card 8745 §2 AC1/AC2): a city's militia is not a sighting, so the
+        // sight test is DISABLED inside this branch. The two seats with first-party news are the
+        // one whose city fired (`mine` - the event's `side` is the city's owner) and the one whose
+        // piece took the 2 (`onMe`). Every other seat reads nothing: this is a widening of the
+        // own-piece / own-action rule, never a blanket pass. The militia is what defends a city
+        // (manual p.10, p.23), so its owner must read it shooting even at a cell it cannot see.
+        const militia = row.event.militia === true;
+        if (militia) {
+          if (!mine && !onMe) break;
+        } else if (!mine && !onMe && !legible(match, side, row.event)) break;
         const attackNoun = unitNoun(row.event.attackerKind);
         const targetNoun = unitNoun(row.event.targetKind);
         const who = mine ? "your " + attackNoun : "an enemy " + attackNoun;

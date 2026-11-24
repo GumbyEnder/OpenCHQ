@@ -180,6 +180,31 @@ export async function run(ctx) {
       if (Number(piece.lastShotRound) !== 1) {
         fail("pb211: " + piece.id + " did not stamp the round it exchanged: " + piece.lastShotRound);
       }
+      // PB-211 (PM 8762 §1(a)): the overrun IS a shot on the piece's counter. The room leg read a
+      // tank frozen at 4 shots through two overrun rounds while its strength fell 35 -> 18 -> 1.
+      if (Number(piece.shots) !== 1) {
+        fail("pb211: " + piece.id + " exchanged in the overrun and its shot counter reads " + piece.shots);
+      }
+    }
+  }
+
+  // --- (b2) no piece exchanges twice inside shotEveryRounds ----------------------------------
+  // The per-PIECE half of D-030: over a whole arm, every piece's appearances as a shooter are at
+  // least `beat` rounds apart - including the overrun rounds, which are the ones that used to be
+  // uncounted. A per-pair-only stamp passes (a) and still lets a piece fire on two fronts.
+  {
+    for (const arm of [overrun.rows, control.rows]) {
+      const last = new Map();
+      for (const row of arm) {
+        const seen = new Set(shotsOf(row.events).filter((e) => e.militia !== true).map((e) => e.pieceId));
+        for (const id of seen) {
+          if (last.has(id) && row.round - last.get(id) < beat) {
+            fail("pb211: " + id + " fired on rounds " + last.get(id) + " and " + row.round +
+              " - inside shotEveryRounds " + beat);
+          }
+          last.set(id, row.round);
+        }
+      }
     }
   }
 

@@ -1145,6 +1145,12 @@ export function advance(match) {
           occupant.fighting = piece.id;
           piece.fightRounds = Number(piece.fightRounds || 0) + 1;
           occupant.fightRounds = Number(occupant.fightRounds || 0) + 1;
+          // PB-211 (PM 8762 §1(a)): the overrun IS a shot on the piece's own clock, so it counts on
+          // the piece that fired it. The room leg read a tank's counter frozen at 4 through two
+          // overrun rounds (r9, r11) while its strength fell 35 -> 18 -> 1 - the exchange was real
+          // and the count was not. combat.resolve has always counted; this path never did.
+          piece.shots = Number(piece.shots || 0) + 1;
+          occupant.shots = Number(occupant.shots || 0) + 1;
           stampPair(piece, occupant, onRound);
           match.foughtRound = onRound;
           const footHit = applyDamage(occupant, foot.amount, max);
@@ -1155,13 +1161,15 @@ export function advance(match) {
             // because the piece it names as the target can be gone before the line is built.
             targetSide: occupant.side, attackerKind: kindOf(piece), targetKind: kindOf(occupant),
             base: foot.base, amount: foot.amount, covered: foot.covered, entrenched: foot.entrenched,
-            flank: foot.flank, rear: foot.rear, after: footHit.after, round: onRound, overrun: true,
+            flank: foot.flank, rear: foot.rear, after: footHit.after, strength: footHit.after,
+            round: onRound, overrun: true,
           });
           events.push({
             type: "shot", side: occupant.side, pieceId: occupant.id, target: piece.id,
             targetSide: piece.side, attackerKind: kindOf(occupant), targetKind: kindOf(piece),
             base: hull.base, amount: hull.amount, covered: hull.covered, entrenched: hull.entrenched,
-            flank: hull.flank, rear: hull.rear, after: hullHit.after, round: onRound, overrun: true,
+            flank: hull.flank, rear: hull.rear, after: hullHit.after, strength: hullHit.after,
+            round: onRound, overrun: true,
           });
           if (footHit.dead) {
             doomed.add(occupant.id);
