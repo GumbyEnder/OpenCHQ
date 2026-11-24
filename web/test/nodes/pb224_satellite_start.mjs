@@ -1,78 +1,109 @@
-// Node test for PB-224's OPENING POSITION: a 1986 or 2023 start opens with one recon satellite per
-// side already in orbit, every other era opens with none.
+// PB-224 ruling 2 (PM 8913 §2): a 1986 or 2023 start opens with ONE recon satellite per side
+// already in orbit, on the standing-in start cells; every other era opens with none.
 //
-// PM 8913 §2 ruled this off p.12 L326-328 ("Press Satellite. You'll see your satellite (in blue)
-// over the Atlantic... The red satellite is over Europe") and p.16 L439 / p.29 L924 (satellites are
-// a 1986/2023 feature). Both the COUNT and the CELLS are STAND-INS: the p.12 frame is a tutorial and
-// the archive prints no start position, so the DOSBox check is owed (Open RE Q-new).
+// This arm reads the SERVED round-0 frame - the lobby's ROOM view, through a real invite/accept,
+// for both seats - not the per-seat payload (PM 8918 §3 / 8919 §3). view.forSeat has carried
+// satellites since 8882c14, so an arm built on it is green under a resolver that seeds nothing
+// (frodo's m4) and under a config key that is read but never placed (m5). Both must red HERE.
 //
-// Why this is a separate node from pb224_satellite_unit: the bought-unit ACs and the ruled opening are
-// separate behaviours with separate sources, and a red line should name which of the two broke.
+// Manual p.12 L326-328 ("You'll see your satellite (in blue) over the Atlantic... The red satellite
+// is over Europe") and p.16 L439 / p.29 L924 (satellites are a 1986/2023 feature). Both the COUNT
+// and the CELLS are STAND-INS: p.12 is a tutorial and the archive prints no start position, so the
+// DOSBox check is owed (Open RE Q-new).
 //
-// What fails if this is removed: openMatch stops seeding, a 1986 room shows an empty Show Satellites
-// box until someone buys one, and the p.12 frame the ruling is built on is not reproduced at all.
+// The purse/id half is the same AC's other edge: the opening pair is SETUP, not a purchase, so it
+// debits nothing, and the first real purchase lands in the `<side>:<kind>:<n>` namespace at
+// blue:reconSat:1 with both `<side>:reconSat:setup` records still in the orbit list.
+//
+// What fails if this is removed: openMatch stops seeding, 2023 and the second zero era go unpinned
+// on the wire, and a purchase that collides with the setup ids goes unnoticed.
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { openMatch } from "../../server/match.mjs";
-import { forSeat } from "../../server/view.mjs";
 import { buySatellite, satelliteRules } from "../../server/satellite.mjs";
+import { priceOf, startPool } from "../../server/rules.mjs";
+import { lastRoom, makeAsserts, openRoom } from "../pb224_helpers.mjs";
 
 export const name = "pb224_satellite_start";
 
-function fail(message) {
-  throw new Error("node test pb224_satellite_start: " + message);
-}
-
-function eq(label, actual, expected) {
-  const a = JSON.stringify(actual);
-  const b = JSON.stringify(expected);
-  if (a !== b) fail(label + ": " + a + " !== " + b);
-}
+const SETUP_IDS = ["blue:reconSat:setup", "red:reconSat:setup"];
 
 export async function run() {
+  const t = makeAsserts(name);
   const cfg = satelliteRules();
 
-  // --- the two eras the ruling names open with one per side, on the config cells ----------------
-  for (const era of ["1986", "2023"]) {
-    const match = openMatch(era, []);
-    eq(era + " opens with one satellite per side", match.satellites.length, 2);
-    eq(era + " opens with one blue and one red", match.satellites.map((sat) => sat.side).sort(), ["blue", "red"]);
-    for (const sat of match.satellites) {
-      eq(era + " " + sat.side + " satellite sits on the config start cell",
-        [sat.x, sat.y], [cfg.startCells[sat.side].x, cfg.startCells[sat.side].y]);
-      eq(era + " " + sat.side + " satellite opens in orbit with a full tank",
-        [sat.orbit, sat.fuel, sat.fuelCapacity], [true, cfg.fuelCapacity, cfg.fuelCapacity]);
-    }
-    // The p.12 stand-in is blue over the Atlantic, red over Europe: the blue one must sit WEST of the
-    // red one on this board (New York 83,42 / London 148,30), or the frame is mirrored and the test
-    // is pinning a coordinate pair without pinning the picture it stands for.
-    const blue = match.satellites.find((sat) => sat.side === "blue");
-    const red = match.satellites.find((sat) => sat.side === "red");
-    if (!(blue.x < red.x)) fail(era + ": the blue satellite is not west of the red one (" + blue.x + " !< " + red.x + ")");
+  const dir = mkdtempSync(path.join(tmpdir(), "openchq-pb224-start-"));
+  const saved = process.env.OPENCHQ_WEB_DATA;
+  process.env.OPENCHQ_WEB_DATA = dir;
+  try {
+    // Dynamic import so db.mjs and rooms.mjs see the isolated data directory, not the operator's store.
+    const { createLobby } = await import("../../server/lobby.mjs");
+    const gate = createLobby();
 
-    // It is not a ground piece: the opening pair must not block a cell, take fire or capture.
-    if (match.pieces.some((unit) => unit.domain === "sat" || unit.kind === "reconSat")) {
-      fail(era + " put a satellite in match.pieces");
+    // --- the two eras the ruling names, on the SERVED round-0 frame, both seats -------------------
+    for (const era of ["1986", "2023"]) {
+      const { blue, red } = openRoom(gate, era, "pb224_start" + era, name);
+      for (const [who, peer] of [["blue", blue], ["red", red]]) {
+        const room = lastRoom(peer);
+        t.eq(era + " " + who + "'s ROOM frame opens at round 0", room.round, 0);
+        const sats = Array.isArray(room.satellites) ? room.satellites : [];
+        t.eq(era + " " + who + "'s ROOM frame carries one satellite per side",
+          sats.map((sat) => sat.side).sort(), ["blue", "red"]);
+        t.eq(era + " " + who + "'s ROOM frame names the setup records",
+          sats.map((sat) => sat.id).sort(), SETUP_IDS);
+        for (const sat of sats) {
+          const cell = cfg.startCells[sat.side];
+          t.eq(era + " " + who + "'s ROOM frame puts the " + sat.side + " satellite on its start cell",
+            [sat.x, sat.y], [cell.x, cell.y]);
+          t.eq(era + " " + who + "'s ROOM frame opens the " + sat.side + " satellite in orbit with a full tank",
+            [sat.orbit, sat.fuel, sat.fuelCapacity], [true, cfg.fuelCapacity, cfg.fuelCapacity]);
+        }
+      }
+      // The p.12 stand-in is blue over the Atlantic, red over Europe: blue sits WEST of red on this
+      // board, or the frame is mirrored and the test pins a coordinate pair without the picture.
+      const sats = lastRoom(blue).satellites || [];
+      const blueSat = sats.find((sat) => sat.side === "blue");
+      const redSat = sats.find((sat) => sat.side === "red");
+      t.ok(era + ": the blue satellite is west of the red one", blueSat.x < redSat.x);
+      // A start-of-match satellite is not a ground piece: it must not ride the pieces list.
+      t.ok(era + ": no satellite is on the ROOM frame's pieces list",
+        !(lastRoom(blue).pieces || []).some((unit) => unit.domain === "sat" || unit.kind === "reconSat"));
     }
-    // Both seats' payloads carry the pair, and it is on the Show Satellites view from round 0.
-    for (const seat of ["blue", "red"]) {
-      eq(era + " " + seat + "'s frame carries both opening satellites",
-        forSeat(match, seat).satellites.map((sat) => sat.side).sort(), ["blue", "red"]);
+
+    // --- every other era opens with none, ON THE SERVED FRAME: two zero eras beside 1942, because
+    // 1942 alone pins one entry of the per-era map rather than the map's default (PM 8919 §1).
+    for (const era of ["1918", "1942", "9999"]) {
+      const { blue, red } = openRoom(gate, era, "pb224_start" + era, name);
+      for (const [who, peer] of [["blue", blue], ["red", red]]) {
+        t.eq("the " + era + " " + who + " ROOM frame carries no satellite",
+          (lastRoom(peer).satellites || []).map((sat) => sat.id), []);
+      }
     }
+  } finally {
+    if (saved === undefined) delete process.env.OPENCHQ_WEB_DATA;
+    else process.env.OPENCHQ_WEB_DATA = saved;
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* a temp dir is not evidence */ }
   }
 
-  // --- every other era opens with none, including 9999 whose roster carries reconSat -------------
-  for (const era of ["1918", "1942", "9999"]) {
-    eq(era + " opens with no satellite", openMatch(era, []).satellites.length, 0);
-  }
-
-  // --- the opening ids are outside the purchase namespace --------------------------------------
-  // A bought unit is `<side>:<kind>:<n>` from seat.bought, which starts at 0. The setup pair must not
-  // sit in that space or the first purchase would collide with it.
+  // --- the purse and the id namespace -----------------------------------------------------------
   const match = openMatch("1986", []);
-  match.sides.blue.cash = 50000;
+  t.eq("a 1986 start opens with the setup pair, by id",
+    match.satellites.map((sat) => sat.id).sort(), SETUP_IDS);
+  t.eq("the opening pair did not debit either pool",
+    [match.sides.blue.cash, match.sides.red.cash], [startPool("1986"), startPool("1986")]);
+  const price = priceOf("reconSat");
+  t.ok("reconSat has a positive price (" + price + ")", Number.isFinite(price) && price > 0);
   const bought = buySatellite(match, "blue", 40, 20);
-  if (bought.error) fail("a satellite could not be bought beside the opening pair: " + bought.error);
-  const ids = match.satellites.map((sat) => sat.id);
-  eq("three satellites, three distinct ids", new Set(ids).size, 3);
-  if (bought.satellite.id.startsWith("blue:reconSat:setup")) fail("the buy reused the setup id namespace");
+  if (bought.error) t.fail("a satellite could not be bought beside the opening pair: " + bought.error);
+  t.eq("the first purchase after the opening pair is blue:reconSat:1", bought.satellite.id, "blue:reconSat:1");
+  t.eq("the purchase debits exactly the price, so the free-opening arm discriminates",
+    match.sides.blue.cash, startPool("1986") - price);
+  t.eq("both setup records survive the purchase",
+    match.satellites.filter((sat) => String(sat.id).endsWith(":setup")).map((sat) => sat.id).sort(), SETUP_IDS);
+  t.eq("the bought satellite sits on its picked cell", [bought.satellite.x, bought.satellite.y], [40, 20]);
+
+  console.log(t.line());
 }

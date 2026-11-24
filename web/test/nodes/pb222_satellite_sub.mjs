@@ -39,7 +39,7 @@ function piece(id, side, domain, kind, x, y) {
 
 // Era 1986, not 9999: the concealed start's capital gate would withhold the whole enemy loop and
 // the pass would look correct for the wrong reason (see PB-223).
-// The opening satellite pair (PM 8913 §2) is pinned in pb224_satellite_unit; this fixture starts
+// The opening satellite pair (PM 8913 §2) is pinned in pb224_satellite_start; this fixture starts
 // from an EMPTY orbit so "before one was bought" measures the buy and not the p.12 opening.
 function fresh() {
   const match = openMatch("1986", []);
