@@ -25,6 +25,43 @@ function fail(message) {
   throw new Error("node test pb223_intel_concealed: " + message);
 }
 
+// PB-223, the 1986 arm. The PM's live failure was era 1986, where `capitalVisible` already returns
+// true - so the capital gate cannot be its cause. Measured on live beb0893 (intel bought at round 4,
+// speed 6, bot match, 135 full frames): the ack said `reveals: 6`, and the six pieces that reached
+// the wire all did so inside ordinary sight. The bar, meanwhile, needs 15.85 s to cross (Q51) and
+// was still off the left edge when the purchase round ended - and the reveal was gated on
+// `revealedRound >= match.round`, so it expired 0.6 s after it was paid for. This arm advances the
+// round past the purchase and then reads the view while the bar covers a column: a pass's lifetime
+// is the bar's, not the round's.
+function barAt(match, lead) {
+  const spec = scanSpec(320);
+  return Number(match.scan.startedAt) + Math.round((lead / spec.cellsPerSecond) * 1000);
+}
+
+function scanBoard(era, round) {
+  const match = openMatch(era, []);
+  match.clock = "running";
+  match.round = round;
+  match.sides.blue.cash = 50000;
+  match.sides.red.cash = 50000;
+  match.seen = {};
+  match.capitals = { blue: { x: 0, y: 15 }, red: { x: 260, y: 123 } };
+  match.sites = [{ id: 10, name: "Home", kind: "city", owner: "blue", x: 0, y: 15 }];
+  return match;
+}
+
+function twoPieces(match) {
+  return [
+    { id: "blue:home", side: "blue", domain: "land", kind: "tank", x: 0, y: 15, path: [], pace: 1, facing: null, fighting: null, shots: 0, movedRound: -1, strength: 100 },
+    { id: "red:far", side: "red", domain: "land", kind: "tank", x: 100, y: 120, path: [], pace: 1, facing: null, fighting: null, shots: 0, movedRound: -1, strength: 100 },
+    { id: "red:far2", side: "red", domain: "land", kind: "tank", x: 260, y: 123, path: [], pace: 1, facing: null, fighting: null, shots: 0, movedRound: -1, strength: 100 },
+  ];
+}
+
+function ids(view) {
+  return view.pieces.map((entry) => entry.id);
+}
+
 function piece(id, side, domain, kind, x, y) {
   return {
     id, side, domain, kind, x, y,
@@ -47,9 +84,6 @@ function fresh() {
   return match;
 }
 
-function ids(view) {
-  return view.pieces.map((entry) => entry.id);
-}
 
 export async function run() {
   const match = fresh();
@@ -118,5 +152,48 @@ export async function run() {
   const openView = forSeat(open, "blue", Date.now());
   if (!ids(openView).includes("red:neighbour")) {
     fail("a red piece a cell away was not sent once the enemy was found: " + ids(openView).join(","));
+  }
+
+  // --- the pass outlives its round (the 1986 arm PM's play-test hit) -------------------------
+  // Same board shape for both eras: buy at round 10, then advance the match to round 40 - far past
+  // the purchase round, still inside the 15.85 s crossing - and read the view at the instant the
+  // bar covers red:far's own column (100). On the pre-fix code this arm is the defect: the reveal
+  // was gated on `revealedRound >= match.round` (10 >= 40 false), so the piece was not sent.
+  for (const era of ["1986", "9999"]) {
+    const late = scanBoard(era, 10);
+    late.pieces = twoPieces(late);
+    const bought = useTool(late, "blue", "intel");
+    if (bought.error) fail("intel was refused in era " + era + ": " + bought.error);
+    const event = bought.events.find((entry) => entry.type === "intel");
+    if (!event || event.reveals !== 2) {
+      fail("intel's count in era " + era + " is not the enemy count: " + JSON.stringify(event));
+    }
+    late.round = 40;
+    const covered = ids(forSeat(late, "blue", barAt(late, 110)));
+    if (!covered.includes("red:far")) {
+      fail("era " + era + ": the bar covered red:far at column 100 in round 40, after a round-10 purchase, and it was not sent: " + covered.join(","));
+    }
+    if (covered.includes("red:far2")) {
+      fail("era " + era + ": the bar was at columns 90..110 and sent the piece at 260: " + covered.join(","));
+    }
+    // ... and the pass still ends: at the end of the crossing nothing scanned is sent.
+    const ended = ids(forSeat(late, "blue", barAt(late, 340)));
+    if (ended.some((id) => id.startsWith("red:"))) {
+      fail("era " + era + ": the reveal outlived the bar: " + ended.join(","));
+    }
+    // ... and it does not open early: at t=0 the bar is off the left edge.
+    const early = ids(forSeat(late, "blue", Number(late.scan.startedAt)));
+    if (early.some((id) => id.startsWith("red:"))) {
+      fail("era " + era + ": a scan sent an enemy before the bar reached it: " + early.join(","));
+    }
+  }
+
+  // The ordinary-sight half of the 9999 ruling is unchanged: with no reveal at all, the enemy stays
+  // hidden even at round 40 while the capital has not been found (PM 8820 §4: keep the gate).
+  const concealed = scanBoard("9999", 40);
+  concealed.pieces = twoPieces(concealed);
+  const plain = ids(forSeat(concealed, "blue", Date.now()));
+  if (plain.some((id) => id.startsWith("red:"))) {
+    fail("ordinary sight in 9999 sent an enemy with the capital not found: " + plain.join(","));
   }
 }

@@ -112,14 +112,21 @@ function visibleEnemy(unit, ownPieces, match, side, now, hidden) {
   // reveals every unit beneath it "including your opponents'", and p.31 does not make that wait for
   // a capital to be found. PB-223: with the gate in front of the whole enemy loop, era 9999 charged
   // a scan, stamped three enemy pieces and sent none of them, so a paid tool did nothing visible.
-  if (Number(unit.revealedRound) >= Number(match.round) && Number(unit.revealedRound) >= 0) {
-    // PB-158: an intel reveal is only a reveal under the bar. `scanGate` returns null when the
-    // active pass is not this unit's (a satellite, or no scan), true while the bar covers its
-    // column, and false once the bar has left it - the original lingers for no measurable time
-    // after the trailing edge clears a unit (Q51). A satellite pass never stamps a submarine
-    // (L326/L329/L936), so the sub test below stays reachable for everything a pass does touch.
-    const gated = scanGate(match, side, unit, now);
-    if (gated !== false) return true;
+  //
+  // PB-223 (1986 arm, measured live 2026-11-24): the pass's lifetime is the BAR's, not the round's.
+  // The reveal used to be gated on `revealedRound >= match.round`, which is true only while the
+  // match is still on the round the scan was bought in - 0.6 s at speed 6, 5 s at speed 1 - while
+  // the bar takes 15.85 s to cross (Q51). On a live 1986 board the bar was still off the left edge
+  // at the end of that round, so a stamp of "round 4" expired before it reached any enemy near
+  // column 79 (~4.9 s in), and a paid scan that counted 6 pieces sent none of them by scan. So the
+  // running pass is consulted FIRST and owns the reveal for as long as it lasts; the round rule
+  // below is only what is left for a stamp with no pass behind it (a satellite, or an old stamp).
+  const gated = scanGate(match, side, unit, now);
+  if (gated === true) return true;
+  if (gated === null && Number(unit.revealedRound) >= Number(match.round) && Number(unit.revealedRound) >= 0) {
+    // No pass is armed for this unit's stamp: a satellite reveal (no bar) or an intel pass that is
+    // not this unit's. That reveal keeps its own round's lifetime.
+    return true;
   }
   // Ordinary sight is what the concealed era withholds: the enemy is the secret until its capital
   // has been seen from one of this seat's own pieces.
