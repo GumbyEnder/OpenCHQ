@@ -541,6 +541,15 @@ export function previewLine(preview) {
   return "Route: " + roundsText(rounds) + ". Click to send the order.";
 }
 
+// PB-177: the one sentence both doors hand the player when a bombing run is armed. The radius is the
+// briefing's own number, read here so the Kit door and the Air panel cannot print two different
+// circles (the Air panel carried it and the Kit door did not, which is how the two doors drifted).
+export function bombArmText(radius) {
+  const cells = Number(radius) > 0 ? Math.trunc(Number(radius)) : "?";
+  return "Bomb: pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
+    + cells + " cells).";
+}
+
 // PB-177: the identity of one hovered destination. A route reply only speaks for the cell it was
 // asked about, and never for a cell that has since been refused - the page keys both the offer and
 // the refusal off this one string so a late reply cannot put "Click to send the order." back over an

@@ -12,6 +12,7 @@ import {
   ackText,
   airNote,
   alarmText,
+  bombArmText,
   buyMessage,
   cargoNote,
   cellAtEvent,
@@ -1793,7 +1794,7 @@ function toolRow(room) {
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : mission.mode === "bomb"
-                ? "Bomb: pick an empty enemy city, base, oil field or capital."
+                ? bombArmText(briefing.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("
                   + (briefing.restrictedReach || "?") + " cells).");
             closeDialog();
@@ -2364,8 +2365,7 @@ const DIALOG_PAINTERS = {
             say(mission.mode === "transfer"
               ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
               : mission.mode === "bomb"
-                ? "Bomb: pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
-                  + (plane.restrictedReach || "?") + " cells)."
+                ? bombArmText(plane.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("
                   + (plane.restrictedReach || "?") + " cells).");
             closeDialog();
