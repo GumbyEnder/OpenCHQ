@@ -23,12 +23,22 @@
 //   AC3 no change — `distance()` is still Chebyshev, a diagonal neighbour is still adjacent, the
 //                shore-fire range is still 2 CELLS (a squared swap there would silently red it), and
 //                computeTargets — the pass resolve() actually reads — shows both the in and out arms.
+//   AC4 land vs a hull — frodo room 8666 §6(i). The same commit moves row 0 col 2 (land attacker,
+//                hull target) from Chebyshev 2 cells to the matrix's 2: a land unit acquires a ship
+//                at (1,1) d^2 = 2 and does not at (2,1) d^2 = 5 or (2,0) d^2 = 4. (2,0) is the arm
+//                that separates the row from cells-squared: 2^2 = 4 would admit d^2 = 4.
+//   AC5 transport vs a hull — frodo room 8666 §6(ii)+(iii). A transport is domain "land" with range
+//                class 1, so row 1 col 2 = 2. Both producers must say so: candidatesFor refuses the
+//                (2,1) pair AND inEngageRange refuses it, so an order onto a cruiser at d^2 = 5
+//                walks instead of completing standing, while the (1,1) order completes without a
+//                step. With the engine's old ENGAGE_DIST2 = 5 constant the completion fired at
+//                d^2 = 5 where acquisition refused — the PB-097b disagreement, for one class.
 
 import { boardPayload, CELL_W } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { adjacent, candidatesFor, computeTargets, distance, engageRange2, squaredDistance } from "../../server/combat.mjs";
 import { combatRules, terrainTables } from "../../server/rules.mjs";
-import { inEngageRange } from "../../server/move.mjs";
+import { advance, inEngageRange, issueOrder } from "../../server/move.mjs";
 
 export const name = "pb204_sea_engage_squared";
 
@@ -40,8 +50,8 @@ const ship = (id, side, kind, x, y) => ({ id, side, kind, domain: "sea", x, y, p
   pace: 1, strength: 100, maxStrength: 100, transport: false, entrenched: false, pinned: false,
   fighting: null });
 
-const troop = (id, side, kind, x, y) => ({ id, side, kind, domain: "land", x, y, path: [], credit: 0,
-  pace: 1, strength: 100, maxStrength: 100, transport: false, entrenched: false, pinned: false,
+const troop = (id, side, kind, x, y, transport = false) => ({ id, side, kind, domain: "land", x, y, path: [], credit: 0,
+  pace: 1, strength: 100, maxStrength: 100, transport, entrenched: false, pinned: false,
   fighting: null });
 
 const ids = (list) => list.map((p) => String(p.id)).sort().join(",");
@@ -161,5 +171,68 @@ export async function run() {
     match.pieces = [cruiser, inn];
     targets = computeTargets(match.pieces);
     must(targets[0] === inn, "AC3: computeTargets lost the (3,1) d^2 = 10 target that the matrix admits");
+  }
+
+  // ---- AC4: land (class 0) vs a hull is row 0 col 2 = 2, not the old Chebyshev 2 CELLS ----------
+  {
+    must(block.rangeMatrix[0][2] === 2, "AC4: row 0 col 2 (land vs a hull) is " + block.rangeMatrix[0][2] + ", not the measured 2");
+    const tank = troop("blue:tank", "blue", "tank", sea.x, sea.y);
+    const at5 = ship("red:at5", "red", "cruiser", sea.x + 2, sea.y + 1);
+    const at4 = ship("red:at4", "red", "cruiser", sea.x + 2, sea.y);
+    const at2 = ship("red:at2", "red", "cruiser", sea.x + 1, sea.y + 1);
+    must(engageRange2(tank, at5) === 2, "AC4: a land attacker's row against a hull reads " + engageRange2(tank, at5) + ", not 2");
+    must(squaredDistance(tank, at5) === 5 && squaredDistance(tank, at4) === 4 && squaredDistance(tank, at2) === 2,
+      "AC4: the three offsets are not d^2 = 5 / 4 / 2");
+    // d^2 = 4 is the arm that separates the matrix value from cells-squared: 2^2 = 4 admits it.
+    must(ids(candidatesFor(tank, [tank, at5, at4])) === "", "AC4: a land unit acquired a hull at d^2 = 5 or 4");
+    must(ids(candidatesFor(tank, [tank, at2])) === "red:at2", "AC4: a land unit lost its (1,1) hull at d^2 = 2");
+    // Completion reads the same row as acquisition: no producer may fire at d^2 = 5 for this pair.
+    must(inEngageRange(tank, at5) === false, "AC4: inEngageRange says a land unit engages a hull at d^2 = 5");
+    must(inEngageRange(tank, at2) === true, "AC4: inEngageRange says a land unit does not engage a hull at d^2 = 2");
+  }
+
+  // ---- AC5: a TRANSPORT is class 1, so row 1 col 2 = 2 — and both producers must say 2 -----------
+  {
+    must(block.rangeMatrix[1][2] === 2, "AC5: row 1 col 2 (a transport vs a hull) is " + block.rangeMatrix[1][2] + ", not the measured 2");
+    const hauler = troop("blue:hauler", "blue", "tank", sea.x, sea.y, true);
+    const at5 = ship("red:at5", "red", "cruiser", sea.x + 2, sea.y + 1);
+    const at2 = ship("red:at2", "red", "cruiser", sea.x + 1, sea.y + 1);
+    must(engageRange2(hauler, at5) === 2, "AC5: a transport's row against a hull reads " + engageRange2(hauler, at5) + ", not 2");
+    must(ids(candidatesFor(hauler, [hauler, at5])) === "", "AC5: a transport acquired a hull at d^2 = 5");
+    must(ids(candidatesFor(hauler, [hauler, at2])) === "red:at2", "AC5: a transport lost its (1,1) hull at d^2 = 2");
+    // The disagreement frodo measured at d91917d: acquisition refused (2,1) while completion fired.
+    must(inEngageRange(hauler, at5) === false,
+      "AC5: inEngageRange still says a transport engages a hull at d^2 = 5 — the completion rule is reading a constant, not row 1");
+    must(inEngageRange(hauler, at2) === true, "AC5: inEngageRange says a transport does not engage a hull at d^2 = 2");
+
+    // Behaviour: an order onto a cruiser at d^2 = 5 must WALK, not complete standing where no
+    // producer pairs it; the same order at d^2 = 2 completes without a step.
+    {
+      const match = openMatch("1986");
+      const walker = troop("blue:walker", "blue", "tank", sea.x, sea.y, true);
+      const foe = ship("red:foe", "red", "cruiser", sea.x + 2, sea.y + 1);
+      match.pieces = [walker, foe];
+      match.round = 1;
+      const order = issueOrder(match, "blue", walker.id, foe.x, foe.y);
+      must(order.ok && order.path.length === 2, "AC5: the (2,1) transport order was refused: " + JSON.stringify(order));
+      const events = advance(match);
+      const types = events.map((e) => e.type);
+      must(!types.includes("engage") || types.indexOf("move") >= 0,
+        "AC5: the (2,1) transport order completed as ENGAGE standing at d^2 = 5 (events " + JSON.stringify(types) + ")");
+      must(types.includes("move"), "AC5: the (2,1) transport order did not take a step (events " + JSON.stringify(types) + ")");
+    }
+    {
+      const match = openMatch("1986");
+      const walker = troop("blue:walker", "blue", "tank", sea.x, sea.y, true);
+      const foe = ship("red:foe", "red", "cruiser", sea.x + 1, sea.y + 1);
+      match.pieces = [walker, foe];
+      match.round = 1;
+      const order = issueOrder(match, "blue", walker.id, foe.x, foe.y);
+      must(order.ok && order.path.length === 1, "AC5: the (1,1) transport order was refused: " + JSON.stringify(order));
+      const events = advance(match);
+      must(events.some((e) => e.type === "engage" && e.pieceId === walker.id),
+        "AC5: the (1,1) transport order did not complete as ENGAGE (events " + JSON.stringify(events.map((e) => e.type)) + ")");
+      must(!events.some((e) => e.type === "move" && e.pieceId === walker.id), "AC5: the (1,1) transport order took a step first");
+    }
   }
 }

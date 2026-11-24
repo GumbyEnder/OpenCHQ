@@ -41,29 +41,37 @@ export function wrapDelta(from, to) {
 }
 
 // PB-097b: a land ATTACK order completes as ENGAGE once the walker is inside its own engage range.
-// The measured threshold is a SQUARED distance - config/game.json:349 pins landEngageCells = 2 with
-// the trace note "dist^2 <= 5" - so the test is dx^2 + dy^2 <= 5, NOT combat.mjs's Chebyshev
+// The measured threshold is a SQUARED distance - config/game.json pins landEngageCells = 2 with the
+// trace note "dist^2 <= 5" - so the test is dx^2 + dy^2 <= 5, NOT combat.mjs's Chebyshev
 // `distance()` (max(|dx|,|dy|) <= 2, which admits a (2,2) offset at dist^2 = 8). frodo room 8626
 // §4a: do not express the completion rule through distance() unless that function is itself pinned
 // to the spec; it is not.
-const ENGAGE_DIST2 = 5;
-
-// PB-204: there is one squared distance in the server and it lives in combat.mjs, because combat's
-// own reach tests (candidatesFor, chooseTarget, computeTargets) have to use the same one as this
-// completion rule. Re-exported here so the PB-097b legs that import it from move.mjs keep working.
+//
+// PB-204: and 5 is not a constant either. It is row 0, column 0 of the 0x1956 range matrix (land
+// attacker, land target), so the completion rule now reads the row for the pair instead of holding
+// the one cell it was measured for. Two rows that the constant silently widened, both live in
+// d91917d (frodo room 8666 §6):
+//   - LAND (class 0) vs a hull (col 2) is 2, not 5: a land unit engages a ship at adjacency, one
+//     diagonal or one orthogonal step, and does not reach a (2,1) offset at d^2 = 5.
+//   - a TRANSPORT is domain "land" with range class 1 (transportDamageKind), so it reads row 1:
+//     against a hull that is also 2. With the constant it completed an order as ENGAGE at d^2 = 5
+//     while candidatesFor/computeTargets refused the same pair at row 1 col 2 = 2 - the exact
+//     two-producer disagreement PB-097b removed, reintroduced for one class.
+// Land vs land still reads 5 out of the same row, so every PB-097b leg is unchanged.
+//
+// `reach` is the caller's read of rangeOf(piece) and is now ONLY the no-reach guard (an aircraft,
+// or any piece the table gives no row): it is never the threshold.
 export { squaredDistance };
 
-// Land reads the measured squared threshold; sea reads its own row of the 0x1956 matrix (PB-204:
-// squared thresholds 5/10/17 for class 2/3/4, not the Chebyshev cell counts 2/3/4 that admitted a
-// (2,2) hull); anything with no reach (air, a transport's cargo) is never in range.
+// One producer for the completion threshold and for combat's acquisition: the matrix row for the
+// ordered pair, squared, read through engageRange2. Both domains go through it (PB-204: sea rows
+// are 5/10/17 for class 2/3/4, not the Chebyshev cell counts 2/3/4 that admitted a (2,2) hull).
 export function inEngageRange(piece, foe, reach) {
+  if (!piece || !foe) return false;
   const r = reach === undefined ? rangeOf(piece) : reach;
-  if (!piece || !foe || !(r > 0)) return false;
-  if (piece.domain === "sea") {
-    const reach2 = engageRange2(piece, foe);
-    return reach2 > 0 && squaredDistance(piece, foe) <= reach2;
-  }
-  return squaredDistance(piece, foe) <= ENGAGE_DIST2;
+  if (!(r > 0)) return false;
+  const reach2 = engageRange2(piece, foe);
+  return reach2 > 0 && squaredDistance(piece, foe) <= reach2;
 }
 
 function terrainAt(x, y) {
