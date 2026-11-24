@@ -113,6 +113,27 @@ export function logLines(match, side, events, round) {
   }
   const overrunDone = new Set();
 
+  // PB-216: one overrun is one loss, and each seat reads it in its own voice. The event's `side`
+  // is the seat that WON the overrun; `targetSide` is the seat that lost the piece. Two indexes
+  // keep the round from saying it twice: the cells an overrun happened on (the winner no longer
+  // also reads "an enemy unit was destroyed" for the piece it just ran over) and the losses the
+  // `destroyed` event already named (the loser reads "lost an infantry" once, from that event).
+  const overrunCells = new Set();
+  const lostTold = new Set();
+  const roundCellOf = (event) => {
+    const cell = cellOf(event);
+    if (!cell) return null;
+    const at = Number.isFinite(Number(event && event.round)) ? Number(event.round) : "?";
+    return at + ":" + cell.x + "," + cell.y;
+  };
+  for (const event of Array.isArray(events) ? events : []) {
+    if (!event) continue;
+    const at = roundCellOf(event);
+    if (!at) continue;
+    if (event.type === "overrun") overrunCells.add(at);
+    else if (event.type === "destroyed") lostTold.add(String(event.side) + ":" + at);
+  }
+
   // PB-202 AC3: every shot used to be dropped, so a fight left no line at all. One line per pair
   // per round, with the shots counted and the strength the target is left on.
   const shots = new Map();
@@ -206,6 +227,9 @@ export function logLines(match, side, events, round) {
         const where = named ? " at " + named : place ? " " + place : "";
         const why = event.cause === "capture" ? "; the air strip was captured" : "";
         if (mine) push("lost " + (event.kind ? unitPhrase(event.kind) : "a unit") + where + why);
+        // PB-216: the winner reads its own overrun line for the piece it ran over, so the generic
+        // "an enemy unit was destroyed" on the same cell and round would be the same loss twice.
+        else if (event.note === "Overrun." && overrunCells.has(roundCellOf(event))) break;
         else if (legible(match, side, event)) push("an enemy unit was destroyed" + where + why);
         break;
       }
@@ -221,10 +245,18 @@ export function logLines(match, side, events, round) {
         const count = group ? group.count : 1;
         const place = placeOf(match, event, side);
         const where = place ? " " + place : "";
-        // The own-side branch used to print the raw cell unconditionally; the enemy branch printed
-        // no place at all, so "no digits" passed there while the line was just as unusable.
-        if (mine) push("overrun: " + (count === 1 ? "a unit was lost" : count + " units were lost") + where);
-        else if (legible(match, side, event)) {
+        // PB-216: `mine` is the seat that WON the overrun - move.mjs has always written `side` that
+        // way - so the old own-side line ("a unit was lost") spoke in the loser's voice to the
+        // winner. The winner now reads what it ran over. The seat that lost the piece reads its own
+        // loss from the `destroyed` event of the same round; this branch only speaks for it when
+        // that event is not in the batch (an overrun held in an earlier round).
+        const what = event.kind ? unitNoun(event.kind) : "unit";
+        if (mine) {
+          push((count === 1 ? "an enemy " + what + " was overrun" : count + " enemy units were overrun") + where);
+        } else if (event.targetSide === side) {
+          if (lostTold.has(String(side) + ":" + roundCellOf(event))) break;
+          push((count === 1 ? "lost " + unitPhrase(event.kind) : "lost " + count + " units") + where);
+        } else if (legible(match, side, event)) {
           push((count === 1 ? "an enemy unit was overrun" : count + " enemy units were overrun") + where);
         }
         break;

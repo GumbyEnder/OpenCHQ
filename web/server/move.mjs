@@ -1114,6 +1114,8 @@ export function advance(match) {
           // happened to meet the enemy.
           piece.overrunBy = null;
           piece.overrunCell = null;
+          piece.overrunKind = null;
+          piece.overrunSide = null;
           // PB-197: the bot reads this counter to re-plan; a unit held by an enemy is still held,
           // exactly as before (AC4), it just no longer counts as a unit that is making progress.
           piece.holdRounds = Number(piece.holdRounds || 0) + 1;
@@ -1181,10 +1183,21 @@ export function advance(match) {
             // The cell is free; the tank walks into it and keeps its order.
             events.push({
               type: "overrun", side: piece.side, pieceId: piece.id, by: occupant.id,
-              target: occupant.id, x: nx, y: ny, round: onRound,
+              target: occupant.id,
+              // PB-216: `side` is the seat that WON the overrun, as it always was - the log used to
+              // read it as the loser and told the winner "a unit was lost". The loser and the noun
+              // ride the event so the line can speak to the right seat and name the piece.
+              targetSide: occupant.side, kind: kindOf(occupant),
+              x: nx, y: ny, round: onRound,
               tankLoss: hull.amount, infantryStrength: footHit.after, tankStrength: hullHit.after,
               note: "Overrun.",
             });
+            // PB-216: this step goes on to walk into the cell below, and the held-cell branch
+            // would fire a SECOND overrun event for the same kill (the PB-211 room leg read
+            // "overrun: 2 units were lost" for one tank and one defender). The hold is cleared so
+            // the round carries one event and the walk still happens.
+            piece.overrunBy = null;
+            piece.overrunCell = null;
           } else if (hullHit.dead) {
             doomed.add(piece.id);
             events.push({
@@ -1199,6 +1212,10 @@ export function advance(match) {
           } else {
             piece.overrunBy = occupant.id;
             piece.overrunCell = { x: nx, y: ny };
+            // PB-216: the defender named here is usually dead by the round the tank walks in, so
+            // the noun and the seat for that later overrun line are carried on the piece now.
+            piece.overrunKind = kindOf(occupant);
+            piece.overrunSide = occupant.side;
             events.push({ type: "overrun_hold", pieceId: piece.id, by: occupant.id, x: nx, y: ny, round: onRound });
             stopped = true;
             break;
@@ -1206,6 +1223,8 @@ export function advance(match) {
         } else {
           piece.overrunBy = occupant.id;
           piece.overrunCell = { x: nx, y: ny };
+          piece.overrunKind = kindOf(occupant);
+          piece.overrunSide = occupant.side;
           events.push({ type: "overrun_hold", pieceId: piece.id, by: occupant.id, x: nx, y: ny, round: onRound });
           stopped = true;
           break;
@@ -1223,6 +1242,10 @@ export function advance(match) {
           pieceId: piece.id,
           by: piece.overrunBy,
           target: piece.overrunBy,
+          // PB-216: the defender that held this piece out of the cell died before the walk, so the
+          // noun and the loser's seat come off the hold, not off a board lookup that would miss.
+          targetSide: piece.overrunSide || null,
+          kind: piece.overrunKind || null,
           x: nx,
           y: ny,
           round: Number(match.round) || 0,
@@ -1230,6 +1253,8 @@ export function advance(match) {
         });
         piece.overrunBy = null;
         piece.overrunCell = null;
+        piece.overrunKind = null;
+        piece.overrunSide = null;
       }
       // Oil (T-033): one cell entered costs this kind's charge out of the side's budget. A side
       // that cannot pay stops here and says so once per episode; the order stays live, so the

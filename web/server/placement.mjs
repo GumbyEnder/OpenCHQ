@@ -55,6 +55,7 @@
 // server accepts.
 
 import { readFileSync } from "node:fs";
+import { CELL_W } from "./board.mjs";
 import { placementRules, readinessRules } from "./rules.mjs";
 import { isSiteReady, placementBoxState, readyRoundOf, unreadyRefusal } from "./readiness.mjs";
 
@@ -226,6 +227,65 @@ export function placementCells(match, side, kind, board) {
     }
   }
   return [...seen.values()];
+}
+
+// PB-216: a cell -> site POSITION index over FOOTPRINT cells, for combat. A city's militia reaches
+// a unit standing anywhere the city painted (D-026), not only on its anchor: Berlin is (161,30) and
+// its measured block is the 3x3 around it, while a unit bought at Berlin lands on the cell that was
+// clicked - (160,29) in the PB-211 room leg - and the anchor-only lookup never saw it.
+//
+// Positions, not site objects, because the index is shared between matches: 1000 bench rooms have
+// 1000 site arrays with 1000 sets of site objects (ownership is per room) but one shape. Keying the
+// built index on the shape - id@x,y:kind per row, which is everything footprintCells reads - lets
+// the second room answer from the first room's build, and the caller still reads its OWN objects
+// out of its own array. Shape build and cell insert are then paid once per distinct board, not once
+// per room per round. A cell two sites both painted resolves to the first site in the match list,
+// which is placementCells' tie-break too.
+const footprintCache = new WeakMap();
+const footprintShapes = new Map();
+const SHAPES_KEPT = 8;
+
+function siteShape(sites) {
+  let out = "";
+  for (let i = 0; i < sites.length; i++) {
+    const site = sites[i];
+    if (!site) {
+      out += "-|";
+      continue;
+    }
+    out += String(site.id) + "@" + Number(site.x) + "," + Number(site.y) + ":" + String(site.kind) + "|";
+  }
+  return out;
+}
+
+export function footprintCellIndex(match) {
+  const sites = Array.isArray(match && match.sites) ? match.sites : null;
+  if (!sites || sites.length === 0) return null;
+  const known = footprintCache.get(sites);
+  if (known && known.length === sites.length) return known;
+  const shape = siteShape(sites);
+  let byCell = footprintShapes.get(shape);
+  if (byCell === undefined) {
+    byCell = new Map();
+    for (let i = 0; i < sites.length; i++) {
+      const site = sites[i];
+      if (!site) continue;
+      // No board here on purpose: a measured site (every city, capital, base and dock on the
+      // shipped board) answers its cells from web/data/footprints.json without one, and a site the
+      // dump does not know is its own cell - the same answer placement gives it.
+      for (const [cx, cy] of footprintCells(site, null)) {
+        const at = Number(cy) * CELL_W + Number(cx);
+        if (!Number.isFinite(at)) continue;
+        if (byCell.has(at)) continue;
+        byCell.set(at, i);
+      }
+    }
+    byCell.length = sites.length;
+    if (footprintShapes.size >= SHAPES_KEPT) footprintShapes.delete(footprintShapes.keys().next().value);
+    footprintShapes.set(shape, byCell);
+  }
+  footprintCache.set(sites, byCell);
+  return byCell;
 }
 
 function terrainIdAt(board, x, y) {

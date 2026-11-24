@@ -115,12 +115,15 @@ export async function run(ctx) {
       { type: "overrun", side: "blue", x: cell.x + 3, y: cell.y, round: 7 },
     ], 7);
     const text = only(fail, two, "two overruns on one cell in one round must be one line");
-    if (!/2 units were lost/.test(text)) fail("pb123: the overrun line does not carry the count: " + text);
+    // PB-216: this arm's `side` is the seat that WON the overrun, so the line is the winner's -
+    // "a unit was lost" spoke in the loser's voice and is gone. The count and the place are what
+    // this node is about and both are still pinned here.
+    if (!/2 enemy units were overrun/.test(text)) fail("pb123: the overrun line does not carry the count: " + text);
     noCell(fail, text, "own overrun line");
     hasPlace(fail, text, "own overrun line");
 
     const one = logLines(match, "blue", [{ type: "overrun", side: "blue", x: cell.x + 3, y: cell.y, round: 7 }], 7);
-    if (!/a unit was lost/.test(only(fail, one, "a single overrun must produce one line"))) {
+    if (!/an enemy unit was overrun/.test(only(fail, one, "a single overrun must produce one line"))) {
       fail("pb123: a single overrun must read as one unit: " + JSON.stringify(texts(one)));
     }
 
@@ -141,7 +144,9 @@ export async function run(ctx) {
       { type: "overrun", side: "blue", x: cell.x + 3, y: cell.y, round: 10 },
       { type: "overrun", side: "red", x: cell.x + 3, y: cell.y, round: 10 },
     ], 10);
-    if (bothSides.length !== 1 || !/overrun: a unit was lost/.test(bothSides[0].text)) {
+    // PB-216: the line now speaks for the seat that won the overrun, so red's own event reads as
+    // what red ran over. The pin here is still "one line, not two".
+    if (bothSides.length !== 1 || !/an enemy unit was overrun/.test(bothSides[0].text)) {
       fail("pb123: the other seat's overrun inflated this seat's line: " + JSON.stringify(texts(bothSides)));
     }
   }
@@ -186,13 +191,11 @@ export async function run(ctx) {
     if (destroyedBare !== "lost a unit") {
       fail("pb123: destroyed's no-landmark fallback is not the bare D-028 sentence: " + JSON.stringify(destroyedBare));
     }
-    const overrunBare = bareTexts.find((text) => /^overrun: /.test(text));
-    if (overrunBare !== "overrun: a unit was lost") {
-      fail("pb123: overrun's no-landmark fallback invented a place clause: " + JSON.stringify(overrunBare));
-    }
-    const enemyOverrunBare = bareTexts.find((text) => /overrun/.test(text) && !/^overrun: /.test(text));
-    if (enemyOverrunBare !== "an enemy unit was overrun") {
-      fail("pb123: the enemy overrun's no-landmark fallback invented a place clause: " + JSON.stringify(enemyOverrunBare));
+    // PB-216: both overrun events here are read by the seat that did NOT lose the unit (blue won
+    // the first, the second names no targetSide), so both lines are the winner's bare sentence.
+    const overrunBare = bareTexts.find((text) => /overrun/.test(text) && text === "an enemy unit was overrun");
+    if (!overrunBare) {
+      fail("pb123: overrun's no-landmark fallback invented a place clause: " + JSON.stringify(bareTexts));
     }
     // The shape the PM asked for: ONE predicate, importable, used by every emitter. A base tree
     // without it fails here by name instead of crashing on the import, so the leg reds on the
@@ -247,7 +250,9 @@ export async function run(ctx) {
       }
       if (seen.overrun > 0) {
         const blue = texts(logLines(match, "blue", events, match.round));
-        const overrunLines = blue.filter((text) => /overrun:/.test(text));
+        // PB-216: the line speaks for the seat that won the overrun and names what it ran over;
+        // the "overrun:" prefix is gone.
+        const overrunLines = blue.filter((text) => /was overrun/.test(text));
         if (overrunLines.length !== 1) {
           fail("pb123: the real path produced " + seen.overrun + " overrun events and " + overrunLines.length + " lines");
         }

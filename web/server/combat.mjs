@@ -23,9 +23,8 @@
 // rule. A transport is cargo: it neither fires nor survives an exchange.
 
 import { CELL_W, boardPayload } from "./board.mjs";
-import { layerOf } from "./placement.mjs";
+import { footprintCellIndex, layerOf } from "./placement.mjs";
 import { combatRules, seaRangeFor, digInIds, terrainTables } from "./rules.mjs";
-import { siteIndex } from "./siteindex.mjs";
 
 // "Is this piece on the air layer?" is asked in four places below (reach, two target scans, the
 // mass-selection pass) and every one of them used to inline `kind === "aircraft" || domain ===
@@ -41,6 +40,10 @@ export const SHOT_NOTE = "Strength hit.";
 export const FIGHT_OVER_NOTE = "Strength spent. The unit is gone.";
 export const ENTRENCH_NOTE = "Dug in. Incoming hits land at the entrenched factor.";
 export const MILITIA_NOTE = "City militia.";
+
+// PB-216: the site kinds whose militia defends them. Same list the old hits-loop carried - a city,
+// base, dock or capital; a facility has none.
+const MILITIA_SITES = new Set(["city", "base", "dock", "docks", "capital"]);
 
 // Chebyshev distance 1, X wraps around the board edge, Y does not.
 export function adjacent(a, b) {
@@ -547,38 +550,80 @@ export function resolve(match) {
 
     // City militia: a defender standing on its own city, base, dock or capital is helped by the
     // militia, and each attacker pays once that round (p.10, p.23).
+    //
+    // PB-216: the militia is the CITY's producer, not a rider on an exchange. It used to walk
+    // `hits`, so with the last defender gone there was no hit to hang on and the block never ran -
+    // the manual's own case ("Do you see it take damage even after the enemy unit is destroyed?",
+    // L246-247) was the one case the code could not express. It also looked the site up on the
+    // ANCHOR cell only, so a defender bought on a footprint cell (D-026) got no militia even while
+    // it was alive and fighting on its own city. Now every enemy piece standing inside the city
+    // pays, on its own militia beat.
     if (combat.militiaDamage > 0) {
+      const byCell = footprintCellIndex(match);
+      const sites = byCell && Array.isArray(match.sites) ? match.sites : null;
       const paid = new Set();
-      // The board's cell index, not a fresh Map of every site every round: the bench builds 1000
-      // rooms' indexes once and then pays one lookup per hit.
-      const byCell = siteIndex(match.sites);
-      for (const hit of hits) {
-        const site = byCell ? byCell.get(Number(hit.target.y) * CELL_W + Number(hit.target.x)) || null : null;
-        if (!site || site.owner !== hit.target.side) continue;
-        if (!["city", "base", "dock", "docks", "capital"].includes(site.kind)) continue;
-        if (paid.has(hit.attacker.id)) continue;
-        paid.add(hit.attacker.id);
-        const militia = applyDamage(hit.attacker, combat.militiaDamage, max);
+      // The index carries a site's POSITION in the match's own list (see placement.mjs), so the
+      // object - and its live owner - is always this room's.
+      const siteOfCell = (piece) => {
+        if (!byCell) return null;
+        const at = byCell.get(Number(piece.y) * CELL_W + Number(piece.x));
+        return at === undefined ? null : sites[at] || null;
+      };
+      const siteKey = (site) => (site.id === undefined || site.id === null
+        ? Number(site.x) + "," + Number(site.y)
+        : String(site.id));
+      const pay = (piece, site) => {
+        if (!piece || paid.has(piece.id) || doomed.has(piece.id)) return;
+        // The beat is per piece per city: a piece that walks into a second city starts that
+        // city's clock fresh, and a piece that leaves and comes back is a new occupation.
+        const key = siteKey(site);
+        const last = piece.militiaSite === key ? Number(piece.militiaRound ?? -1) : -1;
+        if (Number(round) - last < Number(combat.shotEveryRounds)) return;
+        paid.add(piece.id);
+        piece.militiaSite = key;
+        piece.militiaRound = round;
+        const militia = applyDamage(piece, combat.militiaDamage, max);
         log.push({
           type: "shot",
-          side: hit.target.side,
+          side: site.owner,
           pieceId: "militia:" + (site.id ?? site.name ?? "city"),
-          target: hit.attacker.id,
+          target: piece.id,
           // PB-211 gate (f): the militia is a producer like any other, and the log/lexicon reads
-          // these three fields, not a board lookup - the attacker it shot may die this round.
-          targetSide: hit.attacker.side,
+          // these three fields, not a board lookup - the piece it shot may die this round.
+          targetSide: piece.side,
           attackerKind: "militia",
-          targetKind: kindOf(hit.attacker),
+          targetKind: kindOf(piece),
           amount: combat.militiaDamage,
           strength: militia.after,
           flank: false,
           entrenched: false,
           militia: true,
-          at: { x: hit.attacker.x, y: hit.attacker.y },
+          at: { x: piece.x, y: piece.y },
           round,
           note: MILITIA_NOTE,
         });
-        if (militia.dead) doomed.add(hit.attacker.id);
+        if (militia.dead) doomed.add(piece.id);
+      };
+
+      // (a) The occupation: every enemy piece standing inside the city, defender or not. This is
+      // the manual's case, and it is the half the old `hits` walk could not express.
+      for (let i = 0; byCell && i < pieces.length; i++) {
+        const piece = pieces[i];
+        const site = piece ? siteOfCell(piece) : null;
+        if (!site || !MILITIA_SITES.has(String(site.kind))) continue;
+        if (!site.owner || site.owner === piece.side) continue;
+        pay(piece, site);
+      }
+
+      // (b) The defence: a piece that traded shots with a defender standing on its own city this
+      // round is attacking that city, and the militia reaches it from one cell out as it always
+      // did. PB-216 makes the site lookup footprint-aware on the DEFENDER's cell too - a defender
+      // bought on a footprint cell (D-026) used to be invisible to its own militia.
+      for (const hit of hits) {
+        const site = siteOfCell(hit.target);
+        if (!site || !MILITIA_SITES.has(String(site.kind))) continue;
+        if (site.owner !== hit.target.side) continue;
+        pay(hit.attacker, site);
       }
     }
 

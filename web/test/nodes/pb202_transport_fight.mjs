@@ -48,7 +48,13 @@ function fight(pieces, round = 1) {
   const match = openMatch("1986", []);
   match.clock = "running";
   match.round = round;
-  match.foughtRound = round - combatRules().shotEveryRounds;
+  // PB-211 (D-030): the beat is per PAIR and lives on the pieces (`lastShotRound`), so a fixture
+  // that means "this pair's last exchange was one beat ago" has to stamp the pair. The old line
+  // wrote `match.foughtRound`, which resolve stopped reading at a36c36b - inert here since, and a
+  // fixture that only *looks* like it models the cadence. Stamping the pieces keeps the arm honest:
+  // if pairDue ever reads a front-wide clock again, these rounds go silent and the rate asserts red.
+  const last = Number(round) - combatRules().shotEveryRounds;
+  for (const unit of pieces) unit.lastShotRound = last;
   match.pieces = pieces;
   const events = resolve(match);
   return { match, events, shots: events.filter((event) => event.type === "shot") };
