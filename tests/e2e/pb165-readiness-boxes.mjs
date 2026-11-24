@@ -249,6 +249,61 @@ try {
     }, cell);
   }
 
+  // PB-165f: the box's INTERIOR fill, which the window above cannot see. It takes the most
+  // saturated pixel of a 5x5 window around the cell centre, and that pixel is always the 0.95
+  // PLACEMENT_BOX outline (measured: M1, which collapses only the 0.62 PLACEMENT_FILL to the ready
+  // ink, still reads 20/20). This probe stays inside the box and inside the cell: radius is the
+  // smaller of the box's inner edge (side/2 - 3, clear of the 3 px casing and the 1.5 px bright
+  // stroke) and the cell's own half-width, so it samples the fill under the stroke, never the
+  // stroke and never a neighbour's fill.
+  async function fillSample(cell) {
+    return page.evaluate(({ x, y }) => {
+      const cv = document.getElementById("board");
+      const rect = cv.getBoundingClientRect();
+      const ratio = cv.width / Math.max(1, rect.width);
+      const centre = window.__chq.cellToScreen(x, y);
+      let stepBack = Math.abs(window.__chq.cellToScreen(x + 1, y).x - centre.x) * ratio;
+      if (!(stepBack > 0.5)) stepBack = Math.abs(window.__chq.cellToScreen(x, y + 1).y - centre.y) * ratio;
+      const scaleBack = stepBack > 0.5 ? stepBack : 1;
+      const box = (window.__chq.state().placementBox || {});
+      const boxPx = Number(box.px);
+      const sideBack = Math.max(10, Number.isFinite(boxPx) ? boxPx : 0, Math.round(scaleBack));
+      const radius = Math.max(0, Math.min(sideBack / 2 - 3, scaleBack / 2 - 0.5));
+      const g = cv.getContext("2d");
+      const pixels = [];
+      const edge = Math.max(0, Math.floor(radius));
+      const grid = [];
+      for (let dy = -edge; dy <= edge; dy += 1) {
+        const row = [];
+        for (let dx = -edge; dx <= edge; dx += 1) {
+          const px = g.getImageData(
+            Math.round((centre.x + dx - rect.left) * ratio),
+            Math.round((centre.y + dy - rect.top) * ratio),
+            1, 1,
+          ).data;
+          row.push([px[0], px[1], px[2]].join(","));
+          const max = Math.max(px[0], px[1], px[2]);
+          const min = Math.min(px[0], px[1], px[2]);
+          const sat = max ? (max - min) / max : 0;
+          if (max > 40 && sat >= 0.2) pixels.push({ px: [px[0], px[1], px[2], px[3]], max, sat });
+        }
+        grid.push(row.join(" | "));
+      }
+      // PB-165f: the FILL, not the stroke. At this seed the box (11 px) is almost three cells wide,
+      // so a neighbouring cell's 0.95 outline can cross this cell's own bounds and a max-saturation
+      // probe (the old sample()) always lands on it. The 0.62 fill is the DARK half of the ink set;
+      // the median-value saturated pixel inside the box is the fill, on both the reference tree and
+      // the M1 mutant (measured grid: outline 235-249, fill 183-188).
+      pixels.sort((a, b) => a.max - b.max);
+      const median = pixels.length ? pixels[Math.floor((pixels.length - 1) / 2)] : { px: [0, 0, 0, 0], max: 0, sat: 0 };
+      const best = median.px;
+      best.side = Math.round(sideBack / ratio);
+      best.cell = Math.round(scaleBack / ratio);
+      best.radius = +radius.toFixed(1);
+      return { rgba: best.slice(0, 4), side: best.side, cell: best.cell, radius: best.radius, grid, counted: pixels.length };
+    }, cell);
+  }
+
   async function clickCell(cell) {
     const point = await page.evaluate(({ x, y }) => window.__chq.cellToScreen(x, y), cell);
     const vp = page.viewportSize();
@@ -360,6 +415,41 @@ try {
   const inkLong = await classify(pxLong);
   mark("a long-wait cell paints RED (VGA 12 #ff5555)", inkLong.ink === "red",
     "rgba " + pxLong.join(",") + " -> " + JSON.stringify(inkLong));
+
+  // PB-165f: the OUTLINE has been asserted above since PB-165; this is the fill under it. One
+  // assertion, on the same long-wait cell, sampled at the box interior. Grader is M1 — the fill
+  // alone collapsed to the ready ink — which reads 21/0 on the outline-only leg and must red here.
+  //
+  // Zoom first, and that is measured, not cosmetic: at the leg's fit zoom the camera scale is 4,
+  // so the box (10 px floor) is one cell wide times 2.5 and the 3 px casing of the neighbouring
+  // boxes covers almost every fill pixel — with PLACEMENT_FILL forced to magenta only a handful of
+  // pixels changed in a 15x15 dump, and the rest of the cell read as antialiased stroke (183-188).
+  // At scale >= 14 the box is exactly one cell, its stroke sits on the cell's own edge, and the
+  // interior is solid fill. The wheel anchors on the cursor, so the cell stays where it was.
+  async function zoomTo(want) {
+    for (let i = 0; i < 16; i += 1) {
+      const cam = await page.evaluate(() => window.__chq.state().camera);
+      if (cam && Number(cam.scale) >= want) return cam;
+      const point = await page.evaluate(({ x, y }) => window.__chq.cellToScreen(x, y), longCell);
+      await page.evaluate(([x, y]) => {
+        document.getElementById("board").dispatchEvent(new WheelEvent("wheel", {
+          deltaY: -100, clientX: x, clientY: y, bubbles: true, cancelable: true,
+        }));
+      }, [point.x, point.y]);
+      await sleep(160);
+    }
+    return page.evaluate(() => window.__chq.state().camera);
+  }
+  const camFill = longCell ? await zoomTo(14) : null;
+  const fillLong = longCell ? await fillSample(longCell) : { rgba: [0, 0, 0, 0], side: 0, cell: 0, radius: 0 };
+  const inkFillLong = await classify(fillLong.rgba);
+  mark("the long-wait cell's INTERIOR fill paints RED (VGA 12 #ff5555)",
+    inkFillLong.ink === "red" && inkFillLong.h !== null,
+    "rgba " + fillLong.rgba.join(",") + " -> " + JSON.stringify(inkFillLong)
+      + " inside side " + fillLong.side + " px / cell " + fillLong.cell + " px, radius " + fillLong.radius
+      + " camera scale " + (camFill ? camFill.scale : "none"));
+  await page.click("#camFit").catch(() => {});
+  await sleep(200);
 
   const blueTired = ((await room()).sites || []).filter((s) => s.owner === "blue" && Number(s.readyRound) >= 21);
   mark("the server says that radius is >= 21 rounds out", blueTired.length > 0,
