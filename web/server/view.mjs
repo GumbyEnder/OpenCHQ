@@ -11,7 +11,9 @@
 // A submarine is only visible when it moved this round or is in a fight (a boat that fired
 // is not "still"). In era "9999" the other side is withheld entirely until its capital has
 // been seen from one of that seat's pieces; that sighting is remembered on the match, so
-// pulling the scout back does not un-discover the enemy.
+// pulling the scout back does not un-discover the enemy. That gate withholds ORDINARY SIGHT only:
+// the intel bar's reveal ("beneath which all units are revealed - including your opponents'",
+// p.31) and a satellite pass still arrive while the capital is unknown (PB-223).
 
 import { CELL_W, SEATS } from "./board.mjs";
 import { combatRules, enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
@@ -105,19 +107,23 @@ function seatPieces(match, side) {
   return { own, enemy };
 }
 
-function visibleEnemy(unit, ownPieces, match, side, now) {
-  // Intel's p.31 bar stamps every enemy for the round it is used, and a stamped piece is sent.
-  // A satellite pass never stamps a submarine (L326 "except submarines, which remain hidden",
-  // L329 "always hidden from air and satellite scanning", L936 "all enemy units are exposed except
-  // submarines"), so the sub test below stays reachable for every enemy the pass does not touch.
+function visibleEnemy(unit, ownPieces, match, side, now, hidden) {
+  // A reveal is the tool's own contract and crosses the concealed era's gate. Manual p.31: the bar
+  // reveals every unit beneath it "including your opponents'", and p.31 does not make that wait for
+  // a capital to be found. PB-223: with the gate in front of the whole enemy loop, era 9999 charged
+  // a scan, stamped three enemy pieces and sent none of them, so a paid tool did nothing visible.
   if (Number(unit.revealedRound) >= Number(match.round) && Number(unit.revealedRound) >= 0) {
     // PB-158: an intel reveal is only a reveal under the bar. `scanGate` returns null when the
     // active pass is not this unit's (a satellite, or no scan), true while the bar covers its
     // column, and false once the bar has left it - the original lingers for no measurable time
-    // after the trailing edge clears a unit (Q51). The unit then falls back to ordinary sight.
+    // after the trailing edge clears a unit (Q51). A satellite pass never stamps a submarine
+    // (L326/L329/L936), so the sub test below stays reachable for everything a pass does touch.
     const gated = scanGate(match, side, unit, now);
     if (gated !== false) return true;
   }
+  // Ordinary sight is what the concealed era withholds: the enemy is the secret until its capital
+  // has been seen from one of this seat's own pieces.
+  if (hidden) return false;
   if (unit.kind === "submarine" && !movedThisRound(unit, match) && !unit.fighting) return false;
   return ownPieces.some((own) => withinSight(own, unit));
 }
@@ -256,13 +262,13 @@ export function forSeat(match, side, now = Date.now()) {
     if (steps.length) routes[unit.id] = cloneSteps(steps);
   }
 
-  if (!hidden) {
-    for (const unit of enemy) {
-      if (!visibleEnemy(unit, own, match, side, now)) continue;
-      const steps = enemyRoutes(unit);
-      pieces.push(viewPiece(unit, steps, match.round));
-      if (steps.length) routes[unit.id] = cloneSteps(steps);
-    }
+  // The loop always runs: `visibleEnemy` applies the concealed era's gate to ordinary sight, while a
+  // reveal (the intel bar, a satellite pass) still crosses it.
+  for (const unit of enemy) {
+    if (!visibleEnemy(unit, own, match, side, now, hidden)) continue;
+    const steps = enemyRoutes(unit);
+    pieces.push(viewPiece(unit, steps, match.round));
+    if (steps.length) routes[unit.id] = cloneSteps(steps);
   }
 
   const sites = (match.sites || [])
