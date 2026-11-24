@@ -19,7 +19,7 @@ import { metersFor, oilReadout } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing } from "./late.mjs";
-import { ensureStrength } from "./combat.mjs";
+import { ensureStrength, movedThisRound } from "./combat.mjs";
 import { holderOf as capitalHolder } from "./capitals.mjs";
 import { ownershipOf } from "./territory.mjs";
 // The payday itself, so the economy dialog shows the figure the tick will pay rather than a page-side
@@ -50,17 +50,8 @@ export function withinSight(from, to) {
   return distance(from, to) <= sightCells();
 }
 
-// Deliberately not `path.length > 0` alone: a piece that spent its last step this round has
-// an empty path but did move. Movement modules may stamp a round on the piece.
-function movedThisRound(unit, match) {
-  if (Array.isArray(unit.path) && unit.path.length > 0) return true;
-  for (const key of ["movedRound", "lastStepRound", "steppedRound"]) {
-    if (unit[key] !== undefined && unit[key] !== null && Number(unit[key]) === Number(match.round)) {
-      return true;
-    }
-  }
-  return false;
-}
+// "Moved this round" is movedThisRound() in combat.mjs: the entrench tick reads the same predicate,
+// so a piece cannot be dug in and moving at once (PB-214b).
 
 function cloneSteps(steps) {
   return (Array.isArray(steps) ? steps : []).map((step) => ({ ...step }));
@@ -115,7 +106,7 @@ function visibleEnemy(unit, ownPieces, match, side, now) {
     const gated = scanGate(match, side, unit, now);
     if (gated !== false) return true;
   }
-  if (unit.kind === "submarine" && !movedThisRound(unit, match) && !unit.fighting) return false;
+  if (unit.kind === "submarine" && !movedThisRound(unit, match && match.round) && !unit.fighting) return false;
   return ownPieces.some((own) => withinSight(own, unit));
 }
 
@@ -149,7 +140,7 @@ function viewPiece(unit, steps, round) {
     // step this round, but its path is already empty, so the page's own badge reader had nothing to
     // read and showed "idle" one round behind the unit list. Ship the server's word instead of
     // letting the page re-derive it from the path.
-    moving: movedThisRound(unit, { round }),
+    moving: movedThisRound(unit, round),
     state: stateOf(unit, round),
   };
 }
@@ -163,7 +154,7 @@ function stateOf(unit, round) {
   // predicate is `movedThisRound()` — the same one `visibleEnemy()` uses, so "moved" keeps one
   // definition. `movedRound` is stamped by the walker at move.mjs:1261 (its own comment: "the
   // mover attacks"), and by air.mjs:493 for a flown mission.
-  if (movedThisRound(unit, { round })) return "moving";
+  if (movedThisRound(unit, round)) return "moving";
   if (unit.pinned === true) return "pinned";
   if (unit.repairing === true) return "repairing";
   if (unit.entrenched === true) return "digging";

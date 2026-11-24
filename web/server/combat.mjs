@@ -246,6 +246,24 @@ export function baseDamageFor(attackerKind, defender, combat = null) {
   return Number(block.baseDamage[String(attackerKind)] ?? 0);
 }
 
+// "Did this piece move in the round being closed?" A piece that spent its LAST step this round has
+// an empty path but did move: the walker stamps `movedRound` at the step (move.mjs), view.mjs ships
+// that as `moving: true`, and stateOf() calls the round "moving". The entrench tick has to read the
+// same fact. It used to read `path.length > 0` alone, and with config `entrenchRounds: 1` it
+// incremented stillRounds on the arrival round itself - so the wire carried entrenched: true while
+// the state was still moving and the badge tip said "dug in" before the dig-in had begun, and a unit
+// that had just walked in took the dug-in damage factor (PB-214b, PM hand-check on beb0893).
+export function movedThisRound(piece, round) {
+  if (!piece) return false;
+  if (Array.isArray(piece.path) && piece.path.length > 0) return true;
+  const stamp = Number(round);
+  for (const key of ["movedRound", "lastStepRound", "steppedRound"]) {
+    const value = piece[key];
+    if (value !== undefined && value !== null && Number(value) === stamp) return true;
+  }
+  return false;
+}
+
 // The terrain byte under a piece, as the board serves it. Cached: `damageFor` runs once per
 // pairing per beat, and boardPayload() re-reads the extract root on every call otherwise.
 let cellsCache;
@@ -665,7 +683,9 @@ export function resolve(match) {
 
 // Infantry digs in after `entrenchRounds` rounds of standing still without fighting (p.22: "an
 // infantry that has not moved or fought"). Being attacked does not clear the state; only a move
-// order does (move.mjs), which is why this never lowers a flag.
+// order does (move.mjs), which is why this never lowers a flag. The round a piece spends its LAST
+// step is a round it moved, not a round of standing still: `moving` is movedThisRound(), the same
+// predicate the wire and the unit list use (PB-214b).
 //
 // T-016: the ground decides whether the state is available at all. DS:0x1996 bit 0x20 marks the
 // dig-in terrains (plain, forest, mountain, oilfield, desert, jungle) and the config carries that
@@ -680,7 +700,7 @@ export function tickEntrench(match) {
   const round = Number(match.round) || 0;
   for (const piece of match.pieces) {
     if (!piece || piece.kind !== "infantry" || piece.domain === "sea" || piece.transport === true) continue;
-    const moving = Array.isArray(piece.path) && piece.path.length > 0;
+    const moving = movedThisRound(piece, round);
     const fighting = piece.fighting !== null && piece.fighting !== undefined;
     if (moving || fighting) {
       piece.stillRounds = 0;
