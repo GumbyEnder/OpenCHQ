@@ -366,7 +366,8 @@ export function badgeTops(groups) {
 // ---- state ---------------------------------------------------------------------------------
 
 // The state a badge paints. Selection wins over combat, which wins over moving: a selected unit is
-// the one the player is about to order, and that is the strongest thing the frame can say.
+// the one the player is about to order, and that is the strongest thing the frame can say. A dug-in
+// piece reads "digging", the unit list's own word for it.
 export function badgeState(piece, opts = {}) {
   if (!piece) return "idle";
   const selectedId = opts.selectedId;
@@ -374,6 +375,11 @@ export function badgeState(piece, opts = {}) {
   if (piece.fighting !== null && piece.fighting !== undefined && piece.fighting !== false) return "combat";
   if (Array.isArray(piece.path) && piece.path.length > 0) return "moving";
   if (piece.moving === true) return "moving";
+  // PB-214b: a dug-in piece used to fall through to "idle" here while the unit list said "digging",
+  // on every round of every dig-in. The disc already carries the green dug-in bar (showsEntrench) and
+  // the tip the words, so this adds no mark - it only stops the badge's word disagreeing with the
+  // list's on the one comparison PB-214's AC was written against.
+  if (showsEntrench(piece)) return "digging";
   return "idle";
 }
 

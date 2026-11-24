@@ -11,7 +11,7 @@
 //   (a) on the arrival round, while the state is moving, entrenched is false and the tip has no
 //       "dug in";
 //   (b) "dug in" first shows on the round the state leaves moving - the very next round, never
-//       earlier.
+//       earlier - and the badge word follows the server's word there.
 // A parked infantry that never moved is the control: it still digs in on its first still round, so
 // a tree that simply never entrenches cannot pass this node.
 import { boardPayload, CELL_W } from "../../server/board.mjs";
@@ -138,6 +138,8 @@ export async function run(ctx) {
     must(/dug in/.test(after.tip), "PB-214b (b): the round after arrival " + arrival.round + " has no 'dug in': " + after.tip);
     must(after.round === arrival.round + 1, "PB-214b (b): 'dug in' first shows on round " + after.round + ", not " + (arrival.round + 1));
     must(after.state !== "moving" && after.entrenched === true, "PB-214b (b): the first dug-in frame is not settled and dug in: " + JSON.stringify(after));
+    // The badge word follows the server's word once the dig-in has begun (PM's r3/r6 question).
+    must(after.badge === "digging", "the badge calls a dug-in piece '" + after.badge + "' while the unit list says '" + after.state + "'");
   }
 
   // Control: a piece that never moved digs in on its first still round, so (b) cannot pass on a tree
@@ -146,4 +148,5 @@ export async function run(ctx) {
   const parked = frameOf(match, PARKED);
   must(!/dug in/.test(trace[0].tip), "control: a fresh infantry opens dug in: " + trace[0].tip);
   must(parked.entrenched === true && /dug in/.test(parked.tip), "control: a parked infantry never dug in; the pin proves nothing");
+  must(parked.badge === "digging", "control: the parked dug-in badge says '" + parked.badge + "'");
 }
