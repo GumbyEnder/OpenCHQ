@@ -235,7 +235,14 @@ export function logLines(match, side, events, round) {
         const row = shots.get(key);
         if (!row) break;
         shotDone.add(key);
-        if (!mine && !legible(match, side, row.event)) break;
+        // PB-208: a shot AT the seat's own piece is first-party news even when that piece is
+        // already off the board. A killing hit removes the target before this log is built
+        // (combat.mjs filters `doomed` after the exchange), and the removed piece was often the
+        // only eye on its own cell, so `legible` read false and the very round that lost the unit
+        // was the one round with no fight line. The event carries `targetSide` (combat.mjs) so the
+        // reader is known from the shot itself, not from a board the dead piece has left.
+        const onMe = row.event.targetSide === side;
+        if (!mine && !onMe && !legible(match, side, row.event)) break;
         const attackNoun = unitNoun(row.event.attackerKind);
         const targetNoun = unitNoun(row.event.targetKind);
         const who = mine ? "your " + attackNoun : "an enemy " + attackNoun;

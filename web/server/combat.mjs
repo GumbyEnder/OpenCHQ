@@ -492,6 +492,10 @@ export function resolve(match) {
         side: attacker.side,
         pieceId: attacker.id,
         target: target.id,
+        // PB-208: the target's side rides the event. The log has to know whether the piece that
+        // took the hit is the reader's own, because a killing hit removes it before the log is
+        // built and the seat cannot then discover the side from the board.
+        targetSide: target.side,
         // The log names both sides by noun, and the target may already be off the board when the
         // line is written, so the nouns ride the event rather than a post-hoc lookup (PB-202 AC3).
         attackerKind: attacker.transport === true ? "transport" : attacker.kind,
@@ -552,6 +556,9 @@ export function resolve(match) {
           type: "destroyed",
           side: piece.side,
           pieceId: piece.id,
+          // PB-208: the line read "lost a unit" for every loss because this event carried no kind;
+          // the seat that just lost a submarine could not be told it was a submarine.
+          kind: piece.transport === true ? "transport" : piece.kind,
           by: attacker ? attacker.attacker.id : null,
           x: piece.x,
           y: piece.y,
