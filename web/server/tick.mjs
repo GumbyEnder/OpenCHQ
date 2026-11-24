@@ -24,6 +24,9 @@ import { siteAtCell } from "./siteindex.mjs";
 // PB-224: the recon satellites fly, look and fall in their own pass. They never enter advance():
 // they are above the board, so no cell, no fight and no capture belongs to them.
 import { tickSatellites } from "./satellite.mjs";
+// PB-230: a nuke paints wasteland on the MATCH, not on the shared grid; the attrition step reads it
+// through a lookup (see the tick order below).
+import { wastelandTerrain } from "./nukestrike.mjs";
 
 // The alarm speaks when enemy troops are this close to a capital. Eight cells is the sight rule's
 // own radius: inside it, the player can see them coming, so the log should not be quieter than the
@@ -115,7 +118,17 @@ export function tickMatch(match) {
   // Modules that are still stubs return [] (or nothing). A round does not depend on them
   // producing events; it only depends on them being called in this order: advance, attrition,
   // combat, entrench, repair, capture, air, upkeep, pay (T-003's order, from Manual p.20-25).
-  for (const step of [advance, tickSatellites, attritionStep, resolve, tickEntrench, repairStep, occupy, tickAir, upkeep, pay]) {
+  for (const step of [advance, tickSatellites]) {
+    const produced = step(match);
+    if (Array.isArray(produced)) events.push(...produced);
+  }
+  // PB-230: wasteland painted by a nuke belongs to THIS match, not to the shared board grid, so
+  // attrition reads it through the lookup seam move.attritionStep already had. A room with no
+  // wasteland gets null back and takes the same grid path it always did.
+  const scorched = wastelandTerrain(match);
+  const burned = attritionStep(match, scorched);
+  if (Array.isArray(burned)) events.push(...burned);
+  for (const step of [resolve, tickEntrench, repairStep, occupy, tickAir, upkeep, pay]) {
     const produced = step(match);
     if (Array.isArray(produced)) events.push(...produced);
   }

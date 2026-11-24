@@ -65,7 +65,11 @@ export async function run() {
       if (!nuke.text.includes(String(radius))) fail("the nuke text does not print the config's radius: " + nuke.text);
     }
     if (!/3 .*fired/.test(nuke.text)) fail("the nuke text does not print the launch limit");
-    if (!/no damage/.test(nuke.text)) fail("the nuke text does not say it deals no damage");
+    // PB-230 retired the "deals no damage" stand-in: the briefing now has to describe the kill zone
+    // and the wasteland it leaves, in the same sentence that names the radius a stand-in.
+    if (/no damage/.test(nuke.text)) fail("the nuke text still says it deals no damage");
+    if (!/wasteland/.test(nuke.text)) fail("the nuke text does not say what it leaves behind");
+    if (!/home country/.test(nuke.text)) fail("the nuke text does not name the home-country refusal");
 
     // The refused case carries its reason rather than a bare no.
     if (cfg.enabled !== true) {

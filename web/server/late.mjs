@@ -15,6 +15,9 @@ import { siteAtCell } from "./siteindex.mjs";
 // the income roll and the winter check. Both live in nukes.mjs so economy.incomeGate reads the same
 // numbers this module writes.
 import { launchLead, warnFrom, winterFrom, nukeState, nukeRoll, winterChancePercent } from "./nukes.mjs";
+// PB-230: the damage arm. Geometry and removal are blast.mjs's (PB-231); the aim checks, the
+// wasteland paint and the note live here beside the counters that describe a launch.
+import { killRadius, nukeNote, nukeStrike, nukeTarget } from "./nukestrike.mjs";
 
 const LATE_ERAS = new Set(["1986", "2023", "9999"]);
 
@@ -187,19 +190,6 @@ export function nukeStatus(match, side) {
   return { allowed: true };
 }
 
-// A capital may not be targeted: the archive keeps a guard around home ground.
-function nearCapital(match, cell) {
-  const cfg = (rules().nukes || {});
-  const radius = Number(cfg.exclusion);
-  if (!Number.isFinite(radius) || radius < 1) return false;
-  for (const side of ["blue", "red"]) {
-    const capital = match.capitals && match.capitals[side];
-    if (!capital) continue;
-    if (Math.abs(capital.x - cell.x) <= radius && Math.abs(capital.y - cell.y) <= radius) return true;
-  }
-  return false;
-}
-
 // What the kit does, said out loud, with every unascertained number labelled.
 //
 // The tools existed and the buttons existed; the consequences were only in this file. A player could
@@ -249,14 +239,19 @@ export function kitBriefing(match, side) {
       : "No home-ground guard is set in this match.";
     const limitText = `Launches stop once this side has ${lead} more fired than the other side (Manual p.30). ` +
       `This side may fire ${left} more before the other side answers.`;
-    const damageText = `A launch deals no damage and paints no wasteland — a ${STAND_IN}, because the archive's own nuke did neither.`;
+    // PB-230: the launch has consequences now, so the briefing describes them. A briefing that still
+    // said "deals no damage" would be the one place in the build where the player is told the old
+    // stand-in was the rule.
+    const zone = killRadius();
+    const zoneText = `The blast levels everything within ${zone} cells of the aim point — both sides' units, cities, bases and oil fields — and leaves wasteland, where attrition can kill. ${zone} is a ${STAND_IN}: the manual says "within three spaces" and the shape is read as a square.`;
+    const homeText = "Your own home country cannot be targeted, even where it has been invaded.";
     // PB-156: the global count is not decoration. Every launch feeds it, and it is what turns the
     // sky on both sides: income can be skipped from the first detonation, the warning comes at 5,
     // and winter can end the war from 10.
     const parked = match ? nukeState(match) : null;
     const detonated = parked ? Number(parked.detonated) || 0 : 0;
     const countText = `Detonations so far: ${detonated}. From ${warnFrom()} the sky is warned; from ${winterFrom()} each launch can end the war for both sides.`;
-    add("nuke", "Nuke", [radiusText, limitText, countText, damageText].join(" "), status.allowed, status.reason);
+    add("nuke", "Nuke", [radiusText, homeText, zoneText, limitText, countText].join(" "), status.allowed, status.reason);
   }
 
   return kit;
@@ -477,24 +472,44 @@ export function useTool(match, side, tool, target) {
   if (name === "nuke") {
     const status = nukeStatus(match, side);
     if (!status.allowed) return { error: status.reason };
-    const at = target && Number.isInteger(Number(target.x)) && Number.isInteger(Number(target.y))
-      ? { x: Number(target.x), y: Number(target.y) }
-      : null;
-    if (!at) return { error: "A launch needs a target cell." };
-    if (at.y < 0 || at.y > 135) return { error: "The target is off the map." };
-    if (nearCapital(match, at)) return { error: "Home ground is not a target." };
+    // PB-230: the three refusals, all above the charge and each with its own sentence - the capital
+    // ring (SDI/ABM, size a STAND-IN), the firer's OWN home country ("even if it's been invaded"),
+    // and the two above. A refused aim costs 0 and banks nothing.
+    const aim = nukeTarget(match, side, target);
+    if (aim.error) return { error: aim.error, country: aim.country, name: aim.name };
+    const at = aim.cell;
     const paid = charge(match, side, name);
     if (paid.error) return paid;
+    const strike = nukeStrike(match, side, at);
+    // The aim already proved the cell and the radius, so this is a guard, not a path: a charge that
+    // bought no strike is refunded rather than kept.
+    if (strike.error) {
+      const seat = match.sides && match.sides[side];
+      if (seat && Number.isFinite(seat.cash)) seat.cash += paid.price;
+      return { error: strike.error };
+    }
     const mine = launchedBy(match, side);
     mine.fired = Number(mine.fired || 0) + 1;
     // FUN_1eb5_0eae: one global count, incremented by the detonation itself, whatever the side.
     const state = nukeState(match);
     state.detonated = Number(state.detonated || 0) + 1;
     const detonated = state.detonated;
-    // No wasteland, no flipped city, no damage: the archive's own rule for this stand-in.
+    // PB-230: the board changes now. Both sides' units inside the square are gone, the cities,
+    // bases and oil fields in it are levelled, and every land cell it covered reads wasteland from
+    // this round on. Satellites are not in `pieces`, so they are untouched by construction.
+    for (const lost of strike.pieces) {
+      events.push({
+        type: "destroyed", side: lost.side, pieceId: lost.id, kind: lost.kind, by: "nuke",
+        x: lost.x, y: lost.y, strength: 0, round, note: "Nuke.",
+      });
+    }
     events.push({
       type: "nuke", side, x: at.x, y: at.y, round, launched: mine.fired, detonated, cost: paid.price,
-      note: "Stand-in nuke. It paints nothing and deals no damage.",
+      radius: strike.radius, killed: strike.pieces, sites: strike.sites.map((site) => ({
+        id: site.id, kind: site.kind, name: site.name || null, x: site.x, y: site.y, owner: site.owner || null,
+      })),
+      wasteland: strike.wasteland,
+      note: nukeNote(strike),
     });
     // From 5, a warning. Both seats read it: the count is global, not the launcher's business.
     if (detonated >= warnFrom()) {

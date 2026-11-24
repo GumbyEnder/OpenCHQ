@@ -14,6 +14,9 @@ import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
 import { applyDamage, damageFor, engageRange2, ensureStrength, kindOf, pairDue, rangeOf, squaredDistance, stampPair } from "./combat.mjs";
+// PB-230: a nuke's wasteland lives on the match, so the plan-time refusal has to ask the match as
+// well as the board grid. Import direction is one-way (nukestrike imports board/rules/blast only).
+import { wastelandAt } from "./nukestrike.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -448,6 +451,10 @@ export function planOrder(match, side, pieceId, toX, toY) {
   }
 
   if (isRefused(terrainAt(x, y) ?? -1)) return { error: "Wasteland is refused." };
+  // PB-230: ground a nuke has already burned reads wasteland for THIS match. A piece may still be
+  // caught in a blast and walk out (attrition is the consequence); what it may not do is be ORDERED
+  // onto wasteland, which is the same refusal the board's own wasteland cells give.
+  if (wastelandAt(match, x, y)) return { error: "Wasteland is refused." };
 
   // An order onto a cell held by the enemy is an attack, and it used to be refused as if it were
   // a collision. Two player-like sides then stood eight cells apart for a thousand rounds: neither

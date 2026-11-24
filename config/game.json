@@ -538,6 +538,8 @@
   "nukes": {
     "enabled": false,
     "exclusion": 2,
+    "killRadius": 3,
+    "killRadiusSource": "PORT DECISION, UNVERIFIED (PB-230). Manual p.30: the kill zone destroys 'everything within three spaces' of ground zero, land, sea and air units, cities, bases and oil fields, both sides'. The 3 is the manual's own count, read as CHEBYSHEV distance (a square) because every other radius in this build is a square - capital exclusion and the satellite scan. No decode and no DOSBox leg has pinned the shape or the count; web/server/nukestrike.mjs says STAND-IN in every event it emits.",
     "launchLead": 3,
     "warnFrom": 5,
     "winterFrom": 10,
