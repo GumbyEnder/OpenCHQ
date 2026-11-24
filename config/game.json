@@ -545,6 +545,10 @@
     "winterDivisor": 20,
     "source": "DECODED, PB-156. Manual p.30: at most 3 more nukes than the opponent has fired, so launchLead is the DIFFERENCE of the two counters (fired(mine) - fired(theirs) < 3), not one side's total. FUN_1eb5_0eae increments one global count at 0x148c; from 5 the original warns, from 10 nuclear winter if rnd(100) < 100 / (20 - n) (winterDivisor 20), and each round income is paid only if rnd(100) >= 5n (incomeSkipPerDetonation 5, decompiled.c 4763). The roll is the match's own seeded stream (web/server/rng.mjs), so a reload replays the same round. The 100% clamp at n >= 20 is an EXTRAPOLATION, not a decode: the original divides 100 by (20 - n), which has no defined value at 20 and no sensible one above it, so this block stops at a certain winter instead of inventing the original's undefined branch. `enabled:false` keeps the whole block inert, as shipped. exclusion 2 is still a STAND-IN home-ground guard."
   },
+  "blast": {
+    "radius": 6,
+    "source": "PB-231. Manual L343-345 + p.29 for the killer satellite: pick a destination, start over the home capital, travel fast, detonate on arrival, kill every satellite of BOTH sides within about six cells, retarget when the target moves. The count is NOT recovered - the booklet says 'about six' and the extract carries only the KILLSAT/BLOWSAT/SPYSAT animations - so radius 6 is a STAND-IN and web/server/blast.mjs says so in every event it emits. The primitive is shared with PB-230's damage arm, so one radius number, one geometry rule, two consumers."
+  },
   "placement": {
     "rule": "friendly-site",
     "footprint": {
