@@ -13,7 +13,7 @@ import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostL
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft } from "./air.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
-import { applyDamage, damageFor, engageRange2, ensureStrength, pairDue, rangeOf, squaredDistance, stampPair } from "./combat.mjs";
+import { applyDamage, damageFor, engageRange2, ensureStrength, kindOf, pairDue, rangeOf, squaredDistance, stampPair } from "./combat.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -1151,11 +1151,15 @@ export function advance(match) {
           const hullHit = applyDamage(piece, hull.amount, max);
           events.push({
             type: "shot", side: piece.side, pieceId: piece.id, target: occupant.id,
+            // PB-211 gate (f): the overrun is a producer too. The log reads these off the event
+            // because the piece it names as the target can be gone before the line is built.
+            targetSide: occupant.side, attackerKind: kindOf(piece), targetKind: kindOf(occupant),
             base: foot.base, amount: foot.amount, covered: foot.covered, entrenched: foot.entrenched,
             flank: foot.flank, rear: foot.rear, after: footHit.after, round: onRound, overrun: true,
           });
           events.push({
             type: "shot", side: occupant.side, pieceId: occupant.id, target: piece.id,
+            targetSide: piece.side, attackerKind: kindOf(occupant), targetKind: kindOf(piece),
             base: hull.base, amount: hull.amount, covered: hull.covered, entrenched: hull.entrenched,
             flank: hull.flank, rear: hull.rear, after: hullHit.after, round: onRound, overrun: true,
           });
@@ -1163,6 +1167,7 @@ export function advance(match) {
             doomed.add(occupant.id);
             events.push({
               type: "destroyed", side: occupant.side, pieceId: occupant.id, by: piece.id,
+              kind: kindOf(occupant),
               x: nx, y: ny, strength: 0, round: onRound, note: "Overrun.",
             });
             // The cell is free; the tank walks into it and keeps its order.
@@ -1176,6 +1181,7 @@ export function advance(match) {
             doomed.add(piece.id);
             events.push({
               type: "destroyed", side: piece.side, pieceId: piece.id, by: occupant.id,
+              kind: kindOf(piece),
               x: piece.x, y: piece.y, strength: 0, round: onRound,
               note: "Overrun. The tank was lost.",
             });

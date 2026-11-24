@@ -138,6 +138,13 @@ export function stampPair(a, b, round) {
   if (b) b.lastShotRound = at;
 }
 
+// The noun every log line and event uses for a piece. Cargo is a transport whatever hull carried
+// it, and it is the one noun a removed piece can no longer be asked for.
+export function kindOf(piece) {
+  if (!piece) return null;
+  return piece.transport === true ? "transport" : piece.kind;
+}
+
 // Which way a cell lies from a piece: the compass letter the walker already stamps in `facing`.
 export function bearing(from, to) {
   const raw = Number(to.x) - Number(from.x);
@@ -451,7 +458,6 @@ export function resolve(match) {
   // The numeric single pass, not chooseTarget per piece: same rule, one walk over the room.
   const targets = computeTargets(pieces);
 
-
   for (let i = 0; i < pieces.length; i++) {
     const piece = pieces[i];
     const target = targets[i];
@@ -525,8 +531,8 @@ export function resolve(match) {
         targetSide: target.side,
         // The log names both sides by noun, and the target may already be off the board when the
         // line is written, so the nouns ride the event rather than a post-hoc lookup (PB-202 AC3).
-        attackerKind: attacker.transport === true ? "transport" : attacker.kind,
-        targetKind: target.transport === true ? "transport" : target.kind,
+        attackerKind: kindOf(attacker),
+        targetKind: kindOf(target),
         amount: Number(Number(amount).toFixed(2)),
         strength: result.after,
         flank: hit.flank,
@@ -558,6 +564,11 @@ export function resolve(match) {
           side: hit.target.side,
           pieceId: "militia:" + (site.id ?? site.name ?? "city"),
           target: hit.attacker.id,
+          // PB-211 gate (f): the militia is a producer like any other, and the log/lexicon reads
+          // these three fields, not a board lookup - the attacker it shot may die this round.
+          targetSide: hit.attacker.side,
+          attackerKind: "militia",
+          targetKind: kindOf(hit.attacker),
           amount: combat.militiaDamage,
           strength: militia.after,
           flank: false,
@@ -585,7 +596,7 @@ export function resolve(match) {
           pieceId: piece.id,
           // PB-208: the line read "lost a unit" for every loss because this event carried no kind;
           // the seat that just lost a submarine could not be told it was a submarine.
-          kind: piece.transport === true ? "transport" : piece.kind,
+          kind: kindOf(piece),
           by: attacker ? attacker.attacker.id : null,
           x: piece.x,
           y: piece.y,

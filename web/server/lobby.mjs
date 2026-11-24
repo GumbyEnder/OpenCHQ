@@ -1305,6 +1305,9 @@ export function createLobby() {
       steps: Array.isArray(p.path) ? p.path.length : 0,
       next: Array.isArray(p.path) && p.path.length ? p.path[0] : null,
       fighting: p.fighting ?? null, shots: p.shots ?? 0,
+      // PB-211 (D-030): the beat is per pair now, so a flat bar has a visible reason. DEBUG only -
+      // main.mjs serves this dump only under OPENCHQ_DEBUG=1 and view.mjs never projects the field.
+      lastShotRound: p.lastShotRound ?? -1,
       strength: p.strength ?? null, entrenched: p.entrenched === true, pinned: p.pinned === true,
     }));
     return {
