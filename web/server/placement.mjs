@@ -18,9 +18,10 @@
 //
 // That shape is NOT re-implemented here. `web/data/footprints.json` is the MEASURED painted set,
 // taken from the running original's tile map (`t026-map-dump.py` + `t026-measured-footprints.py`,
-// era 1942 side BLUE, 2026-11-14) and baked by `tools/bake_footprints.mjs` (PM ruling 2026-11-14
-// 20:20 ET, option (a): measure the painter, do not derive it). The painter writes its block at
-// site record + (2,0) — measured on all 64 city-kind sites — so the baked cells are translated back
+// era 1986 (the dump's own stamp, era=0x19e=2), side BLUE, 2026-11-14) and baked by
+// `tools/bake_footprints.mjs` (PM ruling 2026-11-14 20:20 ET, option (a): measure the painter, do
+// not derive it). The painter writes its block at site record + (2,0) — measured on all 64
+// city-kind sites — so the baked cells are translated back
 // into the site-record frame, which is the frame the board and this module use. The exported loop
 // below survives only as the fallback for a site the measurement does not cover.
 //
