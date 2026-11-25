@@ -10,7 +10,8 @@
 //   - the answering side is not told, or the proposer is allowed to answer itself
 //   - an accepted truce reports a winner or a reason other than "ceasefire" (AC3)
 //   - the offer's event round and its log round disagree (AC4)
-//   - a bot seat leaves an offer on the table forever instead of declining (PORT DECISION)
+//   - a bot seat leaves an offer on the table forever instead of answering it
+//     (PB-250 owns WHICH answer; this arm grades that an answer lands at all)
 //
 // Everything after the module arms goes over real sockets with real sessions, the way the page does.
 
@@ -236,7 +237,7 @@ export async function run(ctx) {
   if (a.box.slice(markA).some((m) => m.op === "over")) fail("an accepted cease fire sent an over frame");
   if (b.box.slice(markB).some((m) => m.op === "over")) fail("an accepted cease fire sent the answerer an over frame");
 
-  // ---- a bot seat declines (PORT DECISION: how the original's AI decided is UNVERIFIED) -----
+  // ---- a bot seat ANSWERS (PB-250: which word is the city rule's business, not this arm's) ---
   const carol = await ctx.register("TruceBot");
   const c = ctx.socket(carol.token);
   await new Promise((resolve) => {
@@ -262,12 +263,23 @@ export async function run(ctx) {
   await c.wait((m) => m.op === "ack" && Array.isArray(m.events) && m.events.some((e) => e.type === "ceasefire_proposed"), "the bot-room offer ack", markC);
   // The decline rides a delta's `seat` (seatChanged) when the seat already had a shadow; both shapes
   // are accepted so this arm grades the fact, not which frame happened to carry it.
-  const botDeclined = await ctx.waitUntil(c.box, 0,
-    (m) => (m.op === "room" && m.room && m.room.seat && m.room.seat.ceasefire && m.room.seat.ceasefire.status === "declined") ||
-      (m.op === "delta" && m.delta && m.delta.seat && m.delta.seat.ceasefire && m.delta.seat.ceasefire.status === "declined"),
-    "the bot's decline", 8000);
-  const botOver = botDeclined.op === "room" ? Boolean(botDeclined.room.over) : Boolean(botDeclined.delta.over);
-  if (botOver) fail("the bot's decline ended the match");
+  // PB-250 replaced the fixed DECLINE with a stated rule (bot.mjs:botCeasefireAnswer: the bot accepts
+  // only when it holds fewer cities than the proposer). This arm therefore grades the FACT PB-200
+  // owns - the offer stops hanging and the answering status reaches the proposer - and leaves which
+  // word to PB-250's own arm, which flips the city count to get both answers.
+  const answered = (seat) => seat && seat.ceasefire &&
+    (seat.ceasefire.status === "declined" || seat.ceasefire.status === "accepted");
+  const botAnswered = await ctx.waitUntil(c.box, 0,
+    (m) => (m.op === "room" && m.room && answered(m.room.seat)) ||
+      (m.op === "delta" && m.delta && answered(m.delta.seat)),
+    "the bot's answer", 8000);
+  const answerFrame = botAnswered.op === "room" ? botAnswered.room : botAnswered.delta;
+  const status = answerFrame.seat.ceasefire.status;
+  // A decline leaves the war on; an accept enters the peace PB-245 made a STATE. Neither is an ending.
+  if (answerFrame.over) fail("the bot's answer (" + status + ") ended the match");
+  if (status === "accepted" && !(answerFrame.peace && answerFrame.peace.active)) {
+    fail("the bot accepted but the seat reads no peace: " + JSON.stringify(answerFrame.peace));
+  }
 
   for (const sock of [a, b, c]) sock.close();
 }

@@ -471,6 +471,41 @@ function botBuy(match, side, events, urgentSite = null) {
   }
 }
 
+// PB-250: how many CITIES a seat holds. The manual's cease-fire question is about ground held, so
+// a city or a capital counts and a base/dock/oilfield does not; `sites` carries one row per named
+// place with the owner that last took it, which is the same table the board draws.
+const CITY_KINDS = new Set(["city", "capital"]);
+
+export function citiesHeld(match, side) {
+  if (!match || !SIDES.has(side) || !Array.isArray(match.sites)) return 0;
+  let held = 0;
+  for (const site of match.sites) {
+    if (!site || site.owner !== side) continue;
+    if (CITY_KINDS.has(String(site.kind))) held += 1;
+  }
+  return held;
+}
+
+// PB-250: does the bot ACCEPT a cease fire that was proposed to it?
+//
+// PORT DECISION, not a recovered rule. The original's AI both offers and answers a cease fire -
+// docs/re/AI.md:369-375 carries "Do you want a cease fire? (y/n)" and the answer "No cease fire" -
+// but the trigger that makes it say yes is unresolved (AI.md:441; it needs disassembly and is
+// recorded UNVERIFIED on PB-250). So the shipped rule is stated here instead of guessed at:
+//
+//   THE BOT ACCEPTS ONLY WHEN IT HOLDS FEWER CITIES THAN THE PROPOSER.
+//
+// A side behind on ground wants the shooting to stop; a side level or ahead declines and fights
+// on. It is deterministic - no RNG, no clock, no seat name - so a leg can pin both answers by
+// moving one city, and a replay of the same board always answers the same way.
+export function botCeasefireAnswer(match, side) {
+  if (!match || !SIDES.has(side)) return false;
+  const truce = match.ceasefire && typeof match.ceasefire === "object" ? match.ceasefire : null;
+  const by = truce && (truce.by === "blue" || truce.by === "red") ? truce.by : null;
+  if (!by || by === side) return false;
+  return citiesHeld(match, side) < citiesHeld(match, by);
+}
+
 export function ordersFor(match, side) {
   const events = [];
   if (!match || !SIDES.has(side)) return events;

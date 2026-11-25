@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { deleteRoom, flushRooms, flushWindow, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
 import { tickMatch } from "./tick.mjs";
 import { forSeat, resultNote, resultOf, capitalListOf } from "./view.mjs";
-import { ordersFor as botOrders } from "./bot.mjs";
+import { botCeasefireAnswer, citiesHeld, ordersFor as botOrders } from "./bot.mjs";
 import { boardPayload, matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { entrench, issueOrder, launchStartingDestinations, planOrder, repair, setStartingDestination, transferPiece } from "./move.mjs";
@@ -177,6 +177,12 @@ export function deltaBetween(last, view) {
     // PB-224: satellites are not ground pieces (they fly above the board), so they ride the delta as
     // their own whole list rather than through the piece diff.
     satellites: view.satellites || [],
+    // PB-250/PB-251: the peace state rides the delta too, and whole. A bot answers a cease fire
+    // between rounds - the seat's own `ceasefire` flips on a delta - so a peace that only appeared
+    // in whole frames left the strip printing "cease-fire, war may resume" and the enemy still on
+    // the board until the next FULL_EVERY (20) frame. Same argument as `result`: a seat that missed
+    // one delta must not keep a peace it has already left.
+    peace: view.peace || null,
     unscreened: view.unscreened || [],
     seatChanged: last.seat !== signature(view.seat),
     capitalsChanged: last.capitals !== signature(view.capitals),
@@ -1322,19 +1328,39 @@ export function createLobby() {
         if (!room.match.seats) stampSeats(room);
         // PB-200: a cease fire on the table is answered by the bot seat. How the original's AI
         // decided whether to accept is UNVERIFIED (it needs disassembly; the card records this), so
-        // the bot DECLINES by PORT DECISION and the war goes on. The answer is queued before
-        // tickMatch, so the line lands in this round's log like every other between-rounds fact.
+        // the answer is a stated PORT DECISION - bot.mjs's botCeasefireAnswer: it accepts only when
+        // it holds fewer cities than the proposer. The answer is queued before tickMatch, so the
+        // line lands in this round's log like every other between-rounds fact.
         if (room.match.ceasefire && room.match.ceasefire.status === "pending" && room.match.ceasefire.by !== side) {
-          const truce = answerCeasefire(room.match, side, false);
-          if (truce && !truce.error) queueEvents(room, truce.events);
+          // PB-250: the rule is deterministic, so a game log can say why the bot said yes or no.
+          const accept = botCeasefireAnswer(room.match, side);
+          const truce = answerCeasefire(room.match, side, accept);
+          if (truce && !truce.error) {
+            queueEvents(room, truce.events);
+            // A human who accepts gets CEASEFIRE_NOTE on the room; the bot's accept is the same
+            // state, so it carries the same sentence rather than a second wording of it.
+            if (truce.accepted) room.note = CEASEFIRE_NOTE;
+            if (!Array.isArray(room.botActions)) room.botActions = [];
+            room.botActions.push({ round: Number(room.match.round) + 1, type: "ceasefire", accept });
+            if (room.botActions.length > 10) room.botActions = room.botActions.slice(-10);
+            console.log(
+              `bot ${room.id} r${Number(room.match.round) + 1} cease fire ${accept ? "accepted" : "declined"}` +
+              ` (cities ${side} ${citiesHeld(room.match, side)} vs ${room.match.ceasefire.by} ${citiesHeld(room.match, room.match.ceasefire.by)})`
+            );
+          }
         }
         // PB-245b: a bot seat in the cold war begins hostilities as soon as the mandatory counter
         // allows it (p.31 "after that, either player can start the war"). Without this a 1986/2023
         // bot game would open at peace and never leave it - enemy invisible, oil frozen, no fight -
         // which is a broken game rather than a faithful one. The launch runs here too, so a HUMAN
         // seat's starting destinations fire when the BOT is the one who presses the button.
+        //
+        // PB-250: the cold war is the only peace a bot breaks. The counter is spent from round 0 in
+        // the shipped config (no mandatory length), so a bot that accepted a truce would otherwise
+        // re-declare the war in the very next tick and the accept would read as a no-op. A cease
+        // fire is a question the bot answered; having said yes, it keeps its word.
         const standing = peaceOf(room.match);
-        if (standing && standing.active && standing.canResume) {
+        if (standing && standing.active && standing.coldWar && standing.canResume) {
           const declared = resumeWar(room.match, side, room.match.round);
           if (declared && !declared.error) {
             queueEvents(room, declared.events);
