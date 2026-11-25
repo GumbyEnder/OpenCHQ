@@ -36,6 +36,7 @@ import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { answerCeasefire, useTool } from "../../server/late.mjs";
 import { mandatoryRoundsFor, peaceOf, resumeWar } from "../../server/peace.mjs";
+import { atWar } from "../wartime.mjs";
 import { TRANSFER_AT_WAR, TRANSFER_NEUTRAL, transferPiece } from "../../server/move.mjs";
 import { inactiveRounds } from "../../server/air.mjs";
 import { isFriendly, ownersFor, regionLabel } from "../../server/territory.mjs";
@@ -86,7 +87,18 @@ function withPeaceConfig(fn) {
   }
 }
 
+// PB-245b: 1986/2023 open in the cold war (p.31), so a fixture that needs a WAR leaves it at the
+// round it is about to use (the shipped config prints no length; this file's config sets 3/2, and
+// `atWar` uses the scenario's own untilRound, so the war starts where the counter reaches zero).
 function fresh(era = "1986", round = 3) {
+  const match = openMatch(era, matchSites(era));
+  match.clock = "running";
+  match.round = round;
+  return atWar(match);
+}
+
+// The opening state itself, untouched: the cold war as the scenario deals it.
+function opening(era = "1986", round = 0) {
   const match = openMatch(era, matchSites(era));
   match.clock = "running";
   match.round = round;
@@ -113,8 +125,14 @@ export async function run() {
   withPeaceConfig(() => {
     // ---- AC1: the state, both seats, and the counter's own gate ---------------------------
     {
-      const match = fresh("1986", 3);
-      eq(peaceOf(match), null, "a match that never agreed a truce is not at peace");
+      const match = opening("1986", 3);
+      // PB-245b: 1986 now OPENS in the cold war (p.31), so this arm leaves it first - with the same
+      // config length it is testing (3), at the round that length is reached - and only then agrees
+      // a truce. The state under test below is the agreed cease-fire, not the opening cold war.
+      eq(peaceOf(match).coldWar, true, "a fresh 1986 match opens in the cold war (PB-245b)");
+      const leave = resumeWar(match, "blue", 3);
+      ok(leave && leave.ok, "the opening cold war can be left: " + JSON.stringify(leave && leave.error));
+      eq(peaceOf(match).active, false, "a match that has left the peace is not at peace");
       truceAccepted(match);
       eq(match.over, false, "an accepted cease fire does not end the match");
       eq(match.winner, null, "an accepted cease fire names no winner");

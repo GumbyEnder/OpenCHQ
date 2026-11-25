@@ -15,7 +15,8 @@
 // seat's `bought` counter could reset (a resumed match) without the guard noticing, and the page
 // would paint one id at two cells with no error anywhere.
 
-import { ERAS, openMatch } from "../../server/match.mjs";
+import { ERAS } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { buy } from "../../server/economy.mjs";
 
 export const name = "pb207_piece_ids";
@@ -78,7 +79,7 @@ export async function run(ctx) {
 
   // ---- every era's opening: one id per piece, and the shape the card names ----------------
   for (const era of ERAS) {
-    const match = openMatch(era, sitesFor());
+    const match = warMatch(era, sitesFor());
     const dupes = duplicateIds(match.pieces);
     eq(dupes.length, 0, `${era} opening has no duplicated id (${JSON.stringify(dupes.slice(0, 3))})`);
     // An opening piece is `${side}:${domain}` (no capture) or `${side}:open:${kind}:${n}` (capture).
@@ -94,12 +95,12 @@ export async function run(ctx) {
 
   // 1942 is the captured army (60 records): the only era where two rows can share a kind, which is
   // exactly what a serial-per-kind collision would need.
-  const captured = openMatch("1942", sitesFor());
+  const captured = warMatch("1942", sitesFor());
   must(captured.pieces.length >= 50, `1942 opens on the captured army (${captured.pieces.length} pieces)`);
   eq(duplicateIds(captured.pieces).length, 0, "1942's 60-record army has no duplicated id");
 
   // ---- purchases: repeated buys on both sides, across kinds, never reuse a literal ---------
-  const match = openMatch("1986", sitesFor());
+  const match = warMatch("1986", sitesFor());
   match.sides.blue.cash = 1e12; // funded: this test is about ids, not the purse
   match.sides.red.cash = 1e12;
   const openings = new Set(match.pieces.map((piece) => piece.id));

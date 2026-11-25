@@ -1,7 +1,7 @@
 // The round log: what a seat is told each round, and what it must never be told.
 // Owner: feedback node.
 
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { logLines } from "../../server/log.mjs";
 import { boardPayload } from "../../server/board.mjs";
 import { sightCells } from "../../server/rules.mjs";
@@ -14,7 +14,7 @@ function must(ok, why) {
 
 export async function run() {
   const sites = boardPayload().sites || [];
-  const match = openMatch("1986", sites);
+  const match = warMatch("1986", sites);
   const radius = sightCells();
 
   // Give blue a scout so there is a lit part of the map, and put a red city far from it.
@@ -83,18 +83,18 @@ export async function run() {
   must(loss.length === 1 && /the enemy holds every capital \(4 of 4\)/.test(loss[0].text),
     "a loss must report the same set size: " + JSON.stringify(loss.map((line) => line.text)));
 
-  const early = openMatch("1918", sites);
+  const early = warMatch("1918", sites);
   const earlyWin = capitalLines(logLines(early, "blue", [{ type: "win", side: "blue" }], 402));
   must(earlyWin.length === 1 && /every capital \(3 of 3\)/.test(earlyWin[0].text),
     "the win line must read 1918's three capitals, not a fixed pair: " + JSON.stringify(earlyWin.map((line) => line.text)));
 
   // The size is read off the set, so it must move with the era: 1942 carries six and a rolled
   // era carries the two seats. Pin both, or a hard-coded "every capital (4 of 4)" passes here.
-  const six = openMatch("1942", sites);
+  const six = warMatch("1942", sites);
   const sixWin = capitalLines(logLines(six, "blue", [{ type: "win", side: "blue" }], 403));
   must(sixWin.length === 1 && /every capital \(6 of 6\)/.test(sixWin[0].text),
     "the win line must read 1942's six capitals: " + JSON.stringify(sixWin.map((line) => line.text)));
-  const rolled = openMatch("2023", sites);
+  const rolled = warMatch("2023", sites);
   const rolledLoss = capitalLines(logLines(rolled, "blue", [{ type: "win", side: "red" }], 404));
   must(rolledLoss.length === 1 && /the enemy holds every capital \(2 of 2\)/.test(rolledLoss[0].text),
     "a rolled era's win line must read its two seats: " + JSON.stringify(rolledLoss.map((line) => line.text)));
@@ -168,7 +168,7 @@ export async function run() {
     "a sighting that was lost must be reported again when it returns: " + JSON.stringify(redetected.map((line) => line.text)));
 
   // The concealed era withholds the enemy until its capital is seen: contact must not leak it.
-  const concealed = openMatch("9999", boardPayload().sites || []);
+  const concealed = warMatch("9999", boardPayload().sites || []);
   const leaked = logLines(concealed, "blue", [], 1).filter((line) => /in sight/.test(line.text));
   must(leaked.length === 0, "the concealed era must not name an enemy the seat cannot see");
 }

@@ -9,7 +9,7 @@
 import { priceOf } from "../../server/rules.mjs";
 import { resourceSpec, oilFlow } from "../../server/resources.mjs";
 import { startPool } from "../../server/rules.mjs";
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { buy, capture, occupy, pay, upkeep } from "../../server/economy.mjs";
 
 export const name = "economy";
@@ -33,7 +33,7 @@ const SITES = [
 ];
 
 function freshMatch() {
-  const match = openMatch("1986", []);
+  const match = warMatch("1986", []);
   match.sites = SITES.map((site) => ({ ...site, owner: null }));
   return match;
 }
@@ -218,7 +218,7 @@ export async function run(ctx) {
 
   // ---- income: exactly 1.5 billion from 3 cities + 2 wells over 10 rounds (criterion 4) ---
   {
-    const tenth = openMatch("1986", []);
+    const tenth = warMatch("1986", []);
     tenth.sites = [
       { id: 40, name: "A", x: 10, y: 10, kind: "city", owner: "blue" },
       { id: 41, name: "B", x: 11, y: 10, kind: "city", owner: "blue" },
@@ -242,7 +242,7 @@ export async function run(ctx) {
 
   // ---- income: a base pays nothing; the first capital is free (criterion 6, PB-150) --------
   {
-    const quiet = openMatch("1986", []);
+    const quiet = warMatch("1986", []);
     quiet.sites = [
       { id: 50, name: "Base", x: 10, y: 10, kind: "base", type: 3, owner: "blue" },
       { id: 51, name: "Capital", x: 11, y: 10, kind: "capital", type: 1, owner: "blue" },
@@ -301,7 +301,7 @@ export async function run(ctx) {
     // T-033 + PB-153: an oil field pays In (200 a round), never cash. Two type-5 fields against
     // no city pay 400 in and 200 out, so ten quiet rounds are +2,000 and the pool is untouched.
     // A world.json `well` carries no subtype and is NOT one any more (PB-153 AC4).
-    const wellOnly = openMatch("1986", []);
+    const wellOnly = warMatch("1986", []);
     wellOnly.sites = [
       { id: 60, name: "Field A", x: 10, y: 10, kind: "facility", type: 5, owner: "blue" },
       { id: 61, name: "Field B", x: 11, y: 10, kind: "facility", type: 5, owner: "blue" },
@@ -326,7 +326,7 @@ export async function run(ctx) {
   // PB-153: the fields are type-5 `facility` rows. Built here on their own match so the leg
   // does not depend on which sites a shared board happened to carry: 64 at (194,30) starts Red,
   // 65 at (250,79) is neutral, and the walker starts on 64.
-  const fieldMatch = openMatch("1986", []);
+  const fieldMatch = warMatch("1986", []);
   fieldMatch.sites = [
     { id: 64, name: "field 64", x: 194, y: 30, kind: "facility", type: 5, owner: "red" },
     { id: 65, name: "field 65", x: 250, y: 79, kind: "facility", type: 5, owner: null },

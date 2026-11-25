@@ -18,7 +18,7 @@ import path from "node:path";
 
 import { configPath, placementRules, resetRules } from "../../server/rules.mjs";
 import { canPlace, maskBase64, placementMask } from "../../server/placement.mjs";
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { paintPlacement, PLACEMENT_BOX, PLACEMENT_BOX_PX } from "../../public/render.mjs";
 import { snapPlacementCell, snapRadiusPx } from "../../public/command.mjs";
 
@@ -54,7 +54,7 @@ function board() {
 }
 
 function matchWith(sites, round = 0) {
-  const match = openMatch("1986", []);
+  const match = warMatch("1986", []);
   match.sites = sites.map((site) => ({ owner: null, ...site }));
   match.round = round;
   return match;

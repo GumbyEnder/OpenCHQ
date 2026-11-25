@@ -15,7 +15,7 @@
 // site 21 cells away is untouched. AC4: a 20 b tank and a 20 b aircraft give floor(533/2)=266
 // before pooling, i.e. 38 after it.
 
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import {
   capitalDivisor,
   isSiteReady,
@@ -41,7 +41,7 @@ function eq(actual, expected, label, fail) {
 // the build city, five friendly cities inside the radius, one 21 cells away, plus a type-5 oil
 // field and a dock that must never be listed.
 function fixture(era = "1986") {
-  const match = openMatch(era, []);
+  const match = warMatch(era, []);
   match.sites = [
     { id: 0, name: "Capital", kind: "capital", type: 1, x: 100, y: 100, owner: "blue" },
     { id: 10, name: "Build", kind: "city", type: 4, x: 50, y: 50, owner: "blue" },

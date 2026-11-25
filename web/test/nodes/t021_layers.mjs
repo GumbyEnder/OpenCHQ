@@ -33,7 +33,7 @@
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { canPlace, friendlySites, layerOf, placementMask, siteLabel } from "../../server/placement.mjs";
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { buy, occupy } from "../../server/economy.mjs";
 import { planOrder } from "../../server/move.mjs";
 import { sendMission, transferPlane, airBriefing, inactiveRounds } from "../../server/air.mjs";
@@ -69,7 +69,7 @@ function board() {
 }
 
 function matchWith(sites, pieces = []) {
-  const match = openMatch("1986", []);
+  const match = warMatch("1986", []);
   match.sites = sites.map((site) => ({ owner: null, ...site }));
   match.pieces = pieces;
   match.round = 0;

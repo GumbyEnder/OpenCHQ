@@ -15,7 +15,7 @@
 // number that the config owns.
 
 import { resourceSpec, oilFlow, oilReadout, chargeOil, spendOil, movementBlocked, meterOf, upkeepResources } from "../../server/resources.mjs";
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { advance } from "../../server/move.mjs";
 import { sendMission } from "../../server/air.mjs";
 import { pay } from "../../server/economy.mjs";
@@ -38,7 +38,7 @@ function eq(actual, expected, label, fail) {
 // A 1986 room with the given owned sites and no pieces of its own: the opening roster would add
 // wells and cities nobody counted.
 function room(sites, era = "1986") {
-  const match = openMatch(era, []);
+  const match = warMatch(era, []);
   match.sites = sites;
   match.pieces = [];
   match.round = 0;
@@ -293,7 +293,7 @@ export async function run(ctx) {
   {
     const { matchSites } = await import("../../server/board.mjs");
     const { seedOwners } = await import("../../server/economy.mjs");
-    const opening = openMatch("1986", matchSites("1986"));
+    const opening = warMatch("1986", matchSites("1986"));
     seedOwners(opening);
     const flow = oilFlow(opening, "blue");
     const fields = opening.sites.filter((site) => site && site.owner === "blue" && Number(site.type) === 5).length;

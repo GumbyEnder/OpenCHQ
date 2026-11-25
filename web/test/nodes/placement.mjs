@@ -6,7 +6,7 @@
 import { canPlace, domainOf, footprintCells, friendlySites, maskBase64, placementMask, placementRefusal, placementSite } from "../../server/placement.mjs";
 import { shopFor } from "../../server/shop.mjs";
 import { readinessRules } from "../../server/rules.mjs";
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { buy } from "../../server/economy.mjs";
 import { boardPayload } from "../../server/board.mjs";
 
@@ -38,7 +38,7 @@ function board() {
 }
 
 function matchWith(sites) {
-  const match = openMatch("1986", []);
+  const match = warMatch("1986", []);
   match.sites = sites.map((site) => ({ owner: null, ...site }));
   return match;
 }
@@ -256,7 +256,7 @@ export async function run(ctx) {
   // --- the bot obeys the same rule (AC6): its purchase lands on a bot city -------------------
   {
     const { ordersFor } = await import("../../server/bot.mjs");
-    const match = openMatch("1986", []);
+    const match = warMatch("1986", []);
     match.sites = [{ id: 1, name: "Red Home", x: 80, y: 50, kind: "city", owner: "red" }];
     match.seats = {
       blue: { username: "Ada", kind: "human" },

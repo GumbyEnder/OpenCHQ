@@ -14,7 +14,7 @@
 //   4. a world.json sketched well drives no rule (no oil field, no capture of the well itself);
 //   5. the labels say DERIVED and point at RE-E6.
 
-import { openMatch } from "../../server/match.mjs";
+import { warMatch } from "../wartime.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { buy, seedOwners, occupy } from "../../server/economy.mjs";
 import { readinessNeighbours, poolReadiness } from "../../server/readiness.mjs";
@@ -35,7 +35,7 @@ function eq(actual, expected, label, fail) {
 }
 
 function opening(era = "1986") {
-  const match = openMatch(era, matchSites(era));
+  const match = warMatch(era, matchSites(era));
   seedOwners(match);
   return match;
 }
@@ -103,7 +103,7 @@ export async function run(ctx) {
   {
     // A well is drawn and carries a display owner, but it is not an oil field and no piece
     // can take it: the capture path is subtype-driven, not kind-driven.
-    const match = openMatch("1986", []);
+    const match = warMatch("1986", []);
     match.sites = [
       { id: 900, name: "Sketched well", kind: "oilfield", owner: "blue", x: 30, y: 30 },
       { id: 901, name: "City", kind: "city", type: 4, owner: "blue", x: 40, y: 40 },
