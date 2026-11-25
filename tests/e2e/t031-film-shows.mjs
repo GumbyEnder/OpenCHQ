@@ -134,7 +134,7 @@ try {
   await page.evaluate(() => document.querySelector("button[data-film]").click());
   await page.waitForSelector("#filmbar:not(.hidden)", { timeout: 20000 }).catch(() => {});
   const verified = await page.waitForFunction(
-    () => /digest verified|DIGEST MISMATCH|digest unverified|digest unread/.test(
+    () => /digest verified|DIGEST MISMATCH|digest not checked|digest unread/.test(
       (document.getElementById("filmDigest") || {}).textContent || ""),
     null, { timeout: 30000 }).then(() => true).catch(() => false);
   const line = await digestLine();

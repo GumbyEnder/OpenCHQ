@@ -88,7 +88,7 @@ export async function run() {
   const noState = { ...film, frames: frames.slice(0, -1) };
   const blunt = await filmModel.digestCheck(noState);
   eq(blunt.ok, false, "a film with no closing frame does not verify");
-  eq(filmModel.digestText(blunt), "digest unverified", "an unproven film is not called verified");
+  eq(filmModel.digestText(blunt), "digest not checked", "an unproven film is not called verified");
 
   const noDigest = { ...film, meta: { ...meta, final_digest: null } };
   eq((await filmModel.digestCheck(noDigest)).ok, false, "a header with no digest cannot verify");

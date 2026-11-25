@@ -231,7 +231,7 @@ export function digestText(check) {
   if (!check) return "digest unread";
   if (check.ok) return "digest verified";
   if (check.actual) return "DIGEST MISMATCH";
-  return "digest unverified";
+  return "digest not checked";
 }
 
 // ---- §4 (ii): save a film to a file, and load one back -------------------------------------
