@@ -561,11 +561,36 @@ body.in-match .stripinfo .phase {
 }
 
 /* T-033: the red OIL warning. The chip turns red only when the server's own `short` flag says
-   production cannot cover consumption; a dry reserve with the wells paying it back stays green. */
+   production cannot cover consumption; a dry reserve with the wells paying it back stays green.
+   PB-239: red alone was not a warning a player notices mid-round, so the chip BLINKS while the
+   flag is on. The class is the whole state - app.js toggles it from the server's `short`, so the
+   blink stops the moment In >= Out again, with no second copy of the predicate on the page. */
 .pursechip.oilshort,
 body.in-match .pursechip.oilshort {
   color: #ff6b5e;
   font-weight: 700;
+  animation: oilblink 1s steps(2, start) infinite;
+}
+
+/* PB-239: the flash is an OPACITY pulse, not visibility. A warning that sometimes removes the oil
+   numbers from the chip is a warning the player cannot read when they look - the numbers stay
+   legible through every frame, and the pulse is what draws the eye. */
+@keyframes oilblink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.35;
+  }
+}
+
+/* A reader who asked for less motion still gets the warning: the colour and the weight stay, the
+   flash does not. */
+@media (prefers-reduced-motion: reduce) {
+  .pursechip.oilshort,
+  body.in-match .pursechip.oilshort {
+    animation: none;
+  }
 }
 
 body.in-match .pursechip {

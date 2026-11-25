@@ -433,7 +433,10 @@ export function oilText(oil, foe = false) {
 
 // The one sentence the red warning is allowed to say. It names the three effects in the order
 // the original applies them (income first, then movement, then aircraft).
-export const OIL_WARNING = "OIL: consumption is more than the reserve plus production - cities stop paying income and units stop moving.";
+// PB-239: the condition is In < Out (production below consumption), not "reserve plus production",
+// so the sentence names the flow and not the stock - a side with a full reserve is still short the
+// moment its wells stop keeping up.
+export const OIL_WARNING = "OIL: consumption is more than production - cities stop paying income and units stop moving.";
 
 export function oilWarning(oil) {
   return oil && oil.short === true ? OIL_WARNING : "";

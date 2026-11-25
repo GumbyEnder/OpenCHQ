@@ -363,8 +363,16 @@ export function oilFlow(match, side) {
 }
 
 // What the page draws for one side. `in`/`out` are the per-round flow, `held` the reserve, and
-// `short` the one condition the red OIL warning is allowed to mean: consumption above what the
-// reserve plus production can pay.
+// `short` the one condition the red OIL warning is allowed to mean: the side BURNS MORE THAN ITS
+// WELLS PRODUCE (manual p.6 l.118 + p.27 l.841: "In" is production, "Out" consumption, and OIL
+// warns when In < Out).
+//
+// PB-239: the flag used to be `held + in < out` — consumption above the RESERVE plus production —
+// which stays quiet on a side that is losing oil every round just because it still has a big pile.
+// A deficit is a flow fact, not a stock fact: the reserve decides how long a side can feed it, not
+// whether it is running one. `dry` remains its own flag so a side whose wells pay it back is still
+// readable, and the money effects that DO read the reserve (economy.incomeGate, city starvation)
+// keep their own tests; this flag is the warning chip only.
 export function oilReadout(match, side) {
   const spec = oilSpec();
   if (!spec) return null;
@@ -375,7 +383,7 @@ export function oilReadout(match, side) {
   const uses = oilUsesReserve(oilEra(match));
   const held = Number(meter.held);
 
-  const short = uses && (meter.dry === true || (Number.isFinite(flow.out) && Number.isFinite(held) && held + flow.in < flow.out));
+  const short = uses && Number.isFinite(flow.in) && Number.isFinite(flow.out) && flow.in < flow.out;
   return {
     side,
     held: Number.isFinite(held) ? held : null,
