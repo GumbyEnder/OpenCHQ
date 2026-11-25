@@ -3606,8 +3606,8 @@ document.querySelector("#password").addEventListener("submit", async (event) => 
 });
 
 // The opponent's starting-money spinner (Manual p.17). Its per-era default, range and step come
-// from config/game.json through /api/setup; the page types none of them. In 2023 the original had
-// no spinner at all, so the field is disabled and the bot starts on the same large pool.
+// from config/game.json through /api/setup; the page types none of them. Every era carries the
+// spinner, 2023 included; the field is disabled only when config records no default for an era.
 const launchForm = document.querySelector("#launch");
 const eraSelect = launchForm ? launchForm.querySelector('select[name="era"]') : null;
 const handicapInput = launchForm ? launchForm.querySelector('input[name="handicap"]') : null;

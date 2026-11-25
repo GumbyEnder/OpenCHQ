@@ -7,16 +7,20 @@
 //
 // B1: five opponents in DS:0x4fea order, ANOTHER HUMAN = 0, level 1 labelled "Stands still:
 // practice". B2: level 1 never enters the AI pass, so 50 rounds of orders and buys are empty.
-// B3: e94c = level*2-4 (0/2/4/6) and 0bd6's three-site pass cap makes the observable per-pass
-// counts 0/2/3/3 for levels 2-5. B6: the starting-money spinner is independent of the level.
+// B3: e94c = level*2-4 (0/2/4/6) is the REPEAT pool, and 0bd6 allows THREE successful actions a
+// pass at every level (decompiled.c 1188-1203). One dispatch action sends 1 + e94c units to a site,
+// so a pass sends 1/3/5/7 units a site at levels 2-5. B6: the starting-money spinner is independent
+// of the level and exists for 2023 too.
 
 import { openMatch } from "../../server/match.mjs";
 import { tickMatch } from "../../server/tick.mjs";
 import { ordersFor } from "../../server/bot.mjs";
+import { readFileSync } from "node:fs";
 import {
   botDeviations,
   botStandIns,
   defaultOpponentLevel,
+  dispatchGroupSize,
   handicapDefault,
   opponentLevels,
   opponents,
@@ -41,10 +45,12 @@ function piece(id, side, x, y, extra = {}) {
   };
 }
 
-// Three of our sites, each with a hostile pair beside it and one idle defender five cells out. No
-// board extract is needed: the defence routine issues the order through move.planOrder, which works
-// on the coordinates alone, and the fixture is the same on every host.
-function budgetRoom(level) {
+// Three of our cities, each with a hostile pair beside it. The spare blue units sit 25 cells out:
+// outside the 20-cell own-site threat radius (so they do not make the site look safe) but inside
+// the 50-cell dispatch reach, which is what makes them eligible to send. No board extract is
+// needed: the defence routine issues the order through move.planOrder, which works on the
+// coordinates alone, and the fixture is the same on every host.
+function budgetRoom(level, sparePerSite = 8) {
   const sites = [1, 2, 3].map((n) => ({ id: "s" + n, name: "S" + n, kind: "city", owner: "blue", x: 20 + n * 20, y: 40 }));
   const match = {
     era: "1942",
@@ -53,21 +59,30 @@ function budgetRoom(level) {
     sites,
     capitals: { blue: { x: 20, y: 40 }, red: { x: 200, y: 40 } },
     capitalSet: { list: sites.map((site) => ({ siteId: site.id, name: site.name })) },
-    // Cash 0 keeps botBuy out of the count so the number below is the defence pass alone.
+    // Cash 0 keeps botBuy out of the count so the numbers below are the defence pass alone.
     sides: { blue: { cash: 0, bought: 99 }, red: { cash: 0, bought: 99 } },
     seats: { blue: { kind: "bot" }, red: { kind: "human" } },
     opponentLevel: level,
   };
   for (const site of sites) {
     match.pieces.push(piece("red" + site.id + "a", "red", site.x + 1, site.y),
-      piece("red" + site.id + "b", "red", site.x, site.y + 1),
-      piece("blue" + site.id, "blue", site.x + 5, site.y));
+      piece("red" + site.id + "b", "red", site.x, site.y + 1));
+    for (let k = 0; k < sparePerSite; k++) {
+      match.pieces.push(piece("blue" + site.id + ":" + k, "blue", site.x - 4 + k, site.y + 25));
+    }
   }
   return match;
 }
 
+// One pass action is a buy OR one dispatch to a site, no matter how many units that dispatch sends.
 function countActions(events) {
-  return events.filter((event) => event.type === "bot_buy" || event.type === "bot_defend").length;
+  const buys = events.filter((event) => event.type === "bot_buy").length;
+  const sites = new Set(events.filter((event) => event.type === "bot_defend").map((event) => event.site));
+  return buys + sites.size;
+}
+
+function countDefend(events) {
+  return events.filter((event) => event.type === "bot_defend").length;
 }
 
 export async function run(ctx) {
@@ -108,25 +123,38 @@ export async function run(ctx) {
     }
   }
 
-  // ---- B3. e94c = level*2 - 4, and the pass cap binds at levels 4-5 --------------------------
+  // ---- B3. e94c = level*2 - 4 is the REPEAT pool; the pass is three actions at every level ----
   {
     const budgets = [2, 3, 4, 5].map((level) => spareActionBudget(level));
     if (JSON.stringify(budgets) !== JSON.stringify([0, 2, 4, 6])) say("spareActionBudget is not 0/2/4/6", budgets);
     if (spareActionPassCap() !== 3) say("the 0bd6 pass cap is not three", spareActionPassCap());
+    const groups = [2, 3, 4, 5].map((level) => dispatchGroupSize(level));
+    if (JSON.stringify(groups) !== JSON.stringify([1, 3, 5, 7])) say("dispatch group sizes are not 1/3/5/7", groups);
 
-    const observed = [];
     for (const level of [2, 3, 4, 5]) {
-      const events = ordersFor(budgetRoom(level), "blue");
+      const match = budgetRoom(level);
+      const events = ordersFor(match, "blue");
+      // Three threatened sites, so the pass's three actions all land: one dispatch per site at
+      // EVERY level. That is the constant from 0bd6 (1188-1203), not e94c.
       const actions = countActions(events);
-      observed.push(actions);
-      const ceiling = Math.min(spareActionBudget(level), spareActionPassCap());
-      if (actions > ceiling) say("level " + level + " spent " + actions + " spare actions over a ceiling of " + ceiling, events);
+      if (actions !== 3) say("level " + level + " spent " + actions + " pass actions instead of 3", events);
+      // The level lever is how many units one action sends to the same site: 1 + e94c.
+      const sent = countDefend(events);
+      const expected = 3 * dispatchGroupSize(level);
+      if (sent !== expected) say("level " + level + " sent " + sent + " units, not " + expected, events);
+      // And no single dispatch action may exceed the group size.
+      const perSite = new Map();
+      for (const event of events.filter((row) => row.type === "bot_defend")) {
+        perSite.set(event.site, (perSite.get(event.site) || 0) + 1);
+      }
+      for (const [site, count] of perSite) {
+        if (count > dispatchGroupSize(level)) {
+          say("level " + level + " sent " + count + " units to " + site + " in one action", [...perSite]);
+        }
+      }
     }
-    // Level 2's zero is the bytes, not an omission: it enters the pass and has nothing to spend.
-    // Levels 4 and 5 both hit 0bd6's three-site cap, so they look alike in one pass.
-    if (JSON.stringify(observed) !== JSON.stringify([0, 2, 3, 3])) {
-      say("per-pass spare actions are not 0/2/3/3", observed);
-    }
+    // The old model's 0/2/3/3 was refuted by the bytes: level 2 acts (3 actions) even though its
+    // repeat pool is zero, and levels 4/5 differ by the units a dispatch carries, not by a budget.
   }
 
   // ---- B2. level 1 never enters the AI pass: 50 rounds, no orders, no buys --------------------
@@ -178,13 +206,35 @@ export async function run(ctx) {
       say("the spinner no longer moves the opponent's pool", { spinner10: high.sides.red.cash, spinner30: richer.sides.red.cash });
     }
     if (high.sides.blue.cash !== low.sides.blue.cash) say("the player's own pool followed the opponent's spinner", { l2: low.sides.blue.cash, l5: high.sides.blue.cash });
-    if (handicapDefault("2023") !== null) say("2023 grew an opponent spinner", handicapDefault("2023"));
+
+    // B6/2023: Manual p.17 applies to all scenarios, so 2023 carries the spinner too. Its default
+    // is a labelled STAND-IN at the era's own 600b pool, and the control moves the OPPONENT only.
+    const default2023 = handicapDefault("2023");
+    if (default2023 !== 600) say("2023's spinner default is not the 600b stand-in", default2023);
+    const plain2023 = openMatch("2023", sites, { opponentLevel: 3, handicapSide: "red" });
+    if (plain2023.sides.red.cash !== 600 * 1000) say("2023's opponent does not open on the spinner default", plain2023.sides.red.cash);
+    const poor2023 = openMatch("2023", sites, { opponentLevel: 3, handicapSide: "red", opponentPool: 300 });
+    if (poor2023.sides.red.cash !== 300 * 1000) say("2023's spinner does not move the opponent's pool", poor2023.sides.red.cash);
+    if (poor2023.sides.blue.cash !== plain2023.sides.blue.cash) {
+      say("2023's spinner moved the player's pool", { plain: plain2023.sides.blue.cash, poor: poor2023.sides.blue.cash });
+    }
+    // The served table is what the lobby page reads; 2023 must carry a value there, not null.
+    const served = await (await fetch(ctx.base + "/api/setup", { cache: "no-store" })).json();
+    const served2023 = served.handicap && served.handicap.defaults ? served.handicap.defaults["2023"] : undefined;
+    if (Number(served2023) !== 600) say("/api/setup does not serve 2023's spinner default", served2023);
   }
 
   // ---- B7/B8. the card's deviations and STAND-INs are in config and not only in prose --------
   {
     const deviations = botDeviations();
-    if (!deviations.some((line) => /unitCap/i.test(line))) say("the unit cap is missing from the deviation list", deviations);
+    // B7: AC5 allows only the e94c lever plus the level-5 gate, so there is NO production cap at
+    // all - not a small one and not one raised out of the way. The config row is gone, the code
+    // reads no cap, and no deviation claims one.
+    const config = JSON.parse(readFileSync(new URL("../../../config/game.json", import.meta.url), "utf8"));
+    if (config.bot.unitCap !== undefined) say("a unit cap is back in config", config.bot.unitCap);
+    if (deviations.some((line) => /unitCap/i.test(line))) say("a unit cap is back in the deviation list", deviations);
+    const botSource = readFileSync(new URL("../../server/bot.mjs", import.meta.url), "utf8");
+    if (/BOT_UNIT_CAP|botUnitCap|seat\.bought\s*\|\|/.test(botSource)) say("bot.mjs still enforces a production cap");
     if (!deviations.some((line) => /defaultLevel/i.test(line))) say("the default level is missing from the deviation list", deviations);
     const standIns = botStandIns();
     for (const token of ["ownership counters", "staging arrays", "garrison-buy"]) {

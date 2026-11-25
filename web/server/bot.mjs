@@ -17,14 +17,13 @@ import { issueOrder, wrapDelta, wrapX, HOLD_STALL_ROUNDS } from "./move.mjs";
 import {
   botAttackRangeCells,
   botThreatRadii,
-  botUnitCap,
   defaultOpponentLevel,
+  dispatchGroupSize,
   forceAdvantageUnits,
   isRefused,
   levelFiveGarrisonGate,
   opponentLevelOf,
   priceOf,
-  spareActionBudget,
   spareActionPassCap,
 } from "./rules.mjs";
 import { buy, seedOwners } from "./economy.mjs";
@@ -440,23 +439,27 @@ export function threatenedSites(match, side) {
   return out;
 }
 
-// Send one unit to the most threatened site: nearest idle land unit between 3 and 50 cells away
-// (decompiled.c 1727-1728 picks the smallest adjusted distance and rejects anything beyond 2500
-// or closer than 9 squared). The original issues one order per pass and marks the site defended.
-// A site cell its own garrison already stands on refuses the order, so the fallback is the nearest
-// free neighbour — a bot decision, not a combat rule.
-export function defendSites(match, side, events, threatened = null, limit = 1) {
+// Send units to the most threatened sites, most threatened first: nearest idle land unit between 3
+// and 50 cells away (decompiled.c 1727-1728 picks the smallest adjusted distance and rejects
+// anything beyond 2500 or closer than 9 squared). ONE site costs ONE of the pass's three actions
+// no matter how many units that action sends: the original's dispatch routine sends up to its
+// argument in units and only records the destination cell once 0xe94c has run out (decompiled.c
+// 3395-3420), so `group` (= 1 + e94c) is the repeat pool read as units-per-site. A site cell its
+// own garrison already stands on refuses the order, so the fallback is the nearest free neighbour
+// — a bot decision, not a combat rule.
+export function defendSites(match, side, events, threatened = null, limit = 1, group = 1) {
   const claimed = new Set();
   const rows = threatened || threatenedSites(match, side);
   const budget = Math.max(0, Math.floor(Number(limit) || 0));
+  const perSite = Math.max(1, Math.floor(Number(group) || 1));
   if (rows.length === 0 || budget === 0) return { claimed, actions: 0 };
   // Built once per pass: the candidate filter asks per piece.
   const held = capitalCells(match, side);
   let actions = 0;
 
-  // 0bd6 walks the sites in score order and acts on each threatened one until its spare actions
-  // run out (decompiled.c 1174-1202). The pass cap (three) is applied by the caller, so this loop
-  // stops at `limit`.
+  // 0bd6 walks the sites in score order and acts on each threatened one until its three successful
+  // actions run out (decompiled.c 1174-1203). One dispatch to a site is one action; `perSite` is
+  // the e94c repeat pool that decides how many units that one action sends to the same site.
   for (const row of rows) {
     const site = row.site;
     const candidates = (match.pieces || [])
@@ -484,8 +487,9 @@ export function defendSites(match, side, events, threatened = null, limit = 1) {
       }
     }
 
-    let sent = false;
+    let sent = 0;
     for (const { piece, d2 } of candidates) {
+      if (sent >= perSite) break;
       for (const target of targets) {
         let result;
         try {
@@ -497,32 +501,35 @@ export function defendSites(match, side, events, threatened = null, limit = 1) {
           events.push({
             type: "bot_defend", side, pieceId: piece.id, site: site.id ?? site.name ?? null,
             threat: row.threat, distance: Math.round(Math.sqrt(d2)),
-            to: target, path: result.path,
+            to: target, path: result.path, group: perSite,
           });
           claimed.add(piece.id);
-          actions += 1;
-          sent = true;
+          sent += 1;
           break;
         }
       }
-      if (sent) break;
+      // The original rescores the sites it touched after acting (decompiled.c 1235-1237) and only
+      // acts on a site whose score is still negative (1190). Without this, a repeat pool would keep
+      // feeding a site that one defender has already answered, which is over-commitment, not
+      // repetition. Break as soon as the site is no longer under threat.
+      if (sent > 0 && siteThreat(match, site) >= 0) break;
     }
+    if (sent > 0) actions += 1;
     if (actions >= budget) break;
   }
   return { claimed, actions };
 }
 
 // A bot that only ever moves its opening two pieces is a bot a reviewer cannot see acting, and
-// it can never press an advantage. It buys when it can afford to, up to this many pieces, and
-// every purchase is reported as a bot_buy event so the server log and the owner's debug view
-// both show it.
-// The cap counts what the bot PRODUCED, not what it owns: an era that opens with the original's
-// army (1942: 29-31 pieces) already sits over any total-piece cap, and counting the army would stop
-// the bot buying forever (T-013b).
-const BOT_UNIT_CAP = botUnitCap();
+// it can never press an advantage. It buys when it can afford to, and every purchase is reported
+// as a bot_buy event so the server log and the owner's debug view both show it.
+//
+// NO PRODUCTION CAP. The original has none - 0bd6 and the buy routine FUN_107e_1612 read no piece
+// count, only money, a free slot and the site - and T-032 AC5 allows only the e94c lever plus the
+// level-5 gate. The earlier `unitCap 6` was a browser pacing choice and is withdrawn, not raised.
 
 // A dug-in piece of ours standing on `site`'s own cell. The level-5 garrison-buy exclusion
-// (T-032 A7, marked STAND-IN in config) is the one gate beyond the spare-action budget.
+// (T-032 A7, marked STAND-IN in config) is the one gate beyond the e94c repeat pool.
 function siteHasGarrison(match, side, site) {
   if (!site) return false;
   return (match.pieces || []).some((piece) => piece && piece.side === side &&
@@ -533,7 +540,6 @@ function siteHasGarrison(match, side, site) {
 function botBuy(match, side, events, urgentSite = null) {
   const seat = match.sides && match.sides[side];
   if (!seat) return false;
-  if (Number(seat.bought || 0) >= BOT_UNIT_CAP) return false;
   const level = botLevel(match);
   // Level-5 gate (STAND-IN, T-032 A7): do not buy a defender at a site its own dug-in garrison
   // already holds. Level 5 is the only level that carries the gate.
@@ -664,16 +670,18 @@ export function ordersFor(match, side) {
   // A site of ours under attack is answered before the march, and answered by a unit the march
   // then leaves alone (that is what the original's per-site pass does: 0bd6, decompiled.c 1186-1213).
   const threatened = threatenedSites(match, side);
-  // e94c = level*2 - 4 spare actions a pass (0/2/4/6 for levels 2-5), and 0bd6 visits at most
-  // three sites per pass, so the effective per-pass budget is the smaller of the two.
-  const budget = Math.min(spareActionBudget(level), spareActionPassCap());
+  // 0bd6 allows THREE successful actions a pass at every level (decompiled.c 1188-1203); e94c is
+  // the repeat pool that decides how many units ONE dispatch sends to the same site (1649-1651,
+  // 3410-3415). It is not a per-pass budget: min(e94c, 3) was the old model and the bytes refute it.
+  const budget = spareActionPassCap();
+  const groupSize = dispatchGroupSize(level);
   let spent = 0;
   // Reinforce first, so a unit bought this round can march this round. The buy goes to the
-  // threatened site when there is one (FUN_107e_1612) and spends one spare action.
+  // threatened site when there is one (FUN_107e_1612) and spends one pass action.
   if (spent < budget && botBuy(match, side, events, threatened.length ? threatened[0].site : null)) {
     spent += 1;
   }
-  const defence = defendSites(match, side, events, threatened, budget - spent);
+  const defence = defendSites(match, side, events, threatened, budget - spent, groupSize);
   const claimed = defence.claimed;
   spent += defence.actions;
   // One focus for the whole army: a weak point of the enemy line once there is contact, the

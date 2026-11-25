@@ -23,9 +23,11 @@ const START_MONEY_DOC = path.join(root, "docs", "re", "START_MONEY.md");
 // docs/re/START_MONEY.md, table "Era (Blue, SGT. STAN STIL)". In billions.
 const PLAYER_POOL = { 1918: 10, 1942: 50, 1986: 50, 2023: 600, 9999: 50 };
 // The OPPONENT'S starting-money spinner defaults. 1918 010 and 1942 030 are captured; 1986 050 is
-// inferred from DS:0x148e = 2000 on both sides (no dialog capture); 2023 has no spinner (null);
-// ???? showed 150 on the dialog and is UNVERIFIED (never reached the war room).
-const SPINNER = { 1918: 10, 1942: 30, 1986: 50, 2023: null, 9999: 150 };
+// inferred from DS:0x148e = 2000 on both sides (no dialog capture); 2023 carries the spinner because
+// Manual p.17 applies to all scenarios, and its 600 is a labelled STAND-IN for the undialogued
+// default (the era's own p.16 pool); ???? showed 150 on the dialog and is UNVERIFIED (never reached
+// the war room).
+const SPINNER = { 1918: 10, 1942: 30, 1986: 50, 2023: 600, 9999: 150 };
 
 function decodeCell(message, occupied) {
   const binary = Buffer.from(String(message.mask), "base64");
@@ -89,7 +91,11 @@ export async function run(ctx) {
   const handicapSources = (ctx.config.sources && ctx.config.sources.handicap) || {};
   if (!handicapSources.range) fail("sources.handicap has no range entry");
   if (!/UNVERIFIED/.test(handicapSources.range)) fail("the 0-999/1 range must be labelled UNVERIFIED (it was never clicked to either end)");
-  console.log("criterion 3 ok: 1918 010 / 1942 030 / 1986 050 / ???? 150, 2023 none; 0-999 step 1 labelled UNVERIFIED");
+  // 2023's value is the one default with no dialog capture, so its source row must say STAND-IN.
+  if (!/STAND-IN/.test(handicapSources["2023"] || "")) {
+    fail("sources.handicap[2023] must label its undialogued default a stand-in");
+  }
+  console.log("criterion 3 ok: 1918 010 / 1942 030 / 1986 050 / 2023 600 (STAND-IN) / ???? 150; 0-999 step 1 labelled UNVERIFIED");
 
   // ---- 4: the two sides open on different money, and the spinner moves only the opponent ------
   const plain = openMatch("1918", []);
@@ -118,12 +124,16 @@ export async function run(ctx) {
   eq(redPlayer.sides.red.cash, 50 * 1000, "a Red player still opens on 50b");
   eq(redPlayer.sides.blue.cash, 5 * 1000, "a Red player's bot opens on the spinner");
 
-  // 2023 has no spinner: the handicap cannot move either side off the large pool.
-  const large = openMatch("2023", [], { handicapSide: "red", opponentPool: 0 });
+  // 2023 carries the spinner too (Manual p.17 applies to all scenarios): the default keeps the
+  // opponent on the era's 600b pool, and the spinner moves ONLY the opponent's side.
+  const large = openMatch("2023", [], { handicapSide: "red" });
   eq(large.sides.blue.cash, 600 * 1000, "2023 blue large pool");
-  eq(large.sides.red.cash, 600 * 1000, "2023 red large pool (no spinner in this era)");
-  eq(opponentPool("2023", null), 600 * 1000, "opponentPool(2023) with no spinner");
-  console.log("criterion 4 ok: player pool and opponent spinner are separate; 2023 takes no handicap");
+  eq(large.sides.red.cash, 600 * 1000, "2023 red opens on the 600b spinner default");
+  const poor = openMatch("2023", [], { handicapSide: "red", opponentPool: 0 });
+  eq(poor.sides.blue.cash, 600 * 1000, "2023 blue pool does not follow the spinner");
+  eq(poor.sides.red.cash, 0, "2023 red follows the spinner to 0");
+  eq(opponentPool("2023", null), 600 * 1000, "opponentPool(2023) with no spinner value");
+  console.log("criterion 4 ok: player pool and opponent spinner are separate; 2023 carries the p.17 spinner");
 
   // ---- 5: the served setup table is the same one the lobby draws ------------------------------
   const res = await fetch(ctx.base + "/api/setup");

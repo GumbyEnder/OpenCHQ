@@ -584,10 +584,12 @@ export function startPool(era) {
   return Number.isFinite(billions) && Number.isFinite(factor) ? billions * factor : 0;
 }
 
-// The opponent's starting-money spinner (Manual p.17: the player may adjust the money the
-// OPPONENT begins with, as a handicap). It is a different number from the player's pool - 1942
-// starts the player at 50b with the spinner on 030 - so it is stored separately, per era, because
-// the default is not constant (010 in 1918, 030 in 1942). 2023 has no spinner: `null`.
+// The opponent's starting-money spinner (Manual p.17: "For all scenarios, you are allowed to
+// adjust the amount of money with which your opponent begins the game"). It is a different number
+// from the player's pool - 1942 starts the player at 50b with the spinner on 030 - so it is
+// stored separately, per era, because the default is not constant (010 in 1918, 030 in 1942).
+// Every era carries the spinner, 2023 included; 2023's 600 default is a labelled STAND-IN (its
+// dialog was never captured) and keeps the opponent's p.16 large pool.
 export function handicapSpec() {
   const block = rules().handicap || {};
   const min = Number(block.min);
@@ -602,7 +604,7 @@ export function handicapSpec() {
   };
 }
 
-// The era's spinner default in billions, or null where the original had no spinner.
+// The era's spinner default in billions, or null where config records no spinner value.
 export function handicapDefault(era) {
   const value = handicapSpec().defaults[String(era)];
   const number = Number(value);
@@ -610,7 +612,7 @@ export function handicapDefault(era) {
 }
 
 // What the opponent's pool opens at. With a spinner value the opponent gets it; without one the
-// opponent gets the same pool the player does (2023, the "large pool" with no handicap).
+// opponent gets the same pool the player does.
 export function opponentPool(era, spinnerBillions = null) {
   const factor = millionsPerBillion();
   if (spinnerBillions !== null && spinnerBillions !== undefined) {
@@ -677,11 +679,27 @@ export function spareActionBudget(level) {
   return Math.max(0, normalized * multiplier + offset);
 }
 
-// FUN_107e_0bd6 visits at most three sites per pass (DECODED, decompiled.c 1194-1202), so a
-// level whose budget is larger than three still spends at most three actions in one pass.
+// FUN_107e_0bd6 allows at most THREE successful actions per pass, at EVERY level: local_c is
+// incremented once per success (decompiled.c 1188, 1192, 1195, 1199) and the site loop exits on
+// `(2 < local_c) || (9 < local_8)` (1202), with local_8 counting site visits (1203). The body
+// reads neither 0xe94c nor 0x1a0, so the three is a constant, not a level budget.
 export function spareActionPassCap() {
   const value = Number(botSpec().spareActionPassCap);
   return Number.isInteger(value) && value > 0 ? value : 3;
+}
+
+// 0xe94c = level*2 - 4 per turn. It is a REPEAT counter, not the pass allowance: each successful
+// action decrements it while it is nonzero, and only at == 0 is the acted cell recorded so it is
+// not re-targeted (FUN_107e_1612, decompiled.c 1649-1651; the dispatch routine, 3401-3415). The
+// port reads it as how many EXTRA units one dispatch action may send to the same site, so a pass
+// sends 1 / 3 / 5 / 7 units a site at levels 2-5.
+export function dispatchRepeatPool(level) {
+  return spareActionBudget(level);
+}
+
+// How many units one dispatch action may send to one site: the first unit plus the repeat pool.
+export function dispatchGroupSize(level) {
+  return 1 + dispatchRepeatPool(level);
 }
 
 export function botAttackRangeCells() {
@@ -702,11 +720,6 @@ export function botThreatRadii() {
     ownSite: positive(spec.ownSiteThreatRadius, 20),
     otherSite: positive(spec.otherSiteThreatRadius, 15),
   };
-}
-
-export function botUnitCap() {
-  const value = Number(botSpec().unitCap);
-  return Number.isInteger(value) && value >= 0 ? value : 6;
 }
 
 export function levelFiveGarrisonGate() {

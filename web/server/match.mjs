@@ -192,8 +192,9 @@ export function openMatch(era, sites = [], options = {}) {
   const side = options && (options.handicapSide === "blue" || options.handicapSide === "red")
     ? options.handicapSide
     : null;
-  // The spinner the original would have shown. 2023 has none at all (handicapDefault returns null),
-  // so no value - not even 0 - is applied there: both sides open on the p.16 large pool.
+  // The spinner the original would have shown, per era (p.17 applies to all scenarios). An era
+  // whose config records no default (or no bot to handicap) applies no value at all: both sides
+  // then open on the player's pool.
   const eraSpinner = side === null ? null : handicapDefault(year);
   const spinner = eraSpinner === null
     ? null

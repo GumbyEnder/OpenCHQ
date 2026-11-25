@@ -24,12 +24,54 @@ per-site score row for all `0x54` = 84 sites, then runs the piece pass:
 * `0xe47e` = one flagged site from a two-entry table (1147);
 * pick the site of ours with the **lowest** score byte (`0xea6e`) not yet visited in this pass
   (`(0x1102 & 0xc0) == 0xe942`, `(0xeb78 & 1) == 0`, 1174-1183);
-* mark it visited (1184) and act, **at most three actions per pass** (1194-1202):
+* mark it visited (1184) and act, **at most three successful actions per pass** (1188-1203):
   * `FUN_107e_1612` — buy a defender at the site, at most once per pass (`local_a == 0`, 1185-1189);
   * `FUN_107e_1750` — send a unit, but only when that site's score is **negative** (`0xea6e < 0`,
     1190-1193);
   * two other routines this task does not cover (`FUN_107e_1ace`, `FUN_107e_1bec`, 1194-1201);
 * after acting, rescore the sites it touched (1235-1237).
+
+### 1a. The pass ceiling is the constant 3; `0xe94c` is a repeat counter, not a per-pass budget
+
+The site loop's own bookkeeping, quoted from `decompiled.c`:
+
+```
+1142:  local_c = 0;                                   /* successful actions this pass */
+1144:  local_8 = 0;                                   /* site visits this pass        */
+1188:        local_c = local_c + 1;                     /* buy succeeded                */
+1192:        local_c = local_c + 1;                     /* dispatch succeeded           */
+1195:        local_c = local_c + 1;                     /* FUN_107e_1ace                */
+1199:        local_c = local_c + 1;                     /* FUN_107e_1bec                */
+1202:      if ((2 < local_c) || (9 < local_8)) goto LAB_107e_0d8e;
+1203:      local_8 = local_8 + 1;
+```
+
+So the pass ends at **three successful actions** or **ten site visits**, whichever comes first
+(1202), and the later stages of the same routine cap combat calls separately at four
+(`local_c < 4`, 1220-1231; `ai_turn_process(3 - local_c)` at 1217). `FUN_107e_0bd6` (1124-1302) contains **no read of `0xe94c` or
+`0x1a0`**: the three is a constant at every level.
+
+`0xe94c` is written once per AI turn from the level, `0x1a0 * 2 - 4`
+(`*(char *)0xe94c = *(char *)0x1a0 * '\x02' + -4;`, 13232 and 15158), and is a per-turn **repeat**
+counter:
+
+```
+1649:        if (*(char *)0xe94c != '\0') {
+1650:          *(char *)0xe94c = *(char *)0xe94c + -1;   /* FUN_107e_1612: buy, then spend a repeat */
+3410:    if (*(char *)0xe94c == '\0') {
+3411:      auStack_1a[local_4] = local_c;                /* dispatch: record the destination cell  */
+...
+3415:      *(char *)0xe94c = *(char *)0xe94c + -1;       /* else: spend a repeat                   */
+3438:    if ((*(int *)0x1478 == 0) && (*(char *)0xe94c == '\0')) {
+```
+
+i.e. while `0xe94c` is nonzero a successful action only decrements it and the target stays
+eligible; once it reaches zero the acted cell is recorded and excluded (3410-3411) and
+`FUN_2dfc_1874` is called (3438). The port reads that as **how many units one dispatch action
+may send to the same site** — 1 + e94c, so 1 / 3 / 5 / 7 at levels 2-5 — while one dispatch to
+one site still costs exactly one of the pass's three actions. The mapping of a decoded counter
+onto a group size is a labelled port reading; the counter itself, its level formula and the
+constant three are decoded.
 
 ## 2. What counts as a threat
 

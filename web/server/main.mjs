@@ -228,7 +228,7 @@ const server = createServer(async (req, res) => {
         defaultLevel: defaultOpponentLevel(),
         spareActions: Object.fromEntries(opponentLevels().map((level) => [level, spareActionBudget(level)])),
       },
-      note: "Handicap is the OPPONENT'S starting money (Manual p.17); 2023 has no spinner.",
+      note: "Handicap is the OPPONENT'S starting money (Manual p.17); every era carries the spinner, 2023 included.",
     });
     return;
   }

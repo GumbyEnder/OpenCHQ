@@ -660,9 +660,8 @@ export function createLobby() {
       opponentLevel = wanted;
     }
     // The original's setup asked for the OPPONENT'S STARTING MONEY with a three-digit spinner and
-    // used it as a handicap (Manual p.17). The lobby asks the same question with the era's
-    // recovered default. 2023 has no spinner at all, so a value sent for it is ignored rather than
-    // turning a large-pool scenario into a hidden handicap.
+    // used it as a handicap (Manual p.17, all scenarios). The lobby asks the same question with the
+    // era's default, 2023 included; only an era whose config records no default refuses the value.
     const spec = handicapSpec();
     const hasSpinner = handicapDefault(year) !== null;
     let spinner = null;
