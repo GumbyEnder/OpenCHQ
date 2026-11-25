@@ -279,6 +279,105 @@ export async function run(ctx) {
     if (countActions(spentEvents) !== cap) say("the spent-turn control counted " + countActions(spentEvents) + " actions, not " + cap, spentEvents.length);
   }
 
+  // ---- B3 (the pool carries). 0xe94c is seeded once per game, not once per turn ---------------
+  //
+  // Read from the 547f99f9 export: the setter at 13232 sits in FUN_20b1_01b6, the new-game setup
+  // routine, whose ONLY caller is main_game_loop line 23; the turn loop that routine hands off to is
+  // FUN_1000_01da(7) (26-28), which never writes 0xe94c. The second setter line, 15158, is the same
+  // routine decompiled a second time inside the jump-table blob Ghidra labels 20b1:2eea (warnings
+  // 15015-15048, call arguments dropped) - one setter seen twice, not a second event. Nothing else
+  // writes the byte (seven references total: 1649, 1650, 3410, 3415, 3438, 13232, 15158), so the
+  // pool is match-long and the per-turn reset this port used was a stand-in, now retired.
+  {
+    const spent = {};
+    for (const level of [1, 2, 3, 4, 5]) {
+      const match = openMatch("1942");
+      match.seats = { blue: { username: "Bot", kind: "bot" }, red: { username: "Ada", kind: "human" } };
+      match.opponentLevel = level;
+      match.clock = "running";
+      const seed = dispatchRepeatPool(level);
+      if (JSON.stringify([0, 0, 2, 4, 6][level - 1]) !== JSON.stringify(seed)) {
+        say("level " + level + " seeds 0xe94c at " + seed + ", not the byte's 2*level-4", seed);
+      }
+      let lastPool = null;
+      let repeats = 0;
+      let buys = 0;
+      let maxRepeatTurn = 0;
+      let maxSameCell = 0;
+      for (let round = 1; round <= 40; round++) {
+        if (lastPool !== null && match.botRepeatPool.blue > lastPool) {
+          say("level " + level + " refilled 0xe94c on round " + round, { before: lastPool, now: match.botRepeatPool.blue });
+        }
+        const events = ordersFor(match, "blue") || [];
+        if (lastPool === null && (!match.botRepeatPool || match.botRepeatPool.blue > seed)) {
+          say("level " + level + " seeded 0xe94c above the byte's " + seed + " on its first turn", match.botRepeatPool);
+        }
+        const orders = events.filter((event) => event.type === "bot_order");
+        const turnRepeats = orders.filter((event) => event.repeat === true).length;
+        const turnBuys = events.filter((event) => event.type === "bot_buy").length;
+        const perCell = new Map();
+        for (const order of orders) {
+          const key = order.to.x + "," + order.to.y;
+          perCell.set(key, (perCell.get(key) || 0) + 1);
+        }
+        for (const count of perCell.values()) {
+          if (count - 1 > maxSameCell) maxSameCell = count - 1;
+        }
+        repeats += turnRepeats;
+        buys += turnBuys;
+        if (turnRepeats > maxRepeatTurn) maxRepeatTurn = turnRepeats;
+        // The carryover, stated as a per-turn identity on the 1942 campaign (it buys nothing there):
+        // the pool after the turn is the pool before it minus the repeats the turn spent.
+        const before = lastPool === null ? seed : lastPool;
+        if (turnBuys === 0 && match.botRepeatPool.blue !== Math.max(0, before - turnRepeats)) {
+          say("level " + level + " round " + round + " left " + match.botRepeatPool.blue +
+            " in 0xe94c after spending " + turnRepeats + " from " + before, { turnRepeats, before });
+        }
+        lastPool = match.botRepeatPool.blue;
+        tickMatch(match);
+        if (match.over) break;
+      }
+      if (repeats > seed) say("level " + level + " spent " + repeats + " repeats from a pool of " + seed, repeats);
+      if (repeats + (lastPool || 0) > seed) {
+        say("level " + level + " spent past its seed: " + repeats + " repeats and " + lastPool + " left of " + seed);
+      }
+      if (maxRepeatTurn > spareActionPassCap()) {
+        say("level " + level + " spent " + maxRepeatTurn + " counter units in one turn, past the pass cap", maxRepeatTurn);
+      }
+      if (maxSameCell > 2) say("level " + level + " put " + maxSameCell + " repeats on one cell in a turn, past two", maxSameCell);
+      spent[level] = { seed, repeats, buys, left: lastPool, maxRepeatTurn, maxSameCell };
+    }
+    // The separation C1 needs is a MATCH column, not a turn column: both 4 and 5 reach the pass cap
+    // inside a turn, and only the seed differs (4 vs 6 repeats over the campaign).
+    if (!(spent[5].repeats > spent[4].repeats)) {
+      say("levels 4 and 5 spent the same repeats over a campaign, so the pool does not separate them", spent);
+    }
+    if (spent[2].repeats !== 0) say("level 2 spent a repeat from a pool of zero", spent[2]);
+
+    // MUTANT: a per-turn refill must turn this arm red. Re-stamp 0xe94c every round on the same 1942
+    // campaign and count: the arm above bounds repeats by the seed, so the refill has to break it.
+    // This is the shape frodo's probe measured on the shipped 1487367 (36 spends against a stamp of 2),
+    // kept here as a leg so the bound cannot quietly become "whatever the loop does".
+    {
+      const match = openMatch("1942");
+      match.seats = { blue: { username: "Bot", kind: "bot" }, red: { username: "Ada", kind: "human" } };
+      match.opponentLevel = 3;
+      match.clock = "running";
+      const seed = dispatchRepeatPool(3);
+      let spends = 0;
+      for (let round = 1; round <= 40; round++) {
+        match.botRepeatPool = { blue: seed };        // the mutation: a fresh pool every turn
+        const events = ordersFor(match, "blue") || [];
+        spends += events.filter((event) => event.type === "bot_order" && event.repeat === true).length;
+        tickMatch(match);
+        if (match.over) break;
+      }
+      if (spends <= seed) {
+        say("the per-turn-refill mutant did not red the campaign bound", { spends, seed });
+      }
+    }
+  }
+
   // ---- B2. level 1 never enters the AI pass: 50 rounds, no orders, no buys --------------------
   {
     const match = openMatch("1942");

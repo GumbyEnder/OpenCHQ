@@ -703,6 +703,17 @@ export function ordersFor(match, side) {
   // T-032 B2: the turn hook is gated on 1 < 0x1a0. Level 1 is not a slow opponent, it is the
   // practice opponent that never acts: no orders, no buys, one note so the room can say why.
   const level = botLevel(match);
+  // 0xe94c is seeded ONCE, in the new-game setup routine FUN_20b1_01b6, and never on a turn
+  // boundary. Callers: that routine's only caller is main_game_loop (decompiled.c 23), inside the
+  // setup branch; the play loop it hands off to is FUN_1000_01da(7) (26-28), which drives 0bd6 and
+  // the army pass every turn and never touches 0xe94c. So the pool is match-long: it is seeded at
+  // setup (0x1a0*2 - 4 for 1 < 0x1a0 -> 0/2/4/6 at levels 2-5, never at level 1) and only ever
+  // spent, by a repeat dispatch (3415) or by the buy (1650). It lives on the match so it survives
+  // the turn, unlike the pass budget above, which is local to one 0bd6 call.
+  if (!match.botRepeatPool || typeof match.botRepeatPool !== "object") match.botRepeatPool = {};
+  if (!Number.isInteger(match.botRepeatPool[side])) {
+    match.botRepeatPool[side] = dispatchRepeatPool(level);
+  }
   if (!entersAiPass(level)) {
     events.push({ type: "bot_skip", side, level, reason: "level 1 stands still: the AI pass is gated on 1 < 0x1a0" });
     return events;
@@ -724,7 +735,11 @@ export function ordersFor(match, side) {
   // the pass allowance above. The two compose: 1216-1218 enters the army pass only while
   // `local_c < 3` and hands it `3 - local_c`, so a cell can take at most
   // min(1 + 0xe94c, 3 - spent) dispatches in one turn, not 1 + 0xe94c.
-  const repeat = { pool: dispatchRepeatPool(level), recorded: new Set() };
+  // This turn reads the match's pool, not a fresh one: 0xe94c is written only at setup (13232 /
+  // 15158) and spent at 3415 and 1650, so a turn that starts with two repeats left starts the next
+  // turn with whatever it did not spend. The pass allowance is separate and is rebuilt every turn.
+  const repeat = { pool: match.botRepeatPool[side], recorded: new Set() };
+  const syncRepeatPool = () => { match.botRepeatPool[side] = repeat.pool; };
   let spent = 0;
   // Reinforce first, so a unit bought this round can march this round. The buy goes to the
   // threatened site when there is one (FUN_107e_1612) and spends one pass action; it also spends a
@@ -732,6 +747,7 @@ export function ordersFor(match, side) {
   if (spent < budget && botBuy(match, side, events, threatened.length ? threatened[0].site : null)) {
     spent += 1;
     spendRepeat(repeat);
+    syncRepeatPool();
   }
   const defence = defendSites(match, side, events, threatened, budget - spent);
   const claimed = defence.claimed;
@@ -787,6 +803,7 @@ export function ordersFor(match, side) {
     const step = spendRepeat(repeat, destination);
     armyBudget -= 1;
     spent += 1;
+    syncRepeatPool();
     // Say which branch ran, so a leg can count repeats and records apart from each other.
     const filed = events[events.length - 1];
     if (filed && filed.type === "bot_order" && filed.pieceId === piece.id) {

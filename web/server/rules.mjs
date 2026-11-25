@@ -688,8 +688,11 @@ export function spareActionPassCap() {
   return Number.isInteger(value) && value > 0 ? value : 3;
 }
 
-// 0xe94c = level*2 - 4 per turn, SET only when `1 < 0x1a0` (decompiled.c 13231-13232 and
-// 15157-15158), so level 1 never sets it and levels 2-5 read 0/2/4/6. It is the ARMY pass's repeat
+// 0xe94c = level*2 - 4, SET ONCE per game when `1 < 0x1a0` (decompiled.c 13231-13232, and the same
+// routine decompiled a second time at 15157-15158), so level 1 never sets it and levels 2-5 start at
+// 0/2/4/6. The setter's only caller is the new-game setup routine FUN_20b1_01b6, whose only caller
+// is main_game_loop (23); the play loop it hands off to (FUN_1000_01da(7), 26-28) never writes
+// 0xe94c, and nothing resets it on a turn boundary — the pool is match-long. It is the ARMY pass's repeat
 // allowance, not the defence pass's: `ai_turn_process @ 107e:3bd0` (3230-3422) dispatches a mission
 // and, on success, decrements 0xe94c while it is nonzero (3415) WITHOUT recording the destination
 // cell; the cell is recorded only when the counter is already zero (3410-3412), and a recorded cell
@@ -704,12 +707,15 @@ export function dispatchRepeatPool(level) {
 // levels 2-5, but the pass itself ends at three: 1216-1218 enters the army pass only while
 // `local_c < 3` and hands it `3 - local_c`, which already carries the buy and the defence pass, and
 // every dispatch is added back (1218). The reachable figure is therefore
-// `min(1 + e94c, 3 - spent)` — 1/3/3/3 at levels 2-5 with nothing else spent, fewer after a buy or a
-// defence. `spent` is the number of pass actions already taken this turn.
-export function dispatchRepeatLimit(level, spent = 0) {
+// `min(1 + pool, 3 - spent)` — 1/3/3/3 at levels 2-5 on a fresh pool with nothing else spent, fewer
+// after a buy or a defence. `spent` is the number of pass actions already taken this turn, and
+// `pool` is 0xe94c as it stands: seeded once at new-game setup and spent down over the match, NOT
+// reset per turn (see dispatchRepeatPool). The old per-turn reset was a stand-in and is retired.
+export function dispatchRepeatLimit(level, spent = 0, pool = dispatchRepeatPool(level)) {
   const taken = Math.max(0, Math.floor(Number(spent) || 0));
   const room = Math.max(0, spareActionPassCap() - taken);
-  return Math.min(1 + dispatchRepeatPool(level), room);
+  const left = Math.max(0, Math.floor(Number(pool) || 0));
+  return Math.min(1 + left, room);
 }
 
 export function botAttackRangeCells() {

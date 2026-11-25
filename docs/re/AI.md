@@ -111,7 +111,9 @@ dispatches to one  <= min(1 + 0xe94c, 3 - spent)
 destination cell
 ```
 
-At levels 2-5 with nothing else spent that is 1 / 3 / 3 / 3 dispatches to one cell, not 1 / 3 / 5 / 7:
+The pool is seeded ONCE per game at setup (§9.1, "When the setter runs"), not per turn; the figures
+below are the per-turn ceiling that seed allows. At levels 2-5 with nothing else spent that is
+1 / 3 / 3 / 3 dispatches to one cell, not 1 / 3 / 5 / 7:
 a pool of 4 or 6 cannot be spent in one turn because the pass itself ends at three dispatches. A
 turn whose buy or defence already took an action can see at most `3 - spent` more. The port's march
 loop enforces this (`armyBudget = budget - spent`, decremented per dispatch); the earlier cut walked
@@ -276,6 +278,7 @@ Every line number is `decompiled.c` in this document's source tree, re-read at t
 | the era gate | 1207 `0x19e == 3 \|\| 0x19e == 2` around `FUN_107e_51b6` (1208) and `FUN_107e_5500` (1211) — era, not level |
 | no level in 0bd6 | zero reads of `0xe94c` or `0x1a0` in 1126-1268 (grep over the span) |
 | `0xe94c` set from the level | 13231-13232 and 15157-15158, both under `if (1 < *(int *)0x1a0)`; value `0x1a0*2 - 4` |
+| when the setter runs | 13232 is inside `FUN_20b1_01b6` (`20b1:01b6`, 4295 B), the new-game setup routine; its ONLY caller is `main_game_loop` line 23, and the play loop it hands off to (`FUN_1000_01da(7)`, 26-28) never writes the byte. 15158 is that same routine decompiled a second time inside the jump-table blob at `20b1:2eea`, so the two setter lines are ONE setter. Seeded once per game, never on a turn boundary (room 9377 §3) |
 | `0xe94c` ledger | seven lines: 1649, 1650, 3410, 3415, 3438, 13232, 15158 |
 | an extra action is a repeat | 3410-3416: spend without recording while nonzero, record at zero; 3392-3400 strikes the recorded cell (0xf at 3398). The pass bounds it: 1216-1218 hands `3 - local_c` and 3417-3420 returns on `param_1 <= local_4`, so `min(e94c, 3 - spent)` repeats is the reachable figure |
 | the repeat's true owner | `ai_turn_process @ 107e:3bd0` (3230-3422), which takes the remainder at 1217 and loops to `param_1` at 3417-3420; plus the buy at 1649-1651 |
@@ -309,11 +312,35 @@ Two findings, both measured rather than assumed: **(a)** 1632 most plainly reads
 counting down, so draw the buy's unit from another of our sites" — 0x10ae is the readiness countdown,
 so there is no garrison latch to port; **(b)** the level-5 garrison-buy exclusion therefore has no
 byte basis at all and is **refused**, not marked: `bot.levelFiveGarrisonGate`, its config row, its
-export and its call are removed (PM ruling, room 9370), and the A7 list no longer carries it. With
-the army pass bounded at `3 - spent` (1216-1218), neither the 4 nor the 6 can be spent in one turn
-either, so levels 4 and 5 now behave identically within a turn: the only lever is `0xe94c` and only
-0/2 of it is reachable. C1's level 4 vs level 5 delta is consequently empty, which is a scope call
-for the PM (room 9370 §2), not something this file decides.
+export and its call are removed (PM ruling, room 9370), and the A7 list no longer carries it. **When the setter runs: once per game, not once per turn (room 9377 §3).** The setter at 13232 is inside
+FUN_20b1_01b6 (`20b1:01b6`, size 4295) - the new-game setup routine that walks the menu, the
+scenario (`0x19e`, 13103), the side (`0x19c`, 13119) and the difficulty (`0x1a0`, 13415), draws the
+map and returns. Its ONLY caller is `main_game_loop` line 23, inside the setup branch
+`if (*(int *)0xe42e == 0)`; the play loop it hands off to is `FUN_1000_01da(7)` (26-28), which calls
+`ai_command_process` and `FUN_107e_0bd6` every turn and never writes `0xe94c`. The second setter
+line, 15158, is the same routine decompiled a second time inside the jump-table blob Ghidra labels
+`FUN_20b1_2eea @ 20b1:2eea (size 39)` (warnings at 15015-15048, call arguments dropped) - one
+setter seen twice, not a second event. The byte has seven references in the whole export (1649,
+1650, 3410, 3415, 3438, 13232, 15158) and 13232/15158 are the only writes, so nothing resets it on
+a turn boundary: the pool is MATCH-LONG. Levels 2-5 are seeded 0/2/4/6 at new game (level 1 never
+seeds, and the 13008 reset block does not clear the byte, so a level-1 game in the original carries
+the previous game's leftover; the port starts a fresh match at 0 and states that as a deviation).
+
+So the per-turn columns and the match columns say different things, and both are true:
+
+```
+per turn   counterSpendsInOneTurn      <= min(pool, 3 - spent)   <= 3
+turn       sameCellRepeatsInOneTurn    <= min(1 + pool, 3 - spent) - 1 <= 2
+match      repeatsPerMatch             = the seed, 0/0/2/4/6, spent once and never refilled
+```
+
+Levels 4 and 5 are IDENTICAL inside a turn (both reach the pass cap of three dispatches, i.e. two
+repeats on one cell) and differ only over a match: 4 vs 6 repeat dispatches in total. C1 therefore
+cannot be separated by a per-turn maximum; the column that separates 3/4/5 is repeats per match (or
+the count of turns that carry a repeat). The port carries the pool on the match (`match.botRepeatPool`,
+seeded on the bot's first turn from `dispatchRepeatPool(level)`), spends it on a repeat dispatch and
+on a buy (1649-1651), and no longer resets it per turn - the per-turn reset was a STAND-IN and is
+retired.
 
 A7's unknowns, and what each one is in the shipped port. An entry marked STAND-IN is not claimed as
 recovered, and the mark is in `config/game.json` `bot.standIns` as well as here, so a reader who never

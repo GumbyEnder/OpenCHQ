@@ -1,16 +1,20 @@
 // T-032 B3 measurement: the counter value beside the observed repeats, behind the pass budget.
 //
 // The counter (0xe94c) is decided by the level: never set at level 1, `0x1a0*2 - 4` at levels 2-5,
-// i.e. 0/2/4/6. Whether a turn actually SPENDS all of it depends on how many dispatches the army
-// pass issues, so this prints both: the pool the turn started with, the repeats it spent, the cells
-// it recorded, and the gap. A gap is honest data, not a failure.
+// i.e. 0/2/4/6 — and it is seeded ONCE per game, in the setup routine (callers: FUN_20b1_01b6 <- main_game_loop
+// line 23; the turn loop FUN_1000_01da(7) never writes it). So the pool CARRIES OVER and each turn
+// prints the pool it started with, the repeats it spent, the cells it recorded, and the gap. A gap
+// is honest data, not a failure, and the match-total is the column that separates levels 4 and 5.
 //
 // The pass budget composes with the pool: 1216-1218 enters the army pass only while `local_c < 3`
 // and hands it `3 - local_c`, which already carries the buy and the defence pass, and 1218 adds
-// every dispatch back. So in one turn the army can spend at most `min(e94c, 3 - spent)` repeats and
-// issue at most `3 - spent` dispatches, and one cell can see at most `min(1 + e94c, 3 - spent)` of
+// every dispatch back. So in one turn the army can spend at most `min(pool, 3 - spent)` repeats and
+// issue at most `3 - spent` dispatches, and one cell can see at most `min(1 + pool, 3 - spent)` of
 // them. This tool counts all three over a campaign and records every turn that breaks a bound in
-// `violations`, so the JSON is the artifact a gate reads, not a transcription of a console.
+// `violations`, so the JSON is the artifact a gate reads, not a transcription of a console. The two
+// gate columns are named for the room's ruling: `counterSpendsInOneTurnMax` (dispatches that spent
+// the counter in one turn, <= 3) and `sameCellRepeatsInOneTurnMax` (extra dispatches to one cell in
+// one turn, <= 2).
 //
 // The JSON stamps the commit it ran at (`commit`, `branch`, `worktreeDirty`), because era/rounds/
 // levels alone identify no build.
@@ -51,7 +55,7 @@ const out = {
   era: "1942",
   rounds: ROUNDS,
   passCap: cap,
-  reachableRule: "per turn: repeats <= min(e94c, 3 - spent), dispatches <= 3 - spent, same-cell <= min(1 + e94c, 3 - spent); spent is the buy plus the defence pass",
+  reachableRule: "per turn: repeats <= min(pool, 3 - spent), dispatches <= 3 - spent, same-cell <= min(1 + pool, 3 - spent); spent is the buy plus the defence pass; pool is 0xe94c, seeded once per game and carried across turns",
   levels: [],
 };
 
@@ -62,7 +66,7 @@ for (const level of [1, 2, 3, 4, 5]) {
   match.clock = "running";
   const row = {
     level,
-    counterAtTurnStart: dispatchRepeatPool(level),
+    poolSeededAtMatchStart: dispatchRepeatPool(level),
     spareActionBudget: spareActionBudget(level),
     reachableRepeatsInOneTurn: Math.min(dispatchRepeatPool(level), cap),
     reachableSameCellDispatches: Math.min(1 + dispatchRepeatPool(level), cap),
@@ -79,12 +83,19 @@ for (const level of [1, 2, 3, 4, 5]) {
     maxRepeatsWithNothingSpent: 0,
     maxRepeatsWithActionSpent: 0,
     repeatHistogram: {},
+    counterSpendsInOneTurnMax: 0,
+    sameCellRepeatsInOneTurnMax: 0,
+    poolAtEnd: null,
+    repeatsPerMatch: 0,
     buys: 0,
     defends: 0,
     violations: [],
   };
   for (let round = 1; round <= ROUNDS; round++) {
-    const poolAtStart = dispatchRepeatPool(level);
+    // The pool this turn starts with is whatever the match kept: it is seeded once and carried.
+    const poolAtStart = match.botRepeatPool && Number.isInteger(match.botRepeatPool.blue)
+      ? match.botRepeatPool.blue
+      : dispatchRepeatPool(level);
     const events = ordersFor(match, "blue") || [];
     const orders = events.filter((event) => event.type === "bot_order");
     const repeats = orders.filter((event) => event.repeat === true).length;
@@ -126,11 +137,21 @@ for (const level of [1, 2, 3, 4, 5]) {
     tickMatch(match);
     if (match.over) break;
   }
-  // Per TURN, not per campaign: the counter is a per-turn allowance, so the comparable figure is
-  // the mean repeats a turn and the largest turn, beside the counter that turn started with.
+  // Two columns, both reported because both are true of the same bytes (PM ruling, room 9377):
+  // the per-turn ceiling the pass allows, and the per-turn ceiling a board shows. Neither separates
+  // levels 4 and 5 — both reach the pass cap — so the match totals are here too, and they DO
+  // separate them (4 vs 6 repeats per game, 0/2 for levels 2/3).
+  row.counterSpendsInOneTurnMax = row.maxRepeatsInOneTurn;
+  row.sameCellRepeatsInOneTurnMax = row.maxSameCellRepeatsInOneTurn;
+  row.repeatsPerMatch = row.repeatsObserved;
+  row.poolAtEnd = match.botRepeatPool && Number.isInteger(match.botRepeatPool.blue)
+    ? match.botRepeatPool.blue
+    : null;
   row.meanRepeatsPerTurn = row.turns ? Number((row.repeatsObserved / row.turns).toFixed(2)) : 0;
   row.meanDispatchesPerTurn = row.turns ? Number((row.dispatches / row.turns).toFixed(2)) : 0;
-  row.gapPerTurn = Number((row.counterAtTurnStart - row.meanRepeatsPerTurn).toFixed(2));
+  row.gapPerTurn = Number((row.poolSeededAtMatchStart - row.meanRepeatsPerTurn).toFixed(2));
+  row.poolNeverIncreased = row.poolAtEnd === null || row.poolAtEnd <= row.poolSeededAtMatchStart;
+  row.repeatsWithinSeed = row.repeatsObserved <= row.poolSeededAtMatchStart;
   out.levels.push(row);
 }
 
