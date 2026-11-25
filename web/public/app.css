@@ -572,6 +572,18 @@ body.in-match .pursechip.oilshort {
   animation: oilblink 1s steps(2, start) infinite;
 }
 
+/* PB-247: the word OIL travels with the warning. Colour and motion are not the only carriers of
+   the meaning - the original's monitor prints the word (manual p.6 l.118, p.27 l.841), and a
+   reader with a red-blind palette, or one who glances at the strip for a tenth of a second, gets
+   the same sentence from the text. It sits first in the chip so the chip's ellipsis cannot eat it,
+   and it only exists while the server's `short` flag is on, so its presence IS the state. */
+.pursechip .oilword,
+body.in-match .pursechip .oilword {
+  margin-right: 4px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: normal;
+}
+
 /* PB-239: the flash is an OPACITY pulse, not visibility. A warning that sometimes removes the oil
    numbers from the chip is a warning the player cannot read when they look - the numbers stay
    legible through every frame, and the pulse is what draws the eye. */

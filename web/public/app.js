@@ -1732,8 +1732,21 @@ function paintPurse(el, seat, mode = "full") {
   const summary = seat
     ? purseSummaryParts(seat, oilFoe && room && room.opponent ? room.opponent.income : null)
     : null;
+  const budget = seat ? (oilFoe ? seat.foeOil : seat.oil) : null;
   if (mode === "strip" && summary) {
     el.textContent = "";
+    // PB-247: the chip names WHAT is short, not only that something is. The original's monitor
+    // prints the word OIL with the warning (manual p.6 l.118: "In" is production, "Out" is
+    // consumption, and the red warning means Out is above In; p.27 l.841 the same monitor). The
+    // pulse draws the eye; the word carries the meaning for a player who cannot separate the two
+    // reds, or who reads the strip at a glance. It is the FIRST leg so the chip's own ellipsis can
+    // never be the thing that removes it, and it exists only while the server's flag is on.
+    if (budget && budget.short === true) {
+      const word = document.createElement("span");
+      word.className = "oilword";
+      word.textContent = "OIL";
+      el.append(word);
+    }
     if (summary.cash) {
       const cash = document.createElement("span");
       cash.className = "cash";
@@ -1749,7 +1762,6 @@ function paintPurse(el, seat, mode = "full") {
   } else {
     el.textContent = full;
   }
-  const budget = seat ? (oilFoe ? seat.foeOil : seat.oil) : null;
   el.classList.toggle("oilshort", Boolean(budget && budget.short === true));
   const hint = oilFoe
     ? "Alternate Function (manual p.27): the opponent's oil. Click or Ctrl+V to show your own."
