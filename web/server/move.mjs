@@ -11,8 +11,12 @@
 import { CELL_W, CELL_H, TERRAIN, boardPayload, resolveDataRoot } from "./board.mjs";
 import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostLimit, digInIds } from "./rules.mjs";
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
-import { inactiveRounds, isAircraft } from "./air.mjs";
+import { inactiveRounds, isAircraft, isAirStrip } from "./air.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
+// PB-245 AC5: a peacetime transfer is instant and may not land in neutral or enemy territory
+// (manual printed p.31). The state is peace.mjs, the territory question is territory.mjs.
+import { peaceActive } from "./peace.mjs";
+import { isFriendly } from "./territory.mjs";
 import { applyDamage, damageFor, engageRange2, ensureStrength, kindOf, pairDue, rangeOf, squaredDistance, stampPair } from "./combat.mjs";
 // PB-230: a nuke's wasteland lives on the match, so the plan-time refusal has to ask the match as
 // well as the board grid. Import direction is one-way (nukestrike imports board/rules/blast only).
@@ -502,6 +506,127 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   piece.holdRounds = 0;
   return { ok: true, path: plan.path.map((step) => ({ ...step })), rounds: plan.rounds };
 }
+
+// --- PB-245 AC5: the peacetime transfer ------------------------------------------------------
+//
+// Manual printed p.31: "During peacetime, units may be transferred from one location in the world
+// to another, instantly. Simply select the unit once, then select its new location. This does not
+// cause air units to become unready." One sentence later: "units may not be produced in or
+// transferred to neutral or enemy territory."
+//
+// A transfer is therefore NOT a walk with a short path. It is one state change inside one round:
+// nothing is queued, nothing is spent, no round passes, and an aircraft lands READY. planOrder is
+// not consulted and must not be: a walk of 200 cells would quote rounds, and "instantly" has no
+// rounds to quote.
+//
+// The two refusals are the whole rule, and both are read from live state rather than a list:
+//   - the war is on. This op exists only at peace; a wartime move is planOrder/issueOrder.
+//   - the destination is a NATION's neutral or enemy ground. territory.isFriendly answers neutral
+//     and enemy at once for a land unit. Open water is not a nation's territory - it is unassigned
+//     (regionAt returns NO_REGION), so a hull is not refused by that sentence; it is refused by
+//     the water rule instead, which is why a ship transfers to water rather than to "friendly
+//     water". Aircraft keep their own p.22 berth rule: a plane bases in a friendly city, base,
+//     capital or carrier, and it does not stand on open ground.
+export const TRANSFER_AT_WAR = "A transfer is a peacetime order; the war is on.";
+export const TRANSFER_NEUTRAL = "Units may not be transferred into neutral or enemy territory.";
+
+export function transferPiece(match, side, pieceId, toX, toY) {
+  if (!match || !Array.isArray(match.pieces)) return { error: "No match is running." };
+  if (match.over) return { error: "This match is over." };
+  if (!peaceActive(match)) return { error: TRANSFER_AT_WAR };
+  const piece = match.pieces.find((unit) => unit && unit.id === pieceId);
+  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
+
+  const x = Number(toX);
+  const y = Number(toY);
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return { error: "A transfer needs whole cells." };
+  if (y < 0 || y >= CELL_H) return { error: "The destination is off the map." };
+  const wx = wrapX(x);
+  if (wrapX(piece.x) === wx && Number(piece.y) === y) {
+    return { error: "That piece is already on that cell." };
+  }
+
+  // p.31: neutral and enemy ground are both out. This is the LAND rule; a hull's destination is
+  // settled by the water test below, and a plane's by its berth.
+  const air = isAircraft(piece);
+  if (air) {
+    const site = (match.sites || []).find(
+      (entry) => entry && wrapX(entry.x) === wx && Number(entry.y) === y,
+    );
+    const strip = Boolean(site) && site.owner === side && isAirStrip(site.kind);
+    const carrier = (match.pieces || []).find(
+      (unit) => unit && unit !== piece && unit.side === side && unit.kind === "carrier" &&
+        wrapX(unit.x) === wx && Number(unit.y) === y,
+    );
+    if (!strip && !carrier) {
+      if (site && site.owner !== side) return { error: TRANSFER_NEUTRAL };
+      return { error: "Air units transfer only to a friendly city, base or carrier." };
+    }
+  } else if (piece.domain === "sea") {
+    if (!isWater(wx, y)) return { error: "A ship cannot transfer onto land." };
+    const holder = pieceAt(match, wx, y, piece.id);
+    if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
+  } else {
+    if (!isFriendly(match, side, wx, y)) return { error: TRANSFER_NEUTRAL };
+    if (isWater(wx, y)) return { error: "A land unit cannot transfer into the water." };
+    if (isRefused(terrainAt(wx, y) ?? -1)) return { error: "Wasteland is refused." };
+    if (wastelandAt(match, wx, y)) return { error: "Wasteland is refused." };
+    const holder = pieceAt(match, wx, y, piece.id);
+    if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
+  }
+
+  const from = { x: Number(piece.x), y: Number(piece.y) };
+  piece.x = wx;
+  piece.y = y;
+  // A transfer ends whatever the piece was doing, exactly as a new order does: digging, repairing,
+  // a pin and the still/fight counters all belong to the old location.
+  piece.path = [];
+  piece.pace = 1;
+  piece.credit = 0;
+  piece.detours = 0;
+  piece.entrenched = false;
+  piece.repairing = false;
+  piece.pinned = false;
+  piece.stillRounds = 0;
+  piece.fightRounds = 0;
+  piece.heldBy = null;
+  piece.heldCell = null;
+  piece.holdRounds = 0;
+  // p.31: "This does not cause air units to become unready." A plane arrives with no rounds owed,
+  // which is a state write and not the absence of one - the plane may have been inactive on the
+  // round it was transferred.
+  if (air) {
+    piece.inactiveUntil = 0;
+    piece.readyAnnounced = false;
+  }
+  if (piece.domain !== "sea") syncTransport(piece, wx, y);
+  return {
+    ok: true,
+    instant: true,
+    piece,
+    from,
+    to: { x: wx, y: y },
+    rounds: 0,
+    ready: air ? inactiveRounds(piece, match.round) === 0 : true,
+    events: [{
+      type: "transfer",
+      side,
+      pieceId: piece.id,
+      kind: piece.kind || null,
+      domain: piece.domain || null,
+      x: wx,
+      y: y,
+      from,
+      round: Number(match.round) || 0,
+      note: TRANSFER_NOTE,
+    }],
+  };
+}
+
+// The sentence the player reads when a peacetime transfer lands. The page prints its own line, so
+// this is the log's wording: no round count, because a transfer has none.
+export const TRANSFER_NOTE = "Transfer. The unit is in its new location this round, and nothing became unready.";
 
 function facingFor(fromX, fromY, toX, toY) {
   const dx = wrapDelta(fromX, toX);

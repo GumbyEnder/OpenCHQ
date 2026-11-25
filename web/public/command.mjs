@@ -320,6 +320,21 @@ export function orderMessage(piece, target) {
   return { op: "order", piece: piece.id, to };
 }
 
+// PB-245 AC5: at peace a click on a destination is a TRANSFER, not a walk (manual printed p.31:
+// "units may be transferred from one location in the world to another, instantly ... Simply select
+// the unit once, then select its new location"). It is its own op because the server's answer is
+// its own: no rounds to quote, and nothing became unready. The refusals (the war is on, the ground
+// is neutral or enemy) are the server's sentences, so the page does not pre-judge them.
+export function transferMessage(piece, target) {
+  const to = cell(target);
+  if (!piece || !to) return null;
+  return { op: "transfer", kind: "transfer", piece: piece.id, to };
+}
+
+export function transferText() {
+  return "Transferred. The unit is in its new location this round.";
+}
+
 // An aircraft does not walk, so a click on a cell is not an order to move there: it is the target
 // of the mission (Manual p.25, "an air strike on a land unit"). The plane's own cell is the base it
 // flies from, never the cell it hits — a strike aimed at its own base would find nothing.

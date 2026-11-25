@@ -37,6 +37,8 @@ import {
   siteInspectText,
   siteUnderPiece,
   snapPlacementCell,
+  transferMessage,
+  transferText,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { scanAddPieces, scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
@@ -945,8 +947,22 @@ function clearCommand() {
   drawMatch();
 }
 
+// PB-245 AC5: the page's half of the peacetime transfer. The server's room frame carries the state
+// (both seats read `peace`), and while it is active a destination click is a transfer, not a walk.
+// A war that leaves the peace clears the flag on the same frame, so the click reverts by itself.
+function atPeace() {
+  return Boolean(room && room.peace && room.peace.active === true);
+}
+
+function notAir(piece) {
+  return Boolean(piece) && piece.kind !== "aircraft" && piece.domain !== "air";
+}
+
 function askRoute(cell) {
   if (!selected || !cell) return;
+  // A transfer has no rounds to quote, so the hover must not offer a walk's route while the peace
+  // stands: "Route: 14 rounds. Click to send the order." would be the page arguing with p.31.
+  if (atPeace() && notAir(selected)) return;
   const key = hoverOfferKey(selected.id, cell);
   if (key === hoverKey) return;
   // PB-177: a different cell is a new offer, so the refusal marker lapses; the refused cell itself
@@ -1104,7 +1120,9 @@ board.addEventListener("click", (event) => {
     pendingMission = nextDoorMode(pendingMission, "sent");
     return;
   }
-  const message = orderMessage(selected, cell);
+  // PB-245 AC5: at peace this click is a transfer - instant, no round cost, nothing unready
+  // (manual printed p.31). Its refusals come back as the server's own sentences.
+  const message = atPeace() && notAir(selected) ? transferMessage(selected, cell) : orderMessage(selected, cell);
   // PB-191: the page never sends a march to the cell the piece already stands on. The own-cell
   // rule in clickIntent decides the click, so this is the last guard on the wire: a resolved
   // destination equal to the piece's own cell is the cell's own inspect/re-select, and the server
@@ -3334,6 +3352,14 @@ function connect() {
       placement = null;
       drawMatch();
       renderRoom();
+    } else if (message.op === "transferred") {
+      // PB-245 AC5: a transfer lands in the same round, so there is no round sentence to print and
+      // no path to keep drawn. Selection clears exactly as it does after an order.
+      settleOrder(message.id);
+      const hadSelection = Boolean(selected);
+      say(transferText() + (hadSelection ? " Selection cleared." : ""));
+      noteLog([{ round: room && room.round ? room.round : 0, text: transferText().replace(/\.$/, "") }]);
+      clearCommand();
     } else if (message.op === "ordered") {
       settleOrder(message.id);
       // An accepted order clears the selection (the PM's ruling, 2026-11-15) - and it says so, so a

@@ -24,6 +24,8 @@
 //   AC2  production writes no readyRound while at peace (and does write when the war is on)
 //   AC3  the fuel ledger neither charges NOR credits at peace; cash is multiplied by the config rate
 //   AC4  enemy troops are invisible at peace; an Intel Scan reveal still crosses that gate
+//   AC5  a peacetime transfer lands in the SAME round with no round cost, a hull transfers on
+//        water, an aircraft lands ready, and the destination may not be neutral or enemy ground
 
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,6 +36,9 @@ import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { answerCeasefire, useTool } from "../../server/late.mjs";
 import { mandatoryRoundsFor, peaceOf, resumeWar } from "../../server/peace.mjs";
+import { TRANSFER_AT_WAR, TRANSFER_NEUTRAL, transferPiece } from "../../server/move.mjs";
+import { inactiveRounds } from "../../server/air.mjs";
+import { isFriendly, ownersFor, regionLabel } from "../../server/territory.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { logLines } from "../../server/log.mjs";
 import { poolReadiness, readyRoundOf } from "../../server/readiness.mjs";
@@ -221,6 +226,120 @@ export async function run() {
       ok(!seen(), "an enemy piece inside ordinary sight is invisible to the other seat during peacetime");
       enemy.revealedRound = Number(match.round);
       ok(seen(), "an Intel Scan reveal still shows the piece at peace (p.31 Intel Scan)");
+    }
+
+    // ---- AC5: the peacetime transfer ---------------------------------------------------------
+    // p.31: "units may be transferred from one location in the world to another, instantly ...
+    // This does not cause air units to become unready" and "units may not be produced in or
+    // transferred to neutral or enemy territory". The arm reads the round before and after, so
+    // "instant" is a measurement and not the absence of a field.
+    {
+      const blueCity = (match) => (match.sites || []).find((site) => site && site.owner === "blue"
+        && ["city", "capital", "base"].includes(String(site.kind)));
+      const soldierOf = (match) => (match.pieces || []).find((piece) => piece && piece.side === "blue"
+        && piece.domain !== "sea" && piece.kind !== "aircraft");
+
+      // (a) the war is on: the op is refused, and nothing moves.
+      {
+        const war = fresh("1986", 3);
+        const soldier = soldierOf(war);
+        const city = blueCity(war);
+        const before = { x: soldier.x, y: soldier.y };
+        const refused = transferPiece(war, "blue", soldier.id, city.x, city.y);
+        eq(refused.error, TRANSFER_AT_WAR, "a transfer is refused while the war is on");
+        eq([soldier.x, soldier.y], [before.x, before.y], "the refused transfer moved nothing");
+      }
+
+      // (b) at peace: same round, no cost, the piece is there and it is not walking.
+      {
+        const match = fresh("1986", 3);
+        truceAccepted(match);
+        const soldier = soldierOf(match);
+        const city = blueCity(match);
+        const done = transferPiece(match, "blue", soldier.id, city.x, city.y);
+        ok(done && done.ok, "a peacetime transfer is accepted: " + JSON.stringify(done && done.error));
+        eq(match.round, 3, "a transfer does not advance the round (instant, p.31)");
+        eq([soldier.x, soldier.y], [city.x, city.y], "the piece is on the destination cell in the same round");
+        eq(soldier.path, [], "a transfer leaves no path to walk: nothing is queued");
+        eq(done.rounds, 0, "a transfer quotes no rounds");
+
+        // (c) neutral and enemy GROUND are refused (p.31), and the sentence says so. The enemy
+        // site is a nation's ground; the neutral cell is a region no side owns.
+        const enemy = (match.sites || []).find((site) => site && site.owner === "red");
+        ok(enemy, "the fixture has an enemy site");
+        eq(transferPiece(match, "blue", soldier.id, enemy.x, enemy.y).error, TRANSFER_NEUTRAL,
+          "an enemy city is not a transfer destination");
+        const owners = ownersFor(match);
+        let neutral = null;
+        for (let rid = 0; rid < (owners ? owners.length : 0) && !neutral; rid += 1) {
+          if (owners[rid] !== null) continue;
+          const label = regionLabel(rid);
+          if (label && !isFriendly(match, "blue", label.x, label.y)) neutral = label;
+        }
+        ok(neutral, "the fixture has a neutral region (the arm would otherwise pin nothing)");
+        eq(transferPiece(match, "blue", soldier.id, neutral.x, neutral.y).error, TRANSFER_NEUTRAL,
+          "neutral ground is not a transfer destination");
+        eq([soldier.x, soldier.y], [city.x, city.y], "the refused transfers left the piece where it was");
+      }
+
+      // (d) a hull transfers across water - open sea is unassigned, not a nation's territory, so
+      // the neutral/enemy sentence does not apply to it; the water rule does.
+      {
+        const match = fresh("1986", 3);
+        truceAccepted(match);
+        const hull = (match.pieces || []).find((piece) => piece && piece.side === "blue" && piece.domain === "sea");
+        ok(hull, "the fixture has a blue hull");
+        const tx = Number(hull.x) + 2;
+        const ty = Number(hull.y);
+        const done = transferPiece(match, "blue", hull.id, tx, ty);
+        ok(done && done.ok, "a hull transfers on water: " + JSON.stringify(done && done.error));
+        eq([hull.x, hull.y], [tx, ty], "the hull is on the water cell it was sent to");
+        eq(match.round, 3, "the hull's transfer spent no round");
+      }
+
+      // (e) an aircraft lands READY and only on a friendly strip (p.22 berth + p.31 readiness).
+      {
+        const match = fresh("1986", 3);
+        truceAccepted(match);
+        const soldier = soldierOf(match);
+        const plane = {
+          id: "blue:air", side: "blue", kind: "aircraft", domain: "air",
+          x: Number(soldier.x), y: Number(soldier.y), path: [], pace: 1,
+          strength: 100, maxStrength: 100,
+        };
+        match.pieces.push(plane);
+        // A plane that still owes rounds is exactly the case p.31 names: the transfer must not
+        // LEAVE it unready, and it must not ADD to its wait either.
+        plane.inactiveUntil = Number(match.round) + 2;
+        const strips = (match.sites || []).filter((site) => site && site.owner === "blue"
+          && ["city", "capital", "base"].includes(String(site.kind)));
+        // The plane must MOVE: a strip on its own cell would be refused as "already on that cell"
+        // and the arm would pin the wrong sentence.
+        const strip = [...strips].reverse().find((site) => Number(site.x) !== Number(plane.x)
+          || Number(site.y) !== Number(plane.y));
+        ok(strip, "the fixture has a friendly air strip");
+        const done = transferPiece(match, "blue", plane.id, strip.x, strip.y);
+        ok(done && done.ok, "an aircraft transfers to a friendly city: " + JSON.stringify(done && done.error));
+        eq([plane.x, plane.y], [strip.x, strip.y], "the aircraft is based on the strip it was sent to");
+        eq(inactiveRounds(plane, match.round), 0, "the transfer did not leave the aircraft unready (p.31)");
+        ok(done.ready === true, "the transfer reports the aircraft ready");
+
+        // A friendly CELL that is not a strip is refused: p.22 still holds at peace.
+        const owners = ownersFor(match);
+        let openGround = null;
+        for (let rid = 0; rid < (owners ? owners.length : 0) && !openGround; rid += 1) {
+          if (owners[rid] !== "blue") continue;
+          const label = regionLabel(rid);
+          if (!label) continue;
+          const site = (match.sites || []).find((entry) => entry
+            && Number(entry.x) === Number(label.x) && Number(entry.y) === Number(label.y));
+          if (!site) openGround = label;
+        }
+        ok(openGround, "the fixture has friendly ground with no air strip on it");
+        const refused = transferPiece(match, "blue", plane.id, openGround.x, openGround.y);
+        ok(refused.error, "an aircraft does not transfer onto open friendly ground");
+        eq([plane.x, plane.y], [strip.x, strip.y], "the refused air transfer moved nothing");
+      }
     }
   });
 }

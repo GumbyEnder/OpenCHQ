@@ -13,6 +13,7 @@ import { countryName } from "./countries.mjs";
 import { unitNoun, unitPhrase } from "../public/units.mjs";
 import { resourceSpec } from "./resources.mjs";
 import { forSeat } from "./view.mjs";
+import { peaceActive } from "./peace.mjs";
 
 const SIDES = ["blue", "red"];
 
@@ -371,10 +372,18 @@ export function logLines(match, side, events, round) {
       case "ready":
         if (mine) push("an aircraft is ready for a mission");
         break;
-      case "transfer":
-        if (mine) push("an aircraft rebased");
-        else if (legible(match, side, event)) push("an enemy aircraft rebased");
+      case "transfer": {
+        // PB-245 AC5: a peacetime transfer can be a ground or sea unit, not only a rebasing
+        // aircraft, and at peace the other seat's units are invisible (p.31) - so the enemy arm
+        // is gated on the war being on as well as on sight. A peacetime move the opponent can
+        // read in the log would be the same leak the view closes.
+        const air = String(event.kind ?? "") === "aircraft" || String(event.domain ?? "") === "air";
+        if (mine) push(air ? "an aircraft rebased" : "a unit transferred");
+        else if (!peaceActive(match) && legible(match, side, event)) {
+          push(air ? "an enemy aircraft rebased" : "an enemy unit transferred");
+        }
         break;
+      }
       case "embarked":
         if (mine) push("a unit boarded a transport");
         break;

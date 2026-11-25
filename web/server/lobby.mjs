@@ -5,7 +5,7 @@ import { forSeat, resultNote, resultOf, capitalListOf } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { boardPayload, matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
-import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
+import { entrench, issueOrder, planOrder, repair, transferPiece } from "./move.mjs";
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
 import { AID_HELD_MID_WAR, answerCeasefire, CEASEFIRE_NOTE, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
@@ -1041,6 +1041,51 @@ export function createLobby() {
     return { ok: true };
   }
 
+  // PB-245 AC5: a peacetime transfer. The click shape is an order's (piece + destination) and the
+  // rule is not: it lands in the same round with no round cost and no readiness cost (manual
+  // printed p.31). The server owns both refusals - the war is on, and the ground is neutral or
+  // enemy - so every client gets the same answer; move.transferPiece is the only implementation
+  // and the page sends no order of its own for it.
+  function transferOp(username, message) {
+    const roomId = seatOf.get(username);
+    const room = roomId ? rooms.get(roomId) : null;
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const claimed = message.side === undefined || message.side === null ? mine : String(message.side);
+    if (claimed !== mine) {
+      return { error: "That side is not yours. You hold " + mine + "." };
+    }
+    const pieceId = String(message.piece ?? message.pieceId ?? "");
+    if (!pieceId) return { error: "A transfer needs a piece id." };
+    const to = destinationOf(message);
+    let result;
+    try {
+      result = transferPiece(room.match, mine, pieceId, to.x, to.y);
+    } catch (err) {
+      return { error: err && err.message ? err.message : String(err) };
+    }
+    if (!result || result.error) return { error: (result && result.error) || "The transfer was refused." };
+    touch(room);
+    tellRoom(room);
+    const peer = sockets.get(username);
+    if (peer) {
+      const reply = { op: "transferred", id: message.id ?? null, piece: pieceId, to: result.to, rounds: 0 };
+      peer.send(reply);
+      rememberReply(username, message.id, reply);
+    }
+    // The moving seat reads its own line. The other seat reads nothing while the peace stands -
+    // log.mjs gates the enemy arm on the war being on, which is the AC4 invisibility rule.
+    const lines = logLines(room.match, mine, result.events, room.match.round);
+    if (lines.length) {
+      if (!room.log) room.log = { blue: [], red: [] };
+      if (!Array.isArray(room.log[mine])) room.log[mine] = [];
+      room.log[mine].push(...lines);
+      if (peer) peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
+    }
+    return { ok: true, events: result.events || [] };
+  }
+
   // An escort is a decision, not a movement: the warship is told to travel with the transport and
   // the ship trails it one cell a round. Passing no transport releases the ship.
   function escortOp(username, message) {
@@ -1437,6 +1482,8 @@ export function createLobby() {
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
     if (op === "order") return order(username, message);
+    // PB-245 AC5: the peacetime transfer is its own op, never an order with a short path.
+    if (op === "transfer") return transferOp(username, message);
     if (op === "buy") return buyOp(username, message);
     if (op === "route") return routeFor(username, message);
     if (op === "placement") return placementOp(username, message);
