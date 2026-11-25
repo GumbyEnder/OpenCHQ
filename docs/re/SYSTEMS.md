@@ -821,7 +821,7 @@
 - `0xf5e` + `i*2` = site_coords — position
 - `0x1006` + `i` = site_type — terrain type
 - `0x1102` + `i` = site_active — active/owner/subtype
-- `0x10ae` + `i` = site_name_offset — name string index
+- `0x10ae` + `i` = site_readiness_countdown — `0` -> `15` on capture, decays 1 a round (PB-155 DOSBox read; 9178 writes 15, 4856-4862 decrements over 64 slots). Not a name index: the old `site_name_offset` label is retired, and `FUN_1000_0000` has no `0x10ae` read (see `AI.md` §9.1); **where a site's name is stored in the record is UNVERIFIED**
 - `0xcae` + `i` = site_misc_flags — moving flag
 - `0xcb46` + `i` = site_region — region index
 - `0xc46` + `i` = site_misc2 — command eligibility

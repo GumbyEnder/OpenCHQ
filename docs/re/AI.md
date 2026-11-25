@@ -308,6 +308,11 @@ selection (2694, 3340) and `< 0x15` (24262, 24362); four sites clear it to 0 (12
 13858). That is the readiness timer `web/server/readiness.mjs:58` already models (15 on capture,
 decaying one a round), not a latch.
 
+The rename leaves a hole rather than filling it: retiring `site_name_offset` at `0x10ae` says nothing
+about where names actually live, and **where a site's name is stored in the record is UNVERIFIED**.
+The export has no candidate site-array offset that reads as a string index, so this note offers none
+and `STRUCTS.md` carries the same open item on the `0x10ae` row.
+
 Two findings, both measured rather than assumed: **(a)** 1632 most plainly reads "the site is still
 counting down, so draw the buy's unit from another of our sites" — 0x10ae is the readiness countdown,
 so there is no garrison latch to port; **(b)** the level-5 garrison-buy exclusion therefore has no
