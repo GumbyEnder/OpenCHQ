@@ -9,10 +9,12 @@
 // C2 (level 1 issues no orders and no buys over 50 rounds) is the B2 arm of
 // web/test/nodes/t032_bot_level.mjs, not a match here: a match needs two acting seats.
 //
-// Verdict rule, stated because the engine has no capital-set win inside 50 rounds on this board:
+// Verdict rule, stated because the engine has no capital-set win inside 50 rounds on this board.
+// PB-257(b): side-neutral only, and it never reads a raw total. The old rule 3 (total sites) gave
+// the 1942 blue opening 78 sites to 48 and decided ten C3 rows without a shot fired; it is gone.
 //   1. a capital-set win, if the match produced one;
-//   2. else the side holding more CITIES (city + capital sites) at the round limit;
-//   3. else total sites; 4. else surviving pieces; 5. else a draw.
+//   2. else CITIES TAKEN (end minus opening) at the round limit;
+//   3. else FEWER CAPITALS LOST; 4. else more pieces alive; 5. else a draw.
 // Sides are mirrored: every seed is played twice, once with each level as blue. The 1942 opening
 // is asymmetric (blue opens with more sites), so an unmirrored win rate would measure the board,
 // not the opponent. Note that 1942's capitals come from the file and the engine carries no RNG, so
@@ -43,6 +45,8 @@ import { openMatch } from "../web/server/match.mjs";
 import { tickMatch } from "../web/server/tick.mjs";
 import { ordersFor } from "../web/server/bot.mjs";
 import { ordersFor as prePortOrdersFor } from "../web/server/bot-c20dba7.mjs";
+import { buy } from "../web/server/economy.mjs";
+import { issueOrder } from "../web/server/move.mjs";
 import { dispatchRepeatLimit, dispatchRepeatPool, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
 
 const CITY_KINDS = new Set(["city", "capital"]);
@@ -70,6 +74,14 @@ const PAIRS = String(arg("pairs", "3:2,4:3,5:4"))
   .map((row) => row.split(":").map((value) => Number(value)))
   .filter((row) => row.length === 2 && row.every(Number.isInteger));
 const RUN_C3 = process.argv.includes("--c3");
+// PB-257(a): which seat's order set is FILED first. Both seats always PLANNED from the same
+// pre-round snapshot; this flag only moves the filing order, so `base` vs `swap` is the control that
+// shows whether call order still decides the match.
+const FILE_ORDER = String(arg("file-order", "base"));
+if (FILE_ORDER !== "base" && FILE_ORDER !== "swap") {
+  throw new Error("--file-order must be base or swap");
+}
+const FILE_SEQUENCE = FILE_ORDER === "swap" ? ["red", "blue"] : ["blue", "red"];
 const OUT = arg("out", "local/evidence/t032c/bot-vs-bot.json");
 
 const board = boardPayload();
@@ -105,6 +117,89 @@ function openingCapitals(match) {
   return map;
 }
 
+// PB-257(a): the two ordersFor calls read the SAME pre-round snapshot, then both order sets are
+// filed. `ordersFor` mutates the match as it files (web/server/bot.mjs:801), so the old loop - ask
+// blue, let it file, then ask red - made red read a board blue had already changed, and the
+// first-called seat won every match (room 9398). Here each seat plans on its own clone of the
+// pre-round match and the rows are replayed into the live match in FILE_SEQUENCE.
+const cloneMatch = (value) => (typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
+
+function planOrders(match, side, level) {
+  const plan = cloneMatch(match);
+  let rows;
+  if (level === "pre") {
+    rows = prePortOrdersFor(plan, side) || [];
+  } else {
+    // `opponentLevel` is a match field; the harness sets it on the snapshot the seat reads.
+    plan.opponentLevel = level;
+    rows = ordersFor(plan, side) || [];
+  }
+  return {
+    side,
+    rows,
+    pool: plan.botRepeatPool && typeof plan.botRepeatPool === "object" ? plan.botRepeatPool[side] : undefined,
+  };
+}
+
+// Replay one seat's planned rows onto the live match. Buys go back through economy.buy with the cell
+// the plan chose; orders and defends through move.issueOrder. A refusal is recorded, not swallowed:
+// a plan that cannot be filed is a measurement, not a silent zero.
+function fileOrders(match, plan, filed) {
+  const side = plan.side;
+  const remap = new Map();
+  for (const row of plan.rows) {
+    if (row.type === "bot_buy") {
+      const at = row.at || {};
+      let result;
+      try {
+        result = buy(match, side, row.kind || "infantry", at.x, at.y, board);
+      } catch (err) {
+        result = { error: String((err && err.message) || err) };
+      }
+      if (result && result.ok) {
+        remap.set(row.pieceId, result.piece.id);
+        filed.buy += 1;
+      } else {
+        filed.refused.push({ type: row.type, pieceId: row.pieceId, error: (result && result.error) || "refused" });
+      }
+      continue;
+    }
+    if (row.type === "bot_order" || row.type === "bot_defend") {
+      const pieceId = remap.has(row.pieceId) ? remap.get(row.pieceId) : row.pieceId;
+      const to = row.to || {};
+      let result;
+      try {
+        result = issueOrder(match, side, pieceId, to.x, to.y);
+      } catch (err) {
+        result = { error: String((err && err.message) || err) };
+      }
+      if (result && result.ok) {
+        if (row.type === "bot_order") filed.order += 1;
+        else filed.defend += 1;
+      } else {
+        filed.refused.push({ type: row.type, pieceId: row.pieceId, error: (result && result.error) || "refused" });
+      }
+      continue;
+    }
+    if (row.type === "bot_replan") {
+      const piece = match.pieces.find((unit) => unit.id === row.pieceId);
+      if (piece) {
+        piece.path = [];
+        piece.holdRounds = 0;
+      }
+    }
+  }
+  // The repeat counter was spent on the clone during planning; carry the figure the planner ended
+  // with, exactly as an in-place filing would have left it. The pool must be CREATED here if the
+  // live match has none yet: leaving it absent re-seeds 2*level-4 on the next round's clone, which
+  // is the per-turn refill stand-in the card retired.
+  if (plan.pool !== undefined) {
+    if (!match.botRepeatPool || typeof match.botRepeatPool !== "object") match.botRepeatPool = {};
+    match.botRepeatPool[side] = plan.pool;
+  }
+  return filed;
+}
+
 // One match. `levels` is {blue, red}; a level of "pre" plays the frozen c20dba7 bot.
 function playMatch({ seed, index, levels }) {
   const match = openMatch(ERA, sites, { seed, opponentLevel: 3 });
@@ -112,31 +207,39 @@ function playMatch({ seed, index, levels }) {
   match.clock = "running";
   const opening = openingCapitals(match);
   const start = { blue: cityCount(match, "blue"), red: cityCount(match, "red") };
+  // PB-257(b) caveat, measured not assumed: the "pieces alive" rung is a raw count, so the opening
+  // piece count has to be on the row. If the seats open with different armies, that rung reads the
+  // opening the same way "cities held" read the 1942 site table.
+  const aliveOf = (row) => ({
+    blue: row.pieces.filter((piece) => piece.side === "blue" && Number(piece.strength) > 0).length,
+    red: row.pieces.filter((piece) => piece.side === "red" && Number(piece.strength) > 0).length,
+  });
+  const aliveStart = aliveOf(match);
   const events = {
     blue: { buy: 0, order: 0, defend: 0, repeat: 0 },
     red: { buy: 0, order: 0, defend: 0, repeat: 0 },
   };
   let capBound = 0; // no production cap exists (T-032 B7): nothing can bind. Kept as a printed 0.
+  const filing = { refused: [], sequenced: FILE_ORDER };
+  const filedCounts = { blue: { buy: 0, order: 0, defend: 0 }, red: { buy: 0, order: 0, defend: 0 } };
   while (!match.over && match.round < ROUNDS) {
     // A repeat spend and the buy's spend are the same counter (0xe94c): record the pool each side
     // actually held at the end so the session column is measured, not inferred.
-    for (const side of ["blue", "red"]) {
-      const level = levels[side];
-      let rows;
-      if (level === "pre") {
-        rows = prePortOrdersFor(match, side) || [];
-      } else {
-        // `opponentLevel` is a match field; the harness sets it for the side whose orders it asks
-        // for. title: the engine reads botLevel(match) inside ordersFor and caches nothing.
-        match.opponentLevel = level;
-        rows = ordersFor(match, side) || [];
-      }
-      for (const event of rows) {
+    // PB-257(a): plan both seats off one snapshot, then file both sets in FILE_SEQUENCE.
+    const plans = { blue: planOrders(match, "blue", levels.blue), red: planOrders(match, "red", levels.red) };
+    for (const side of FILE_SEQUENCE) {
+      const plan = plans[side];
+      for (const event of plan.rows) {
         if (event.type === "bot_buy") events[side].buy += 1;
         if (event.type === "bot_order") events[side].order += 1;
         if (event.type === "bot_defend") events[side].defend += 1;
         if (event.repeat === true) events[side].repeat += 1;
       }
+      const filed = fileOrders(match, plan, { buy: 0, order: 0, defend: 0, refused: [] });
+      filedCounts[side].buy += filed.buy;
+      filedCounts[side].order += filed.order;
+      filedCounts[side].defend += filed.defend;
+      filing.refused.push(...filed.refused.map((row) => ({ ...row, side, round: Number(match.round) || 0 })));
     }
     tickMatch(match);
   }
@@ -150,19 +253,31 @@ function playMatch({ seed, index, levels }) {
     blue: match.pieces.filter((piece) => piece.side === "blue" && Number(piece.strength) > 0).length,
     red: match.pieces.filter((piece) => piece.side === "red" && Number(piece.strength) > 0).length,
   };
+  const aliveTaken = { blue: alive.blue - aliveStart.blue, red: alive.red - aliveStart.red };
   // Side-neutral: what each seat TOOK, not what it inherited. The 1942 blue opening holds 40 city
   // sites against red's 23, so "cities held" would hand blue every match before a shot is fired.
   const taken = { blue: citiesEnd.blue - start.blue, red: citiesEnd.red - start.red };
   const lostFewer = (a, b) => (a === b ? null : a < b ? "blue" : "red");
   let verdict;
-  if (match.over && (match.winner === "blue" || match.winner === "red")) verdict = match.winner;
-  else if (taken.blue !== taken.red) verdict = taken.blue > taken.red ? "blue" : "red";
-  else {
+  let verdictRung;
+  if (match.over && (match.winner === "blue" || match.winner === "red")) {
+    verdict = match.winner;
+    verdictRung = "capital-set win";
+  } else if (taken.blue !== taken.red) {
+    verdict = taken.blue > taken.red ? "blue" : "red";
+    verdictRung = "cities taken";
+  } else {
     const fewer = lostFewer(capitalsLost.blue, capitalsLost.red);
-    if (fewer) verdict = fewer;
-    else if (sitesEnd.blue !== sitesEnd.red) verdict = sitesEnd.blue > sitesEnd.red ? "blue" : "red";
-    else if (alive.blue !== alive.red) verdict = alive.blue > alive.red ? "blue" : "red";
-    else verdict = "draw";
+    if (fewer) {
+      verdict = fewer;
+      verdictRung = "capitals lost";
+    } else if (alive.blue !== alive.red) {
+      verdict = alive.blue > alive.red ? "blue" : "red";
+      verdictRung = "pieces alive";
+    } else {
+      verdict = "draw";
+      verdictRung = "draw";
+    }
   }
   return {
     match: index,
@@ -178,7 +293,12 @@ function playMatch({ seed, index, levels }) {
     citiesTaken: { blue: citiesEnd.blue - start.blue, red: citiesEnd.red - start.red },
     sitesEnd,
     capitalsLost,
+    aliveStart,
     alive,
+    aliveTaken,
+    verdictRung,
+    filing,
+    filed: filedCounts,
     events,
     repeatPoolEnd: match.botRepeatPool && typeof match.botRepeatPool === "object"
       ? { ...match.botRepeatPool }
@@ -261,7 +381,9 @@ const report = {
   seedBase: SEED_BASE,
   rounds: ROUNDS,
   matchesPerPair: MATCHES,
-  verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else total sites, else live pieces, else draw",
+  verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else more live pieces, else draw; no raw total (sites/cities held) is ever read",
+  planning: "both seats call ordersFor on their own clone of the same pre-round snapshot, then both order sets are filed into the live match in fileOrder",
+  fileOrder: FILE_ORDER,
   levers: {
     spareActionBudget: [2, 3, 4, 5].map((level) => [level, spareActionBudget(level)]),
     passCap: spareActionPassCap(),
