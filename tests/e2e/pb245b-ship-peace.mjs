@@ -125,8 +125,11 @@ async function main() {
     const room = window.__chq.room();
     return { peace: room.peace, round: room.round, clock: room.clock };
   });
-  mark("the 1986 room opens at WAR (no era opens at peace before PB-245b)",
-    !atWarOpen.peace || atWarOpen.peace.active !== true, JSON.stringify(atWarOpen.peace));
+  // PB-245b changed the world: 1986 opens in the COLD WAR, so at round 0 the peace is already
+  // active and the cold-war flag is set. A cut that empties COLD_WAR_ERAS nulls both and reds this.
+  mark("the 1986 open reads the cold war at round 0 (coldWar true, peace active)",
+    Boolean(atWarOpen.peace) && atWarOpen.peace.active === true && atWarOpen.peace.coldWar === true &&
+      atWarOpen.round === 0, JSON.stringify(atWarOpen.peace) + " round " + atWarOpen.round);
 
   // Run the clock: the cease-fire tool is a wartime act and the server refuses it on a held clock.
   await blue.click("#clockBtn");
@@ -200,7 +203,9 @@ async function main() {
   });
   mark("the War panel prints the peace counter", /Cease-fire=the mandatory peace has elapsed/.test(panel.dfn.join("|")),
     panel.dfn.join(" | "));
-  mark("the War panel states the peacetime footing", /Peacetime: transfers are instant/.test(panel.text), panel.text.slice(0, 120));
+  // PB-245b shipped the longer footing sentence (web/public/app.js:2678: transfers, oil, unready
+  // cities, cash, production ground, starting destinations, the invisible enemy). Pin the shipped words.
+  mark("the War panel states the peacetime footing", /Peacetime: units transfer instantly/.test(panel.text), panel.text.slice(0, 120));
   mark("the agreement's note is printed while the peace stands", /Cease fire accepted/i.test(panel.text),
     panel.text.slice(0, 160));
   mark("the War panel offers Begin Hostilities, enabled at the elapsed counter",
