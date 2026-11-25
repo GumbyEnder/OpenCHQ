@@ -11,7 +11,7 @@ pass. Nothing here needs a dashboard click.
 | Environment | `production` — id `a971db7b-8ac8-4917-8cfd-d0752a016e75` |
 | Service | `openchq-web` — id `3d3fafe6-a580-4c77-a948-b6044433b6fa` |
 | Source | GitHub `GumbyEnder/OpenCHQ`, branch `web` (deploys on push) |
-| Volume | `openchq-web-volume`, mounted `/data` (5 GB) |
+| Volume | `openchq-web-volume`, mounted `/data` (50 GB = 48.8 GiB; measured `sizeMB 50000`, frodo 9124 §1) |
 | Live URL | https://openchq-web-production.up.railway.app |
 | Builder | Railpack, Node, start `node web/server/main.mjs` |
 

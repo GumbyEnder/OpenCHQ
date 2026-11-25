@@ -25,7 +25,7 @@
 // never a prune candidate and neither is a user or session row.
 
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
+import { statSync, statfsSync } from "node:fs";
 import path from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { db as sharedDb, dataRoot } from "./db.mjs";
@@ -353,9 +353,300 @@ export function historyCapBytes(env = process.env) {
   return Math.round(value * 1_000_000_000);
 }
 
-// Pruning is deliberately NOT in this commit. A DELETE does not shrink the sqlite file - the pages
-// are reused - so a prune that "frees bytes" by file size will not show it until a VACUUM, and a
-// VACUUM under the single-writer lock is exactly the stall frodo's condition 3 forbids inside a
-// request. The cap needs a measured decision (file bytes vs stored_bytes, and when to vacuum), so
-// step 2 brings the prune with the numbers that justify it. What exists here is the accounting the
-// decision needs: `historyUsage()` counts the real files, and `historyCapBytes()` reads the env.
+// ---- step 3: the prune, the abandoned class, and the vacuum ------------------------------
+//
+// Frodo's ruling (room 9117 §6, PM 9124) chose option (a): prune by `stored_bytes` against the
+// cap, oldest finished first, never a live match. A DELETE does not shrink the sqlite file (the pages
+// are reused), so the file total only moves after a vacuum - which is why this module ALSO owns the
+// auto_vacuum pragma and an interval `incremental_vacuum`, and why nothing here asserts that the file
+// shrank. It asserts `stored_bytes` and freelist pages, the two numbers that actually move.
+//
+// Three classes, and only three:
+//   1. FINISHED - `ended_at IS NOT NULL`, oldest-first, only when the real file total is over the cap.
+//      The newest 100 finished films per account are never pruned (T-031 §2): a player's recent wars
+//      are the point of the feature.
+//   2. ABANDONED - `ended_at IS NULL`, the room row is GONE, and `started_at < now - X`, X =
+//      `OPENCHQ_HISTORY_ABANDONED_HOURS` (default 24, the same idle window `pruneRooms()` uses). This
+//      is the class that grows without bound: a room deleted at idle can no longer finish its film,
+//      so nothing else will ever close it. It is not live (its room is gone) and it is not finished,
+//      so under a finished-only rule it would sit there forever.
+//   3. Nothing else. A live match (room row present) is never touched, and neither is a user or
+//      session row: this module's DELETE statements name `matches` and `match_rounds` only.
+//
+// The pass is BOUNDED (default 50 headers per pass) and runs off the tick, on a timer: a delete of
+// 500 films inside the beat is the stall condition 3 forbids, just moved from the request to the
+// beat. The wal is checkpointed after a pass that deleted anything.
+
+const PRUNE_TRIGGER = 0.8; // the alarm line: 80% of the cap (condition 4)
+const ABANDONED_HOURS_DEFAULT = 24;
+const PRUNE_BATCH_DEFAULT = 50;
+const VACUUM_PAGES_DEFAULT = 256;
+const FREE_SPACE_FLOOR = 1_000_000_000; // a vacuum with under 1 GB free is not a maintenance pass
+
+export function historyAbandonedHours(env = process.env) {
+  const hours = Number(env.OPENCHQ_HISTORY_ABANDONED_HOURS);
+  return Number.isFinite(hours) && hours > 0 ? hours : ABANDONED_HOURS_DEFAULT;
+}
+
+export function historyPruneBatch(env = process.env) {
+  const batch = Number(env.OPENCHQ_HISTORY_PRUNE_BATCH);
+  return Number.isFinite(batch) && batch > 0 ? Math.min(500, Math.floor(batch)) : PRUNE_BATCH_DEFAULT;
+}
+
+function integerOf(row, key) {
+  if (!row) return 0;
+  const value = row[key] !== undefined ? row[key] : Object.values(row)[0];
+  return Number(value) || 0;
+}
+
+// The pragma, read as a number. 2 = INCREMENTAL, 0 = NONE, 1 = FULL.
+export function autoVacuumMode(handle = sharedDb) {
+  try {
+    return integerOf(handle.prepare("PRAGMA auto_vacuum").get(), "auto_vacuum");
+  } catch {
+    return -1;
+  }
+}
+
+function freelistPages(handle) {
+  try {
+    return integerOf(handle.prepare("PRAGMA freelist_count").get(), "freelist_count");
+  } catch {
+    return 0;
+  }
+}
+
+// The boot flip. `auto_vacuum` cannot be turned on for an existing file without one full VACUUM, so
+// this runs BEFORE the server listens (main.mjs): a full VACUUM inside a request is the stall.
+// Returns { before, mode, changed, vacuumed } and never throws: a read-only volume must not stop boot,
+// it must be LOUD.
+export function ensureIncrementalAutoVacuum(handle = sharedDb, log = console) {
+  const before = autoVacuumMode(handle);
+  const report = { before, mode: before, changed: false, vacuumed: false };
+  if (before === 2) {
+    log.log("[history] auto_vacuum = 2 (INCREMENTAL): interval vacuum is armed");
+    return report;
+  }
+  try {
+    handle.exec("PRAGMA auto_vacuum = INCREMENTAL");
+    handle.exec("VACUUM");
+    report.changed = true;
+    report.vacuumed = true;
+    report.mode = autoVacuumMode(handle);
+  } catch (err) {
+    report.error = err && err.message ? err.message : String(err);
+    report.mode = autoVacuumMode(handle);
+  }
+  if (report.mode !== 2) {
+    log.warn(
+      `[history] LOUD: auto_vacuum is ${report.mode}, not 2 (INCREMENTAL) - a deleted film will not ` +
+      `return its pages to the filesystem. Boot VACUUM ${report.vacuumed ? "ran" : "FAILED"}` +
+      (report.error ? `: ${report.error}` : "") + ". The /data volume is probably read-only.",
+    );
+  } else {
+    log.log(`[history] auto_vacuum was ${before}; set to INCREMENTAL and VACUUMed before serving`);
+  }
+  return report;
+}
+
+// The interval vacuum. A page budget, off the beat, and it refuses to run when the volume is nearly
+// full (a vacuum needs room to rebuild pages). Asserts freelist pages, never file size.
+export function incrementalVacuum(handle = sharedDb, opts = {}) {
+  const log = opts.log || console;
+  const rootDir = opts.rootDir || dataRoot;
+  const pages = Number.isFinite(opts.pages) ? Math.max(0, Math.floor(opts.pages)) : VACUUM_PAGES_DEFAULT;
+  const mode = autoVacuumMode(handle);
+  if (mode !== 2) {
+    log.warn(`[history] LOUD: incremental vacuum skipped - auto_vacuum is ${mode}, not 2`);
+    return { skipped: "auto_vacuum", mode, freed: 0 };
+  }
+  const free = freeBytes(rootDir);
+  if (free !== null && free < FREE_SPACE_FLOOR) {
+    log.warn(`[history] incremental vacuum skipped - /data has ${free} B free`);
+    return { skipped: "free-space", free, freed: 0 };
+  }
+  const before = freelistPages(handle);
+  if (before === 0) return { freed: 0, before, after: 0, mode };
+  try {
+    handle.exec(`PRAGMA incremental_vacuum(${pages})`);
+  } catch (err) {
+    log.warn(`[history] incremental vacuum failed: ${err && err.message ? err.message : err}`);
+    return { freed: 0, before, after: freelistPages(handle), mode, error: true };
+  }
+  const after = freelistPages(handle);
+  const freed = Math.max(0, before - after);
+  if (freed > 0) log.log(`[history] incremental vacuum freed ${freed} pages (freelist ${before} -> ${after})`);
+  return { freed, before, after, mode };
+}
+
+function freeBytes(dir) {
+  try {
+    const stat = statfsSync(dir);
+    return Number(stat.bavail) * Number(stat.bsize);
+  } catch {
+    return null;
+  }
+}
+
+function tableExists(handle, name) {
+  const row = handle
+    .prepare("SELECT 1 AS one FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(String(name));
+  return Boolean(row && row.one);
+}
+
+// The report /api/health carries: real bytes, cap, the ratio, and whether the 80% alarm is lit.
+export function historyBudget(handle = sharedDb, rootDir = dataRoot, env = process.env) {
+  // A fresh /data has no `matches` table until the first film starts; /api/health must answer the
+  // budget anyway (it is the page's one liveness read, not a film request).
+  ensureHistorySchema(handle);
+  const usage = historyUsage(handle, rootDir);
+  const capBytes = historyCapBytes(env);
+  const ratio = capBytes > 0 ? usage.totalBytes / capBytes : 0;
+  return {
+    fileBytes: usage.totalBytes,
+    capBytes,
+    ratio: Number(ratio.toFixed(4)),
+    alarm: ratio >= PRUNE_TRIGGER,
+    matches: usage.matches,
+    finished: usage.finished,
+    abandonedHours: historyAbandonedHours(env),
+  };
+}
+
+// One bounded pass. Deletes at most `batch` headers total (abandoned first, then finished while over
+// the cap), checkpoints the wal when anything went, and returns the numbers a log line needs.
+// `roomExists` is injectable so a test can model a deleted room without writing the rooms table.
+export function pruneHistory(handle = sharedDb, opts = {}) {
+  const env = opts.env || process.env;
+  const rootDir = opts.rootDir || dataRoot;
+  const now = opts.now instanceof Date ? opts.now : new Date(opts.now ?? Date.now());
+  const capBytes = Number.isFinite(opts.capBytes) ? Number(opts.capBytes) : historyCapBytes(env);
+  const batch = Number.isFinite(opts.batch) ? Math.max(1, Math.min(500, Math.floor(opts.batch))) : historyPruneBatch(env);
+  const abandonedHours = Number.isFinite(opts.abandonedHours) ? opts.abandonedHours : historyAbandonedHours(env);
+  ensureHistorySchema(handle);
+
+  const before = historyUsage(handle, rootDir);
+  const report = {
+    at: now.toISOString(),
+    batch,
+    abandonedHours,
+    capBytes,
+    overCap: before.totalBytes > capBytes,
+    alarm: capBytes > 0 ? before.totalBytes / capBytes >= PRUNE_TRIGGER : false,
+    usageBeforeBytes: before.totalBytes,
+    abandoned: [],
+    finished: [],
+    freedBytes: 0,
+    usageAfterBytes: before.totalBytes,
+  };
+
+  const roomsPresent = tableExists(handle, "rooms");
+  const cutoff = new Date(now.getTime() - abandonedHours * 3600 * 1000).toISOString();
+
+  // Class 2 first: invisible rows that can never be finished. Their bytes are already in the file,
+  // but they still occupy pages a vacuum can only return once the header is gone.
+  let left = batch;
+  if (left > 0) {
+    const rows = roomsPresent
+      ? handle
+        .prepare(
+          `SELECT m.id AS id, m.stored_bytes AS stored_bytes FROM matches m
+           LEFT JOIN rooms r ON r.id = m.id
+           WHERE m.ended_at IS NULL AND m.started_at < ? AND r.id IS NULL
+           ORDER BY m.started_at ASC, m.id ASC LIMIT ?`,
+        )
+        .all(cutoff, left)
+      : handle
+        .prepare(
+          `SELECT id, stored_bytes FROM matches
+           WHERE ended_at IS NULL AND started_at < ? ORDER BY started_at ASC, id ASC LIMIT ?`,
+        )
+        .all(cutoff, left);
+    report.abandoned = rows.map((row) => String(row.id));
+    left -= rows.length;
+  }
+
+  // Class 1: finished films, oldest first, and only while the real file total is over the cap. The
+  // newest 100 per account are excluded by a window over both seats' handles.
+  if (left > 0 && report.overCap) {
+    const rows = handle
+      .prepare(
+        `WITH newest AS (
+           SELECT id FROM (
+             SELECT id, ROW_NUMBER() OVER (PARTITION BY handle ORDER BY ended_at DESC, id DESC) AS rn
+             FROM (
+               SELECT id, ended_at, blue_user AS handle FROM matches WHERE ended_at IS NOT NULL AND blue_user <> ''
+               UNION ALL
+               SELECT id, ended_at, red_user AS handle FROM matches WHERE ended_at IS NOT NULL AND red_user <> ''
+             )
+           ) WHERE rn <= 100
+         )
+         SELECT id, stored_bytes FROM matches
+         WHERE ended_at IS NOT NULL AND id NOT IN (SELECT id FROM newest)
+         ORDER BY ended_at ASC, id ASC LIMIT ?`,
+      )
+      .all(left);
+    report.finished = rows.map((row) => String(row.id));
+    left -= rows.length;
+  }
+
+  const ids = [...report.abandoned, ...report.finished];
+  if (ids.length) {
+    const storedBytes = handle
+      .prepare(
+        `SELECT COALESCE(SUM(stored_bytes), 0) AS bytes FROM matches
+         WHERE id IN (${ids.map(() => "?").join(",")})`,
+      )
+      .get(...ids);
+    report.freedBytes = Number(storedBytes && storedBytes.bytes ? storedBytes.bytes : 0);
+    const dropRounds = handle.prepare("DELETE FROM match_rounds WHERE match_id = ?");
+    const dropMatch = handle.prepare("DELETE FROM matches WHERE id = ?");
+    handle.exec("BEGIN IMMEDIATE");
+    try {
+      for (const id of ids) {
+        dropRounds.run(id);
+        dropMatch.run(id);
+      }
+      handle.exec("COMMIT");
+    } catch (err) {
+      handle.exec("ROLLBACK");
+      report.error = err && err.message ? err.message : String(err);
+      report.abandoned = [];
+      report.finished = [];
+      report.freedBytes = 0;
+      return report;
+    }
+    try {
+      handle.exec("PRAGMA wal_checkpoint(PASSIVE)");
+    } catch {
+      // A checkpoint is maintenance; a failed one does not undo the deletes.
+    }
+    report.usageAfterBytes = historyUsage(handle, rootDir).totalBytes;
+  }
+  return report;
+}
+
+// One log line per pass that did something, silent when there was nothing to do (a 5-minute timer
+// that prints every tick is noise, and condition 4 asks for a signal, not a heartbeat).
+export function logPrune(report, log = console) {
+  if (!report) return;
+  if (report.error) {
+    log.warn(`[history] prune failed: ${report.error}`);
+    return;
+  }
+  if (!report.abandoned.length && !report.finished.length) {
+    if (report.alarm) {
+      log.warn(
+        `[history] ALARM: /data at ${report.usageBeforeBytes} B of ${report.capBytes} B cap; ` +
+        `nothing prunable this pass`,
+      );
+    }
+    return;
+  }
+  log.log(
+    `[history] pruned ${report.abandoned.length} abandoned + ${report.finished.length} finished films ` +
+    `(${report.freedBytes} stored B); /data ${report.usageBeforeBytes} -> ${report.usageAfterBytes} B, ` +
+    `cap ${report.capBytes} B`,
+  );
+}

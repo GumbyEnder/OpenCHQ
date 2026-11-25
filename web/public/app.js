@@ -45,6 +45,21 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfoParts } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
 import { NAV, buyRows, economyModel, navFor, oilLine, reserveLine, untypedCount } from "./dialogs.mjs";
+// T-031 step 3: the War Films replay. The pure view model lives in film.mjs so the node tests and the
+// page toggle the same four shows (Show Red / Blue / Common / Both) with one implementation.
+import {
+  FILM_SHOWS,
+  FILM_SPEED_LABELS,
+  FILM_SHOW_LABELS,
+  emptyFilm,
+  filmEventRows,
+  filmRoomAt,
+  frameCount,
+  frameDelayMs,
+  nextSpeed,
+  stepFilm,
+  toggleShow,
+} from "./film.mjs";
 // The Log panel's buffer and scroll policy (PB-135): the panel paints every line the page retains
 // and a mid-match resync merges instead of being dropped.
 import {
@@ -772,6 +787,12 @@ function tickChrome() {
 setInterval(tickChrome, 100);
 
 function drawMatch() {
+  // T-031 step 3: a film is painted instead of the room. The live room, the socket and the clock are
+  // untouched while a film is open - the film's own frames are the whole truth on screen.
+  if (film) {
+    drawFilmFrame();
+    return;
+  }
   const ctx = board.getContext("2d");
   let view = viewForCanvas();
   // Follow the selected piece: a zoomed view that leaves the piece behind is a worse camera than
@@ -2245,7 +2266,9 @@ function closeDialog() {
 }
 
 function openDialog(id) {
-  if (!room) {
+  // T-031: the film list is a LOBBY dialogue - it is where a player goes between wars, so it opens
+  // without a room. Every other panel is a view of a live match and still refuses without one.
+  if (!room && id !== "films") {
     say("Start a match first.");
     return;
   }
@@ -2639,7 +2662,311 @@ const DIALOG_PAINTERS = {
     body.append(list);
     paintLog(list);
   },
+
+  // T-031 step 3: the War Films list. A film opens only when a match is over, which is the server's
+  // rule (room 7683 condition 1): the list it answers with contains finished wars only.
+  films(body) {
+    if (filmListError) body.append(note(filmListError));
+    if (!filmList) {
+      body.append(note("Reading your films…"));
+      loadFilmList().then(() => {
+        if (openDialogId === "films") paintDialog();
+      });
+      return;
+    }
+    if (!filmList.length) {
+      body.append(note("No finished wars yet. A film opens when a match is over; a live match has none."));
+      return;
+    }
+    const list = document.createElement("div");
+    list.className = "filmList";
+    for (const row of filmList) {
+      const line = document.createElement("div");
+      line.className = "filmRow";
+      const when = String(row.ended_at || "").slice(0, 16).replace("T", " ");
+      const who = [row.blue_user || "?", row.red_user || "?"].join(" v ");
+      const text = document.createElement("span");
+      text.textContent = (row.era || "?") + " · " + who + " · " + when +
+        " · " + (Number(row.rounds) || 0) + " rounds · " + (row.winner ? row.winner + " won" : "no winner");
+      const watch = document.createElement("button");
+      watch.type = "button";
+      watch.className = "buy";
+      watch.textContent = "Watch";
+      watch.dataset.film = String(row.id);
+      watch.addEventListener("click", () => openFilmById(row.id));
+      line.append(text, watch);
+      list.append(line);
+    }
+    body.append(list, note("A film is the war as it was recorded: every round, both sides. Show Red / Show Blue / Show Common / Show Both are the original's own view toggles (manual p.35, p.38)."));
+  },
 };
+
+// ---- War Films: the replay state, the transport and the four toggles (T-031 step 3) ----------
+// A film is a REPLAY. It does not touch the live room, the socket or the clock: `film` is non-null
+// only while one is being watched, and drawMatch() paints the film instead of the room in that state.
+// The view model (what a frame paints, what each Show means) lives in film.mjs, where the node tests
+// drive the same functions - so the toggle cannot mean one thing on the page and another in a test.
+let film = null;
+let filmList = null;
+let filmListError = "";
+let filmTimer = null;
+let filmBarEl = null;
+let filmMoreFrames = 0;
+
+async function loadFilmList(force = false) {
+  if (filmList && !force) return filmList;
+  filmListError = "";
+  try {
+    const response = await fetch("/api/matches?limit=50", { headers: { accept: "application/json" } });
+    if (response.status === 401) {
+      filmListError = "Sign in to see your films.";
+      filmList = [];
+      return filmList;
+    }
+    const body = await response.json();
+    filmList = Array.isArray(body && body.matches) ? body.matches : [];
+    return filmList;
+  } catch (err) {
+    filmListError = "Could not read your films: " + (err && err.message ? err.message : String(err));
+    filmList = [];
+    return filmList;
+  }
+}
+
+function openFilms() {
+  openDialogId = "films";
+  paintDialog();
+}
+
+async function openFilmById(id) {
+  const name = String(id || "");
+  if (!name) return;
+  try {
+    const metaResponse = await fetch("/api/matches/" + encodeURIComponent(name), { headers: { accept: "application/json" } });
+    if (metaResponse.status !== 200) throw new Error("HTTP " + metaResponse.status);
+    const meta = await metaResponse.json();
+    const pageResponse = await fetch("/api/matches/" + encodeURIComponent(name) + "/rounds?from=0", { headers: { accept: "application/json" } });
+    if (pageResponse.status !== 200) throw new Error("HTTP " + pageResponse.status);
+    const page = await pageResponse.json();
+    film = emptyFilm();
+    film.meta = meta.film;
+    film.start = meta.film && meta.film.start ? meta.film.start : {};
+    film.frames = (Array.isArray(page && page.frames) ? page.frames : []).map((row) => row.frame);
+    filmMoreFrames = Number(page && page.rounds) || film.frames.length;
+    film.at = 0;
+    closeDialog();
+    buildFilmBar();
+    syncFilmBar();
+    drawMatch();
+  } catch (err) {
+    say("That film could not be opened: " + (err && err.message ? err.message : String(err)));
+  }
+}
+
+// A 400-round war is three windows of 200 frames, and the reader must not have to know that. The
+// next window is fetched when playback reaches the end of the one it holds.
+async function loadMoreFrames() {
+  if (!film || !film.meta) return false;
+  if (frameCount(film) >= filmMoreFrames) return false;
+  try {
+    const response = await fetch("/api/matches/" + encodeURIComponent(film.meta.id) + "/rounds?from=" + frameCount(film),
+      { headers: { accept: "application/json" } });
+    if (response.status !== 200) return false;
+    const page = await response.json();
+    const more = (Array.isArray(page && page.frames) ? page.frames : []).map((row) => row.frame);
+    if (!more.length) {
+      filmMoreFrames = frameCount(film);
+      return false;
+    }
+    film.frames.push(...more);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scheduleFilm() {
+  clearTimeout(filmTimer);
+  filmTimer = null;
+  if (!film || !film.playing) return;
+  filmTimer = setTimeout(async () => {
+    if (!film || !film.playing) return;
+    if (film.at + 1 < frameCount(film) || await loadMoreFrames()) {
+      film.at += 1;
+      drawMatch();
+      syncFilmBar();
+      scheduleFilm();
+      return;
+    }
+    film.playing = false;
+    syncFilmBar();
+  }, frameDelayMs(film.speed));
+}
+
+function filmPlay() {
+  if (!film) return;
+  if (film.playing) {
+    film.playing = false;
+    clearTimeout(filmTimer);
+    filmTimer = null;
+  } else {
+    if (film.at + 1 >= frameCount(film)) film.at = 0;
+    film.playing = true;
+    scheduleFilm();
+  }
+  syncFilmBar();
+  drawMatch();
+}
+
+function filmStep(delta) {
+  if (!film) return;
+  stepFilm(film, delta);
+  clearTimeout(filmTimer);
+  filmTimer = null;
+  syncFilmBar();
+  drawMatch();
+}
+
+function filmSpeed() {
+  if (!film) return;
+  film.speed = nextSpeed(film.speed);
+  syncFilmBar();
+  if (film.playing) scheduleFilm();
+}
+
+function filmShow(show) {
+  if (!film) return;
+  toggleShow(film, show);
+  syncFilmBar();
+  drawMatch();
+}
+
+function exitFilm() {
+  if (!film) return;
+  film.playing = false;
+  clearTimeout(filmTimer);
+  filmTimer = null;
+  film = null;
+  if (filmBarEl) filmBarEl.classList.add("hidden");
+  // The lobby owns the page again; the film borrowed the in-match layout to show the map.
+  document.body.classList.remove("filming");
+  if (!room) {
+    document.body.classList.remove("in-match");
+    const ctx = board.getContext("2d");
+    paintMatch(ctx, boardPayload, null, {
+      view: viewForCanvas(), satellites: [], theme: currentTheme(), atlas: fontAtlas,
+      badgeMinPx: BADGE_MIN_PX * dpr(), badgeSprites,
+    });
+    return;
+  }
+  drawMatch();
+}
+
+function filmButton(label, title, run, id) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "navbtn";
+  button.textContent = label;
+  button.title = title;
+  if (id) button.id = id;
+  button.addEventListener("click", run);
+  return button;
+}
+
+function buildFilmBar() {
+  if (filmBarEl) {
+    filmBarEl.classList.remove("hidden");
+    document.body.classList.add("in-match", "filming");
+    return;
+  }
+  const bar = document.createElement("div");
+  bar.id = "filmbar";
+  bar.className = "filmbar";
+  const label = document.createElement("span");
+  label.id = "filmLabel";
+  label.className = "filmLabel";
+  const log = document.createElement("ol");
+  log.id = "filmLog";
+  log.className = "filmLog";
+  const row = document.createElement("div");
+  row.className = "filmControls";
+  row.append(
+    filmButton("\u25C0", "Previous round", () => filmStep(-1), "filmPrev"),
+    filmButton("Play", "Play or pause the film", filmPlay, "filmPlay"),
+    filmButton("\u25B6", "Next round", () => filmStep(1), "filmNext"),
+    filmButton("1x", "Playback speed", filmSpeed, "filmSpeed"),
+  );
+  for (const show of FILM_SHOWS) {
+    const button = filmButton(FILM_SHOW_LABELS[show], "The original's film view toggles (manual p.35)", () => filmShow(show),
+      "filmShow" + show.charAt(0).toUpperCase() + show.slice(1));
+    button.dataset.show = show;
+    row.append(button);
+  }
+  row.append(filmButton("Close film", "Leave the film and go back to the lobby", exitFilm, "filmExit"));
+  bar.append(label, row, log);
+  document.body.append(bar);
+  document.body.classList.add("in-match", "filming");
+  filmBarEl = bar;
+}
+
+function syncFilmBar() {
+  if (!filmBarEl || !film) return;
+  const play = document.getElementById("filmPlay");
+  if (play) play.textContent = film.playing ? "Pause" : "Play";
+  const speed = document.getElementById("filmSpeed");
+  if (speed) speed.textContent = FILM_SPEED_LABELS[film.speed] || String(film.speed) + "x";
+  for (const show of FILM_SHOWS) {
+    const button = document.getElementById("filmShow" + show.charAt(0).toUpperCase() + show.slice(1));
+    if (button) {
+      button.classList.toggle("armed", film.show === show);
+      button.setAttribute("aria-pressed", film.show === show ? "true" : "false");
+    }
+  }
+  const label = document.getElementById("filmLabel");
+  if (label) {
+    const room0 = filmRoomAt(film, film.at);
+    const end = room0.over ? " · the last round" : "";
+    label.textContent = "Film · " + String(room0.era || "?") + " · round " + room0.round +
+      " · frame " + (film.at + 1) + " of " + frameCount(film) + end;
+  }
+  // The film's log is the recorded events up to this frame, rendered as recorded - never re-derived.
+  const log = document.getElementById("filmLog");
+  if (log) {
+    log.textContent = "";
+    const rows = [];
+    for (let i = 0; i <= film.at && i < frameCount(film); i += 1) rows.push(...filmEventRows(film.frames[i]));
+    for (const row of rows.slice(-40)) {
+      const line = document.createElement("li");
+      line.textContent = "r" + row.round + " · " + row.text;
+      log.append(line);
+    }
+  }
+}
+
+function drawFilmFrame() {
+  const ctx = board.getContext("2d");
+  const view = viewForCanvas();
+  const frameRoom = filmRoomAt(film, film.at);
+  const result = paintMatch(ctx, boardPayload, frameRoom, {
+    view,
+    own: null,
+    satellites: [],
+    badgeMinPx: BADGE_MIN_PX * dpr(),
+    badgeSprites,
+    theme: currentTheme(),
+    atlas: fontAtlas,
+    viewMode: "terrain",
+  });
+  lastPaint = {
+    mode: "film",
+    layers: result.layers ? result.layers.slice() : [],
+    painted: result.painted || 0,
+    political: 0,
+    fogged: 0,
+  };
+}
+
+document.getElementById("filmsBtn")?.addEventListener("click", openFilms);
 
 function paintDialog() {
   const panel = document.getElementById("dialog");
@@ -2651,7 +2978,10 @@ function paintDialog() {
     // match. The panel repaint carries the same rule as renderRoom, so a close and a frame agree.
     if (button.dataset.dialog === "buy") button.disabled = Boolean(room && room.over);
   }
-  if (!room) openDialogId = dialogAfter(openDialogId, { type: "refresh", room: false });
+  // A state refresh closes a panel that is a view of a match the page no longer has. The film list is
+  // a lobby panel, so it survives having no room (T-031); it is closed by the player, like every other
+  // panel (dialogstate's own rule).
+  if (!room && openDialogId !== "films") openDialogId = dialogAfter(openDialogId, { type: "refresh", room: false });
   if (!openDialogId) {
     panel.classList.add("hidden");
     return;

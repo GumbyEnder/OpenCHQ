@@ -1029,3 +1029,51 @@ body.in-match .result { bottom: 50px; }
 }
 .badgerow svg { display: block; }
 .badgerow .badgename { margin-left: 6px; color: #9fb4d8; }
+
+/* ---- T-031 step 3: War Films ------------------------------------------------ */
+/* A film borrows the in-match layout (the map fills the window) but none of its controls: the clock,
+   the speed and the orders belong to a live war, and a replay must not offer them. */
+.filmList { display: grid; gap: 6px; }
+.filmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid #1d2b42;
+  border-radius: 6px;
+  background: #0d1521;
+}
+.filmRow span { color: #cfe0ff; font-size: 13px; }
+.filmbar {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #22405c;
+  border-radius: 8px;
+  background: rgba(6, 12, 20, 0.94);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.filmbar.hidden { display: none; }
+.filmLabel { color: #9fe7dc; font-size: 13px; letter-spacing: 0.02em; }
+.filmControls { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.filmLog {
+  margin: 0;
+  padding: 0 0 0 18px;
+  max-height: 120px;
+  overflow-y: auto;
+  color: #b9cbe6;
+  font: 12px/1.45 ui-monospace, monospace;
+}
+.filmLog li { margin: 0; }
+body.filming .clockbtn,
+body.filming .speedctl,
+body.filming #nav,
+body.filming .gamebtns { display: none; }
+body.filming #filmbar { display: flex; }

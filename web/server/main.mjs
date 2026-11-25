@@ -4,7 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { changePassword, closeSession, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
+import { changePassword, closeSession, db, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
+import { ensureHistorySchema, ensureIncrementalAutoVacuum, historyBudget, incrementalVacuum, logPrune, pruneHistory } from "./history.mjs";
 // T-031 step 2: the film readers. They take a username, never an id a caller supplies.
 import { filmFor, framesFor, listFor } from "./history.mjs";
 import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
@@ -161,7 +162,16 @@ function versionInfo() {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   if (req.method === "GET" && url.pathname === "/api/health") {
-    send(res, 200, { ok: true });
+    // T-031 condition 4: the cap and its usage are visible here, not only in a log. `fileBytes` is
+    // the REAL /data triple (sqlite + wal + shm), never Railway's allocation counter, and `alarm`
+    // is the 80% line so a reader hears about it at a decision point rather than from a 500.
+    let history = null;
+    try {
+      history = historyBudget();
+    } catch (err) {
+      history = { error: err && err.message ? err.message : String(err) };
+    }
+    send(res, 200, { ok: true, history });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/version") {
@@ -391,6 +401,14 @@ server.on("error", (err) => {
   process.exit(1);
 });
 
+// T-031 step 3 (frodo 9117 §6, PM 9131 §2): the auto_vacuum pragma flip and its ONE full VACUUM
+// run at boot, BEFORE the listener opens. `auto_vacuum` cannot be enabled on an existing file
+// without a full VACUUM, and a full VACUUM inside a request (or on the beat) is the stall condition
+// 3 forbids. Doing it here also means the first film a player records is stored in a file that can
+// return pages to /data at all.
+ensureHistorySchema(db);
+ensureIncrementalAutoVacuum(db);
+
 server.listen(port, host, () => {
   console.log(`OpenCHQ web shell http://${host}:${port}`);
 });
@@ -407,6 +425,29 @@ setInterval(() => {
     console.error("session prune failed:", err && err.message ? err.message : err);
   }
 }, 60 * 60 * 1000).unref();
+
+// T-031 step 3: the two history timers, both OFF the 50 ms beat and both unref'd so a test that
+// imports this process is not held open by maintenance it never asked for.
+//   - a bounded prune pass (50 headers) every 5 minutes: a multi-hundred-row DELETE on the beat is
+//     the stall condition 3 forbids, moved from the request to the tick;
+//   - `incremental_vacuum` with a 256-page budget every 10 minutes. It asserts freelist pages and
+//     stored_bytes, never that the file shrank - a normal sqlite file only returns pages this way.
+const PRUNE_EVERY_MS = Number(process.env.OPENCHQ_HISTORY_PRUNE_MS) || 5 * 60 * 1000;
+const VACUUM_EVERY_MS = Number(process.env.OPENCHQ_HISTORY_VACUUM_MS) || 10 * 60 * 1000;
+setInterval(() => {
+  try {
+    logPrune(pruneHistory(db));
+  } catch (err) {
+    console.error("[history] prune pass failed:", err && err.message ? err.message : err);
+  }
+}, PRUNE_EVERY_MS).unref();
+setInterval(() => {
+  try {
+    incrementalVacuum(db);
+  } catch (err) {
+    console.error("[history] incremental vacuum failed:", err && err.message ? err.message : err);
+  }
+}, VACUUM_EVERY_MS).unref();
 
 // The base beat has to divide the shortest round length so a fast room is not visibly late. At the
 // shipped speeds the shortest round is 0.6 s; 50 ms gives it twelve chances a round.
