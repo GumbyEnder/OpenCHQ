@@ -27,6 +27,10 @@ function fail(message) {
   throw new Error(message);
 }
 
+function ok(value, label) {
+  if (!value) fail(label);
+}
+
 function eq(actual, expected, label) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     fail(label + ": expected " + JSON.stringify(expected) + ", got " + JSON.stringify(actual));
@@ -108,6 +112,14 @@ export async function run() {
     eq(report.finished.length, 3, "a pass deletes at most its batch");
     eq(ids(report.finished), ["finished-000", "finished-001", "finished-002"], "oldest finished first");
     eq(report.freedBytes, 3000, "the report counts the stored bytes it freed");
+    // frodo 9149 §5: stored_bytes (what the rule is about), never the file size - a DELETE returns no
+    // pages to the filesystem, and asserting that it did would be asserting a thing sqlite does not do.
+    eq(report.storedBytesAfter, 103 * 1000, "the survivors' stored_bytes is reported, and it dropped by the freed bytes");
+    // Frodo 9183 §6: this assertion used to repeat the line above under a label it did not test. It now
+    // checks the report against the TABLE: the number must be an independent SUM over the survivors,
+    // not a value the pass carried over from its own delete list.
+    const survivingSum = handle.prepare("SELECT COALESCE(SUM(stored_bytes), 0) AS n FROM matches").get().n;
+    eq(report.storedBytesAfter, survivingSum, "storedBytesAfter equals an independent SUM over the surviving headers");
     eq(handle.prepare("SELECT COUNT(*) AS n FROM matches").get().n, 103, "103 headers remain");
     eq(handle.prepare("SELECT COUNT(*) AS n FROM match_rounds").get().n, 103, "and their frames only");
     const again = history.pruneHistory(handle, { now: NOW, rootDir: dir, capBytes: 1, batch: 1 });
@@ -129,9 +141,9 @@ export async function run() {
     const budget = history.historyBudget(handle, dir, { OPENCHQ_HISTORY_CAP_GB: "0.000001" });
     eq(budget.capBytes, 1000, "the cap is the env value, in decimal bytes");
     eq(budget.alarm, true, "a file past 80% of the cap is an alarm");
-    const roomy = history.historyBudget(handle, dir, { OPENCHQ_HISTORY_CAP_GB: "20" });
-    eq(roomy.alarm, false, "20 GB of cap on a small file is not an alarm");
-    eq(roomy.capBytes, 20_000_000_000, "the default is 20 GB decimal");
+    const roomy = history.historyBudget(handle, dir, {});
+    eq(roomy.alarm, false, "the 10 GB default on a small file is not an alarm");
+    eq(roomy.capBytes, 10_000_000_000, "the default is 10 GB decimal (PB-249)");
   }
 
   // ---- 6. the pragma flip needs the full VACUUM, and the interval vacuum moves pages --------
@@ -149,6 +161,18 @@ export async function run() {
     handle.exec("DELETE FROM matches WHERE id LIKE 'bulk-%'");
     const freed = history.incrementalVacuum(handle, { rootDir: dir, pages: 512, log: quiet });
     if (!(freed.freed > 0)) fail("the interval vacuum freed no pages after a bulk delete: " + JSON.stringify(freed));
+
+    // frodo 9149 §5: the BOOT vacuum is statfs-guarded. Its floor is max(4x the file, 512 MB) - a
+    // VACUUM writes a second copy before it replaces the first - and a volume under that floor ABORTS
+    // the flip instead of attempting it. The free number is injected because no test can fill a disk.
+    eq(history.bootVacuumNeed(10 * 1024 * 1024), 512 * 1024 * 1024, "a small file still needs 512 MB");
+    eq(history.bootVacuumNeed(1024 * 1024 * 1024), 4 * 1024 * 1024 * 1024, "a 1 GB file needs 4 GB");
+    const guarded = open();
+    const abort = history.ensureIncrementalAutoVacuum(guarded.handle, quiet, { freeBytes: 1 });
+    eq(abort.skipped, "free-space", "a volume with 1 byte free aborts the boot VACUUM");
+    eq(abort.vacuumed, false, "no VACUUM is attempted under the floor");
+    eq(history.autoVacuumMode(guarded.handle), 0, "auto_vacuum stays NONE when the flip is aborted");
+    ok(abort.need >= 512 * 1024 * 1024, "the abort names the floor it needed: " + abort.need);
   }
 
   // A 5-minute pass with nothing to do is silent; the alarm line is the only thing it may say.

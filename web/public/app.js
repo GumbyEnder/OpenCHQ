@@ -51,8 +51,13 @@ import {
   FILM_SHOWS,
   FILM_SPEED_LABELS,
   FILM_SHOW_LABELS,
+  digestCheck,
+  digestText,
   emptyFilm,
+  filmEnvelope,
   filmEventRows,
+  filmFileName,
+  filmFromEnvelope,
   filmRoomAt,
   frameCount,
   frameDelayMs,
@@ -2903,7 +2908,22 @@ function buildFilmBar() {
     row.append(button);
   }
   row.append(filmButton("Close film", "Leave the film and go back to the lobby", exitFilm, "filmExit"));
-  bar.append(label, row, log);
+  // §4 (ii): a film leaves the browser as a .film file and comes back through the file picker. Both
+  // are the player's own act on a finished war; neither touches the live room.
+  row.append(
+    filmButton("Save film", "Download this film as a .film file", saveFilmFile, "filmSave"),
+    filmButton("Load film", "Open a .film file from this machine", () => pickFilmFile(), "filmLoad"),
+  );
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.accept = ".film,application/json";
+  picker.id = "filmFile";
+  picker.className = "hidden";
+  picker.addEventListener("change", () => loadFilmFile(picker));
+  const digest = document.createElement("span");
+  digest.id = "filmDigest";
+  digest.className = "filmDigest";
+  bar.append(label, digest, row, log, picker);
   document.body.append(bar);
   document.body.classList.add("in-match", "filming");
   filmBarEl = bar;
@@ -2922,6 +2942,7 @@ function syncFilmBar() {
       button.setAttribute("aria-pressed", film.show === show ? "true" : "false");
     }
   }
+  syncFilmDigest();
   const label = document.getElementById("filmLabel");
   if (label) {
     const room0 = filmRoomAt(film, film.at);
@@ -2940,6 +2961,82 @@ function syncFilmBar() {
       line.textContent = "r" + row.round + " · " + row.text;
       log.append(line);
     }
+  }
+}
+
+// §4 (i): the digest the player can read. The check is computed from the film's LAST frame, not from
+// the round on screen, and it is recomputed when the film opens, when more frames arrive and when a
+// file is loaded - never hard-coded to "verified". While it is being computed the line says so.
+function syncFilmDigest() {
+  const el = document.getElementById("filmDigest");
+  if (!el || !film) return;
+  if (film.digest && film.digestFor === frameCount(film)) {
+    el.textContent = digestText(film.digest);
+    el.title = film.digest.reason || "";
+    el.classList.toggle("bad", Boolean(film.digest.expected && film.digest.actual && !film.digest.ok));
+    return;
+  }
+  el.textContent = "digest …";
+  el.title = "Recomputing the last frame's digest";
+  el.classList.remove("bad");
+  const mine = film;
+  digestCheck(mine).then((result) => {
+    if (film !== mine) return; // a different film opened while this digest was being computed
+    mine.digest = result;
+    mine.digestFor = frameCount(mine);
+    const again = document.getElementById("filmDigest");
+    if (!again) return;
+    again.textContent = digestText(result);
+    again.title = (result.reason || "") + (result.actual ? " · " + result.actual.slice(0, 16) + "…" : "");
+    again.classList.toggle("bad", Boolean(result.expected && result.actual && !result.ok));
+  }).catch((err) => {
+    const again = document.getElementById("filmDigest");
+    if (again) again.textContent = "digest unread (" + (err && err.message ? err.message : String(err)) + ")";
+  });
+}
+
+// §4 (ii): Save. The download is the whole film as JSON; the name carries the era and the room id so
+// two wars do not overwrite each other in a downloads folder.
+function saveFilmFile() {
+  if (!film) return;
+  const envelope = filmEnvelope(film);
+  if (!envelope) { say("There is no film to save."); return; }
+  const blob = new Blob([JSON.stringify(envelope)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filmFileName(film);
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  say("Saved " + filmFileName(film) + ".");
+}
+
+function pickFilmFile() {
+  const picker = document.getElementById("filmFile");
+  if (picker) picker.click();
+}
+
+async function loadFilmFile(picker) {
+  const file = picker && picker.files && picker.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const read = filmFromEnvelope(text);
+    if (read.error) { say(read.error); return; }
+    film = read.film;
+    filmMoreFrames = frameCount(film);
+    film.playing = false;
+    clearTimeout(filmTimer);
+    filmTimer = null;
+    syncFilmBar();
+    drawMatch();
+    say("Loaded " + file.name + " · " + frameCount(film) + " frames.");
+  } catch (err) {
+    say("That film could not be read: " + (err && err.message ? err.message : String(err)));
+  } finally {
+    if (picker) picker.value = "";
   }
 }
 

@@ -1062,6 +1062,8 @@ body.in-match .result { bottom: 50px; }
 }
 .filmbar.hidden { display: none; }
 .filmLabel { color: #9fe7dc; font-size: 13px; letter-spacing: 0.02em; }
+.filmDigest { color: #7f9fc0; font-size: 12px; }
+.filmDigest.bad { color: #ff8f8f; font-weight: 700; }
 .filmControls { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .filmLog {
   margin: 0;

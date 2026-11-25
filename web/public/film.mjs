@@ -175,3 +175,134 @@ export function frameDelayMs(speed) {
   const safe = FILM_SPEEDS.includes(value) ? value : 1;
   return Math.round(1000 / safe);
 }
+
+// ---- §4 (i): the digest the player can check -----------------------------------------------
+//
+// The server records `final_digest` = sha256 over the canonical final state, and the closing frame
+// carries that same state. A replay is honest only if the frame the player lands on still hashes to
+// the digest the header recorded - otherwise the film and the header disagree and nobody would ever
+// see it. The page therefore recomputes the digest from the LAST frame in the browser and shows the
+// result. Canonical JSON here is the server's own rule (object keys sorted at every depth), written
+// out again because the page cannot import the server module.
+export function canonicalJson(value) {
+  const sort = (item) => {
+    if (Array.isArray(item)) return item.map(sort);
+    if (item && typeof item === "object") {
+      const out = {};
+      for (const key of Object.keys(item).sort()) out[key] = sort(item[key]);
+      return out;
+    }
+    return item;
+  };
+  return JSON.stringify(sort(value));
+}
+
+export async function digestOf(value) {
+  const bytes = new TextEncoder().encode(canonicalJson(value));
+  const hash = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+// What the last frame says against what the header recorded. `ok` is only true when a digest was
+// expected AND a closing state exists AND the two agree; every other shape is a sentence, never a
+// silent pass - a replay with no closing frame must not read as "verified".
+export async function digestCheck(film) {
+  const meta = (film && film.meta) || {};
+  const expected = meta.finalDigest || meta.final_digest || null;
+  const frames = Array.isArray(film && film.frames) ? film.frames : [];
+  const last = frames.length ? frames[frames.length - 1] : null;
+  if (!expected) {
+    return { ok: false, expected: null, actual: null, reason: "this film recorded no end digest" };
+  }
+  if (!last || !last.state) {
+    return { ok: false, expected, actual: null, reason: "the last frame carries no closing state" };
+  }
+  const actual = await digestOf(last.state);
+  return {
+    ok: actual === expected,
+    expected,
+    actual,
+    reason: actual === expected ? "the last frame matches the recorded digest"
+      : "the last frame does not hash to the recorded digest",
+  };
+}
+
+export function digestText(check) {
+  if (!check) return "digest unread";
+  if (check.ok) return "digest verified";
+  if (check.actual) return "DIGEST MISMATCH";
+  return "digest unverified";
+}
+
+// ---- §4 (ii): save a film to a file, and load one back -------------------------------------
+//
+// The file is the whole film: the recorded start state, every frame (including the closing one with
+// its state), the header's identity and its final digest. Load re-derives the digest from the last
+// frame, so a film that was edited on disk cannot pass as the war it claims to be. The format string
+// and version are checked before anything is trusted.
+export const FILM_FILE_FORMAT = "openchq.film";
+export const FILM_FILE_VERSION = 1;
+
+export function filmFileName(film) {
+  const id = String((film && film.meta && film.meta.id) || "war");
+  const era = String((film && film.meta && film.meta.era) || "").replace(/[^0-9A-Za-z_-]/g, "");
+  return "openchq-" + (era ? era + "-" : "") + id.slice(0, 24) + ".film";
+}
+
+export function filmEnvelope(film) {
+  if (!film || !film.meta) return null;
+  const meta = film.meta;
+  return {
+    format: FILM_FILE_FORMAT,
+    version: FILM_FILE_VERSION,
+    savedAt: new Date().toISOString(),
+    film: {
+      meta: {
+        id: meta.id ?? null,
+        era: meta.era ?? null,
+        mode: meta.mode ?? null,
+        blueUser: meta.blue_user ?? meta.blueUser ?? null,
+        redUser: meta.red_user ?? meta.redUser ?? null,
+        startedAt: meta.started_at ?? meta.startedAt ?? null,
+        endedAt: meta.ended_at ?? meta.endedAt ?? null,
+        winner: meta.winner ?? null,
+        rounds: meta.rounds ?? null,
+        finalDigest: meta.finalDigest ?? meta.final_digest ?? null,
+      },
+      start: film.start || null,
+      frames: Array.isArray(film.frames) ? film.frames : [],
+    },
+  };
+}
+
+// A loaded film, or the sentence that says why the file was refused. Every refusal names the thing
+// that is wrong with the FILE, because "could not open film" teaches the player nothing.
+export function filmFromEnvelope(text) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(String(text || ""));
+  } catch {
+    return { error: "That file is not JSON, so it is not a film." };
+  }
+  if (!parsed || typeof parsed !== "object" || parsed.format !== FILM_FILE_FORMAT) {
+    return { error: "That file is not an OpenCHQ film (no " + FILM_FILE_FORMAT + " marker)." };
+  }
+  if (Number(parsed.version) !== FILM_FILE_VERSION) {
+    return { error: "That film is version " + String(parsed.version) + "; this build reads version " + FILM_FILE_VERSION + "." };
+  }
+  const body = parsed.film;
+  if (!body || typeof body !== "object") return { error: "That film file has no film inside it." };
+  const frames = Array.isArray(body.frames) ? body.frames : null;
+  if (!frames || !frames.length) return { error: "That film has no frames." };
+  const film = {
+    meta: body.meta && typeof body.meta === "object" ? { ...body.meta } : {},
+    start: body.start && typeof body.start === "object" ? body.start : {},
+    frames,
+    at: 0,
+    playing: false,
+    speed: 1,
+    show: "both",
+    file: true,
+  };
+  return { film };
+}

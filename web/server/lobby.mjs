@@ -14,7 +14,7 @@ import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
 // T-031 step 1: the War Films recorder. A film is a recording of a finished match; nothing here is
 // read by a live page, and every call is wrapped so a storage fault can never stop a match.
-import { appendFrame, armRestoredFilm, finishFilm, startFilm } from "./history.mjs";
+import { appendFrame, armRestoredFilm, closeFilm, startFilm } from "./history.mjs";
 import { scanActiveFor, scanAnyActive } from "./scan.mjs";
 import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
 import { isSatelliteKind, shopFor } from "./shop.mjs";
@@ -59,12 +59,25 @@ function recordFilm(room, events) {
   try {
     if (!room || !room.film) return;
     appendFrame(room, events);
-    if (room.match && room.match.over) {
-      finishFilm(room);
-      room.film = false;
-    }
+    if (room.match && room.match.over) closeFilmNow(room);
   } catch (err) {
     console.warn(`[history] frame not recorded for room ${room && room.id}: ${err && err.message ? err.message : err}`);
+  }
+}
+
+// PB-248: the ONE seam every transition to `over` goes through. Resign, an accepted cease-fire and a
+// nuclear winter all end the war OUTSIDE the tick, and the round loop skips a room that is already
+// over - so the old recorder never ran and the film stayed open for ever (frodo 9162 §3, PM 9159).
+// `closeFilm` appends the closing frame (with any events still queued) and writes the digest; the
+// flag goes down here because the room is the recorder's own state, not the store's.
+function closeFilmNow(room, events = []) {
+  try {
+    const closed = closeFilm(room, events);
+    if (closed) room.film = false;
+    return closed;
+  } catch (err) {
+    console.warn(`[history] film not closed for room ${room && room.id}: ${err && err.message ? err.message : err}`);
+    return null;
   }
 }
 
@@ -590,6 +603,9 @@ export function createLobby() {
     room.holds = { blue: false, red: false };
     room.match.clock = "held";
     room.note = nameOf(username) + " resigned. " + other + " wins.";
+    // PB-248: the war ended outside a tick, so the film is closed here; without this the header
+    // stayed open and the war never appeared in War Films (PM 9159, frodo 9162).
+    closeFilmNow(room);
     saveRoom(room);
     tellRoom(room);
     return { ok: true };
@@ -841,6 +857,10 @@ export function createLobby() {
     // stamped the event with the round it was used in and logged it at the next one, which is how a
     // cease fire read as event r1 and log r2.
     queueEvents(room, result.events);
+    // PB-248: a nuke can end the war (nuclear winter) inside a tool call, and the tick that would
+    // have recorded the round never runs for a finished room. Close the film here; the queued
+    // events ride into the closing frame instead of being dropped.
+    if (room.match.over) closeFilmNow(room);
     touch(room);
     tellRoom(room);
     return { ok: true, events: result.events || [] };
@@ -882,6 +902,8 @@ export function createLobby() {
     room.clock = "held";
     room.match.clock = "held";
     room.note = resultNote(room.match);
+    // PB-248: an accepted cease-fire ends the war outside a tick; close the film at the same seam.
+    closeFilmNow(room, result.events);
     saveRoom(room);
     room.dirty = false;
     tellRoom(room);

@@ -9,7 +9,7 @@
 //   4. the end digest is the canonical hash of the final state, written once; a second finish call
 //      cannot overwrite it (AC1: the last replay frame must hash to this);
 //   5. the digest does not depend on object insertion order;
-//   6. the cap is env-driven and defaults to 20 GB; usage counts REAL FILE BYTES (sqlite + wal + shm),
+//   6. the cap is env-driven and defaults to 10 GB (PB-249); usage counts REAL FILE BYTES (sqlite + wal + shm),
 //      and the film blobs are counted once, inside the file, not a second time.
 //
 // Pruning is step 2 and is not tested here because it does not exist yet - the commit says why.
@@ -126,9 +126,9 @@ export async function run() {
   eq(history.digestOf(a), history.digestOf(b), "the digest does not depend on insertion order");
 
   // ---- 6. the cap and the accounting --------------------------------------------------
-  eq(history.historyCapBytes({}), 20_000_000_000, "the default cap is 20 GB");
+  eq(history.historyCapBytes({}), 10_000_000_000, "the default cap is 10 GB (PB-249)");
   eq(history.historyCapBytes({ OPENCHQ_HISTORY_CAP_GB: "5" }), 5_000_000_000, "the cap is env-driven");
-  eq(history.historyCapBytes({ OPENCHQ_HISTORY_CAP_GB: "nonsense" }), 20_000_000_000, "a bad cap falls back to the default");
+  eq(history.historyCapBytes({ OPENCHQ_HISTORY_CAP_GB: "nonsense" }), 10_000_000_000, "a bad cap falls back to the default");
   const usage = history.historyUsage(handle, dir);
   const files = usage.files.reduce((sum, file) => sum + file.bytes, 0);
   eq(usage.fileBytes, files, "usage counts the real files");

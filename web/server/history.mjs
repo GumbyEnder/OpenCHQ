@@ -31,7 +31,9 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { db as sharedDb, dataRoot } from "./db.mjs";
 
 const SCHEMA = 1;
-const DEFAULT_CAP_GB = 20;
+// PB-249: frodo 9149 §5 accepted CAP_GB=10 for production; the code default follows the ruling so a
+// host with no env override is at 10 GB, not 20.
+const DEFAULT_CAP_GB = 10;
 
 export function ensureHistorySchema(handle = sharedDb) {
   handle.exec(`
@@ -90,6 +92,14 @@ export function packMatch(match) {
     round: match.round ?? 0,
     clock: match.clock ?? null,
     seed: match.seed ?? null,
+    // PB-248: a persisted room has to remember that its war is FINISHED. `packMatch` dropped the
+    // three end fields, so a room saved after a resignation came back as a live match with a held
+    // clock - and the stranded-film repair could not tell a finished war from an abandoned one from
+    // the store alone. They are recorded now for every new save; rows written before this carry
+    // none of them and are treated as "cannot be proved finished", never as finished.
+    over: match.over === true,
+    winner: match.winner ?? null,
+    winReason: match.winReason ?? null,
   };
 }
 
@@ -191,6 +201,36 @@ export function finishFilm(room, handle = sharedDb, now = new Date()) {
   return { id: String(room.id), digest, bytes, rounds: Number(match.round) || 0 };
 }
 
+// PB-248: ONE seam that closes a film on every transition to `over`. The recorder used to run only
+// from the round loop (`lobby.recordFilm`, called after a tick), and that loop skips a room whose
+// match is already over - so a resignation, an accepted cease-fire or a nuclear winter stranded an
+// open header: `ended_at` null, `final_digest` null, and `listFor` (which requires `ended_at`) never
+// showed the war. This is idempotent in both directions: a header with a digest is already closed and
+// is not touched, and a room with no header is not given one. The closing frame carries the state the
+// digest is taken over (appendFrame does that when `match.over`), so a replay's last frame and the
+// recorded digest still agree.
+export function closeFilm(room, events = [], handle = sharedDb) {
+  if (!room || !room.id || !room.match) return null;
+  if (room.match.over !== true) return null;
+  ensureHistorySchema(handle);
+  const row = handle.prepare("SELECT final_digest FROM matches WHERE id = ?").get(String(room.id));
+  if (!row) return null;
+  if (row.final_digest) return { id: String(room.id), digest: row.final_digest, already: true };
+  // Events a tool queued for a round that will now never tick belong to the closing frame, not to
+  // nothing: a nuke that ended the war should read in the film's log.
+  const pending = Array.isArray(room.match.pendingEvents) ? room.match.pendingEvents.splice(0) : [];
+  appendFrame(room, [...pending, ...(Array.isArray(events) ? events : [])], handle);
+  return finishFilm(room, handle);
+}
+
+// There is deliberately NO boot-time repair of headers stranded before this fix (PM 9189 §1a, frodo
+// 9183 §3). armRestoredFilm below closes every header the store can PROVE finished at restore, which
+// is the same evidence a repair would read; the headers it cannot prove (a room row that is gone, or a
+// persisted match written before `over` was stored) are retired by the 168 h abandoned arm, and a
+// digest invented over them would be a hash of a board nobody can reproduce. An earlier revision of
+// this commit carried repairStrandedFilms() and said it ran at boot; nothing imported it, and a repair
+// that cannot run is worse than no repair, because the ship record then describes code that is dead.
+
 // AC1 needs the last REPLAY FRAME to hash to the recorded digest, which means the frame has to carry
 // the state the digest is taken over. One function builds it, the last frame stores it, and
 // `finishFilm` hashes the same object - so the two cannot drift apart. Earlier rounds carry no state:
@@ -225,6 +265,15 @@ export function armRestoredFilm(room, handle = sharedDb) {
   if (!room || !room.id || !room.match) return false;
   // A finished match's film is already closed; re-arming it would append a frame to a finished film.
   if (room.match.over) {
+    // PB-248 (§4 iv): a room restored after its war ended has a film that must be CLOSED, not
+    // re-armed. `finishFilm` is idempotent, so this also repairs a header stranded by the old
+    // recorder: a match that is over and has no digest gets its final state and digest here, from
+    // the match the store just handed us.
+    try {
+      closeFilm(room, [], handle);
+    } catch (err) {
+      console.warn(`[history] stranded film not closed for room ${room.id}: ${err && err.message ? err.message : err}`);
+    }
     room.film = false;
     return false;
   }
@@ -382,6 +431,17 @@ const ABANDONED_HOURS_DEFAULT = 24;
 const PRUNE_BATCH_DEFAULT = 50;
 const VACUUM_PAGES_DEFAULT = 256;
 const FREE_SPACE_FLOOR = 1_000_000_000; // a vacuum with under 1 GB free is not a maintenance pass
+// frodo 9149 §5: the BOOT vacuum needs room to rebuild the file, so it is guarded by statfs and
+// aborted - not attempted - when the volume cannot hold the copy. The floor is the larger of four
+// times the file and 512 MB, because a VACUUM writes a second copy of the database before it
+// replaces the first.
+const BOOT_VACUUM_FILE_FACTOR = 4;
+const BOOT_VACUUM_FLOOR_BYTES = 512 * 1024 * 1024;
+
+export function bootVacuumNeed(fileBytes) {
+  const size = Number(fileBytes) > 0 ? Number(fileBytes) : 0;
+  return Math.max(size * BOOT_VACUUM_FILE_FACTOR, BOOT_VACUUM_FLOOR_BYTES);
+}
 
 export function historyAbandonedHours(env = process.env) {
   const hours = Number(env.OPENCHQ_HISTORY_ABANDONED_HOURS);
@@ -420,12 +480,42 @@ function freelistPages(handle) {
 // this runs BEFORE the server listens (main.mjs): a full VACUUM inside a request is the stall.
 // Returns { before, mode, changed, vacuumed } and never throws: a read-only volume must not stop boot,
 // it must be LOUD.
-export function ensureIncrementalAutoVacuum(handle = sharedDb, log = console) {
+export function ensureIncrementalAutoVacuum(handle = sharedDb, log = console, opts = {}) {
   const before = autoVacuumMode(handle);
   const report = { before, mode: before, changed: false, vacuumed: false };
   if (before === 2) {
     log.log("[history] auto_vacuum = 2 (INCREMENTAL): interval vacuum is armed");
     return report;
+  }
+  // frodo 9149 §5: the boot VACUUM is statfs-guarded. It writes a second copy of the database before
+  // it replaces the first, so a volume that cannot hold max(4x the file, 512 MB) must not start one -
+  // a full /data in the middle of boot is worse than an un-vacuumed file. Aborted, loud, and the mode
+  // is reported as it actually is.
+  try {
+    const file = handle.prepare("PRAGMA database_list").all().find((row) => row && row.file);
+    const fileBytes = file ? statSync(file.file).size : 0;
+    const need = bootVacuumNeed(fileBytes);
+    // `opts.freeBytes` is the test seam: the guard is arithmetic over statfs, and a test cannot
+    // make a real volume full. Production never passes it.
+    const free = Number.isFinite(opts.freeBytes)
+      ? Number(opts.freeBytes)
+      : freeBytes(file && file.file ? path.dirname(file.file) : dataRoot);
+    report.fileBytes = Number(fileBytes) || 0;
+    report.need = need;
+    report.free = free;
+    if (free !== null && free < need) {
+      report.skipped = "free-space";
+      log.warn(
+        `[history] LOUD: boot VACUUM ABORTED - /data has ${free} B free, the file is ${fileBytes} B and ` +
+        `the copy needs ${need} B (max(4x file, 512 MB)). auto_vacuum stays ${before}; the pragma flip ` +
+        `needs a VACUUM this volume cannot afford.`,
+      );
+      return report;
+    }
+  } catch (err) {
+    // A statfs that cannot be read is not a reason to skip the pragma flip, but it IS a reason to say
+    // so: the guard only ever skips a vacuum it can prove is unsafe.
+    report.guardError = err && err.message ? err.message : String(err);
   }
   try {
     handle.exec("PRAGMA auto_vacuum = INCREMENTAL");
@@ -623,6 +713,16 @@ export function pruneHistory(handle = sharedDb, opts = {}) {
       // A checkpoint is maintenance; a failed one does not undo the deletes.
     }
     report.usageAfterBytes = historyUsage(handle, rootDir).totalBytes;
+  }
+  // frodo 9149 §5: the pass reports the number its own rule is about - the SUM OF STORED_BYTES the
+  // headers still claim - so a test (and /api/health's next reader) can assert "under the cap" without
+  // ever asserting that the FILE shrank. A DELETE leaves the pages in place; the interval vacuum is
+  // what returns them, and it asserts its own freelist delta.
+  try {
+    const surviving = handle.prepare("SELECT COALESCE(SUM(stored_bytes), 0) AS bytes FROM matches").get();
+    report.storedBytesAfter = Number(surviving && surviving.bytes ? surviving.bytes : 0);
+  } catch {
+    report.storedBytesAfter = null;
   }
   return report;
 }
