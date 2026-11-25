@@ -1880,7 +1880,9 @@ function toolRow(room) {
     if (tool.name === "ceasefire" && truce) {
       if (truce.canAnswer) {
         button.textContent = "Accept cease-fire";
-        button.title = "Both sides agree and the war ends. Declining leaves the board as it is.";
+        // frodo 9241 §2: this sentence is read at the instant the state changes, and accepting no
+        // longer ends the war - it enters the peace both sides can leave again (p.31-32).
+        button.title = "Both sides agree and the fighting stops: the war goes to a cease-fire peace, and either side can begin hostilities again from War Status. Declining leaves the board as it is.";
       } else if (truce.status === "pending") {
         button.textContent = "Cease-fire proposed";
         button.title = "Your opponent must agree. The war continues until they do.";

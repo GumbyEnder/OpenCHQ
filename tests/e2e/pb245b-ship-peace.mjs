@@ -148,11 +148,16 @@ async function main() {
     return Boolean(room && room.seat && room.seat.ceasefire && room.seat.ceasefire.canAnswer === true);
   }, null, { timeout: 25000, polling: 100 });
   await red.waitForSelector('.shop.tools button', { timeout: 25000 });
-  await red.evaluate(() => {
+  const acceptTitle = await red.evaluate(() => {
     const button = [...document.querySelectorAll(".shop.tools button")].find((b) => /^Accept cease-fire$/.test(b.textContent.trim()));
     if (!button) throw new Error("red's kit has no Accept cease-fire button");
+    const title = button.title;
     button.click();
+    return title;
   });
+  // frodo 9241 §2: the sentence on the button that creates the state must not promise an ending.
+  mark("the accept button's title names the peace, not an end to the war",
+    !/war ends/i.test(acceptTitle) && /peace/i.test(acceptTitle), acceptTitle);
 
   await blue.waitForFunction(() => {
     const room = window.__chq.room();

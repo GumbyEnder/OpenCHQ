@@ -20,6 +20,10 @@
 //      resume_war - and this arm REDS when that sender is cut (the cut is run here, not assumed)
 //   6. over real sockets, two human seats: offer, accept, press Begin Hostilities, and the war is
 //      on for both seats with their own log lines and no stale note
+//   7. the accept button's sentence names the peace, not an end to the war - and REDS on the old
+//      sentence (frodo 9241 §2; the cut is run here, not assumed)
+//   8. the refusal carries the count ("...: 1 round(s) remain."), and the refusal branch writes no
+//      room note - both cut RUN, so a lost digit or a note cleared on refusal reds (frodo 9250 A2)
 
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -54,6 +58,7 @@ function ok(value, label) {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const shippedPath = path.resolve(here, "..", "..", "..", "config", "game.json");
 const appPath = path.resolve(here, "..", "..", "public", "app.js");
+const lobbyPath = path.resolve(here, "..", "..", "server", "lobby.mjs");
 
 const MANDATORY = { "1986": 3 };
 
@@ -87,6 +92,38 @@ function truceAcceptedAt(round) {
   return match;
 }
 
+// The accept button's own sentence (frodo 9241 §2). It is read at the instant the state changes,
+// so it must name the peace that starts instead of promising that the war ends.
+function acceptTitleArms(source, label) {
+  const start = source.indexOf('button.textContent = "Accept cease-fire"');
+  if (start < 0) fail(label + ": the kit has no Accept cease-fire button");
+  const block = source.slice(start, source.indexOf('} else if (truce.status === "pending")', start));
+  if (block.length < 40) fail(label + ": the accept branch is not where it was: " + block.length + " chars");
+  const title = (block.match(/button\.title = "([^"]*)"/) || [])[1] || "";
+  ok(title.length > 0, label + ": the accept button carries no title");
+  ok(!/war ends/i.test(title), label + ": the accept button still says the war ends: " + title);
+  ok(/peace/i.test(title), label + ": the accept title does not name the peace it enters: " + title);
+  ok(/declining leaves the board as it is/i.test(title),
+    label + ": the decline half of the sentence was lost: " + title);
+}
+
+// The refusal must not touch the agreement's note (frodo 9250 §1, "pin the note-unchanged-on-
+// refusal in the same eq block"). The clear lives in the lobby's resumeWarOp, so this reads that
+// op's shape: the refusal returns before any note write.
+function refusalNoteArms(source, label) {
+  const start = source.indexOf("function resumeWarOp(");
+  if (start < 0) fail(label + ": the lobby has no resumeWarOp");
+  const next = source.indexOf("function missionOp(", start);
+  const block = source.slice(start, next > start ? next : source.length);
+  const refusal = block.indexOf("if (!result || result.error) {");
+  const clear = block.indexOf('room.note = "";');
+  if (refusal < 0) fail(label + ": resumeWarOp has no refusal branch");
+  if (clear < 0) fail(label + ": resume_war no longer clears the agreement's note");
+  ok(refusal < clear, label + ": the note clear sits before the refusal branch, so a refused press wipes the agreement's note");
+  const body = block.slice(refusal, block.indexOf("return", refusal));
+  ok(!/room\.note\s*=/.test(body), label + ": the refusal branch writes the room note");
+}
+
 // The page's Begin Hostilities sender, as one checker so the cut can be run against a copy.
 function pageControlArms(source, label) {
   const start = source.indexOf('textContent = "Begin Hostilities"');
@@ -116,6 +153,10 @@ export async function run(ctx) {
       const early = resumeWar(match, "blue", 5);
       ok(early.error, "a press before the counter elapsed was allowed");
       ok(/mandatory peace has not elapsed/i.test(early.error), "the refusal does not name the rule: " + early.error);
+      // frodo 9250 A2: the sentence the War panel shows must carry the digits, not just the rule.
+      // This exact eq is what reds when peace.mjs drops the count (frodo's F3 survived without it).
+      eq(early.error, "The mandatory peace has not elapsed: 1 round(s) remain.",
+        "the refusal's sentence, count included");
       eq(early.remaining, 1, "the refusal does not name the rounds remaining");
       eq(peaceOf(match).active, true, "a refused press left the peace standing");
       eq(peaceOf(match).brokenBy, null, "a refused press named a breaker");
@@ -177,6 +218,37 @@ export async function run(ctx) {
       red = /no resume_war sender/.test(String(err && err.message));
     }
     ok(red, "cutting the Begin Hostilities sender did NOT red the arm");
+  }
+
+  // ---- 5b: the accept button's sentence, and the same cut (frodo 9241 §2) --------------
+  {
+    const source = readFileSync(appPath, "utf8");
+    acceptTitleArms(source, "the shipped page");
+    const old = source.replace(
+      /button\.title = "Both sides agree and the fighting stops[^"]*";/,
+      'button.title = "Both sides agree and the war ends. Declining leaves the board as it is.";');
+    ok(old !== source, "the title cut could not be applied - the pin is not reading the real line");
+    let titleRed = false;
+    try {
+      acceptTitleArms(old, "a page with the old sentence");
+    } catch (err) {
+      titleRed = /still says the war ends/.test(String(err && err.message));
+    }
+    ok(titleRed, "the old \"the war ends\" sentence did NOT red the title arm");
+
+    // The refusal's note half, and its cut: a note write moved above the refusal must red.
+    const lobby = readFileSync(lobbyPath, "utf8");
+    refusalNoteArms(lobby, "the shipped lobby");
+    const moved = lobby.replace("const mine = seatUsername(room, username);\n    if (!mine) return { error: \"You do not hold a seat in this match.\" };\n    const result = resumeWar(room.match, mine, room.match.round);",
+      "const mine = seatUsername(room, username);\n    if (!mine) return { error: \"You do not hold a seat in this match.\" };\n    room.note = \"\";\n    const result = resumeWar(room.match, mine, room.match.round);");
+    ok(moved !== lobby, "the note cut could not be applied - the pin is not reading the real op");
+    let noteRed = false;
+    try {
+      refusalNoteArms(moved, "a lobby that clears the note before the refusal");
+    } catch (err) {
+      noteRed = /wipes the agreement's note/.test(String(err && err.message));
+    }
+    ok(noteRed, "clearing the note before the refusal did NOT red the arm");
   }
 
   // ---- 6: two human seats, over sockets, the way the page does it ----------------------
