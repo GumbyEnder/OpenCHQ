@@ -94,23 +94,28 @@ export async function run() {
     eq(frame.state.winReason.kind, "resignation", "the closing state carries the reason");
   }
 
-  // ---- 2. cease-fire ----------------------------------------------------------
+  // ---- 2. cease-fire: PB-245 turned this into a NON-ending ---------------------
   {
     const { answerCeasefire } = await import("../../server/late.mjs");
+    const { peaceOf } = await import("../../server/peace.mjs");
     const room = makeRoom("life-ceasefire");
     history.startFilm(room, handle);
-    // The engine's OWN transition: a pending offer answered by the other seat sets over/winner/
-    // winReason and hands back the event the closing frame must carry.
     room.match.ceasefire = { status: "pending", by: "blue", round: 3, answeredRound: null };
     const answered = answerCeasefire(room.match, "red", true);
     ok(answered && answered.accepted, "the engine accepts the cease-fire: " + JSON.stringify(answered && answered.error));
-    ok(room.match.over === true, "answerCeasefire sets over");
-    const events = answered.events;
-    ok(history.closeFilm(room, events, handle), "the cease-fire room's film closes");
+    // Manual p.31: an accepted cease fire makes the war a CEASE-FIRE (a state either player can
+    // leave), not an ending. So the engine must NOT set over, and the seam that keys on a
+    // transition to `over` must stay shut: no closing frame, no digest, header stays open.
+    ok(room.match.over === false, "answerCeasefire leaves over false: peace is a state, not an ending");
+    ok(room.match.winner === null, "answerCeasefire names no winner");
+    eq(peaceOf(room.match).active, true, "answerCeasefire puts the war at peace");
+    eq(history.closeFilm(room, answered.events, handle), null, "no film closes on an accepted cease fire");
+    const row = handle.prepare("SELECT ended_at, final_digest FROM matches WHERE id = ?").get("life-ceasefire");
+    eq(row ? (row.ended_at ?? null) : null, null, "the header stays open");
+    eq(row ? (row.final_digest ?? null) : null, null, "no digest is invented for a peace");
     const frame = lastFrame("life-ceasefire");
-    eq(frame.events.map((event) => event.type), ["ceasefire_accepted"], "the closing frame carries the accepted event");
-    eq(history.digestOf(frame.state), header("life-ceasefire").final_digest, "digest matches after a cease-fire");
-    eq(header("life-ceasefire").winner, "", "a cease-fire records no winner");
+    ok(!frame || !frame.events.some((event) => event.type === "ceasefire_accepted"),
+      "the accepted event did not enter a closing frame");
   }
 
   // ---- 3. nuclear winter ------------------------------------------------------

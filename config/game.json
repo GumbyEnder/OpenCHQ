@@ -588,6 +588,11 @@
       "source": "T-017 / PB-029: the smallest box the page may draw around a legal placement site, in screen pixels. Manual printed p.14 - green ready, yellow soon, red a long wait; the remake uses cyan/amber."
     }
   },
+  "peace": {
+    "_comment": "PB-245. Manual printed p.31-32: 'Peace lasts for a pre-set amount of time, depending upon the scenario. A counter in Monitor One tells you how much time remains in mandatory peace' and 'Cash, however, still accumulates, and at an accelerated rate.' The page prints NO length and NO rate. Both numbers are UNVERIFIED - neither is evidence. mandatoryRounds is keyed by scenario; an absent key means the page printed no mandatory window for that scenario, not that the window is zero rounds. cashMultiplier 1 means 'no change from wartime'.",
+    "mandatoryRounds": {},
+    "cashMultiplier": 1
+  },
   "readiness": {
     "radiusSq": 401,
     "priceScaleNumerator": 80,

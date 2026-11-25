@@ -21,6 +21,7 @@ import { metersFor, oilReadout } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing, ceasefireOf } from "./late.mjs";
+import { peaceActive, peaceOf } from "./peace.mjs";
 import { ensureStrength } from "./combat.mjs";
 import { holderOf as capitalHolder } from "./capitals.mjs";
 import { ownershipOf } from "./territory.mjs";
@@ -131,6 +132,10 @@ function visibleEnemy(unit, ownPieces, match, side, now, hidden) {
     // not this unit's. That reveal keeps its own round's lifetime.
     return true;
   }
+  // PB-245, manual printed p.31: "during peacetime, the opposing player's troops are 'invisible'."
+  // A scan (or a satellite) still crosses this - the two reveal paths above return first - so the
+  // scan plus its disclosure to the opponent is the whole of what peace allows (p.31 Intel Scan).
+  if (peaceActive(match)) return false;
   // Ordinary sight is what the concealed era withholds: the enemy is the secret until its capital
   // has been seen from one of this seat's own pieces.
   if (hidden) return false;
@@ -340,6 +345,9 @@ export function forSeat(match, side, now = Date.now()) {
   // keeps its own copy of the round length is a second source of truth for a tunable.
   return {
     pieces, routes, sites, capitals, capitalList, seat, opponent, notes, alarm, over, winner, result, unscreened,
+    // PB-245: the peace state, identical for both seats - `over` and `winner` above are untouched
+    // by an accepted cease fire, which is what makes peace a state rather than an ending.
+    peace: peaceOf(match),
     // One entry per region (184 of them), in region id order: "blue", "red" or null. The page
     // fills the ground from this and the geometry that came with the board.
     ownership: ownershipOf(match),

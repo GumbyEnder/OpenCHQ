@@ -75,15 +75,16 @@ export async function run(ctx) {
     const accept = answerCeasefire(match, "blue", true);
     if (accept.error) fail("the acceptance was refused: " + accept.error);
     eq("the acceptance's note", (accept.events[0] || {}).note, CEASEFIRE_NOTE);
-    if (!match.over) fail("an accepted cease fire did not end the match");
+    // PB-245 (manual p.31): peace is a STATE. An accepted cease fire no longer ends the match, so
+    // `over` and `winner` stay put and the seat reads the peace object instead of a result.
+    if (match.over) fail("an accepted cease fire ended the match; p.31 makes it a state");
     if (match.winner) fail("an accepted cease fire named a winner; a truce is not a victory");
-    const result = resultOf(match);
-    eq("the result's reason", result && result.reason, "ceasefire");
-    eq("the result's winner", result && result.winner, null);
-    eq("the result's offerer", result && result.ceasefire && result.ceasefire.by, "red");
-    if (!/cease fire/i.test(resultNote(match)) || !/Neither side won/.test(resultNote(match))) {
-      fail("the server's end sentence does not say the war ended by cease fire: " + resultNote(match));
-    }
+    const bluePeace = forSeat(match, "blue").peace;
+    const redPeace = forSeat(match, "red").peace;
+    eq("both seats read peace", [Boolean(bluePeace && bluePeace.active), Boolean(redPeace && redPeace.active)], [true, true]);
+    eq("the peace names the offerer", [bluePeace.by, redPeace.by], ["red", "red"]);
+    eq("the peace keeps the match open for both seats", [forSeat(match, "blue").over, forSeat(match, "red").over], [false, false]);
+    eq("no result is invented", resultOf(match), null);
     if (!answerCeasefire(match, "blue", true).error) fail("a finished match still answered an offer");
   }
 
@@ -224,15 +225,16 @@ export async function run(ctx) {
   await a.wait((m) => m.op === "ack" && Array.isArray(m.events) && m.events.some((e) => e.type === "ceasefire_proposed"), "the second offer ack", markA);
   await ctx.waitUntil(b.box, 0, (m) => m.op === "room" && m.room && m.room.seat && m.room.seat.ceasefire && m.room.seat.ceasefire.canAnswer === true, "bob's second answerable offer", 8000);
   markB = b.box.length;
+  markA = a.box.length;
   b.send({ op: "ceasefire_answer", accept: true });
-  const overB = await ctx.waitUntil(b.box, markB, (m) => m.op === "over", "bob's over frame", 4000);
-  eq("the over frame's reason", overB.result && overB.result.reason, "ceasefire");
-  eq("the over frame's winner", overB.winner, null);
-  const overA = await ctx.waitUntil(a.box, 0, (m) => m.op === "over", "alice's over frame", 4000);
-  eq("both seats read the same end", overA.result && overA.result.reason, "ceasefire");
-  if (!/Neither side won/.test(String(overA.note || ""))) fail("the end note does not say neither side won: " + overA.note);
-  const endedRoom = await ctx.waitUntil(a.box, 0, (m) => m.op === "room" && m.room && m.room.over === true, "the finished room", 4000);
-  eq("the finished room's result", endedRoom.room.result && endedRoom.room.result.reason, "ceasefire");
+  // PB-245: no `over` frame is sent. Both seats read the same peace object with the match open.
+  const peaceB = await ctx.waitUntil(b.box, markB, (m) => m.op === "room" && m.room && m.room.peace && m.room.peace.active === true, "bob's peace state", 8000);
+  eq("the answerer's match stays open", Boolean(peaceB.room.over), false);
+  const peaceA = await ctx.waitUntil(a.box, markA, (m) => m.op === "room" && m.room && m.room.peace && m.room.peace.active === true, "alice's peace state", 8000);
+  eq("the proposer's match stays open", Boolean(peaceA.room.over), false);
+  eq("both seats read the same deadline", peaceA.room.peace.untilRound, peaceB.room.peace.untilRound);
+  if (a.box.slice(markA).some((m) => m.op === "over")) fail("an accepted cease fire sent an over frame");
+  if (b.box.slice(markB).some((m) => m.op === "over")) fail("an accepted cease fire sent the answerer an over frame");
 
   // ---- a bot seat declines (PORT DECISION: how the original's AI decided is UNVERIFIED) -----
   const carol = await ctx.register("TruceBot");

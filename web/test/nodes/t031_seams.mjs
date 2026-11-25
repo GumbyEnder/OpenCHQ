@@ -9,20 +9,23 @@
 // the same door main.mjs's socket handler uses (lobby.handle) or the same beat main.mjs runs
 // (lobby.tickRooms):
 //   1. resign         op "resign"                                    -> resignOp
-//   2. cease-fire     op "tool" ceasefire, op "ceasefire_answer"     -> toolOp + ceasefireAnswerOp
-//   3. nuclear winter op "tool" nuke from 18 detonations             -> toolOp (the war ends INSIDE
+//   2. nuclear winter op "tool" nuke from 18 detonations             -> toolOp (the war ends INSIDE
 //                     the tool call — a path the tick can never cover)
-//   4. capital capture a real tick that takes the last enemy capital -> recordFilm (the tick path,
+//   3. capital capture a real tick that takes the last enemy capital -> recordFilm (the tick path,
 //                     the only recorder there was before the fix)
 // Every arm asserts the header closed (ended_at + final_digest), the film's last frame carrying the
 // over-state, that state hashing to the recorded digest, and the arm's own events in that frame.
+//
+// PB-245 (manual p.31) moved the fourth door OUT of this list: an accepted cease fire is a STATE,
+// not an ending, so `ceasefireAnswerOp` no longer closes a film and there is no M2 mutant to red.
+// The old cease-fire arm now asserts the opposite and lives below the loop: the header stays open,
+// no digest is written, and the accepted event never enters a closing frame.
 //
 // Each arm has its OWN two accounts: the lobby maps username -> one room, so four rooms sharing two
 // seats would have the last restored room answer every op (seen on the first draft of this file).
 //
 // Mutants this is built to red, one per arm (counts in the gate row):
 //   M1 delete closeFilmNow(room) from resignOp                          -> arm 1
-//   M2 delete closeFilmNow(room, result.events) from ceasefireAnswerOp  -> arm 2
 //   M3 delete if (room.match.over) closeFilmNow(room) from toolOp       -> arm 3
 //   M4 delete if (room.match && room.match.over) closeFilmNow(room) from recordFilm -> arm 4
 //
@@ -206,7 +209,6 @@ console.log("SEAMS_REPORT " + JSON.stringify(report));
     // own events: the capture and the win.
     { id: "seam-capital", label: "capital capture (tick)", events: ["capture", "win"], grew: true },
     { id: "seam-resign", label: "resign", events: [] },
-    { id: "seam-ceasefire", label: "cease-fire", events: ["ceasefire_accepted"] },
     // The nuke and the winter are two events: the strike, and the sentence that ends the war.
     { id: "seam-winter", label: "nuclear winter", events: ["nuke", "nuclear_winter"] },
   ];
@@ -228,6 +230,19 @@ console.log("SEAMS_REPORT " + JSON.stringify(report));
     for (const type of arm.events) {
       eq(got.lastEventTypes.includes(type), true, arm.label + ": the closing frame carries '" + type + "' (" + got.lastEventTypes.join(",") + ")");
     }
+  }
+
+  // PB-245 (manual p.31): the fourth door is a NON-ending. The cease-fire answer is accepted, and
+  // nothing closes: no ended_at, no digest, no over-state frame, and the accepted event never
+  // enters a closing frame. This arm reds if any later edit puts the close back on the event.
+  {
+    const got = report["seam-ceasefire"];
+    eq(Boolean(got), true, "the cease-fire arm ran");
+    eq(Boolean(got && got.result && got.result.ok), true, "the cease-fire answer was accepted: " + JSON.stringify(got && got.result));
+    eq(got.endedAt ?? null, null, "cease-fire: no ended_at (peace is not an ending)");
+    eq(got.digest ?? null, null, "cease-fire: no final_digest was invented");
+    eq(got.lastStateOver, false, "cease-fire: the film never carries an over state");
+    eq(got.lastEventTypes.includes("ceasefire_accepted"), false, "cease-fire: the accepted event did not enter a closing frame");
   }
 
   // The winter arm's queued events must be DRAINED into the closing frame, not left to a tick that

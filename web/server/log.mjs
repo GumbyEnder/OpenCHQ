@@ -433,7 +433,11 @@ export function logLines(match, side, events, round) {
         else push("your cease fire was declined; the war goes on");
         break;
       case "ceasefire_accepted":
-        push("cease fire agreed; the war is over");
+        // PB-245: the war is at peace, not over (manual p.31).
+        push("cease fire agreed; the war is at peace");
+        break;
+      case "peace_broken":
+        push("the peace is broken; the war is on again");
         break;
       case "aid":
         // PB-228: a gift buys a step for the city's nation, and it can be banked without turning

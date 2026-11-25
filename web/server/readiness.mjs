@@ -20,6 +20,7 @@
 // pre-T-011 build is migrated on load (rooms.unpackMatch), never written by this module.
 
 import { millionsPerBillion, priceOf, readinessRules } from "./rules.mjs";
+import { peaceActive } from "./peace.mjs";
 
 // PB-153: a type-5 `facility` is an oil field, so it is not a producer and is never listed as a
 // readiness neighbour. Cities, capitals and bases produce.
@@ -125,6 +126,10 @@ function capitalsExempt(match, side) {
 // friendly city, base or capital, so the dock itself is never the site that goes unready.
 export function poolReadiness(match, side, site, kind) {
   const round = roundOf(match);
+  // PB-245, manual printed p.31: "Producing units does not cause cities to become unready during
+  // peacetime." The skip sits on the WRITE, above the pooled formula: nothing is written, so no
+  // site's timer moves and the purchase reports rounds: 0.
+  if (peaceActive(match)) return { round, rounds: 0, sites: [], peace: true };
   const home = PRODUCE_KINDS.has(String(site && site.kind)) ? site : nearestProducer(match, side, site);
   if (!home) return { round: 0, rounds: 0, sites: [] };
 

@@ -8,7 +8,8 @@ import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
-import { AID_HELD_MID_WAR, answerCeasefire, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
+import { AID_HELD_MID_WAR, answerCeasefire, CEASEFIRE_NOTE, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
+import { peaceOf, resumeWar } from "./peace.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
@@ -353,6 +354,9 @@ export function createLobby() {
       log: Array.isArray(room.log && room.log[you]) ? room.log[you] : [],
       over: room.match ? Boolean(room.match.over) : false,
       winner: room.match ? room.match.winner : null,
+      // PB-245: the peace state (manual p.31). Both seats read the same object; `over` above stays
+      // false through a cease fire, which is the whole difference between a state and an ending.
+      peace: room.match ? peaceOf(room.match) : null,
       // Who won, why, and the capital list the server's own site records carry. The end screen
       // draws this instead of guessing a cause from the clock having stopped.
       result: room.match ? resultOf(room.match) : null,
@@ -897,17 +901,14 @@ export function createLobby() {
       tellRoom(room);
       return { ok: true, accepted: false, events: result.events };
     }
-    // Agreed: the match is over, now. Stop the clock, write the one sentence that ended it, and give
-    // both human seats the same `over` frame the tick sends, plus their own log line.
-    room.clock = "held";
-    room.match.clock = "held";
-    room.note = resultNote(room.match);
-    // PB-248: an accepted cease-fire ends the war outside a tick; close the film at the same seam.
-    closeFilmNow(room, result.events);
+    // Agreed: PB-245. The war is at PEACE, not over (manual p.31). The clock keeps running, `over`
+    // stays false, and no film closes - PB-248's seam keys on a transition to `over`, which this
+    // event does not make. Both human seats get the same note and their own log line.
+    room.note = CEASEFIRE_NOTE;
+    queueEvents(room, result.events);
     saveRoom(room);
     room.dirty = false;
     tellRoom(room);
-    const over = resultOf(room.match);
     for (const side of ["blue", "red"]) {
       const seat = room.seats[side];
       if (!seat || seat.kind !== "human") continue;
@@ -920,9 +921,38 @@ export function createLobby() {
         room.log[side].push(...lines);
         peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
       }
-      peer.send({ op: "over", roomId: room.id, winner: null, result: over, note: room.note });
     }
-    return { ok: true, accepted: true, events: result.events };
+    return { ok: true, accepted: true, peace: result.peace || peaceOf(room.match), events: result.events };
+  }
+
+  // PB-245: leave the peace. The clock was never stopped, so this writes the state, one line to
+  // each seat and nothing else; a refusal before the mandatory counter hits zero changes nothing.
+  function resumeWarOp(username) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const result = resumeWar(room.match, mine, room.match.round);
+    if (!result || result.error) {
+      return { error: (result && result.error) || "That was refused.", remaining: (result && result.remaining) || 0 };
+    }
+    queueEvents(room, result.events);
+    saveRoom(room);
+    room.dirty = false;
+    tellRoom(room);
+    for (const side of ["blue", "red"]) {
+      const seat = room.seats[side];
+      if (!seat || seat.kind !== "human") continue;
+      const peer = sockets.get(seat.username);
+      if (!peer) continue;
+      const lines = logLines(room.match, side, result.events, room.match.round);
+      if (!lines.length) continue;
+      if (!room.log) room.log = { blue: [], red: [] };
+      if (!Array.isArray(room.log[side])) room.log[side] = [];
+      room.log[side].push(...lines);
+      peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
+    }
+    return { ok: true, peace: peaceOf(room.match), events: result.events };
   }
 
   function missionOp(username, message) {
@@ -1413,6 +1443,9 @@ export function createLobby() {
     if (op === "tool") return toolOp(username, message);
     // PB-200: the opponent's answer to a cease fire proposal. `accept:false` (or 0/"false") declines.
     if (op === "ceasefire_answer") return ceasefireAnswerOp(username, message);
+    // PB-245: Begin Hostilities/Cease Fire (manual p.32 War Status) - the other way into the state,
+    // legal only once the mandatory peace has elapsed.
+    if (op === "resume_war") return resumeWarOp(username, message);
     if (op === "mission") return missionOp(username, message);
     if (op === "entrench") return pieceOp(username, message, "entrench");
     if (op === "repair") return pieceOp(username, message, "repair");

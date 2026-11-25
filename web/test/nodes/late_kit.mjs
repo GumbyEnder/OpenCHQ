@@ -11,6 +11,7 @@ import { rules } from "../../server/rules.mjs";
 import { assertShippedNukesArmed, withNukesOff } from "./_nuke_default.mjs";
 import { scanSpec } from "../../public/scan.mjs";
 import { nukeStatus, launchEdge, toolsForEra, useTool, intelNote, INTEL_NOTE, answerCeasefire, CEASEFIRE_NOTE, CEASEFIRE_PROPOSED_NOTE, CEASEFIRE_DECLINED_NOTE } from "../../server/late.mjs";
+import { peaceOf } from "../../server/peace.mjs";
 import { buySatellite, tickSatellites } from "../../server/satellite.mjs";
 
 export const name = "late_kit";
@@ -182,12 +183,13 @@ export async function run(ctx) {
   if (!agreed.events.some((event) => event.type === "ceasefire_accepted" && event.note === CEASEFIRE_NOTE)) {
     fail("the acceptance did not say the war was over: " + JSON.stringify(agreed.events));
   }
-  if (!truce.over) fail("an accepted cease-fire did not end the match");
+  // PB-245 (manual p.31): an accepted cease fire puts the war at PEACE. The match does not end:
+  // `over` and `winner` do not move, and the state carries the mandatory counter's own deadline.
+  if (truce.over) fail("an accepted cease-fire ended the match; peace is a state, not an ending");
   if (truce.winner) fail("an accepted cease-fire named a winner; a truce is not a victory");
-  const truceResult = resultOf(truce);
-  if (!truceResult || truceResult.reason !== "ceasefire") {
-    fail("the result does not say ceasefire: " + JSON.stringify(truceResult));
-  }
+  const peace = peaceOf(truce);
+  if (!peace || peace.active !== true) fail("the acceptance did not put the war at peace: " + JSON.stringify(peace));
+  if (peace.since !== truce.round) fail("the peace does not start on the round it was agreed: " + JSON.stringify(peace));
 
   // --- the shipped default is ARMED, and a forced-off config still refuses ------------
   // PB-233 (f): the shipped file arms the block, so the status test runs on shipped rules and the

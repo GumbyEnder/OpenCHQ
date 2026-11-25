@@ -350,6 +350,32 @@ export function readinessRules() {
   };
 }
 
+// PB-245: peacetime (manual printed p.31-32). Two numbers the page never prints, and neither of
+// them is invented here. `mandatoryRounds` is keyed by scenario because p.31 says the length is
+// "pre-set ... depending upon the scenario"; a scenario with no key has no mandatory window, and a
+// test that needs one sets it in the config it loads rather than relying on a default.
+export function peaceRules() {
+  const block = rules().peace || {};
+  const whole = (value, fallback) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
+  };
+  const raw = block.mandatoryRounds;
+  const rounds = {};
+  if (raw && typeof raw === "object") {
+    for (const [scenario, value] of Object.entries(raw)) {
+      if (String(scenario).startsWith("_")) continue;
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) continue;
+      rounds[String(scenario)] = Math.floor(n);
+    }
+  }
+  // 1 means "no change from wartime": the acceleration is unprinted, so the build must not
+  // accelerate on a number nobody measured. A rate is NOT floored - 1.25 is a rate, not a count.
+  const rate = Number(block.cashMultiplier);
+  return { mandatoryRounds: rounds, cashMultiplier: Number.isFinite(rate) && rate >= 0 ? rate : 1 };
+}
+
 // The placement forgiveness values (T-017). The rule itself is a site kind (D-019, placement.mjs);
 // these two blocks only say how big the click target and the painted box are, so a page can be
 // forgiving without inventing a rule the original never had. Defaults live here only so a config

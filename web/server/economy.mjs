@@ -11,6 +11,8 @@
 
 import { payEvery, priceOf, cityIncome, maxCash, captureReward, combatRules, missionedSurvivesCapture } from "./rules.mjs";
 import { upkeepResources, oilIncome } from "./resources.mjs";
+import { peaceActive } from "./peace.mjs";
+import { peaceRules } from "./rules.mjs";
 import { isOilField, siteTypeOf } from "./sitetype.mjs";
 // Where a purchase may stand. One rule, one module: the page paints the mask this module returns.
 import { canPlace, siteLabel, layerOf } from "./placement.mjs";
@@ -649,10 +651,14 @@ export function pay(match) {
     const counted = row.cities + Math.max(0, row.capitals - 1);
     const wells = row.wells;
     // Oil short? The original takes the unpaid share off the city count before the payday, so a
-    // side out of oil stops producing income (Manual p.27; FUN_15f4_0664 4727-4762).
-    const oil = oilIncome(match, side, counted);
+    // side out of oil stops producing income (Manual p.27; FUN_15f4_0664 4727-4762). PB-245:
+    // during peacetime "a side does not use or generate oil" (p.31), so no oil comes off the city
+    // count at all, and "Cash ... still accumulates, and at an accelerated rate" is the multiplier
+    // from config (UNVERIFIED - 1 means no change).
+    const atPeace = peaceActive(match);
+    const oil = atPeace ? { cities: counted, penalty: 0 } : oilIncome(match, side, counted);
     const cities = oil.cities;
-    const amount = cities * perCity;
+    const amount = Math.round(cities * perCity * (atPeace ? peaceRules().cashMultiplier : 1));
     // PB-151: income is a credit, so it clamps at the original's ceiling. The event reports what
     // actually landed, not what the count was worth, so a capped payday is not logged twice over.
     const before = Number.isFinite(seat.cash) ? Number(seat.cash) : 0;
@@ -690,5 +696,9 @@ export function upkeep(match) {
     }
   }
 
+  // PB-245 (p.31): "a side does not use or generate oil during peacetime". Both halves are the
+  // one ledger, so the whole settlement is skipped rather than the charge alone: skipping only
+  // `out` would still let `in` credit a side that the page says uses nothing.
+  if (peaceActive(match)) return events;
   return events.concat(upkeepResources(match));
 }

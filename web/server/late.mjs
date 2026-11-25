@@ -9,6 +9,7 @@
 // city's owner.
 
 import { millionsPerBillion, priceOf, rules } from "./rules.mjs";
+import { PEACE_ACCEPTED_NOTE, enterPeace } from "./peace.mjs";
 import { countryName } from "./countries.mjs";
 import { beginScan } from "./scan.mjs";
 import { siteAtCell } from "./siteindex.mjs";
@@ -84,7 +85,8 @@ export function homeSetComplete(match) {
 // ones become neutral, or neutral ones become allied", so a neutral pick is the second half of the
 // tool's job, not a mistake. The refusal that lived here until PM 8843 §2 was a stand-in that read
 // the one-sided half of the sentence.
-export const CEASEFIRE_NOTE = "Cease fire accepted. The war is over.";
+// PB-245: an accepted cease fire no longer ends the match; it puts the war at peace (p.31).
+export const CEASEFIRE_NOTE = PEACE_ACCEPTED_NOTE;
 // PB-200 (manual p.32, L1032): "ask for a cease-fire... Your opponent must agree to your proposed
 // cease-fire, or the war continues." The tool was an instant "accepted" with no opponent in it, and
 // its log line arrived a round after the event that caused it. Both facts are these two strings.
@@ -430,10 +432,17 @@ export function answerCeasefire(match, side, accept) {
   if (!accept) {
     return { ok: true, accepted: false, events: [{ type: "ceasefire_declined", side, by: read.by, round, note: CEASEFIRE_DECLINED_NOTE }] };
   }
-  match.over = true;
-  match.winner = null;
-  match.winReason = { kind: "ceasefire", by: read.by, round };
-  return { ok: true, accepted: true, events: [{ type: "ceasefire_accepted", side, by: read.by, round, note: CEASEFIRE_NOTE }] };
+  // PB-245: the war does not end here. p.31 makes an accepted cease fire a CONDITION the war can
+  // leave again ("either player can start the war"), and the original's two-valued flag
+  // (DS:0xc34e) is why `over` and `winner` stay exactly as they were. The film seam keys on a
+  // transition to `over`, so it correctly stays shut for this event.
+  const peace = enterPeace(match, read.by, round);
+  return {
+    ok: true,
+    accepted: true,
+    peace: { active: peace.active, since: peace.since, untilRound: peace.untilRound },
+    events: [{ type: "ceasefire_accepted", side, by: read.by, round, note: CEASEFIRE_NOTE }],
+  };
 }
 
 // One tool use. Returns { ok, events } or { error }.
