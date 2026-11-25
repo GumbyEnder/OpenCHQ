@@ -5,6 +5,10 @@
 //   node tests/e2e/pb191-self-order-inspect.mjs --w=1440 --h=900      # the other reachable fit
 //   node tests/e2e/pb191-self-order-inspect.mjs --url=<base> --expect=<sha>
 //
+// --url mode (PB-252): the leg did not start the base, so the server-restart row cannot run. It is
+// printed as SKIP with that reason and the leg re-enters the same match from the page, so a live
+// run finishes with its own summary line and a real exit code instead of a TypeError on server.kill.
+//
 // The zoom under test is the WORLD FIT at the pinned viewport, which is also the camera's floor
 // (every untouched-camera path builds `scale = max(MIN_ZOOM, fit.scale)` and clamps down to it, so
 // there is no lowered state to reach and no resumed camera to inherit). Measured fit values are
@@ -110,12 +114,21 @@ function startServer(port, dataDir) {
 
 const evidence = [];
 let failed = 0;
+const dump = () => writeFileSync(path.join(OUT, `pb191-${W}x${H}-dpr${DPR}.json`), JSON.stringify(evidence, null, 2));
 function mark(step, ok, detail = "") {
   if (!ok) failed += 1;
-  evidence.push({ step, ok: Boolean(ok), detail: String(detail || "") });
+  evidence.push({ step, ok: Boolean(ok), status: ok ? "pass" : "fail", detail: String(detail || "") });
   console.log((ok ? "PASS " : "FAIL ") + step + (detail ? " — " + detail : ""));
-  writeFileSync(path.join(OUT, `pb191-${W}x${H}-dpr${DPR}.json`), JSON.stringify(evidence, null, 2));
+  dump();
   return Boolean(ok);
+}
+// PB-252: a row the base cannot run is SKIP with its reason printed — never a pass, never a throw.
+// `ok: null` so the passed count cannot reach it, and the summary carries its own skipped count.
+function skip(step, reason) {
+  evidence.push({ step, ok: null, status: "skip", detail: String(reason || "") });
+  console.log("SKIP " + step + " — " + reason);
+  dump();
+  return false;
 }
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "openchq-pb191-"));
@@ -263,21 +276,42 @@ try {
   mark("a unit stands on that city cell", Boolean(placed), placed ? "id " + placed.id : "none on the cell");
 
   // ---- RESUME through the server's own restart path -------------------------------------------
+  // PB-252: the restart is a LOCAL row. In --url mode this script did not start the base, so there
+  // is no process to SIGTERM: the row is SKIP with that reason, and the leg re-enters the same
+  // match through the page instead (the client-resume path the camera and inspect arms grade on).
   const roomId = (await room()).id;
-  server.kill("SIGTERM");
-  await new Promise((resolve) => server.once("exit", resolve));
-  const port2 = await freePort();
-  server = await startServer(port2, dataDir);
-  base = "http://127.0.0.1:" + port2;
-  await openMatch();
-  const resumed = await room();
-  const resumedSite = (resumed.sites || []).find((s) => Number(s.x) === place.x && Number(s.y) === place.y);
-  const resumedPiece = (resumed.pieces || []).find((p) => Number(p.x) === place.x && Number(p.y) === place.y);
-  mark("the match resumed over a real server restart",
-    String(resumed.id) === String(roomId) && Boolean(resumedSite) && Boolean(resumedPiece),
-    "room " + resumed.id + " (same id: " + (String(resumed.id) === String(roomId)) + "), sites "
-      + (resumed.sites || []).length + ", city row " + Boolean(resumedSite) + ", garrison " + Boolean(resumedPiece)
-      + ", round " + resumed.round);
+  let resumed;
+  let resumedSite;
+  let resumedPiece;
+  if (server) {
+    server.kill("SIGTERM");
+    await new Promise((resolve) => server.once("exit", resolve));
+    const port2 = await freePort();
+    server = await startServer(port2, dataDir);
+    base = "http://127.0.0.1:" + port2;
+    await openMatch();
+    resumed = await room();
+    resumedSite = (resumed.sites || []).find((s) => Number(s.x) === place.x && Number(s.y) === place.y);
+    resumedPiece = (resumed.pieces || []).find((p) => Number(p.x) === place.x && Number(p.y) === place.y);
+    mark("the match resumed over a real server restart",
+      String(resumed.id) === String(roomId) && Boolean(resumedSite) && Boolean(resumedPiece),
+      "room " + resumed.id + " (same id: " + (String(resumed.id) === String(roomId)) + "), sites "
+        + (resumed.sites || []).length + ", city row " + Boolean(resumedSite) + ", garrison " + Boolean(resumedPiece)
+        + ", round " + resumed.round);
+  } else {
+    skip("the match resumed over a real server restart",
+      "SKIP (live): --url base, no local server process to SIGTERM and respawn; this row only runs "
+        + "against a server the leg started (PB-252)");
+    await openMatch();   // the same base, re-entered from the page: no restart, no new port
+    resumed = await room();
+    resumedSite = (resumed.sites || []).find((s) => Number(s.x) === place.x && Number(s.y) === place.y);
+    resumedPiece = (resumed.pieces || []).find((p) => Number(p.x) === place.x && Number(p.y) === place.y);
+    mark("the same match re-enters from the page on a live base (SKIP stands in for the restart)",
+      String(resumed.id) === String(roomId) && Boolean(resumedSite) && Boolean(resumedPiece),
+      "room " + resumed.id + " (same id: " + (String(resumed.id) === String(roomId)) + "), sites "
+        + (resumed.sites || []).length + ", city row " + Boolean(resumedSite) + ", garrison " + Boolean(resumedPiece)
+        + ", round " + resumed.round + ", base " + base);
+  }
 
   // ---- the camera under test: the world fit, which is also the floor --------------------------
   await page.click("#camFit").catch(() => {});
@@ -448,10 +482,11 @@ try {
   if (server) server.kill("SIGTERM");
 }
 
-const passed = evidence.filter((e) => e.ok).length;
+const passed = evidence.filter((e) => e.ok === true).length;
+const skipped = evidence.filter((e) => e.status === "skip").length;
 const total = evidence.length;
 writeFileSync(path.join(OUT, `pb191-${W}x${H}-dpr${DPR}.json`), JSON.stringify(evidence, null, 2));
 console.log("");
-console.log("pb191 self-order inspect: " + passed + " passed, " + failed + " failed, " + total + " checks, exit " + (failed ? 1 : 0));
+console.log("pb191 self-order inspect: " + passed + " passed, " + failed + " failed" + (skipped ? ", " + skipped + " skipped" : "") + ", " + total + " checks, exit " + (failed ? 1 : 0));
 console.log("leg " + SELF + " md5 " + SELF_MD5 + " git " + (HEAD_SHA || "unknown") + " evidence " + OUT);
 process.exit(failed ? 1 : 0);
