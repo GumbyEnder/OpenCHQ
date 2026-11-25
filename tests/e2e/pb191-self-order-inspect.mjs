@@ -194,10 +194,25 @@ try {
     const armedToast = await toast();
     const armedNote = await note();
     const armedLine = (String(armedToast) + " " + String(armedNote)).trim();
+    const armedState = await state();
     mark("a SECOND select at peace arms a starting destination, not the city inspect",
       /Destination mode/.test(armedLine), armedLine);
+    // frodo 9251 §2(b): this arm pins that the destination line printed, but not that the city
+    // inspect did not. Delete the early return at the reclick branch and both lines print, with
+    // /Destination mode/ still matching the first - so the negative half is asserted here.
+    mark("the armed line is the destination only - the city inspect did not print",
+      !/Ready\.|Unready — ready at round \d+|No production timer\./.test(armedLine), armedLine);
+    // frodo 9251 §2(a): "Escape cancels" is in the sentence, so the gesture must be observable, not
+    // just quoted. app.js:3759 exports armedDestination = the piece's own id while armed, and
+    // clearCommand() nulls it - an Escape that did nothing leaves that field set.
+    mark("the armed destination is the selected piece's own id",
+      String(armedState.armedDestination) === String(mine.id),
+      JSON.stringify({ armedDestination: armedState.armedDestination, piece: mine.id }));
     await page.keyboard.press("Escape");
     await sleep(250);
+    const disarmed = await state();
+    mark("Escape disarms the destination (armedDestination is null)",
+      disarmed.armedDestination === null, JSON.stringify({ armedDestination: disarmed.armedDestination }));
     await page.click('#nav button[data-dialog="war"]');
     await page.waitForFunction(() => {
       const b = [...document.querySelectorAll("#dialogBody button")]
