@@ -39,6 +39,8 @@ import {
   snapPlacementCell,
   transferMessage,
   transferText,
+  destinationMessage,
+  destinationText,
 } from "./command.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { scanAddPieces, scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
@@ -912,6 +914,9 @@ let pendingMission = "strike";
 // its button arms this instead of spending blind; the next map click is the target and Escape
 // disarms. One slot for every picker tool, so two doors cannot arm different modes at once.
 let pendingTool = null;
+// PB-245b: the piece whose SECOND select armed a starting destination (manual printed p.31: "select
+// it twice, then select its destination"). The next click on a cell is the destination, not a walk.
+let pendingDestination = null;
 
 // The round log. A running clock is dead time unless it reports itself: every line here came
 // from the server already filtered to what this seat could see. LOG_KEEP matches the room's own
@@ -934,6 +939,7 @@ function clearCommand() {
   selected = null;
   buying = null;
   placement = null;
+  pendingDestination = null;
   preview = null;
   hoverKey = "";
   refusedHover = "";
@@ -962,7 +968,8 @@ function askRoute(cell) {
   if (!selected || !cell) return;
   // A transfer has no rounds to quote, so the hover must not offer a walk's route while the peace
   // stands: "Route: 14 rounds. Click to send the order." would be the page arguing with p.31.
-  if (atPeace() && notAir(selected)) return;
+  const arming = pendingDestination && String(pendingDestination) === String(selected.id);
+  if (atPeace() && notAir(selected) && !arming) return;
   const key = hoverOfferKey(selected.id, cell);
   if (key === hoverKey) return;
   // PB-177: a different cell is a new offer, so the refusal marker lapses; the refused cell itself
@@ -1053,6 +1060,22 @@ board.addEventListener("click", (event) => {
     // definition (the own-cell rule is the only branch that returns the selected piece), and the
     // floored cell can be one cell over by the pointer's own pixel error - re-testing it here is
     // what made a corner click reselect instead of naming the city it stands on.
+    // PB-245b (manual printed p.31): "To give a unit a destination, select it twice, then select
+    // its destination." At peace the SECOND select of the same piece arms the destination, and it
+    // takes precedence over the PB-175 city-inspect cycle: p.31 names this gesture for the cold war,
+    // and a player who wants the city line can clear the selection (or click a city with nothing
+    // selected) - the inspect path is a remake convenience, the destination is the manual's rule.
+    // Aircraft are excluded on the page as well as on the server: "Air missions cannot be
+    // predetermined."
+    if (atPeace() && selected && notAir(intent.piece) && String(intent.piece.id) === String(selected.id)) {
+      pendingDestination = String(selected.id);
+      pendingMission = nextDoorMode(pendingMission, "cleared");
+      preview = null;
+      hoverKey = "";
+      drawMatch();
+      say("Destination mode: click the cell this unit should move to the moment war begins. It may be outside friendly territory. Escape cancels.");
+      return;
+    }
     const reclickSite = selected && String(intent.piece.id) === String(selected.id)
       ? siteUnderPiece(room.sites, intent.piece,
         { x: Number(intent.piece.x), y: Number(intent.piece.y) }, viewForCanvas().boardW)
@@ -1062,6 +1085,7 @@ board.addEventListener("click", (event) => {
       return;
     }
     selected = intent.piece;
+    pendingDestination = null;
     preview = null;
     refusedHover = "";
     hoverKey = selected.id + ":" + selected.x + "," + selected.y;
@@ -1122,7 +1146,13 @@ board.addEventListener("click", (event) => {
   }
   // PB-245 AC5: at peace this click is a transfer - instant, no round cost, nothing unready
   // (manual printed p.31). Its refusals come back as the server's own sentences.
-  const message = atPeace() && notAir(selected) ? transferMessage(selected, cell) : orderMessage(selected, cell);
+  // PB-245b: an armed starting destination takes this click. It is not a transfer and not a walk:
+  // the server stores the cell on the piece and nothing is queued until the war begins.
+  const arming = pendingDestination && String(pendingDestination) === String(selected.id);
+  const message = arming && atPeace() && notAir(selected)
+    ? destinationMessage(selected, cell)
+    : atPeace() && notAir(selected) ? transferMessage(selected, cell) : orderMessage(selected, cell);
+  if (arming) pendingDestination = null;
   // PB-191: the page never sends a march to the cell the piece already stands on. The own-cell
   // rule in clickIntent decides the click, so this is the last guard on the wire: a resolved
   // destination equal to the piece's own cell is the cell's own inspect/re-select, and the server
@@ -2645,7 +2675,7 @@ const DIALOG_PAINTERS = {
     if (peace && peace.active) {
       const peacetime = document.createElement("p");
       peacetime.className = "dialogfoot";
-      peacetime.textContent = "Peacetime: transfers are instant, oil is neither used nor generated, cities do not go unready, cash still accrues, and the enemy is invisible except to an Intel Scan.";
+      peacetime.textContent = "Peacetime: units transfer instantly, oil is neither used nor generated, cities do not go unready, cash still accrues, production may stand on any friendly ground, starting destinations may be set, and the enemy is invisible except to an Intel Scan.";
       body.append(peacetime);
     }
     // The era's capitals, with the holder the server's site records carry, and - once the match is
@@ -2686,7 +2716,7 @@ const DIALOG_PAINTERS = {
       begin.textContent = "Begin Hostilities";
       begin.disabled = peace.canResume !== true;
       begin.title = peace.canResume
-        ? "Start the war again. Both sides leave the peace."
+        ? "Start the war again. Both sides leave the peace, and starting destinations move."
         : "The mandatory peace has not elapsed yet.";
       begin.addEventListener("click", () => send({ op: "resume_war" }));
       group.append(begin);
@@ -3393,6 +3423,13 @@ function connect() {
       const hadSelection = Boolean(selected);
       say(transferText() + (hadSelection ? " Selection cleared." : ""));
       noteLog([{ round: room && room.round ? room.round : 0, text: transferText().replace(/\.$/, "") }]);
+      clearCommand();
+    } else if (message.op === "destination") {
+      // PB-245b: the destination is stored, not walked. The ack's `rounds` is the walk's preview,
+      // which is what the player is promised; nothing has been spent and no path is drawn.
+      settleOrder(message.id);
+      say(destinationText(message.rounds));
+      noteLog([{ round: room && room.round ? room.round : 0, text: destinationText(message.rounds).replace(/\.$/, "") }]);
       clearCommand();
     } else if (message.op === "ordered") {
       settleOrder(message.id);

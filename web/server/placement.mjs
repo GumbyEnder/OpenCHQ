@@ -61,9 +61,20 @@ import { placementRules, readinessRules } from "./rules.mjs";
 import { isSiteReady, placementBoxState, readyRoundOf, unreadyRefusal } from "./readiness.mjs";
 // PB-224: a satellite's legal aim is every cell, so this module needs to recognise the kind.
 import { isSatelliteKind } from "./shop.mjs";
+// PB-245b: at peace a land unit may be produced on ANY friendly ground, not only in a city (p.31),
+// and neutral or enemy ground is refused with the page's own sentence. Both answers come from the
+// one territory table the transfer refusal already reads.
+import { cellsHeldBy, ownerAt } from "./territory.mjs";
+import { peaceActive } from "./peace.mjs";
 
 const SEA_KINDS = new Set(["cruiser", "carrier", "submarine"]);
 const DOCK_KINDS = new Set(["dock", "docks"]);
+
+// PB-245b, manual printed p.31: "Units may be produced normally, but need not be placed in cities;
+// units may not be produced in or transferred to neutral or enemy territory." The first sentence is
+// the mask's rule, the second is the refusal - both are the page's own words, not a paraphrase.
+export const PEACE_GROUND_RULE = "At peace a land unit may be placed on any friendly ground.";
+export const PEACE_PRODUCTION_REFUSED = "Units may not be produced in or transferred to neutral or enemy territory.";
 // "City or base" in the manual. world.json calls the non-capital settlements `city`; the era
 // table and combat also carry `base`. PB-153: a `facility` is a type-5 OIL FIELD, not a
 // placement site - it is captured by standing on it, it never produces a unit and never tires a
@@ -455,7 +466,9 @@ export function placementMask(match, side, kind, board) {
     ? "Aircraft go only on a friendly city, base or carrier."
     : domain === "sea"
       ? "Ships go only at a dock, or on the water beside a coastal city or base."
-      : "Land units go only on a friendly city or base.";
+      : peaceActive(match)
+        ? PEACE_GROUND_RULE
+        : "Land units go only on a friendly city or base.";
   const kinds = siteKindsFor(domain);
   const taken = occupiedSet(match, layer);
   const mask = new Uint8Array(w * h);
@@ -463,6 +476,35 @@ export function placementMask(match, side, kind, board) {
   let count = 0;
   let ready = 0;
   let unready = 0;
+
+  // PB-245b (manual printed p.31): "Units may be produced normally, but need not be placed in
+  // cities; units may not be produced in or transferred to neutral or enemy territory." At peace a
+  // LAND unit's mask is therefore every friendly ground cell, not a list of held cities. Readiness is
+  // the city's cost for wartime production, and p.31 says production at peace "does not cause cities
+  // to become unready", so every legal cell is offered ready (1). A hull keeps D-025's berth and an
+  // aircraft keeps its p.22 base - the sentence is about ground, and neither stands on ground.
+  if (peaceActive(match) && domain === "land" && layer === "ground") {
+    for (const [cx, cy] of cellsHeldBy(match, side)) {
+      if (cx < 0 || cx >= w || cy < 0 || cy >= h) continue;
+      // A land unit cannot stand on water, and a cell another ground piece holds is taken.
+      const id = cy * w + cx;
+      if (cells[id] !== undefined && Number(cells[id]) <= WATER_MAX_ID) continue;
+      if (taken.has(cx + "," + cy)) continue;
+      if (mask[id]) continue;
+      mask[id] = 1;
+      count += 1;
+      ready += 1;
+    }
+    if (!count) {
+      return { error: "You hold no ground to place a land unit on.", domain, layer, rule };
+    }
+    return {
+      ok: true, width: w, height: h, mask, count, ready, unready, domain, layer, rule, radius,
+      peace: true,
+      snap: { px: forgiveness.snapPx, cells: forgiveness.snapCells },
+      box: { px: forgiveness.boxPx },
+    };
+  }
 
   for (const site of Array.isArray(match && match.sites) ? match.sites : []) {
     if (!site || site.owner !== side) continue;
@@ -568,6 +610,20 @@ export function canPlace(match, side, kind, x, y, board) {
   const value = result.mask[cy * result.width + cx];
   const occupied = siteAt(match, cx, cy);
   const where = occupied ? siteLabel(match, occupied) : "";
+  // PB-245b: the peacetime land rule has its own refusals, and they name the reason p.31 names -
+  // neutral or enemy territory - rather than "not a friendly city or base", which is the wartime
+  // sentence and would be false at peace.
+  const peaceLand = peaceActive(match) && domain === "land" && layer === "ground";
+  if (!value && peaceLand) {
+    if (isWaterCell(board, cx, cy)) {
+      return { error: placementRefusal(kind, domain, result.rule, "that is water, and a land unit needs ground."), domain };
+    }
+    const owner = ownerAt(match, cx, cy);
+    const detail = owner === "blue" || owner === "red"
+      ? "that ground is the enemy's."
+      : "that ground is neutral.";
+    return { error: placementRefusal(kind, domain, PEACE_PRODUCTION_REFUSED, detail), domain };
+  }
   // D-026: a footprint cell belongs to the site that painted it, so a refusal on one names that
   // site even though no site record stands on the cell.
   // Ships keep their own refusal vocabulary (inland, water taken), so the footprint claim below

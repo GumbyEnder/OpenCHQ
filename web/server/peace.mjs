@@ -27,6 +27,17 @@ export const PEACE_ACCEPTED_NOTE = "Cease fire accepted. The war is at peace.";
 export const NOT_AT_PEACE = "The war is not at peace.";
 export const PEACE_NOT_ELAPSED = "The mandatory peace has not elapsed";
 
+// PB-245b: the scenarios that OPEN in the cold war. Manual printed p.31 names exactly two - "At the
+// start of the 1986 and 2023 scenarios ... peacetime conditions prevail. At the start of the game,
+// this is called the cold war" - so 1918 and 1942 are not in this list and still open at war. The
+// list is a rule, not a tunable: a page that printed no other year cannot be widened by editing a
+// number, and AC5 is exactly the absence of the two older years from it.
+export const COLD_WAR_ERAS = Object.freeze(["1986", "2023"]);
+
+export function opensAtPeace(year) {
+  return COLD_WAR_ERAS.includes(String(year ?? ""));
+}
+
 // The sentence the other seat reads when the peace is broken. The original's own wording is
 // archived as "Our warmonger enemy has broken the peace!" (exe_strings.txt:458); this build puts
 // the acting seat's name where the original put "our warmonger enemy".
@@ -44,12 +55,27 @@ function roundOf(value) {
 
 // How long mandatory peace lasts in THIS scenario. A scenario with no key gets no mandatory
 // window, which is the only honest reading of a page that prints no numbers.
-export function mandatoryRoundsFor(match) {
+export function mandatoryRoundsForEra(year) {
   const { mandatoryRounds } = peaceRules();
-  const scenario = String(eraOf(match && match.era));
+  const scenario = String(eraOf(year));
   if (Object.hasOwn(mandatoryRounds, scenario)) return mandatoryRounds[scenario];
-  if (Object.hasOwn(mandatoryRounds, "default")) return mandatoryRounds.default;
+  if (Object.hasOwn(mandatoryRounds, "default")) return mandatoryRounds["default"];
   return 0;
+}
+
+export function mandatoryRoundsFor(match) {
+  return mandatoryRoundsForEra(match && match.era);
+}
+
+// PB-245b: the state a scenario OPENS with (p.31 "At the start of the game, this is called the cold
+// war"). Same shape as an accepted cease fire, with no seat named: nobody broke anything, and `by`
+// stays null so the page cannot print "proposed by" for a peace the scenario itself started. The
+// deadline is the config's per-scenario length (UNVERIFIED, {} by default), and `since` is round 0
+// because that is where the clock is when the match is dealt.
+export function openingPeace(year) {
+  if (!opensAtPeace(year)) return null;
+  const length = mandatoryRoundsForEra(year);
+  return { active: true, since: 0, untilRound: length, by: null, brokenBy: null, coldWar: true };
 }
 
 export function peaceActive(match) {

@@ -628,6 +628,94 @@ export function transferPiece(match, side, pieceId, toX, toY) {
 // this is the log's wording: no round count, because a transfer has none.
 export const TRANSFER_NOTE = "Transfer. The unit is in its new location this round, and nothing became unready.";
 
+// --- PB-245b: starting destinations ------------------------------------------------------------
+//
+// Manual printed p.31: "A unit can be given a destination to which it will start to move the moment
+// war begins. To give a unit a destination, select it twice, then select its destination.
+// Destinations do not have to be within friendly territory. Air missions cannot be predetermined."
+//
+// Three things follow, and each is a line of code:
+//   - it is NOT an order. Nothing is queued, nothing walks, and no round passes while the peace
+//     stands: planOrder is used as a PREVIEW only (it writes nothing), so the rounds the page quotes
+//     are the walk's own numbers and not a second rule.
+//   - the destination MAY sit outside friendly territory (that is half the sentence), so unlike a
+//     transfer there is no isFriendly gate here. Wasteland and a cell a friend already holds are
+//     still refused, by planOrder's own answers.
+//   - aircraft are refused outright: "Air missions cannot be predetermined".
+export const DESTINATION_AT_WAR = "A starting destination is a peacetime order; the war is on.";
+export const DESTINATION_AIR = "Air missions cannot be predetermined.";
+export const DESTINATION_NOTE = "Destination set. The unit starts to move the moment war begins.";
+
+export function setStartingDestination(match, side, pieceId, toX, toY) {
+  if (!match || !Array.isArray(match.pieces)) return { error: "No match is running." };
+  if (match.over) return { error: "This match is over." };
+  if (!peaceActive(match)) return { error: DESTINATION_AT_WAR };
+  const piece = match.pieces.find((unit) => unit && unit.id === pieceId);
+  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
+  if (isAircraft(piece)) return { error: DESTINATION_AIR };
+  const x = Number(toX);
+  const y = Number(toY);
+  // The walk's own refusals, read as a preview: an own cell, an off-map cell, wasteland and a cell
+  // a friend holds are refused here exactly as they would be at war, so a destination can never be
+  // stored that the war's first round would then drop in silence.
+  const plan = planOrder(match, side, pieceId, x, y);
+  if (!plan || plan.error) return { error: (plan && plan.error) || "That destination was refused." };
+  piece.startingDestination = { x: wrapX(x), y };
+  return {
+    ok: true,
+    piece,
+    to: { x: piece.startingDestination.x, y: piece.startingDestination.y },
+    rounds: plan.rounds || 0,
+    events: [{
+      type: "destination_set",
+      side,
+      pieceId: piece.id,
+      kind: piece.kind || null,
+      x: piece.startingDestination.x,
+      y: piece.startingDestination.y,
+      round: Number(match.round) || 0,
+      note: DESTINATION_NOTE,
+    }],
+  };
+}
+
+// The war has begun: every stored destination becomes a real order, for BOTH seats (the sentence is
+// about the unit, not about who pressed Begin Hostilities). The cell is cleared first, so a launch
+// is one-shot even if an issueOrder below refuses, and a later peace starts from a blank slate.
+export function launchStartingDestinations(match) {
+  const events = [];
+  let launched = 0;
+  if (!match || !Array.isArray(match.pieces)) return { launched, events };
+  for (const piece of match.pieces) {
+    if (!piece || !piece.startingDestination) continue;
+    const to = { x: Number(piece.startingDestination.x), y: Number(piece.startingDestination.y) };
+    piece.startingDestination = null;
+    if (isAircraft(piece)) continue;
+    const from = { x: wrapX(piece.x), y: Number(piece.y) };
+    let result;
+    try {
+      result = issueOrder(match, piece.side, piece.id, to.x, to.y);
+    } catch (err) {
+      result = { error: err && err.message ? err.message : String(err) };
+    }
+    if (!result || result.error) {
+      events.push({
+        type: "destination_dropped", side: piece.side, pieceId: piece.id, kind: piece.kind || null,
+        x: from.x, y: from.y, to, round: Number(match.round) || 0, reason: (result && result.error) || null,
+      });
+      continue;
+    }
+    launched += 1;
+    events.push({
+      type: "destination_launched", side: piece.side, pieceId: piece.id, kind: piece.kind || null,
+      x: from.x, y: from.y, to, rounds: result.rounds || 0, round: Number(match.round) || 0,
+      note: "Set off for its peacetime destination.",
+    });
+  }
+  return { launched, events };
+}
+
 function facingFor(fromX, fromY, toX, toY) {
   const dx = wrapDelta(fromX, toX);
   const dy = Number(toY) - Number(fromY);

@@ -446,12 +446,29 @@ export function logLines(match, side, events, round) {
         push("cease fire agreed; the war is at peace");
         break;
       case "peace_broken":
-        // PB-245b (p.31-32): the seat that pressed Begin Hostilities reads what it did; the OTHER
+        // PB-245b AC2 (p.31-32): the seat that pressed Begin Hostilities reads what it did; the OTHER
         // seat reads the sentence naming the breaker, which is the one line p.31's "one message to
         // the other player" owes it. The sentence is carried on the event (peace.mjs), so the two
         // seats cannot read two different accounts of the same act.
         if (mine) push("you began hostilities; the war is on again");
         else push(String(event.note || "the peace is broken; the war is on again"));
+        break;
+      case "destination_set":
+        // PB-245b AC4: only the owner reads the destination. The enemy is invisible at peace (p.31),
+        // and a stored destination printed to the other seat would be the intent behind that
+        // invisibility, which is the leak the view closes.
+        if (mine) push("a destination is set; it moves when the war begins");
+        break;
+      case "destination_launched": {
+        // The war has begun, so the usual sight rule applies: the owner always reads its unit's
+        // start, the other seat only when it can see the cell the unit starts from.
+        const air = String(event.kind ?? "") === "aircraft";
+        if (mine) push(air ? "an aircraft set off for its peacetime destination" : "a unit set off for its peacetime destination");
+        else if (legible(match, side, event)) push("an enemy unit set off toward its peacetime destination");
+        break;
+      }
+      case "destination_dropped":
+        if (mine) push("a peacetime destination could not be walked and was dropped");
         break;
       case "aid":
         // PB-228: a gift buys a step for the city's nation, and it can be banked without turning

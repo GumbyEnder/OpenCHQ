@@ -143,7 +143,7 @@ function visibleEnemy(unit, ownPieces, match, side, now, hidden) {
   return ownPieces.some((own) => withinSight(own, unit));
 }
 
-function viewPiece(unit, steps, round) {
+function viewPiece(unit, steps, round, side = null) {
   const max = combatRules().maxStrength;
   const strength = ensureStrength(unit, max);
   return {
@@ -175,6 +175,12 @@ function viewPiece(unit, steps, round) {
     // letting the page re-derive it from the path.
     moving: movedThisRound(unit, { round }),
     state: stateOf(unit, round),
+    // PB-245b (p.31): a unit's peacetime destination, to its OWNER only. The enemy is invisible at
+    // peace anyway; this gate is explicit so a later view change cannot turn the stored intent into
+    // a leak the day a sight rule widens.
+    destination: unit.side === side && unit.startingDestination
+      ? { x: Number(unit.startingDestination.x), y: Number(unit.startingDestination.y) }
+      : null,
   };
 }
 
@@ -247,7 +253,7 @@ export function forSeat(match, side, now = Date.now()) {
     const pieces = match.pieces.map((unit) => {
       const steps = cloneSteps(unit.path);
       if (steps.length) routes[unit.id] = cloneSteps(steps);
-      return viewPiece(unit, steps, match.round);
+      return viewPiece(unit, steps, match.round, null);
     });
     return {
       pieces,
@@ -277,7 +283,7 @@ export function forSeat(match, side, now = Date.now()) {
 
   for (const unit of own) {
     const steps = ownRoutes(unit);
-    pieces.push(viewPiece(unit, steps, match.round));
+    pieces.push(viewPiece(unit, steps, match.round, side));
     if (steps.length) routes[unit.id] = cloneSteps(steps);
   }
 
@@ -286,7 +292,7 @@ export function forSeat(match, side, now = Date.now()) {
   for (const unit of enemy) {
     if (!visibleEnemy(unit, own, match, side, now, hidden)) continue;
     const steps = enemyRoutes(unit);
-    pieces.push(viewPiece(unit, steps, match.round));
+    pieces.push(viewPiece(unit, steps, match.round, side));
     if (steps.length) routes[unit.id] = cloneSteps(steps);
   }
 

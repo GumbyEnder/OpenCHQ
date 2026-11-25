@@ -163,6 +163,38 @@ export function isFriendly(match, side, x, y) {
   return owners[rid] === side;
 }
 
+// PB-245b: who holds the cell - "blue", "red", or null for unassigned ground and open sea. It is the
+// same ownersFor table isFriendly reads, so the placement refusal ("neutral or enemy territory",
+// p.31) and the peacetime mask cannot disagree about a cell.
+export function ownerAt(match, x, y) {
+  const rid = regionAt(x, y);
+  if (rid === NO_REGION) return null;
+  const owners = ownersFor(match);
+  if (!owners || rid >= owners.length) return null;
+  const owner = owners[rid];
+  return owner === "blue" || owner === "red" ? owner : null;
+}
+
+// Every CELL a side holds, as [x, y] pairs. Not the label points: peacetime production may stand
+// anywhere on the side's own ground (p.31), and a mask needs cells, not one point per region.
+// Cells are emitted row-major so a list and a painted mask agree byte for byte.
+export function cellsHeldBy(match, side) {
+  if (!TERRITORY) return [];
+  const owners = ownersFor(match);
+  if (!owners) return [];
+  const out = [];
+  const { width, height, grid } = TERRITORY;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const rid = grid[y * width + x];
+      if (rid === NO_REGION || rid >= owners.length) continue;
+      if (owners[rid] !== side) continue;
+      out.push([x, y]);
+    }
+  }
+  return out;
+}
+
 // The reverse lookup the placement rules want: every region this side holds, as id + label point.
 export function regionsHeldBy(match, side) {
   const owners = ownersFor(match);

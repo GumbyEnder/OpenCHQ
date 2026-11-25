@@ -12,6 +12,9 @@ import { capitalRows, capitalSet, capitalsFromFile } from "./capitals.mjs";
 import { openingForce } from "./dispositions.mjs";
 import { combatRules, handicapDefault, opponentPool, rosterFor, roundSeconds, startPool } from "./rules.mjs";
 import { DOMAIN_BY_KIND } from "./shop.mjs";
+// PB-245b: 1986 and 2023 open in the cold war (manual printed p.31), so the opening position carries
+// the peace state from the deal. 1918 and 1942 get null and open at war (AC5).
+import { openingPeace } from "./peace.mjs";
 // The opening satellite pair is seeded from the same module that owns every other satellite write
 // (PB-224, PM 8913 §2: 1986/2023 open with one per side, every other era with none).
 import { startSatellites } from "./satellite.mjs";
@@ -250,6 +253,8 @@ export function openMatch(era, sites = [], options = {}) {
     foughtRound: -1,
     winner: null,
     over: false,
+    // Round 0 of 1986 and 2023 is the cold war (p.31). 1918/1942 carry null here and open at war.
+    peace: openingPeace(year),
   };
 }
 

@@ -335,6 +335,24 @@ export function transferText() {
   return "Transferred. The unit is in its new location this round.";
 }
 
+// PB-245b (manual printed p.31): "A unit can be given a destination to which it will start to move
+// the moment war begins. To give a unit a destination, select it twice, then select its
+// destination. Destinations do not have to be within friendly territory. Air missions cannot be
+// predetermined." The op queues nothing - the server stores the cell on the piece - so `rounds` in
+// the ack is the walk's PREVIEW, the number the player is being promised, not a cost paid now.
+export function destinationMessage(piece, target) {
+  const to = cell(target);
+  if (!piece || !to) return null;
+  return { op: "destination", kind: "destination", piece: piece.id, to };
+}
+
+export function destinationText(rounds) {
+  const count = Math.max(0, Math.trunc(Number(rounds) || 0));
+  const walk = count === 0 ? "that piece is already there"
+    : count === 1 ? "1 round of walking" : count + " rounds of walking";
+  return "Starting destination set: " + walk + ". It moves the moment war begins.";
+}
+
 // An aircraft does not walk, so a click on a cell is not an order to move there: it is the target
 // of the mission (Manual p.25, "an air strike on a land unit"). The plane's own cell is the base it
 // flies from, never the cell it hits — a strike aimed at its own base would find nothing.

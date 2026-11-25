@@ -5,7 +5,7 @@ import { forSeat, resultNote, resultOf, capitalListOf } from "./view.mjs";
 import { ordersFor as botOrders } from "./bot.mjs";
 import { boardPayload, matchSites } from "./board.mjs";
 import { eraOf, openMatch, piecesFor } from "./match.mjs";
-import { entrench, issueOrder, planOrder, repair, transferPiece } from "./move.mjs";
+import { entrench, issueOrder, launchStartingDestinations, planOrder, repair, setStartingDestination, transferPiece } from "./move.mjs";
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
 import { AID_HELD_MID_WAR, answerCeasefire, CEASEFIRE_NOTE, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
@@ -942,6 +942,11 @@ export function createLobby() {
     // and a second sentence here would be the page telling the same act twice.
     room.note = "";
     queueEvents(room, result.events);
+    // PB-245b (p.31): "A unit can be given a destination to which it will start to move the moment
+    // war begins." The launch runs inside the press that begins the war, for BOTH seats, and its
+    // lines ride the same queue as the broken-peace line.
+    const launch = launchStartingDestinations(room.match);
+    if (launch.events.length) queueEvents(room, launch.events);
     saveRoom(room);
     room.dirty = false;
     tellRoom(room);
@@ -1081,6 +1086,47 @@ export function createLobby() {
     }
     // The moving seat reads its own line. The other seat reads nothing while the peace stands -
     // log.mjs gates the enemy arm on the war being on, which is the AC4 invisibility rule.
+    const lines = logLines(room.match, mine, result.events, room.match.round);
+    if (lines.length) {
+      if (!room.log) room.log = { blue: [], red: [] };
+      if (!Array.isArray(room.log[mine])) room.log[mine] = [];
+      room.log[mine].push(...lines);
+      if (peer) peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
+    }
+    return { ok: true, events: result.events || [] };
+  }
+
+  // PB-245b (p.31): "A unit can be given a destination to which it will start to move the moment war
+  // begins ... select it twice, then select its destination." The page's double-click is what sends
+  // this op; the server stores the cell on the piece and nothing is queued. A destination is a
+  // peacetime fact, so the war-is-on refusal and the air refusal are the server's sentences.
+  function destinationOp(username, message) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const claimed = message.side === undefined || message.side === null ? mine : String(message.side);
+    if (claimed !== mine) {
+      return { error: "That side is not yours. You hold " + mine + "." };
+    }
+    const pieceId = String(message.piece ?? message.pieceId ?? "");
+    if (!pieceId) return { error: "A destination needs a piece id." };
+    const to = destinationOf(message);
+    let result;
+    try {
+      result = setStartingDestination(room.match, mine, pieceId, to.x, to.y);
+    } catch (err) {
+      return { error: err && err.message ? err.message : String(err) };
+    }
+    if (!result || result.error) return { error: (result && result.error) || "That destination was refused." };
+    touch(room);
+    tellRoom(room);
+    const peer = sockets.get(username);
+    if (peer) {
+      const reply = { op: "destination", id: message.id ?? null, piece: pieceId, to: result.to, rounds: result.rounds ?? 0 };
+      peer.send(reply);
+      rememberReply(username, message.id, reply);
+    }
     const lines = logLines(room.match, mine, result.events, room.match.round);
     if (lines.length) {
       if (!room.log) room.log = { blue: [], red: [] };
@@ -1282,6 +1328,23 @@ export function createLobby() {
           const truce = answerCeasefire(room.match, side, false);
           if (truce && !truce.error) queueEvents(room, truce.events);
         }
+        // PB-245b: a bot seat in the cold war begins hostilities as soon as the mandatory counter
+        // allows it (p.31 "after that, either player can start the war"). Without this a 1986/2023
+        // bot game would open at peace and never leave it - enemy invisible, oil frozen, no fight -
+        // which is a broken game rather than a faithful one. The launch runs here too, so a HUMAN
+        // seat's starting destinations fire when the BOT is the one who presses the button.
+        const standing = peaceOf(room.match);
+        if (standing && standing.active && standing.canResume) {
+          const declared = resumeWar(room.match, side, room.match.round);
+          if (declared && !declared.error) {
+            queueEvents(room, declared.events);
+            const launch = launchStartingDestinations(room.match);
+            if (launch.events.length) queueEvents(room, launch.events);
+            if (!Array.isArray(room.botActions)) room.botActions = [];
+            room.botActions.push({ round: Number(room.match.round) + 1, type: "hostilities" });
+            if (room.botActions.length > 10) room.botActions = room.botActions.slice(-10);
+          }
+        }
         let issued = [];
         try {
           issued = botOrders(room.match, side) || [];
@@ -1440,7 +1503,7 @@ export function createLobby() {
   // "That aircraft is inactive for N more rounds." and the page painted that as a refusal. A
   // replayed buy or move is idempotent; a replayed mission is not, so "mission" joins the set and a
   // replay is answered from orderReplies with the ack the first copy earned.
-  const DEDUPE_OPS = new Set(["buy", "order", "mission"]);
+  const DEDUPE_OPS = new Set(["buy", "order", "mission", "transfer", "destination"]);
   function rememberReply(username, id, reply) {
     if (id === undefined || id === null) return;
     const key = username + "|" + String(id);
@@ -1489,6 +1552,8 @@ export function createLobby() {
     if (op === "order") return order(username, message);
     // PB-245 AC5: the peacetime transfer is its own op, never an order with a short path.
     if (op === "transfer") return transferOp(username, message);
+    // PB-245b: a starting destination is its own op too - it queues nothing.
+    if (op === "destination") return destinationOp(username, message);
     if (op === "buy") return buyOp(username, message);
     if (op === "route") return routeFor(username, message);
     if (op === "placement") return placementOp(username, message);
