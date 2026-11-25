@@ -9,6 +9,8 @@
 //
 // Everything here goes over a real socket with a real session, the way the page does it.
 
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
+
 export const name = "late_ops";
 
 function must(ok, why) {
@@ -37,8 +39,12 @@ export async function run(ctx) {
   // PB-224: the satellite is a unit now, so there is no tool row for it. The door is the Buy row,
   // and the wire arm below buys the piece.
   must(!names.includes("satellite"), "1986 still offers the retired satellite tool: " + names.join(","));
+  // PB-233 (f): the shipped default is armed, so the room's nuke row must say so. The forced-off
+  // refusal is proved in-process (the socket's server keeps its own rules() and cannot be
+  // re-configured from the test), and the tool door is exercised below on the armed config.
   const nuke = room.tools.find((tool) => tool.name === "nuke");
-  must(nuke && nuke.allowed === false, "a nuke must carry its refusal with it: " + JSON.stringify(nuke));
+  must(nuke && nuke.allowed === true, "the armed room still carries a refusal on the nuke: " + JSON.stringify(nuke));
+  assertShippedNukesArmed({});
 
   // ---- the tools go through the socket and change the match ---------------------------------
   // Each send gets a mark: the box holds every frame since the socket opened, and a predicate

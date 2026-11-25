@@ -3,8 +3,9 @@
 // What breaks if this node is removed: the launch gate goes back to counting one side's total (so a
 // side could never answer after three), the global detonation count stops existing, income is paid
 // through a nuclear winter, and a war can never end in the winter. Everything here runs with
-// `nukes.enabled:true` in a test config, because the shipped default is deliberately inert - so
-// this node ALSO proves that the default still changes nothing.
+// `nukes.enabled:true` in a test config. PB-233 (f) flipped the shipped default to ARMED, so the
+// first arm proves the shipped file allows a launch AND that a forced-off config still refuses at
+// nukeStatus; the inert-behaviour block below loads its own enabled:false config.
 //
 // Rules, all decoded (web/server/nukes.mjs, config `nukes.*`):
 //   - Manual p.30: at most 3 more launches than the opponent has fired: fired(mine) - fired(theirs) < 3.
@@ -23,6 +24,7 @@ import { detonatedCount, nukeState, incomeSkipPercent, winterChancePercent } fro
 import { incomeGate, pay } from "../../server/economy.mjs";
 import { draw } from "../../server/rng.mjs";
 import { logLines } from "../../server/log.mjs";
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
 
 export const name = "pb156_nuke";
 
@@ -97,8 +99,7 @@ function fire(m, side, n = 1) {
 }
 
 export async function run(ctx) {
-  const shipped = rules().nukes || {};
-  eq("the shipped config leaves nukes inert", shipped.enabled, false);
+  assertShippedNukesArmed();
 
   const restore = withNukes(true);
   try {
@@ -266,20 +267,28 @@ export async function run(ctx) {
   }
 
   // --- 4. enabled:false: no behaviour change at all ------------------------------------------
+  // The shipped file is armed, so this block loads its own forced-off config and proves the inert
+  // behaviour there; the shipped file is re-checked after the swap.
   {
-    eq("the shipped config is inert again", rules().nukes.enabled, false);
-    for (let i = 0; i < TRIALS; i += 1) {
+    const restoreOff = withNukes(false);
+    try {
+      eq("the config under test is inert", rules().nukes.enabled, false);
+      for (let i = 0; i < TRIALS; i += 1) {
       if (!incomeGate(match({ capitalSeed: i, nukes: { detonated: 9 } }), "blue")) {
         fail("income was skipped with nukes disabled");
       }
+      }
+      const m = match();
+      const refused = useTool(m, "blue", "nuke", { x: 100, y: 100 });
+      if (!refused.error) fail("a nuke launched with the block disabled");
+      eq("a refused launch leaves no detonation", detonatedCount(m), 0);
+      // The counts are still readable in a match that came back from a save with them set.
+      const saved = match({ nukes: { detonated: 7, rngState: 12345 } });
+      eq("a restored count is read, not reset", detonatedCount(saved), 7);
+      eq("a restored stream keeps its state", nukeState(saved).rngState, 12345);
+    } finally {
+      restoreOff();
     }
-    const m = match();
-    const refused = useTool(m, "blue", "nuke", { x: 100, y: 100 });
-    if (!refused.error) fail("a nuke launched with the block disabled");
-    eq("a refused launch leaves no detonation", detonatedCount(m), 0);
-    // The counts are still readable in a match that came back from a save with them set.
-    const saved = match({ nukes: { detonated: 7, rngState: 12345 } });
-    eq("a restored count is read, not reset", detonatedCount(saved), 7);
-    eq("a restored stream keeps its state", nukeState(saved).rngState, 12345);
+    eq("the shipped config is armed again", rules().nukes.enabled, true);
   }
 }

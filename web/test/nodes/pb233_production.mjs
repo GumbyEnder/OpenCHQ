@@ -28,6 +28,7 @@ import { pay, payoutFor, seedOwners } from "../../server/economy.mjs";
 import { logLines } from "../../server/log.mjs";
 import { siteTypeOf } from "../../server/sitetype.mjs";
 import { nukeRoll, nukeState } from "../../server/nukes.mjs";
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
 
 export const name = "pb233_production";
 
@@ -100,7 +101,8 @@ function payingNames(match, side) {
 
 export async function run(ctx) {
   // --- b(i). the flat cut is STRUCK in config and in the block sentence ---------------------
-  eq("the shipped config leaves nukes inert", Boolean((rules().nukes || {}).enabled), false);
+  // PB-233 (f): the shipped default is ARMED; a forced-off config still refuses at nukeStatus.
+  assertShippedNukesArmed();
   must(!("productionCutPercent" in (rules().nukes || {})),
     "nukes.productionCutPercent must not exist: frodo 8983 §4 struck the flat cut");
   must(!("productionCutFrom" in (rules().nukes || {})),

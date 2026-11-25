@@ -8,6 +8,7 @@
 import { openMatch } from "../../server/match.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { rules } from "../../server/rules.mjs";
+import { assertShippedNukesArmed, withNukesOff } from "./_nuke_default.mjs";
 import { scanSpec } from "../../public/scan.mjs";
 import { nukeStatus, launchEdge, toolsForEra, useTool, intelNote, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
 import { buySatellite, tickSatellites } from "../../server/satellite.mjs";
@@ -160,12 +161,21 @@ export async function run(ctx) {
     fail("the cease-fire changed the board; the archive says it changes nothing");
   }
 
-  // --- a nuke is refused by default, and stops after three when enabled ---------------
-  if (rules().nukes && rules().nukes.enabled === true) fail("nukes are enabled by default");
-  const nuked = fresh();
-  const refused = useTool(nuked, "blue", "nuke", { x: 100, y: 100 });
-  if (!refused.error) fail("a nuke launched while refused");
-  if (nukeStatus(nuked, "blue").allowed) fail("nukeStatus allowed a launch while refused");
+  // --- the shipped default is ARMED, and a forced-off config still refuses ------------
+  // PB-233 (f): the shipped file arms the block, so the status test runs on shipped rules and the
+  // refusal keeps its own arm under an explicit enabled:false config.
+  assertShippedNukesArmed(fresh());
+  {
+    const restoreOff = withNukesOff();
+    try {
+      const nuked = fresh();
+      const refused = useTool(nuked, "blue", "nuke", { x: 100, y: 100 });
+      if (!refused.error) fail("a nuke launched with the block forced off");
+      if (nukeStatus(nuked, "blue").allowed) fail("nukeStatus allowed a launch with the block forced off");
+    } finally {
+      restoreOff();
+    }
+  }
 
   // The limit is the DIFFERENCE of the two counters (Manual p.30, PB-156), and that arithmetic is
   // readable without enabling the tool. The refusal itself needs `nukes.enabled:true`, so it is

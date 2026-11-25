@@ -536,7 +536,7 @@
     "source": "MEASURED Q51 (T-022): web/public/scan.mjs carries the capture numbers (one 40-px bar on a 624-px capture map = 20 of the board's 320 columns; 39.36 px/s = one crossing in 15.85 s) and MANUAL p.31 says units are revealed beneath the moving bar. PB-158 moves the reveal itself to the server: an enemy piece is in the scanner's payload only while the bar's server-side span covers its column. These two keys are the server's copy of the measured geometry; pb158_intel_server pins them equal to scanSpec()."
   },
   "nukes": {
-    "enabled": false,
+    "enabled": true,
     "exclusion": 2,
     "exclusionSource": "STAND-IN (PB-230; made fail-closed in PB-233). Manual p.30 names a capital guard but never prints its size. The ring is config, so a config that loses this key REFUSES a launch (NUKE_EXCLUSION_UNKNOWN, web/server/nukestrike.mjs) instead of falling back to the literal 2 it used to substitute - frodo's M9 on the PB-229/230 gate, ruled into PB-233.",
     "killRadius": 3,

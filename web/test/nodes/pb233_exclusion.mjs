@@ -18,6 +18,7 @@ import { openMatch } from "../../server/match.mjs";
 import { resetRules, rules } from "../../server/rules.mjs";
 import { useTool } from "../../server/late.mjs";
 import { STAND_IN } from "../../server/blast.mjs";
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
 import {
   NUKE_EXCLUSION_UNKNOWN, capitalText, exclusionRadius, nukeTarget, resolvedCapitals,
 } from "../../server/nukestrike.mjs";
@@ -85,7 +86,8 @@ function ringCells(match, ring, side = null) {
 }
 
 export async function run(ctx) {
-  eq("the shipped config leaves nukes inert", Boolean((rules().nukes || {}).enabled), false);
+  // PB-233 (f): the shipped default is ARMED; a forced-off config still refuses at nukeStatus.
+  assertShippedNukesArmed();
   eq("the shipped ring is the stand-in 2", exclusionRadius(), 2);
   must(/2 cells/.test(capitalText()), "the shipped sentence must read the shipped 2: " + capitalText());
   must(new RegExp(STAND_IN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(capitalText()),

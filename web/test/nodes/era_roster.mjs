@@ -9,6 +9,7 @@
 
 import { shopFor } from "../../server/shop.mjs";
 import { rosterFor, sourceOf } from "../../server/rules.mjs";
+import { withNukesOff } from "./_nuke_default.mjs";
 
 export const name = "era_roster";
 
@@ -43,9 +44,25 @@ export async function run(ctx) {
   eq(shopFor("1986").map((row) => row.kind), LATE, "the 1986 buy list");
   eq(shopFor("2023").map((row) => row.kind), LATE, "the 2023 buy list");
 
-  // A nuke is on the shelf but refused by default; every other late item is buyable.
+  // PB-233 (f): the nuke is ARMED by default now. The shop's refusal path keeps its own pin: a
+  // forced-off config must put the refusal back on the row, and killerSat stays the row that is
+  // refused by design (its effect is not recovered).
   const late = Object.fromEntries(shopFor("1986").map((row) => [row.kind, row]));
-  ok(late.nuke && late.nuke.refused, "the 1986 shop does not refuse a nuke by default");
+  ok(late.nuke && !late.nuke.refused, "the 1986 shop still refuses a nuke under the shipped armed config");
+  {
+    const restoreOff = withNukesOff();
+    try {
+      const off = Object.fromEntries(shopFor("1986").map((row) => [row.kind, row]));
+      ok(off.nuke && off.nuke.refused, "an enabled:false config does not put the refusal back on the nuke row");
+      ok(String(off.nuke.refused).length > 0, "the refused nuke row states no reason");
+      ok(Object.fromEntries(shopFor("1986").map((row) => [row.kind, row])).killerSat.refused,
+        "killerSat stopped being refused under the forced-off config");
+    } finally {
+      restoreOff();
+    }
+    ok(!Object.fromEntries(shopFor("1986").map((row) => [row.kind, row])).nuke.refused,
+      "the armed config did not come back after the forced-off swap");
+  }
   for (const kind of ["foreignAid", "intelScan"]) {
     ok(late[kind] && !late[kind].refused, kind + " is not buyable in 1986: " + JSON.stringify(late[kind]));
     ok(late[kind].domain === "tool", kind + " is not routed as a tool");

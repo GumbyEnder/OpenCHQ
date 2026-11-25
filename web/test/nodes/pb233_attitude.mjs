@@ -20,6 +20,7 @@ import { resetRules, rules } from "../../server/rules.mjs";
 import { useTool } from "../../server/late.mjs";
 import { attitudeOf, attitudeShift, shiftAttitude } from "../../server/aftermath.mjs";
 import { blastCountries, cellCountry, homeCountriesOf, killRadius, resolvedCapitals } from "../../server/nukestrike.mjs";
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
 
 export const name = "pb233_attitude";
 
@@ -101,7 +102,8 @@ function pickTarget(match, payload, { margin = 3 } = {}) {
 }
 
 export async function run(ctx) {
-  eq("the shipped config leaves nukes inert", Boolean((rules().nukes || {}).enabled), false);
+  // PB-233 (f): the shipped default is ARMED; a forced-off config still refuses at nukeStatus.
+  assertShippedNukesArmed();
   must(/decompiled\.c 12133/.test(String(rules().nukes.attitudeShiftSource)),
     "config nukes.attitudeShiftSource must name the routine and the line range it ports");
   must(new RegExp("STAND-IN").test(String(rules().nukes.attitudeShiftSource)),

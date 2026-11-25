@@ -35,6 +35,7 @@ import {
 import { blastRadius, STAND_IN } from "../../server/blast.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { NO_REGION, regionAt, regionSites } from "../../server/territory.mjs";
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
 
 export const name = "pb230_nuke_strike";
 
@@ -124,8 +125,8 @@ function piece(id, side, kind, x, y, strength = 100) {
 }
 
 export async function run(ctx) {
-  // The shipped file must keep the tool inert until PB-233: read it before any swap.
-  eq("the shipped config leaves nukes inert", Boolean((rules().nukes || {}).enabled), false);
+  // PB-233 (f): the shipped default is ARMED; a forced-off config still refuses at nukeStatus.
+  assertShippedNukesArmed();
 
   const radius = killRadius();
   must(Number.isInteger(radius) && radius >= 1, "config nukes.killRadius must be an integer >= 1, got " + radius);

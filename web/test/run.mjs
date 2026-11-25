@@ -528,13 +528,19 @@ async function main() {
   const purse = purseText(empty2023.room.seat);
   if (!purse.includes("pool ")) fail("the wallet does not name the pool: " + purse);
   if (purse.includes("$")) fail("the wallet is written as money: " + purse);
+  // PB-233 (f): the nuke row is ARMED under the shipped config now, so the refused-row half moves
+  // to killerSat -- the row that is refused by design because its effect is not recovered (the
+  // same row era_roster pins). The armed half is asserted rather than skipped, so a regression that
+  // puts the refusal back still reds here.
   const nukeRow = shop.find((entry) => entry.kind === "nuke");
-  if (!nukeRow || !nukeRow.refused) fail("the shop does not refuse a nuke: " + JSON.stringify(nukeRow));
-  if (!shopLabel(nukeRow).includes(nukeRow.refused)) fail("a refused row does not say why: " + shopLabel(nukeRow));
+  if (!nukeRow || nukeRow.refused) fail("the shop still refuses a nuke under the shipped armed config: " + JSON.stringify(nukeRow));
+  const refusedRow = shop.find((entry) => entry.kind === "killerSat");
+  if (!refusedRow || !refusedRow.refused) fail("the shop does not refuse a satellite killer: " + JSON.stringify(refusedRow));
+  if (!shopLabel(refusedRow).includes(refusedRow.refused)) fail("a refused row does not say why: " + shopLabel(refusedRow));
   if (shopLabel(infantry) !== "Infantry " + (Number(infantry.price) / 1000) + "b") fail("a shop row does not name its price: " + shopLabel(infantry));
   if (!shopDisabled(infantry, Number(infantry.price) - 1)) fail("a row the seat cannot pay for is enabled");
   if (shopDisabled(infantry, Number(infantry.price))) fail("a row the seat can pay for is disabled");
-  if (!shopDisabled(nukeRow, 1000000)) fail("a refused row is enabled with any pool");
+  if (!shopDisabled(refusedRow, 1000000)) fail("a refused row is enabled with any pool");
   const intent = buyMessage("infantry", city);
   if (!intent || intent.op !== "buy" || intent.kind !== "infantry" || intent.x !== city.x || intent.y !== city.y) {
     fail("the page's purchase message is malformed: " + JSON.stringify(intent));

@@ -20,6 +20,7 @@ import { seedOwners } from "../../server/economy.mjs";
 import { useTool } from "../../server/late.mjs";
 import { nukeState, warnFrom, winterChancePercent, winterFrom } from "../../server/nukes.mjs";
 import { cellCountry, homeCountriesOf, resolvedCapitals } from "../../server/nukestrike.mjs";
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
 
 export const name = "pb233_winter_source";
 
@@ -112,7 +113,8 @@ function launch(match, at) {
 }
 
 export async function run(ctx) {
-  eq("the shipped config leaves nukes inert", Boolean((rules().nukes || {}).enabled), false);
+  // PB-233 (f): the shipped default is ARMED; a forced-off config still refuses at nukeStatus.
+  assertShippedNukesArmed();
 
   // --- c(i). the provenance AC (d) demands of every number here ------------------------------
   const block = String(rules().nukes.source || "");

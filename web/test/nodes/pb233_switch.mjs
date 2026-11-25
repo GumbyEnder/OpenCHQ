@@ -25,6 +25,7 @@ import { useTool } from "../../server/late.mjs";
 import { nukeState } from "../../server/nukes.mjs";
 import { switchCities, switchRoll } from "../../server/aftermath.mjs";
 import { blastCountries, cellCountry, homeCountriesOf, killRadius, resolvedCapitals } from "../../server/nukestrike.mjs";
+import { assertShippedNukesArmed } from "./_nuke_default.mjs";
 
 export const name = "pb233_switch";
 
@@ -142,7 +143,8 @@ function seedCities(match, country, count) {
 }
 
 export async function run(ctx) {
-  eq("the shipped config leaves nukes inert", Boolean((rules().nukes || {}).enabled), false);
+  // PB-233 (f): the shipped default is ARMED; a forced-off config still refuses at nukeStatus.
+  assertShippedNukesArmed();
   must(/Manual p\.30/.test(String(rules().nukes.switchChanceSource)),
     "nukes.switchChanceSource must quote the manual sentence it stands in for");
   must(/Manual p\.30/.test(String(rules().nukes.firstStrikePenaltySource)),
