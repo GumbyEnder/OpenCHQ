@@ -358,7 +358,13 @@ export async function run(ctx) {
       if (maxRepeatTurn > effectivePassCap(level)) {
         say("level " + level + " spent " + maxRepeatTurn + " counter units in one turn, past the effective pass cap", maxRepeatTurn);
       }
-      if (maxSameCell > 2) say("level " + level + " put " + maxSameCell + " repeats on one cell in a turn, past two", maxSameCell);
+      // The same-cell bound is the reachable one: min(pool, cap - 1) repeats, because the first
+      // dispatch to a cell is not a repeat. PB-258 lifts the cap, never the pool, so with the lever
+      // on the room is min(pool, effectiveCap - 1) - still 2 at level 3, 4 at level 4, 5 at level 5.
+      const sameCellBound = Math.min(dispatchRepeatPool(level), effectivePassCap(level) - 1);
+      if (maxSameCell > sameCellBound) {
+        say("level " + level + " put " + maxSameCell + " repeats on one cell in a turn, past the reachable " + sameCellBound, maxSameCell);
+      }
       spent[level] = { seed, repeats, buys, left: lastPool, maxRepeatTurn, maxSameCell };
     }
     // The separation C1 needs is a MATCH column, not a turn column: both 4 and 5 reach the pass cap
