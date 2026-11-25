@@ -485,7 +485,13 @@ export function useTool(match, side, tool, target) {
     // ring (SDI/ABM, size a STAND-IN), the firer's OWN home country ("even if it's been invaded"),
     // and the two above. A refused aim costs 0 and banks nothing.
     const aim = nukeTarget(match, side, target);
-    if (aim.error) return { error: aim.error, country: aim.country, name: aim.name };
+    // PB-242: a refusal carries WHY it refused (no region / no site row / no country byte) and, for a
+    // cell the territory map leaves unassigned, whether the ground was water or land. The sentence
+    // alone says "did not resolve"; a player aiming at a lake and a player aiming at land both need
+    // to be told which one they hit, so the fields ride with the error.
+    if (aim.error) {
+      return { error: aim.error, country: aim.country, name: aim.name, reason: aim.reason ?? null, terrain: aim.terrain ?? null };
+    }
     const at = aim.cell;
     const paid = charge(match, side, name);
     if (paid.error) return paid;

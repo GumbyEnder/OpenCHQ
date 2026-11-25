@@ -304,8 +304,25 @@ export function nukeTarget(match, side, target) {
     return { error: NUKE_HOME_UNKNOWN, capitals: { declared: capitals.declared, complete: capitals.complete, resolved: home ? home.size : 0 } };
   }
   const here = cellCountry(match, cell.x, cell.y);
+  // PB-242 (frodo 8985 §1, PM 8991 §2): NO_REGION + WATER is not an unknown country. Water belongs
+  // to no country, so no home-country rule can reach it and a fleet at sea is a legal aim - which is
+  // the point of a sea aim. NO_REGION + land is still unknown (every such cell on this map is lake),
+  // and a real region whose site row, site or country byte is missing is a mapping gap rather than
+  // "belongs to no country": both keep refusing below. The terrain read is the SAME one
+  // wastelandCells() uses, so "is this the sea" has one source and not two.
+  if (here && here.region === NO_REGION) {
+    const sea = terrainName(cell.x, cell.y);
+    if (sea && WATER.has(sea)) return { ok: true, cell, homeGuard: true, water: true, terrain: sea };
+  }
   if (!here || here.country === null) {
-    return { error: NUKE_HOME_UNKNOWN, cell: { x: cell.x, y: cell.y }, reason: here ? here.reason : "no territory" };
+    return {
+      error: NUKE_HOME_UNKNOWN,
+      cell: { x: cell.x, y: cell.y },
+      reason: here ? here.reason : "no territory",
+      // The reason alone ("no region") does not tell a player that the cell was land or water, and
+      // PB-242 makes exactly that distinction the difference between a legal aim and a refusal.
+      terrain: here && here.region === NO_REGION ? terrainName(cell.x, cell.y) : null,
+    };
   }
   if (home.has(here.country)) {
     const named = countryName(here.country);

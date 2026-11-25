@@ -358,12 +358,19 @@ export async function run(ctx) {
       eq("a missing capital set refuses", refusedAbsent.error, NUKE_HOME_UNKNOWN);
       eq("a missing-set refusal costs nothing", absent.sides.blue.cash, cashAbsent);
 
-      // (3) a cell the territory map leaves unassigned (NO_REGION).
+      // (3) a cell the territory map leaves unassigned (NO_REGION) and that is LAND.
+      // PB-242 (frodo 8985 §1) makes NO_REGION + water a legal aim, so the residue that still
+      // refuses is the land one - every such cell on this board is lake. The arm keeps its subject
+      // (an unnameable cell still refuses instead of reading as foreign ground); only the class it
+      // samples moved, because the ruling moved that class. Without the terrain filter this arm now
+      // samples an ocean cell and fails for the right reason: see pb242_sea_aim for the other side.
       const noRegion = fixture().match;
       let blank = null;
       for (let y = 3; y < 133 && !blank; y += 1) {
         for (let x = 3; x < 317 && !blank; x += 1) {
           if (regionAt(x, y) !== NO_REGION) continue;
+          const terrain = terrainAt(payload.cells, x, y);
+          if (terrain && WATER.has(terrain)) continue;
           let near = false;
           for (const cap of resolvedCapitals(noRegion).list) {
             if (Math.abs(cap.x - x) <= Number(rules().nukes.exclusion) && Math.abs(cap.y - y) <= Number(rules().nukes.exclusion)) near = true;

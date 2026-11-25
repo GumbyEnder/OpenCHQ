@@ -321,7 +321,12 @@ server.on("upgrade", (req, socket) => {
       if (answered) {
         // nothing more to send for this frame
       } else if (result && result.error) {
-        peer.send({ op: "error", id: message.id ?? null, error: result.error });
+        peer.send({
+          op: "error", id: message.id ?? null, error: result.error,
+          // PB-242: a refusal that says only "did not resolve" cannot tell a lake from the open sea,
+          // which is now the difference between a legal aim and a refused one.
+          reason: result.reason ?? null, terrain: result.terrain ?? null,
+        });
       } else if (result && message.op === "mission" && message.id !== undefined && message.id !== null) {
         // PB-172: the mission ack names the order it answers. The page settles an order BY ID, and a
         // mission ack without one left the mission in the page's queue until the next socket open
