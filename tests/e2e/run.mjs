@@ -14,7 +14,7 @@
 // node_modules, then the agent-relay installs on this machine (agent-relay-local first: it is the
 // one that exists here, and a missing candidate is only a note in `tried`, not a failure).
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -42,6 +42,10 @@ const HEADED = process.argv.includes("--headed");
 const ROUNDS = Number(argOf("rounds", "20")) || 20;
 const PLAY_ERA = String(argOf("era", "1942"));
 const ERAS = ["1918", "1942", "1986", "2023"];
+// Where the PB-236 leg photographs the two seats' logs. A screenshot is evidence only if the run
+// says where it put it, so the path is printed with the counts.
+const SHOTS = argOf("shots", process.env.E2E_SHOTS
+  || path.join(process.env.HOME || ".", "agents", "game", "notes", "e2e-shots"));
 
 const EMAIL_SHAPE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -111,6 +115,10 @@ async function toast(page) {
 
 async function roomOf(page) {
   return page.evaluate(() => window.__chq.room());
+}
+
+async function logOf(page) {
+  return page.evaluate(() => window.__chq.log());
 }
 
 async function waitRoom(page, predicate, label, timeout = 30000) {
@@ -435,6 +443,205 @@ async function assertBuildFooter(page, where) {
     "title " + JSON.stringify(shown && shown.title) + " vs live " + JSON.stringify(live && live.commit));
 }
 
+// ---------------------------------------------------------------- PB-236: the aid announcement
+
+// Manual p.30: "only large countries make it known that they have received foreign aid". The rule
+// is between SEATS, so this leg needs two human seats: a bot match cannot ask what the other
+// player's log says. 2023 is the era, and the two gifts are aimed at nations either side of the
+// shipped cut (`loyalty.announceFromCities`, 4 cities): Japan (5 cities) must become the other
+// seat's news, Poland (1 city) must not - while the payer's own log carries both.
+//
+// The receiver first stands a unit within sight of BOTH cities. Fog is the log's other gate
+// (`legible()`), and a silent Poland that the receiver could not see anyway would prove nothing:
+// with the units in place the only difference between the two gifts is the nation's SIZE.
+//
+// The gifts are made while the clock is held (PB-235's pre-game aid) and the log lines are written
+// by the round that follows them, so the leg runs one round after the aiming. Evidence: the two
+// seats' own room views (`window.__chq.log/toast`), the server's own sentences on the payer's
+// flash, and a 1280x800 photograph of each seat's log.
+
+// A throwaway account for one seat of the two-seat leg. `signIn` is shared with the single-seat
+// flow and would reuse E2E_USER/E2E_PASS when they are set, which cannot invite itself; this leg
+// always registers, so a reviewer's account is never touched.
+async function openSeat(browser, prefix) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const page = await context.newPage();
+  page.on("dialog", (dialog) => dialog.accept().catch(() => {}));
+  page.on("pageerror", (err) => check(false, "no page errors in the " + prefix + " seat", String(err && err.message)));
+  await page.goto(BASE, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 20000 });
+  const name = prefix + Date.now().toString(36).slice(-8);
+  await page.fill("#register input[name=username]", name);
+  await page.fill("#register input[name=password]", "pw-" + Math.random().toString(36).slice(2, 12));
+  await page.click("#register button[type=submit]");
+  await page.waitForSelector("#play:not(.hidden)", { timeout: 20000 });
+  const me = await page.evaluate(() => window.__chq.me());
+  check(me === name, "the " + prefix + " seat registered its own throwaway user", String(me));
+  return { context, page, name };
+}
+
+// Stand one infantry as close to `target` as the server's own placement mask allows, and answer the
+// distance in cells (Chebyshev with the board's x wrap, the same arithmetic the log's sight test
+// uses). 320 is the board width the page draws.
+async function standNear(page, target, label) {
+  const before = (await roomOf(page)).pieces.length;
+  await page.click('#nav button[data-dialog="buy"]');
+  await page.click('button.buyrow[data-kind="infantry"]');
+  await page.waitForFunction(() => window.__chq.state().placement === true, null, { timeout: 15000 }).catch(() => {});
+  const cells = await page.evaluate(() => window.__chq.legalCells(4000));
+  const away = (cell) => {
+    const raw = Math.abs(Number(cell.x) - Number(target.x));
+    return Math.max(Math.min(raw, 320 - raw), Math.abs(Number(cell.y) - Number(target.y)));
+  };
+  const best = [...cells].sort((a, b) => away(a) - away(b))[0] || null;
+  check(Boolean(best), "the mask offers a cell to stand near " + label, cells.length + " cells");
+  if (!best) return Infinity;
+  await clickCell(page, best);
+  const landed = await page.waitForFunction((wanted) => (window.__chq.room().pieces || []).length > wanted,
+    before, { timeout: 20000 }).then(() => true).catch(() => false);
+  check(landed, "an infantry lands near " + label, "cell " + best.x + "," + best.y + " distance " + away(best));
+  return away(best);
+}
+
+async function aidAnnouncement(browser) {
+  mkdirSync(SHOTS, { recursive: true });
+  const payer = await openSeat(browser, "aidp");
+  const receiver = await openSeat(browser, "aidr");
+  try {
+    // The payer invites: 2023, and blue is the seat the invitation names for the INVITER.
+    await payer.page.selectOption('#launch select[name="era"]', "2023");
+    await payer.page.selectOption('#launch select[name="side"]', "blue");
+    const listed = await payer.page.waitForFunction((name) => (window.__chq.users() || [])
+      .some((user) => user.username === name), receiver.name, { timeout: 20000 }).then(() => true).catch(() => false);
+    check(listed, "the lobby lists the receiver for the invite", receiver.name);
+    if (listed) {
+      await payer.page.evaluate((name) => {
+        const row = [...document.querySelectorAll("#people li.person")]
+          .find((item) => item.textContent.includes(name));
+        const button = row && row.querySelector("button");
+        if (button) button.click();
+      }, receiver.name);
+    }
+    const invited = await receiver.page.waitForSelector("#invites .invite button", { timeout: 20000 })
+      .then(() => true).catch(() => false);
+    check(invited, "the invitation reaches the second seat");
+    if (invited) await receiver.page.evaluate(() => document.querySelector("#invites .invite button").click());
+
+    const opened = async (page) => page.waitForFunction(
+      () => window.__chq.room() && String(window.__chq.room().era) === "2023",
+      null, { timeout: 25000 }).then(() => page.evaluate(() => window.__chq.room())).catch(() => null);
+    const payRoom = await opened(payer.page);
+    const recvRoom = await opened(receiver.page);
+    const together = Boolean(payRoom && recvRoom && payRoom.id === recvRoom.id);
+    check(together, "one human 2023 room holds both seats", (payRoom && payRoom.id) + " / " + (recvRoom && recvRoom.id));
+    check(payRoom && payRoom.you === "blue" && recvRoom && recvRoom.you === "red",
+      "the payer holds blue and the receiver holds red",
+      (payRoom && payRoom.you) + " / " + (recvRoom && recvRoom.you));
+    if (!together) return;
+
+    const sites = recvRoom.sites || [];
+    const tokyo = sites.find((site) => site.name === "Tokyo") || null;
+    const warsaw = sites.find((site) => site.name === "Warsaw") || null;
+    check(Boolean(tokyo && warsaw), "the 2023 board carries the two target cities",
+      JSON.stringify({ Tokyo: Boolean(tokyo), Warsaw: Boolean(warsaw) }));
+    if (!tokyo || !warsaw) return;
+
+    const dLarge = await standNear(receiver.page, tokyo, "Tokyo");
+    const dSmall = await standNear(receiver.page, warsaw, "Warsaw");
+    const recvPieces = (await roomOf(receiver.page)).pieces.filter((piece) => piece.side === "red");
+    const sightOf = (city) => Math.min(...recvPieces.map((piece) => {
+      const raw = Math.abs(Number(piece.x) - Number(city.x));
+      return Math.max(Math.min(raw, 320 - raw), Math.abs(Number(piece.y) - Number(city.y)));
+    }));
+    check(recvPieces.length >= 2 && sightOf(tokyo) <= 8 && sightOf(warsaw) <= 8,
+      "both nations are in the receiver's sight, so silence cannot be fog",
+      JSON.stringify({ units: recvPieces.length, Tokyo: sightOf(tokyo), Warsaw: sightOf(warsaw), placed: [dLarge, dSmall] }));
+
+    // One gift, through the page's own door: the Kit row arms the picker and the next map click is
+    // the city. The payer's flash repeats the server's sentence verbatim.
+    const gift = async (city) => {
+      await payer.page.click('#nav button[data-dialog="kit"]');
+      await payer.page.waitForSelector('#dialog div.shop.tools button.buy', { timeout: 10000 });
+      await payer.page.click('#dialog div.shop.tools button.buy:has-text("Foreign aid")');
+      const armed = await payer.page.waitForFunction(() => /pick the city/i.test(window.__chq.toast()),
+        null, { timeout: 10000 }).then(() => true).catch(() => false);
+      check(armed, "the aid button arms its picker for " + city.name);
+      await clickCell(payer.page, city);
+      const said = await payer.page.waitForFunction(() => /Foreign aid to/.test(window.__chq.toast()),
+        null, { timeout: 20000 }).then(() => toast(payer.page)).catch(() => toast(payer.page));
+      return said;
+    };
+
+    const largeNote = await gift(tokyo);
+    check(/^Foreign aid to Tokyo: Japan is 1 of 5 gifts/.test(largeNote),
+      "the large nation's gift is accepted and names its nation and size", largeNote);
+    const smallNote = await gift(warsaw);
+    check(/^Foreign aid to Warsaw: Poland has come over/.test(smallNote),
+      "the small nation's gift is accepted and turns it", smallNote);
+    await payer.page.screenshot({ path: path.join(SHOTS, "pb236-payer-flash.png") });
+
+    const recvFlashAfterGifts = await toast(receiver.page);
+    check(!/aid|Japan|Poland|Warsaw/i.test(recvFlashAfterGifts),
+      "no aid news reaches the receiver's flash while the clock is held", JSON.stringify(recvFlashAfterGifts));
+
+    // The gifts sit in the room's pending events until a round runs; one round writes both logs.
+    await payer.page.click("#clockBtn");
+    const ticked = async (page) => page.waitForFunction(() => Number((window.__chq.room() || {}).round) >= 1,
+      null, { timeout: 90000 }).then(() => true).catch(() => false);
+    check(await ticked(payer.page) && await ticked(receiver.page), "one round runs and writes the logs");
+    await receiver.page.waitForFunction(() => (window.__chq.log() || [])
+      .some((line) => /reports receiving foreign aid/.test(String(line.text || ""))),
+      null, { timeout: 20000 }).catch(() => {});
+    await sleep(800);
+
+    const payLog = (await logOf(payer.page)).map((line) => String(line.text || ""));
+    const recvLog = (await logOf(receiver.page)).map((line) => String(line.text || ""));
+    const recvFlash = await toast(receiver.page);
+    const news = recvLog.filter((line) => /reports receiving foreign aid/.test(line));
+
+    check(payLog.some((line) => /^aid reached Tokyo$/.test(line)),
+      "the payer's own log carries the large nation's gift", JSON.stringify(payLog.filter((line) => /aid reached/.test(line))));
+    check(payLog.some((line) => /^aid reached Warsaw \(its nation came over\)$/.test(line)),
+      "the payer's own log carries the small nation's gift", JSON.stringify(payLog.filter((line) => /aid reached/.test(line))));
+    check(news.length === 1 && news[0] === "Japan reports receiving foreign aid",
+      "the other seat is told about the large nation, once, by name", JSON.stringify(news));
+    check(!recvLog.some((line) => /Warsaw|Poland/.test(line)),
+      "the other seat's log has no line for the small nation", JSON.stringify(recvLog));
+    check(!/aid|Japan|Poland|Warsaw/i.test(recvFlash),
+      "no aid news reaches the receiver's flash", JSON.stringify(recvFlash));
+
+    // Photographs: each seat's own log dialog, at the viewport the PM asked for, after the round.
+    const shots = [];
+    for (const [seat, tag] of [[payer, "payer"], [receiver, "receiver"]]) {
+      await seat.page.click('#nav button[data-dialog="log"]').catch(() => {});
+      await sleep(350);
+      const file = path.join(SHOTS, "pb236-" + tag + "-log.png");
+      await seat.page.screenshot({ path: file });
+      shots.push(file);
+      await seat.page.click("#dialogClose").catch(() => {});
+    }
+    await receiver.page.screenshot({ path: path.join(SHOTS, "pb236-receiver-board.png") });
+    const shotOk = shots.every((file) => existsSync(file) && statSync(file).size > 10000);
+    check(shotOk, "both seats' logs were photographed at 1280x800", shots.join(" "));
+
+    // Leave the room so a live host is not holding a match for nobody. A programmatic click, not a
+    // pointer one: the strip's Quit sits under the map's own furniture at this viewport and a
+    // swallowed click must not turn a green rule red. The confirm is answered by the seat's own
+    // dialog handler; if the host does not answer, closing the contexts drops both sockets and the
+    // abandoned-room arm is the same cleanup a closed tab gets.
+    for (const seat of [payer, receiver]) {
+      await seat.page.evaluate(() => {
+        const button = document.getElementById("quitBtn");
+        if (button) button.click();
+      }).catch(() => {});
+    }
+    await sleep(600);
+  } finally {
+    await payer.context.close().catch(() => {});
+    await receiver.context.close().catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------- main
 
 const main = async () => {
@@ -493,6 +700,10 @@ const main = async () => {
 
     await quitMatch(page);
     await assertBuildFooter(page, "back in the lobby after a match");
+
+    // PB-236 (PM 9155 §3): the announcement rule between two human seats, last so the single-seat
+    // flow keeps its own order and its own counts. It brings its own two seats and its own room.
+    await aidAnnouncement(browser);
   } catch (err) {
     check(false, "the run finished", String((err && err.stack) || err).split("\n")[0]);
   } finally {
