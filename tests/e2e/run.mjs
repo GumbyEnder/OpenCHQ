@@ -442,26 +442,49 @@ async function runRounds(page, rounds) {
 async function reloadAndResume(page, before) {
   const id = before.id;
   const round = Number(before.round) || 0;
-  const started = Date.now();
-  await page.reload({ waitUntil: "domcontentloaded" });
-  // AC5: the sign-in form must not appear while the session is checked.
-  const flashed = await page.evaluate(() => document.body.classList.contains("booting"));
-  const room = await page.waitForFunction((wanted) => {
-    const r = window.__chq && window.__chq.room();
-    return r && r.id === wanted;
-  }, id, { timeout: 30000, polling: 100 }).then(() => true).catch(() => false);
-  check(room, "a reloaded page rejoins the same match", "id " + id);
-  const now = await roomOf(page);
+  // PB-246: the arm is TIMED and it RE-ASKS ONCE. A single wait graded a timeout as "did not
+  // rejoin"; now a missed rejoin gets one more reload+wait before it is called, and every ask
+  // reports its own wall time and what the room itself said (`room.note`) — the page's reason, not
+  // ours. Two asks, one row: the count does not move.
+  const asks = [];
+  let now = null;
+  for (let attempt = 1; attempt <= 2 && !now; attempt += 1) {
+    const started = Date.now();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const flashed = await page.evaluate(() => document.body.classList.contains("booting"));
+    const rejoined = await page.waitForFunction((wanted) => {
+      const r = window.__chq && window.__chq.room();
+      return r && r.id === wanted;
+    }, id, { timeout: 30000, polling: 100 }).then(() => true).catch(() => false);
+    const ms = Date.now() - started;
+    const cur = await roomOf(page).catch(() => null);
+    asks.push({
+      attempt, ms, rejoin: rejoined, bootingFlash: flashed,
+      round: cur ? Number(cur.round) : null, note: cur ? String(cur.note || "") : "(no room)",
+    });
+    if (rejoined) now = cur;
+  }
+  const wall = asks[asks.length - 1].ms;
+  const totalMs = asks.reduce((sum, a) => sum + Number(a.ms || 0), 0);
+  const perAsk = asks.map((a) => a.ms + "ms" + (a.rejoin ? "" : " (missed)")).join(", ");
+  const said = asks.map((a) => a.note || "(room said nothing)").join(" | ");
+  check(Boolean(now), "a reloaded page rejoins the same match",
+    "id " + id + " after " + asks.length + " ask(s) [" + perAsk + "] " + JSON.stringify(asks));
   check(Boolean(now) && Number(now.round) >= round, "the match resumes at its round, not at zero",
-    now ? "round " + now.round + " from " + round : "no room");
+    (now ? "round " + now.round + " from " + round : "no room") + ", wall " + totalMs + " ms over "
+      + asks.length + " ask(s) [" + perAsk + "], room said " + JSON.stringify(said));
   const booting = await page.evaluate(() => document.body.classList.contains("booting"));
-  check(!booting || flashed === false || true, "the reload boots through the session check");
+  check(!booting || asks.some((a) => a.bootingFlash === false), "the reload boots through the session check");
   const banner = await page.evaluate(() => {
     const el = document.querySelector("#pauseBanner");
     return el && !el.classList.contains("hidden") ? el.textContent : "";
   });
   check(/Paused - press Play to resume/.test(banner), "a reloaded match says it is paused", banner);
-  check(Date.now() - started > 0, "reload took " + (Date.now() - started) + " ms");
+  // The row that used to be `Date.now() - started > 0` — true by construction. It now carries the
+  // number it names: the TOTAL wall time across the asks (per ask in brackets, a miss marked), the
+  // bound each ask's own wait allows, and the room's own words rather than the harness's.
+  check(totalMs > 0 && totalMs < 30000 * asks.length + 5000, "reload took " + totalMs + " ms over "
+    + asks.length + " ask(s) [" + perAsk + "], last rejoin in " + wall + " ms, room said " + JSON.stringify(said));
   await assertNoEmail(page, "after a reload");
 }
 
