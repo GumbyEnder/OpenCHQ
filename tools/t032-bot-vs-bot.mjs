@@ -40,7 +40,13 @@
 // Usage:
 //   node tools/t032-bot-vs-bot.mjs [--era 1918|1942|1986|2023] [--seeds mirror|distinct] [--rounds 50]
 //                                 [--matches 20] [--out <path>] [--pairs 3:2,4:3,5:4]
-//                                 [--c3] [--seed-base 1942]
+//                                 [--c3] [--seed-base 1942] [--handicap-grid]
+//
+// PB-260: `--handicap-grid` turns the opponent's starting-money spinner (Manual p.17) into a board
+// sweep. For every seed it plays 7 steps (-30,-20,-10,0,+10,+20,+30 percent of the era's
+// handicapDefault) and seat-pairs every step: A as blue once and A as red once, with the handicap
+// on the B level's side in both. In this mode `--matches` counts SEEDS, not matches: rows per block =
+// seeds x 7 steps x 2 seats. The grid is a harness flag only; no engine, config or bot RNG changes.
 
 import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -52,7 +58,7 @@ import { ordersFor } from "../web/server/bot.mjs";
 import { ordersFor as prePortOrdersFor } from "../web/server/bot-c20dba7.mjs";
 import { buy } from "../web/server/economy.mjs";
 import { issueOrder } from "../web/server/move.mjs";
-import { dispatchRepeatLimit, dispatchRepeatPool, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
+import { dispatchRepeatLimit, dispatchRepeatPool, handicapDefault, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
 import { effectivePassCap } from "../web/server/bot.mjs";
 
 const CITY_KINDS = new Set(["city", "capital"]);
@@ -80,6 +86,14 @@ const PAIRS = String(arg("pairs", "3:2,4:3,5:4"))
   .map((row) => row.split(":").map((value) => Number(value)))
   .filter((row) => row.length === 2 && row.every(Number.isInteger));
 const RUN_C3 = process.argv.includes("--c3");
+// PB-260: symmetric handicap grid. `null` means the flag is off and the harness behaves exactly as
+// before (one board per seed, both seats). With the flag on, every seed is played at each step.
+const HANDICAP_GRID = process.argv.includes("--handicap-grid");
+const HANDICAP_STEPS = HANDICAP_GRID ? [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3] : [0];
+const HANDICAP_DEFAULT = HANDICAP_GRID ? handicapDefault(ERA) : null;
+if (HANDICAP_GRID && (HANDICAP_DEFAULT === null || !Number.isFinite(HANDICAP_DEFAULT))) {
+  throw new Error("--handicap-grid: era " + ERA + " has no handicapDefault");
+}
 // PB-257(a): which seat's order set is FILED first. Both seats always PLANNED from the same
 // pre-round snapshot; this flag only moves the filing order, so `base` vs `swap` is the control that
 // shows whether call order still decides the match.
@@ -207,8 +221,20 @@ function fileOrders(match, plan, filed) {
 }
 
 // One match. `levels` is {blue, red}; a level of "pre" plays the frozen c20dba7 bot.
-function playMatch({ seed, index, levels }) {
-  const match = openMatch(ERA, sites, { seed, opponentLevel: 3 });
+// PB-260: `handicapLevel` names the seat the spinner handicaps (the B level), `handicapStep` is the
+// fraction of the era default applied to that seat's starting cash. With the grid off both are
+// undefined and the opening is exactly the pre-PB-260 one.
+function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
+  const options = { seed, opponentLevel: 3 };
+  let handicapSide = null;
+  let handicapBillions = null;
+  if (HANDICAP_GRID) {
+    handicapSide = String(levels.blue) === String(handicapLevel) ? "blue" : "red";
+    handicapBillions = Math.max(0, HANDICAP_DEFAULT * (1 + handicapStep));
+    options.handicapSide = handicapSide;
+    options.opponentPool = handicapBillions;
+  }
+  const match = openMatch(ERA, sites, options);
   match.seats = { blue: { username: "Bot A", kind: "bot" }, red: { username: "Bot B", kind: "bot" } };
   match.clock = "running";
   const opening = openingCapitals(match);
@@ -325,6 +351,10 @@ function playMatch({ seed, index, levels }) {
       ? { ...match.botRepeatPool }
       : null,
     capBound,
+    handicap: HANDICAP_GRID
+      ? { step: handicapStep, side: handicapSide, billions: handicapBillions,
+          cash: match.sides[handicapSide] ? match.sides[handicapSide].cash : null }
+      : null,
   };
 }
 
@@ -335,6 +365,19 @@ function playMatch({ seed, index, levels }) {
 //              (2023) samples MATCHES distinct games and still plays each seat ten times each.
 function seedPlan(a, b, matches, base) {
   const rows = [];
+  // PB-260: grid mode treats `matches` as a SEED count; every seed is played at all 7 handicap
+  // steps, each step seat-paired, so the row count is seeds x steps x 2.
+  if (HANDICAP_GRID) {
+    for (let seedIndex = 0; seedIndex < matches; seedIndex++) {
+      const seed = base + seedIndex;
+      for (const step of HANDICAP_STEPS) {
+        for (const levels of [{ blue: a, red: b }, { blue: b, red: a }]) {
+          rows.push({ seed, levels, handicapStep: step });
+        }
+      }
+    }
+    return rows;
+  }
   if (SEED_MODE === "distinct") {
     for (let index = 0; index < matches; index++) {
       const seed = base + index;
@@ -361,8 +404,8 @@ function seedPlan(a, b, matches, base) {
 function runPair(a, b, matches) {
   const sameLevel = String(a) === String(b);
   const rows = [];
-  for (const { seed, levels } of seedPlan(a, b, matches, SEED_BASE)) {
-    const row = playMatch({ seed, index: rows.length + 1, levels });
+  for (const { seed, levels, handicapStep } of seedPlan(a, b, matches, SEED_BASE)) {
+    const row = playMatch({ seed, index: rows.length + 1, levels, handicapLevel: b, handicapStep });
     // Who won, named by LEVEL rather than by side.
     row.winnerLevel = row.verdict === "draw" ? "draw" : String(row.levels[row.verdict]);
     rows.push(row);
@@ -378,7 +421,8 @@ function runPair(a, b, matches) {
   // "2 distinct outcome(s)" is a claim about verdicts rather than about city counts alone.
   const distinct = new Set(rows.map((row) => [row.levels.blue, row.levels.red, row.verdict, row.verdictRung,
     row.citiesTaken.blue, row.citiesTaken.red, row.capitalsLost.blue, row.capitalsLost.red,
-    row.piecesLost ? row.piecesLost.blue + "/" + row.piecesLost.red : "uncomparable"].join("|")));
+    row.piecesLost ? row.piecesLost.blue + "/" + row.piecesLost.red : "uncomparable",
+    row.handicap ? row.handicap.step : "off"].join("|")));
   return {
     pair: String(a) + "v" + String(b),
     matches: rows.length,
@@ -417,7 +461,11 @@ const report = {
   seedMode: SEED_MODE,
   seedBase: SEED_BASE,
   rounds: ROUNDS,
-  matchesPerPair: MATCHES,
+  matchesPerPair: HANDICAP_GRID ? MATCHES * HANDICAP_STEPS.length * 2 : MATCHES,
+  seedCount: MATCHES,
+  handicapGrid: HANDICAP_GRID
+    ? { steps: HANDICAP_STEPS, eraDefaultBillions: HANDICAP_DEFAULT, appliedTo: "the B level's seat" }
+    : null,
   verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else FEWER PIECES LOST (aliveStart - aliveEnd), else draw; no raw total (sites, cities held, pieces alive) is ever read",
   planning: "both seats call ordersFor on their own clone of the same pre-round snapshot, then both order sets are filed into the live match in fileOrder",
   fileOrder: FILE_ORDER,
@@ -459,8 +507,8 @@ if (RUN_C3) {
   // same seeds. The pre bot plays both sides, so the positional bias is the only asymmetry; the
   // level-3 seat is the shipped bot.
   const rows = [];
-  for (const { seed, levels } of seedPlan("pre", 3, MATCHES, SEED_BASE)) {
-    const row = playMatch({ seed, index: rows.length + 1, levels });
+  for (const { seed, levels, handicapStep } of seedPlan("pre", 3, MATCHES, SEED_BASE)) {
+    const row = playMatch({ seed, index: rows.length + 1, levels, handicapLevel: "pre", handicapStep });
     row.winnerLevel = row.verdict === "draw" ? "draw" : String(row.levels[row.verdict]);
     rows.push(row);
   }
