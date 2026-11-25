@@ -95,7 +95,7 @@
 | `0xf5e` + `i*2` | 2 | `uint` | `site_coords` | FUN_1000_0000 — stored as `x*256+y` format |
 | `0x1006` + `i` | 1 | `byte` | `site_type` | FUN_1000_0000 — terrain type (ocean, city, capital, oilfield, etc.) |
 | `0x1102` + `i` | 1 | `byte` | `site_active` | FUN_1000_0000 — **bits 7:6 = owner** (`0x40` BLUE / `0x80` RED / `0x00` neutral), **bits 2:0 = subtype** (1 and 2 are the two capital subtypes), bits 4:3 set on every active site at load (`|0x18`) |
-| `0x10ae` + `i` | 1 | `char` | `site_name_offset` | FUN_1000_0000 — string table index; `'\0'` = no name |
+| `0x10ae` + `i` | 1 | `char` | `site_readiness` | PB-155 / AI.md §9.1 — the capture readiness countdown, **not** a name index (PB-255): the capture handler writes `0xf` (`decompiled.c` 9178), a once-a-round pass decrements it over 64 slots (4856-4862), and the reads are `!= 0` (1632), `< 10` (2246, 2381) and `< 0x15` (24262, 24362). Measured in DOSBox (PB-155 RE-E3): 0 -> **15** on capture, decaying one a round. The retired `site_name_offset` reading cited `FUN_1000_0000`, which carries no `0x10ae` reference at all; where a site's name is stored in the record is **UNVERIFIED** |
 | `0xcae` + `i` | 1 | `byte` | `site_misc_flags` | FUN_107e_2ff4 — bit 2 = moving; FUN_107e_4616 — bit 2 set on move |
 | `0xcb46` + `i` | 1 | `byte` | `site_region` | FUN_1000_0000 — which of 84 regions this site belongs to |
 | `0xc46` + `i` | 1 | `byte` | `site_misc2` | FUN_107e_4616 — bit 6 checked for command eligibility |

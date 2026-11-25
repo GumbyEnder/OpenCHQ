@@ -821,7 +821,7 @@
 - `0xf5e` + `i*2` = site_coords — position
 - `0x1006` + `i` = site_type — terrain type
 - `0x1102` + `i` = site_active — active/owner/subtype
-- `0x10ae` + `i` = site_name_offset — name string index
+- `0x10ae` + `i` = site_readiness — capture readiness countdown (0 -> 15 on capture, one a round after: PB-155 RE-E3 in DOSBox, AI.md §9.1). **Not** a name string index (PB-255): the retired row cited `FUN_1000_0000`, which carries no `0x10ae` reference; site-name storage in the site record is UNVERIFIED
 - `0xcae` + `i` = site_misc_flags — moving flag
 - `0xcb46` + `i` = site_region — region index
 - `0xc46` + `i` = site_misc2 — command eligibility
