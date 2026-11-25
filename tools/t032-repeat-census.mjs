@@ -19,16 +19,31 @@
 // The JSON stamps the commit it ran at (`commit`, `branch`, `worktreeDirty`), because era/rounds/
 // levels alone identify no build.
 //
-// Run: node tools/t032-repeat-census.mjs [rounds]
+// Run: node tools/t032-repeat-census.mjs [rounds] [--era 1942|2023] [--sites]
+//
+// `--sites` seats the campaign on the era's real board (matchSites) instead of the empty opening the
+// gate receipt used. Buy and defence spending only exist on a board that has sites and cash, so the
+// session column on a real board is the one that shows the buy drawing on the same counter
+// (1649-1651) - frodo's scope note in room 9388. Both are recorded in the JSON's `board` field.
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { boardPayload, matchSites } from "../web/server/board.mjs";
 import { openMatch } from "../web/server/match.mjs";
 import { tickMatch } from "../web/server/tick.mjs";
 import { ordersFor } from "../web/server/bot.mjs";
 import { dispatchRepeatPool, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
 
-const ROUNDS = Number(process.argv[2]) || 40;
+const args = process.argv.slice(2);
+const flag = (name) => args.includes("--" + name);
+const valued = (name, fallback) => {
+  const index = args.indexOf("--" + name);
+  return index >= 0 && args[index + 1] && !args[index + 1].startsWith("--") ? args[index + 1] : fallback;
+};
+
+const ROUNDS = Number(args.find((row) => /^\d+$/.test(row))) || 40;
+const ERA = String(valued("era", "1942"));
+const USE_SITES = flag("sites");
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function git(args) {
@@ -43,6 +58,7 @@ const sha = process.env.T032_SHA || git("rev-parse HEAD");
 const branch = git("rev-parse --abbrev-ref HEAD");
 const status = git("status --porcelain");
 const cap = spareActionPassCap();
+const eraSites = USE_SITES ? matchSites(ERA, boardPayload()) : [];
 
 const out = {
   task: "T-032 B3",
@@ -52,7 +68,8 @@ const out = {
   branch,
   worktreeDirty: Boolean(status),
   capturedAt: new Date().toISOString(),
-  era: "1942",
+  era: ERA,
+  board: USE_SITES ? "era board (matchSites)" : "empty opening (openMatch default)",
   rounds: ROUNDS,
   passCap: cap,
   reachableRule: "per turn: repeats <= min(pool, 3 - spent), dispatches <= 3 - spent, same-cell <= min(1 + pool, 3 - spent); spent is the buy plus the defence pass; pool is 0xe94c, seeded once per game and carried across turns",
@@ -60,7 +77,7 @@ const out = {
 };
 
 for (const level of [1, 2, 3, 4, 5]) {
-  const match = openMatch("1942");
+  const match = openMatch(ERA, eraSites);
   match.seats = { blue: { username: "Bot", kind: "bot" }, red: { username: "Ada", kind: "human" } };
   match.opponentLevel = level;
   match.clock = "running";
