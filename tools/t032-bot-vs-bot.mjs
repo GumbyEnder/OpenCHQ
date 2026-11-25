@@ -14,7 +14,9 @@
 // the 1942 blue opening 78 sites to 48 and decided ten C3 rows without a shot fired; it is gone.
 //   1. a capital-set win, if the match produced one;
 //   2. else CITIES TAKEN (end minus opening) at the round limit;
-//   3. else FEWER CAPITALS LOST; 4. else more pieces alive; 5. else a draw.
+//   3. else FEWER CAPITALS LOST; 4. else FEWER PIECES LOST (aliveStart - aliveEnd); 5. else a draw.
+// PB-258 (PM 9414 §2): rung 4 counts pieces LOST, not pieces alive. Raw alive is a total, and the
+// 1942 opening is 29/31, so "more alive" decided matches on the opening the same way total sites did.
 // Sides are mirrored: every seed is played twice, once with each level as blue. The 1942 opening
 // is asymmetric (blue opens with more sites), so an unmirrored win rate would measure the board,
 // not the opponent. Note that 1942's capitals come from the file and the engine carries no RNG, so
@@ -207,9 +209,9 @@ function playMatch({ seed, index, levels }) {
   match.clock = "running";
   const opening = openingCapitals(match);
   const start = { blue: cityCount(match, "blue"), red: cityCount(match, "red") };
-  // PB-257(b) caveat, measured not assumed: the "pieces alive" rung is a raw count, so the opening
-  // piece count has to be on the row. If the seats open with different armies, that rung reads the
-  // opening the same way "cities held" read the 1942 site table.
+  // PB-257(b) caveat, measured not assumed: a raw "pieces alive" count reads the opening when the
+  // seats open with different armies (1942 opens 29/31), so rung 4 compares pieces LOST.
+  // aliveStart stays on the row so the subtraction is auditable.
   const aliveOf = (row) => ({
     blue: row.pieces.filter((piece) => piece.side === "blue" && Number(piece.strength) > 0).length,
     red: row.pieces.filter((piece) => piece.side === "red" && Number(piece.strength) > 0).length,
@@ -254,6 +256,9 @@ function playMatch({ seed, index, levels }) {
     red: match.pieces.filter((piece) => piece.side === "red" && Number(piece.strength) > 0).length,
   };
   const aliveTaken = { blue: alive.blue - aliveStart.blue, red: alive.red - aliveStart.red };
+  // PB-258 rung 4: pieces LOST (aliveStart - aliveEnd), fewer wins. aliveTaken stays as the signed
+  // delta the D4 grader sums; piecesLost is the same quantity negated, printed so the rung is auditable.
+  const piecesLost = { blue: aliveStart.blue - alive.blue, red: aliveStart.red - alive.red };
   // Side-neutral: what each seat TOOK, not what it inherited. The 1942 blue opening holds 40 city
   // sites against red's 23, so "cities held" would hand blue every match before a shot is fired.
   const taken = { blue: citiesEnd.blue - start.blue, red: citiesEnd.red - start.red };
@@ -271,9 +276,9 @@ function playMatch({ seed, index, levels }) {
     if (fewer) {
       verdict = fewer;
       verdictRung = "capitals lost";
-    } else if (alive.blue !== alive.red) {
-      verdict = alive.blue > alive.red ? "blue" : "red";
-      verdictRung = "pieces alive";
+    } else if (piecesLost.blue !== piecesLost.red) {
+      verdict = piecesLost.blue < piecesLost.red ? "blue" : "red";
+      verdictRung = "pieces lost";
     } else {
       verdict = "draw";
       verdictRung = "draw";
@@ -296,6 +301,7 @@ function playMatch({ seed, index, levels }) {
     aliveStart,
     alive,
     aliveTaken,
+    piecesLost,
     verdictRung,
     filing,
     filed: filedCounts,
