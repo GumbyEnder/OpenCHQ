@@ -27,7 +27,8 @@ import { openMatch } from "../../server/match.mjs";
 import { priceOf, resetRules, rules } from "../../server/rules.mjs";
 import { useTool } from "../../server/late.mjs";
 import {
-  NUKE_HOME_COUNTRY, NUKE_HOME_UNKNOWN, cellCountry, homeCountriesOf, nukeTarget, resolvedCapitals,
+  NUKE_HOME_COUNTRY, NUKE_HOME_UNKNOWN, capitalText, cellCountry, homeCountriesOf, nukeTarget,
+  resolvedCapitals,
 } from "../../server/nukestrike.mjs";
 import { NO_REGION, regionAt, regionSites } from "../../server/territory.mjs";
 
@@ -282,6 +283,76 @@ export async function run(ctx) {
       const refused = nukeTarget(match, "blue", { x: spot.x, y: spot.y });
       eq("the firer's own home ground still refuses", refused.error, NUKE_HOME_COUNTRY);
       eq("the home refusal names the country", refused.country, spot.country);
+    }
+
+    // --- 6. the whole residue, cell by cell: 22,373 water aims, 10 lake refusals --------------
+    // Arms 1-5 sample one cell of each class. This arm walks every NO_REGION cell on the board, so
+    // "the allow-arm pins the water residue" is the whole class and not a sample. It also measures
+    // where the two rules meet: the capital ring is read ABOVE the relaxation in nukeTarget, so the
+    // sea cells inside an exclusion box must still refuse with the ring's own sentence.
+    {
+      const { match } = fixture();
+      const capitals = resolvedCapitals(match).list;
+      const ring = Number(rules().nukes.exclusion);
+      const inRing = (x, y) => capitals.find(
+        (cap) => Math.abs(cap.x - x) <= ring && Math.abs(cap.y - y) <= ring,
+      ) || null;
+      const census = {
+        total: 0, noRegion: 0, water: 0, waterAimed: 0, waterRung: 0, land: 0, landRefused: 0,
+        ocean: 0, shallows: 0, docks: 0, other: 0,
+      };
+      const wrong = [];
+      for (let y = 0; y < 136; y += 1) {
+        for (let x = 0; x < CELL_W; x += 1) {
+          census.total += 1;
+          if (regionAt(x, y) !== NO_REGION) continue;
+          census.noRegion += 1;
+          const terrain = terrainAt(payload.cells, x, y);
+          const sea = terrain !== null && WATER.has(terrain);
+          if (sea) census[terrain] = (census[terrain] || 0) + 1;
+          else census.other += 1;
+          const aim = nukeTarget(match, "blue", { x, y });
+          if (inRing(x, y)) {
+            if (aim.error !== capitalText(ring)) wrong.push({ x, y, terrain, ring: aim });
+            if (sea) census.waterRung += 1;
+            continue;
+          }
+          if (sea) {
+            census.water += 1;
+            if (aim.ok === true && aim.water === true && aim.terrain === terrain) census.waterAimed += 1;
+            else wrong.push({ x, y, terrain, aimed: aim });
+          } else {
+            census.land += 1;
+            if (aim.error === NUKE_HOME_UNKNOWN && aim.terrain === terrain) census.landRefused += 1;
+            else wrong.push({ x, y, terrain, refused: aim });
+          }
+        }
+      }
+      must(
+        wrong.length === 0,
+        "the residue disagrees with the ruling at " + wrong.length + " cells: " + JSON.stringify(wrong.slice(0, 5)),
+      );
+      eq("the board is 43,520 cells at cellW 320", census.total, 43520);
+      eq("the NO_REGION residue is 22,383 cells (51.4% of the board)", census.noRegion, 22383);
+      eq("the water residue is 22,373 cells, ring cells included", census.water + census.waterRung, 22373);
+      eq(
+        "the water residue splits ocean 22,326 / shallows 47 / docks 0",
+        { ocean: census.ocean, shallows: census.shallows, docks: census.docks },
+        { ocean: 22326, shallows: 47, docks: 0 },
+      );
+      eq(
+        "every water residue cell outside a capital ring aims, and names the terrain it read",
+        census.waterAimed, census.water,
+      );
+      eq(
+        "the sea cells inside a capital exclusion ring still refuse by the ring",
+        census.waterRung, 4,
+      );
+      eq("the land residue is 10 cells, every one of them lake", census.land, 10);
+      eq(
+        "every land residue cell still refuses, and names the terrain it read",
+        census.landRefused, 10,
+      );
     }
   } finally {
     restore();
