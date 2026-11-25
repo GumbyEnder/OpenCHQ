@@ -180,6 +180,11 @@ async function main() {
       note: window.__chq.note(),
     };
   });
+  // PB-251 (PM 9270, frodo 9279 §2): the proposer's "the war continues until they do" line must not
+  // outlive the answer. Blue proposed; red accepted; blue's own toast must read the new state.
+  const blueToast = await blue.evaluate(() => window.__chq.toast());
+  mark("PB-251: the accept replaces the proposal line, it does not outlive the peace",
+    !/until they do/i.test(blueToast) && /agreed|peace|accept/i.test(blueToast), "toast=" + JSON.stringify(blueToast));
   mark("an accepted cease fire is a PEACE, not an ending", Boolean(peaceState.peace && peaceState.peace.active === true),
     JSON.stringify(peaceState.peace));
   mark("the match is not over and no winner is named",
