@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { changePassword, closeSession, login, openSession, pruneSessions, register, userForToken } from "./db.mjs";
+// T-031 step 2: the film readers. They take a username, never an id a caller supplies.
+import { filmFor, framesFor, listFor } from "./history.mjs";
 import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
 import { boardPayload, fontPayload } from "./board.mjs";
 import { territoryGeometry } from "./territory.mjs";
@@ -201,6 +203,48 @@ const server = createServer(async (req, res) => {
       handicap: { unit: spec.unit, min: spec.min, max: spec.max, step: spec.step, defaults: spec.defaults },
       note: "Handicap is the OPPONENT'S starting money (Manual p.17); 2023 has no spinner.",
     });
+    return;
+  }
+  // T-031 step 2: War Films. The account's own finished matches, one film's header, and a window of
+  // its frames. Condition 1 (room 7683): a LIVE match is not a film, so it is never listed and never
+  // readable here - the four view toggles exist only for a war that is over. Condition 2: per account,
+  // by the handle the session belongs to; someone else's film answers 404, the same as a missing one.
+  if (req.method === "GET" && url.pathname === "/api/matches") {
+    const user = userForToken(tokenFrom(req));
+    if (!user) {
+      send(res, 401, { error: "Sign in to see your films." });
+      return;
+    }
+    const limit = Number(url.searchParams.get("limit")) || 50;
+    send(res, 200, { matches: listFor(user.username, undefined, limit) });
+    return;
+  }
+  const filmMatch = url.pathname.match(/^\/api\/matches\/([A-Za-z0-9_-]{1,64})(\/rounds)?$/);
+  if (req.method === "GET" && filmMatch) {
+    const user = userForToken(tokenFrom(req));
+    if (!user) {
+      send(res, 401, { error: "Sign in to see your films." });
+      return;
+    }
+    const id = filmMatch[1];
+    if (!filmMatch[2]) {
+      const film = filmFor(user.username, id);
+      if (!film) {
+        send(res, 404, { error: "No such film." });
+        return;
+      }
+      send(res, 200, { film });
+      return;
+    }
+    const from = Number(url.searchParams.get("from")) || 0;
+    const to = url.searchParams.has("to") ? Number(url.searchParams.get("to")) : Number.POSITIVE_INFINITY;
+    const frames = framesFor(user.username, id, undefined, from, to);
+    if (!frames) {
+      send(res, 404, { error: "No such film." });
+      return;
+    }
+    const film = filmFor(user.username, id);
+    send(res, 200, { id, rounds: film.rounds, finalDigest: film.final_digest, frames });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/board") {
