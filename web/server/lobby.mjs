@@ -980,11 +980,16 @@ export function createLobby() {
     const pieceId = String(message.piece ?? message.pieceId ?? "");
     if (!pieceId) return { error: "An order needs a piece id." };
     const to = destinationOf(message);
+    // PB-240(a): the ack carries the moving piece's KIND and DOMAIN, so the page can choose a verb
+    // ("to fly" for a satellite, "to walk" for anything on the ground) without keeping its own copy
+    // of the satellite kind list. The server already has the piece in hand here.
+    const sat = satelliteById(room.match, pieceId);
+    const moving = sat || (Array.isArray(room.match.pieces) ? room.match.pieces.find((p) => String(p.id) === String(pieceId)) : null);
     let result;
     try {
       // PB-224: a satellite is a unit with its own destination order (manual p.12). It never touches
       // the ground walker: no terrain, no lanes, no collision.
-      result = satelliteById(room.match, pieceId)
+      result = sat
         ? orderSatellite(room.match, mine, pieceId, to.x, to.y)
         : issueOrder(room.match, mine, pieceId, to.x, to.y);
     } catch (err) {
@@ -997,7 +1002,9 @@ export function createLobby() {
     // that a silent socket meant success.
     const peer = sockets.get(username);
     if (peer) {
-      const reply = { op: "ordered", id: message.id ?? null, piece: pieceId, to, rounds: result.rounds ?? 0 };
+      const reply = { op: "ordered", id: message.id ?? null, piece: pieceId, to, rounds: result.rounds ?? 0,
+        kind: moving && moving.kind ? moving.kind : null,
+        domain: sat ? "sat" : (moving && moving.domain) || null };
       peer.send(reply);
       rememberReply(username, message.id, reply);
     }

@@ -35,6 +35,12 @@ export function buyRows(room) {
   const enemy = you === "blue" ? "red" : you === "red" ? "blue" : "";
   const cash = room && room.seat && Number.isFinite(room.seat.cash) ? Number(room.seat.cash) : null;
   const count = (side, kind) => (side ? pieces.filter((piece) => piece.side === side && piece.kind === kind).length : 0);
+  // PB-240(b): PB-224 moved satellites OUT of `pieces` (they ride `room.satellites`, both sides'),
+  // so a satellite row counted 0 while blue held one in orbit. A satellite kind counts the ones in
+  // ORBIT for that side; `orbit === false` is a satellite that is no longer up there.
+  const sats = Array.isArray(room && room.satellites) ? room.satellites : [];
+  const inOrbit = (side, kind) => (side ? sats.filter((sat) => sat && sat.side === side && sat.kind === kind && sat.orbit !== false).length : 0);
+  const held = (side, entry) => (entry && entry.domain === "sat" ? inOrbit(side, entry.kind) : count(side, entry && entry.kind));
   return shop.map((entry) => {
     const price = Number.isFinite(Number(entry.price)) ? Number(entry.price) : null;
     return {
@@ -44,8 +50,8 @@ export function buyRows(room) {
       domain: entry.domain || "land",
       tool: entry.tool || null,
       refused: entry.refused || "",
-      own: count(you, entry.kind),
-      known: count(enemy, entry.kind),
+      own: held(you, entry),
+      known: held(enemy, entry),
       // Whether the seat can pay is the shop's own rule, not a second copy of it here: a price the
       // server sent and a purse the server sent, and a refused unit stays refused whatever the pool.
       affordable: !shopDisabled(entry, cash),

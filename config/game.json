@@ -251,7 +251,7 @@
       "carrier": "Manual p.28 + DS:0x2E16; row order from p.28 icons: UNVERIFIED",
       "aircraft": "Manual p.28 + DS:0x2E16",
       "reconSat": "Manual p.28 + DS:0x2E16",
-      "killerSat": "Manual p.28 + DS:0x2E16",
+      "killerSat": "Manual p.28 + DS:0x2E16; the effect on a satellite was never recovered (UNVERIFIED), so the shop row refuses instead of guessing",
       "nuke": "Manual p.28 + DS:0x2E16; Manual p.30",
       "foreignAid": "Manual p.28 + DS:0x2E16",
       "intelScan": "Manual p.28 + DS:0x2E16"

@@ -378,10 +378,19 @@ export function roundsText(rounds) {
 }
 
 // What the page says when its own order comes back acknowledged.
+// PB-240(a): a satellite FLIES. The verb comes from the ack's own domain (the server sends "sat"
+// for a satellite and the piece's ground domain otherwise), so this file keeps no list of kinds and
+// a unit added later cannot silently inherit "walk".
 export function ackText(message) {
   const rounds = Math.max(0, Math.trunc(Number(message && message.rounds) || 0));
   if (rounds === 0) return "Order sent. That piece is already on that cell.";
-  return "Order sent. " + roundsText(rounds) + " to walk.";
+  return "Order sent. " + roundsText(rounds) + (flies(message) ? " to fly." : " to walk.");
+}
+
+function flies(message) {
+  if (!message) return false;
+  if (String(message.domain || "").toLowerCase() === "sat") return true;
+  return /sat/i.test(String(message.kind || ""));
 }
 
 // A refusal is the server's sentence, verbatim. An empty error is never swallowed into

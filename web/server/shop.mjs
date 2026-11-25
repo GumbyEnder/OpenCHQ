@@ -54,7 +54,10 @@ export function shopFor(era, options = {}) {
       row.refused = "A nuke is refused.";
     }
     if (TOOL_OF[kind] === null) {
-      row.refused = "A satellite killer has no effect recovered: UNVERIFIED.";
+      // PB-240(c): the row refuses in a player's words. The provenance that the original's effect was
+      // never recovered lives in config/game.json `sources.prices.killerSat`, not in a title a player
+      // reads - a tag addressed to a developer is not a reason the player can act on.
+      row.refused = "A satellite killer is not in this build.";
     }
     shop.push(row);
   }
