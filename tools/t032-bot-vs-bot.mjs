@@ -28,6 +28,7 @@
 //   node tools/t032-bot-vs-bot.mjs [--rounds 50] [--matches 20] [--out <path>] [--pairs 3:2,4:3,5:4]
 //                                 [--c3] [--seed-base 1942]
 
+import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { boardPayload, matchSites } from "../web/server/board.mjs";
@@ -215,7 +216,7 @@ const started = process.hrtime.bigint();
 const report = {
   task: "T-032 Part C",
   branch: "t032b-bot-port",
-  sha: process.env.T032_SHA || null,
+  sha: process.env.T032_SHA || execSync("git rev-parse HEAD", { encoding: "utf8" }).trim(),
   era: "1942",
   rounds: ROUNDS,
   matchesPerPair: MATCHES,
