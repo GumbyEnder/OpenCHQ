@@ -17,6 +17,9 @@
 //   3. else FEWER CAPITALS LOST; 4. else FEWER PIECES LOST (aliveStart - aliveEnd); 5. else a draw.
 // PB-258 (PM 9414 §2): rung 4 counts pieces LOST, not pieces alive. Raw alive is a total, and the
 // 1942 opening is 29/31, so "more alive" decided matches on the opening the same way total sites did.
+// PB-258 (PM 9423 §2): a pairing whose two seats are the SAME level prints unmeasurable. winnerLevel
+// names a level, so with 3v3 both aWins and bWins count the same rows and the line is not a rate;
+// the report keeps a per-seat split and the distinct-outcome count instead.
 // Sides are mirrored: every seed is played twice, once with each level as blue. The 1942 opening
 // is asymmetric (blue opens with more sites), so an unmirrored win rate would measure the board,
 // not the opponent. Note that 1942's capitals come from the file and the engine carries no RNG, so
@@ -217,6 +220,11 @@ function playMatch({ seed, index, levels }) {
     red: row.pieces.filter((piece) => piece.side === "red" && Number(piece.strength) > 0).length,
   });
   const aliveStart = aliveOf(match);
+  // PB-258 (PM 9423 §2, second half): 2023 opens with NO pieces (match.mjs: "2023 starts empty on
+  // purpose"), so aliveStart - alive there is -(what each side built), not pieces lost. Rung 4 may
+  // only run when the opening had pieces to lose; otherwise the row says the rung is unmeasurable and
+  // the verdict falls through to a draw rather than letting production volume pick a winner.
+  const piecesLostComparable = aliveStart.blue + aliveStart.red > 0;
   const events = {
     blue: { buy: 0, order: 0, defend: 0, repeat: 0 },
     red: { buy: 0, order: 0, defend: 0, repeat: 0 },
@@ -258,7 +266,9 @@ function playMatch({ seed, index, levels }) {
   const aliveTaken = { blue: alive.blue - aliveStart.blue, red: alive.red - aliveStart.red };
   // PB-258 rung 4: pieces LOST (aliveStart - aliveEnd), fewer wins. aliveTaken stays as the signed
   // delta the D4 grader sums; piecesLost is the same quantity negated, printed so the rung is auditable.
-  const piecesLost = { blue: aliveStart.blue - alive.blue, red: aliveStart.red - alive.red };
+  const piecesLost = piecesLostComparable
+    ? { blue: aliveStart.blue - alive.blue, red: aliveStart.red - alive.red }
+    : null;
   // Side-neutral: what each seat TOOK, not what it inherited. The 1942 blue opening holds 40 city
   // sites against red's 23, so "cities held" would hand blue every match before a shot is fired.
   const taken = { blue: citiesEnd.blue - start.blue, red: citiesEnd.red - start.red };
@@ -276,9 +286,12 @@ function playMatch({ seed, index, levels }) {
     if (fewer) {
       verdict = fewer;
       verdictRung = "capitals lost";
-    } else if (piecesLost.blue !== piecesLost.red) {
+    } else if (piecesLost && piecesLost.blue !== piecesLost.red) {
       verdict = piecesLost.blue < piecesLost.red ? "blue" : "red";
       verdictRung = "pieces lost";
+    } else if (!piecesLost) {
+      verdict = "draw";
+      verdictRung = "draw (rung 4 unmeasurable: this era opens with no pieces)";
     } else {
       verdict = "draw";
       verdictRung = "draw";
@@ -302,6 +315,7 @@ function playMatch({ seed, index, levels }) {
     alive,
     aliveTaken,
     piecesLost,
+    piecesLostComparable,
     verdictRung,
     filing,
     filed: filedCounts,
@@ -339,7 +353,12 @@ function seedPlan(a, b, matches, base) {
 }
 
 // A pairing runs MATCHES games over the seed plan above.
+// PB-258 (PM 9423 §2): when both seats are the same LEVEL, winnerLevel names no seat - aWins and
+// bWins count the same rows, so "20 wins / 20 losses over 20 matches" is not a rate. Such a pair is
+// reported UNMEASURABLE; the seat split stays on the rows (row.verdict is blue/red), and row identity
+// is the only evidence a same-level pairing can carry.
 function runPair(a, b, matches) {
+  const sameLevel = String(a) === String(b);
   const rows = [];
   for (const { seed, levels } of seedPlan(a, b, matches, SEED_BASE)) {
     const row = playMatch({ seed, index: rows.length + 1, levels });
@@ -350,16 +369,27 @@ function runPair(a, b, matches) {
   const wins = rows.filter((row) => row.winnerLevel === String(a)).length;
   const losses = rows.filter((row) => row.winnerLevel === String(b)).length;
   const draws = rows.filter((row) => row.winnerLevel === "draw").length;
-  const distinct = new Set(rows.map((row) => [row.levels.blue, row.levels.red, row.citiesEnd.blue, row.citiesEnd.red, row.capitalsLost.blue, row.capitalsLost.red].join("|")));
+  const bySeat = {
+    blue: rows.filter((row) => row.verdict === "blue").length,
+    red: rows.filter((row) => row.verdict === "red").length,
+  };
+  // distinctOutcomes fingerprints every column the verdict reads, rung and pieces lost included, so
+  // "2 distinct outcome(s)" is a claim about verdicts rather than about city counts alone.
+  const distinct = new Set(rows.map((row) => [row.levels.blue, row.levels.red, row.verdict, row.verdictRung,
+    row.citiesTaken.blue, row.citiesTaken.red, row.capitalsLost.blue, row.capitalsLost.red,
+    row.piecesLost ? row.piecesLost.blue + "/" + row.piecesLost.red : "uncomparable"].join("|")));
   return {
     pair: String(a) + "v" + String(b),
     matches: rows.length,
-    aWins: wins,
-    bWins: losses,
+    measurable: !sameLevel,
+    unmeasurable: sameLevel ? "both seats are L" + a + ": winnerLevel names no seat, so aWins/bWins are not a rate" : null,
+    bySeat,
+    aWins: sameLevel ? null : wins,
+    bWins: sameLevel ? null : losses,
     draws,
-    winRateA: rows.length ? wins / rows.length : 0,
+    winRateA: sameLevel ? null : (rows.length ? wins / rows.length : 0),
     required: 0.7,
-    meets: rows.length ? wins / rows.length >= 0.7 : false,
+    meets: sameLevel ? null : (rows.length ? wins / rows.length >= 0.7 : false),
     seeds: rows.map((row) => row.seed),
     distinctSeeds: new Set(rows.map((row) => row.seed)).size,
     distinctOutcomes: distinct.size,
@@ -387,7 +417,7 @@ const report = {
   seedBase: SEED_BASE,
   rounds: ROUNDS,
   matchesPerPair: MATCHES,
-  verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else more live pieces, else draw; no raw total (sites/cities held) is ever read",
+  verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else FEWER PIECES LOST (aliveStart - aliveEnd), else draw; no raw total (sites, cities held, pieces alive) is ever read",
   planning: "both seats call ordersFor on their own clone of the same pre-round snapshot, then both order sets are filed into the live match in fileOrder",
   fileOrder: FILE_ORDER,
   levers: {
@@ -406,9 +436,14 @@ for (const [a, b] of PAIRS) {
   pair.events = summarise(pair.rows);
   report.pairs.push(pair);
   console.log(
-    "pair " + pair.pair + " (" + ERA + "): " + pair.aWins + " / " + pair.matches + " for L" + a +
-      " (" + Math.round(pair.winRateA * 1000) / 10 + "%), " + pair.bWins + " losses, " + pair.draws +
-      " draws, " + pair.distinctSeeds + " seed(s), " + pair.distinctOutcomes + " distinct outcome(s)"
+    pair.measurable
+      ? "pair " + pair.pair + " (" + ERA + "): " + pair.aWins + " / " + pair.matches + " for L" + a +
+        " (" + Math.round(pair.winRateA * 1000) / 10 + "%), " + pair.bWins + " losses, " + pair.draws +
+        " draws, " + pair.distinctSeeds + " seed(s), " + pair.distinctOutcomes + " distinct outcome(s)"
+      : "pair " + pair.pair + " (" + ERA + "): unmeasurable - both seats are level " + a +
+        ", so no seat is named by winnerLevel and no line here is a rate; " + pair.matches + " match(es), " +
+        "blue " + pair.bySeat.blue + " / red " + pair.bySeat.red + " / " + pair.draws + " draw(s), " +
+        pair.distinctSeeds + " seed(s), " + pair.distinctOutcomes + " distinct outcome(s); row identity only"
   );
 }
 
