@@ -353,8 +353,10 @@ export async function run(ctx) {
       if (repeats + (lastPool || 0) > seed) {
         say("level " + level + " spent past its seed: " + repeats + " repeats and " + lastPool + " left of " + seed);
       }
-      if (maxRepeatTurn > spareActionPassCap()) {
-        say("level " + level + " spent " + maxRepeatTurn + " counter units in one turn, past the pass cap", maxRepeatTurn);
+      // PB-258: with the port lever on, a turn's counter spends are bounded by the budget the pass
+      // actually received, not the faithful three (level 4's 4 repeats fit a 5-action pass).
+      if (maxRepeatTurn > effectivePassCap(level)) {
+        say("level " + level + " spent " + maxRepeatTurn + " counter units in one turn, past the effective pass cap", maxRepeatTurn);
       }
       if (maxSameCell > 2) say("level " + level + " put " + maxSameCell + " repeats on one cell in a turn, past two", maxSameCell);
       spent[level] = { seed, repeats, buys, left: lastPool, maxRepeatTurn, maxSameCell };
