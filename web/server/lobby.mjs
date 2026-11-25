@@ -8,7 +8,7 @@ import { eraOf, openMatch, piecesFor } from "./match.mjs";
 import { entrench, issueOrder, planOrder, repair } from "./move.mjs";
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
-import { AID_HELD_MID_WAR, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
+import { AID_HELD_MID_WAR, answerCeasefire, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
@@ -800,14 +800,71 @@ export function createLobby() {
       };
     }
     // A tool is used between rounds; its line belongs to the round that follows it, the same way an
-    // escort order and a mission do.
-    if (Array.isArray(result.events) && result.events.length) {
-      if (!Array.isArray(room.match.pendingEvents)) room.match.pendingEvents = [];
-      room.match.pendingEvents.push(...result.events);
-    }
+    // escort order and a mission do. PB-200 AC4: the event carries that SAME round, so the event a
+    // seat is handed and the line it reads in the log name one round instead of two. The old shape
+    // stamped the event with the round it was used in and logged it at the next one, which is how a
+    // cease fire read as event r1 and log r2.
+    queueEvents(room, result.events);
     touch(room);
     tellRoom(room);
     return { ok: true, events: result.events || [] };
+  }
+
+  // PB-200 AC4: one queue helper for every between-rounds event (a tool, an answer). The ROUND it
+  // is logged in is not stamped here any more: `event.round` is the round the fact happened in and
+  // is pinned by other cards (PB-235 pins a pre-game gift at round 0), so the agreement with the log
+  // is made where the line is built (log.mjs reads the event's own round for the line's round).
+  function queueEvents(room, events) {
+    if (!Array.isArray(events) || !events.length) return events || [];
+    if (!Array.isArray(room.match.pendingEvents)) room.match.pendingEvents = [];
+    room.match.pendingEvents.push(...events);
+    return events;
+  }
+
+  // PB-200 AC1-AC3: the opponent answers a cease fire from the kit. It is not a spend, so it is
+  // allowed on a held clock (a seat cannot be held hostage by a pause), and it is only ever the
+  // OTHER seat's to send. Accept ends the match here rather than at the next tick: the tick skips a
+  // finished room, so a pending "the war is over" event would never be flushed or logged.
+  function ceasefireAnswerOp(username, message) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const accept = message.accept !== false && message.accept !== 0 && message.accept !== "false";
+    const result = answerCeasefire(room.match, mine, accept);
+    if (!result || result.error) return { error: (result && result.error) || "There is no cease fire to answer." };
+    if (!result.accepted) {
+      // Declined: nothing on the board changed, so the line is queued for the next round like any
+      // other between-rounds fact, and the war runs on.
+      queueEvents(room, result.events);
+      touch(room);
+      tellRoom(room);
+      return { ok: true, accepted: false, events: result.events };
+    }
+    // Agreed: the match is over, now. Stop the clock, write the one sentence that ended it, and give
+    // both human seats the same `over` frame the tick sends, plus their own log line.
+    room.clock = "held";
+    room.match.clock = "held";
+    room.note = resultNote(room.match);
+    saveRoom(room);
+    room.dirty = false;
+    tellRoom(room);
+    const over = resultOf(room.match);
+    for (const side of ["blue", "red"]) {
+      const seat = room.seats[side];
+      if (!seat || seat.kind !== "human") continue;
+      const peer = sockets.get(seat.username);
+      if (!peer) continue;
+      const lines = logLines(room.match, side, result.events, room.match.round);
+      if (lines.length) {
+        if (!room.log) room.log = { blue: [], red: [] };
+        if (!Array.isArray(room.log[side])) room.log[side] = [];
+        room.log[side].push(...lines);
+        peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
+      }
+      peer.send({ op: "over", roomId: room.id, winner: null, result: over, note: room.note });
+    }
+    return { ok: true, accepted: true, events: result.events };
   }
 
   function missionOp(username, message) {
@@ -1072,6 +1129,14 @@ export function createLobby() {
         const seat = room.seats[side];
         if (!seat || seat.kind !== "bot") continue;
         if (!room.match.seats) stampSeats(room);
+        // PB-200: a cease fire on the table is answered by the bot seat. How the original's AI
+        // decided whether to accept is UNVERIFIED (it needs disassembly; the card records this), so
+        // the bot DECLINES by PORT DECISION and the war goes on. The answer is queued before
+        // tickMatch, so the line lands in this round's log like every other between-rounds fact.
+        if (room.match.ceasefire && room.match.ceasefire.status === "pending" && room.match.ceasefire.by !== side) {
+          const truce = answerCeasefire(room.match, side, false);
+          if (truce && !truce.error) queueEvents(room, truce.events);
+        }
         let issued = [];
         try {
           issued = botOrders(room.match, side) || [];
@@ -1279,6 +1344,8 @@ export function createLobby() {
     if (op === "route") return routeFor(username, message);
     if (op === "placement") return placementOp(username, message);
     if (op === "tool") return toolOp(username, message);
+    // PB-200: the opponent's answer to a cease fire proposal. `accept:false` (or 0/"false") declines.
+    if (op === "ceasefire_answer") return ceasefireAnswerOp(username, message);
     if (op === "mission") return missionOp(username, message);
     if (op === "entrench") return pieceOp(username, message, "entrench");
     if (op === "repair") return pieceOp(username, message, "repair");

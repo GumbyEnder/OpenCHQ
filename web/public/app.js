@@ -282,6 +282,9 @@ function sayResult(room) {
     : "";
   // PB-137 AC4: the result is written to its own line, not to the flash. It stays there until the
   // player leaves the match; a later `say()` cannot overwrite or clear it.
+  // PB-200: a cease fire ends the match with no winner, and the server's own sentence for it is the
+  // `room.note` below - resultNote(): "The war ended by cease fire at round N. Neither side won." The
+  // page does not write a second version of that sentence.
   if (result && result.reason === "capitals" && result.lastCapital && result.lastCapital.name) {
     const who = result.winner === mine
       ? "You win"
@@ -1813,6 +1816,10 @@ function toolRow(room) {
   // The server's own words for each tool: what it does, what it costs a side, and every stand-in
   // named as one. The page never writes this text itself, so it cannot disagree with the rule.
   const kit = ((room && room.seat && room.seat.kit) || []);
+  // PB-200: the cease fire on the table, as the server reads it for this seat. The offer is answered
+  // by the other side, so the row says which half of the offer this seat holds instead of printing a
+  // button that pretends the war already ended.
+  const truce = (room && room.seat && room.seat.ceasefire) || null;
   for (const tool of wanted) {
     const button = document.createElement("button");
     button.type = "button";
@@ -1826,12 +1833,38 @@ function toolRow(room) {
       // An aircraft on the ground is the other half of this row: a mission is a piece order.
       button.title = brief ? brief.text : "Send it now.";
     }
+    if (tool.name === "ceasefire" && truce) {
+      if (truce.canAnswer) {
+        button.textContent = "Accept cease-fire";
+        button.title = "Both sides agree and the war ends. Declining leaves the board as it is.";
+      } else if (truce.status === "pending") {
+        button.textContent = "Cease-fire proposed";
+        button.title = "Your opponent must agree. The war continues until they do.";
+        button.disabled = true;
+      } else if (truce.status === "declined") {
+        button.title = "Your offer was declined, and the war goes on. You can offer again.";
+      }
+    }
     button.addEventListener("click", () => {
+      // PB-200: an offer this seat may answer is answered, not re-proposed.
+      if (tool.name === "ceasefire" && truce && truce.canAnswer) {
+        send({ op: "ceasefire_answer", accept: true });
+        return;
+      }
       // PB-226: a tool that names a cell arms the picker; everything else is spent on the click.
       if (TOOL_PICKERS.has(tool.name)) return armTool(tool.name);
       send({ op: "tool", tool: tool.name });
     });
     row.append(button);
+    if (tool.name === "ceasefire" && truce && truce.canAnswer) {
+      const decline = document.createElement("button");
+      decline.type = "button";
+      decline.className = "buy";
+      decline.textContent = "Decline cease-fire";
+      decline.title = "Refuse the offer. The war goes on, and nothing on the board changes.";
+      decline.addEventListener("click", () => send({ op: "ceasefire_answer", accept: false }));
+      row.append(decline);
+    }
   }
   // The consequences of the kit, in text rather than in a tooltip: a player should be able to read
   // the kill zone, the wasteland and the three refusals before they fire one (PB-230).

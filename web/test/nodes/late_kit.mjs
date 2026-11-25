@@ -6,11 +6,11 @@
 // or a damage number - a nuke is refused by default, and the blast it deals is PB-230's arm.
 
 import { openMatch } from "../../server/match.mjs";
-import { forSeat } from "../../server/view.mjs";
+import { forSeat, resultOf } from "../../server/view.mjs";
 import { rules } from "../../server/rules.mjs";
 import { assertShippedNukesArmed, withNukesOff } from "./_nuke_default.mjs";
 import { scanSpec } from "../../public/scan.mjs";
-import { nukeStatus, launchEdge, toolsForEra, useTool, intelNote, INTEL_NOTE, CEASEFIRE_NOTE } from "../../server/late.mjs";
+import { nukeStatus, launchEdge, toolsForEra, useTool, intelNote, INTEL_NOTE, answerCeasefire, CEASEFIRE_NOTE, CEASEFIRE_PROPOSED_NOTE, CEASEFIRE_DECLINED_NOTE } from "../../server/late.mjs";
 import { buySatellite, tickSatellites } from "../../server/satellite.mjs";
 
 export const name = "late_kit";
@@ -148,17 +148,45 @@ export async function run(ctx) {
     fail("the second gift did not bring the city over");
   }
 
-  // --- cease-fire is accepted and changes nothing --------------------------------------
+  // --- a cease-fire is a PROPOSAL the opponent answers (PB-200, manual p.32 L1032) ---------
+  // "Your opponent must agree to your proposed cease-fire, or the war continues." The old tool
+  // answered itself; this block is the three facts: offered, declined, agreed.
   const truce = fresh();
   truce.pieces = [sub("blue:sub", "blue", 0, 15)];
   const before = JSON.stringify(truce.sites) + JSON.stringify(truce.pieces);
   const stop = useTool(truce, "blue", "ceasefire");
   if (stop.error) fail("a cease-fire was refused: " + stop.error);
-  if (!stop.events.some((event) => event.type === "ceasefire" && event.note === CEASEFIRE_NOTE)) {
-    fail("the cease-fire did not say it was accepted");
+  if (!stop.events.some((event) => event.type === "ceasefire_proposed" && event.note === CEASEFIRE_PROPOSED_NOTE)) {
+    fail("the cease-fire did not say it was a proposal: " + JSON.stringify(stop.events));
+  }
+  if (truce.over) fail("a proposal ended the match before the opponent answered");
+  if (JSON.stringify(truce.sites) + JSON.stringify(truce.pieces) !== before) {
+    fail("the proposal changed the board; nothing changes until it is answered");
+  }
+  if (!useTool(truce, "blue", "ceasefire").error) fail("a second offer was accepted while one was pending");
+  if (!answerCeasefire(truce, "blue", true).error) fail("the proposer answered its own offer");
+  const refusedTruce = answerCeasefire(truce, "red", false);
+  if (refusedTruce.error) fail("the decline was refused: " + refusedTruce.error);
+  if (truce.over) fail("a declined cease-fire ended the match");
+  if (!refusedTruce.events.some((event) => event.type === "ceasefire_declined" && event.note === CEASEFIRE_DECLINED_NOTE)) {
+    fail("the decline did not say the war continues: " + JSON.stringify(refusedTruce.events));
   }
   if (JSON.stringify(truce.sites) + JSON.stringify(truce.pieces) !== before) {
-    fail("the cease-fire changed the board; the archive says it changes nothing");
+    fail("a declined cease-fire changed the board");
+  }
+  // A declined offer is off the table, so the same or the other side may offer again.
+  if (useTool(truce, "blue", "ceasefire").error) fail("a fresh offer was refused after a decline");
+  if (!answerCeasefire(truce, "blue", true).error) fail("the proposer answered its own second offer");
+  const agreed = answerCeasefire(truce, "red", true);
+  if (agreed.error) fail("the acceptance was refused: " + agreed.error);
+  if (!agreed.events.some((event) => event.type === "ceasefire_accepted" && event.note === CEASEFIRE_NOTE)) {
+    fail("the acceptance did not say the war was over: " + JSON.stringify(agreed.events));
+  }
+  if (!truce.over) fail("an accepted cease-fire did not end the match");
+  if (truce.winner) fail("an accepted cease-fire named a winner; a truce is not a victory");
+  const truceResult = resultOf(truce);
+  if (!truceResult || truceResult.reason !== "ceasefire") {
+    fail("the result does not say ceasefire: " + JSON.stringify(truceResult));
   }
 
   // --- the shipped default is ARMED, and a forced-off config still refuses ------------

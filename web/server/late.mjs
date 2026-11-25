@@ -84,7 +84,12 @@ export function homeSetComplete(match) {
 // ones become neutral, or neutral ones become allied", so a neutral pick is the second half of the
 // tool's job, not a mistake. The refusal that lived here until PM 8843 §2 was a stand-in that read
 // the one-sided half of the sentence.
-export const CEASEFIRE_NOTE = "Cease fire accepted.";
+export const CEASEFIRE_NOTE = "Cease fire accepted. The war is over.";
+// PB-200 (manual p.32, L1032): "ask for a cease-fire... Your opponent must agree to your proposed
+// cease-fire, or the war continues." The tool was an instant "accepted" with no opponent in it, and
+// its log line arrived a round after the event that caused it. Both facts are these two strings.
+export const CEASEFIRE_PROPOSED_NOTE = "Cease fire proposed. Your opponent must agree; until they do, the war continues.";
+export const CEASEFIRE_DECLINED_NOTE = "Cease fire declined. The war continues.";
 export const NUKE_NOTE = "A nuke is refused.";
 
 // PB-224 (PM 8905 §2): "satellite" is NOT a tool any more. A recon satellite is an owned unit with
@@ -109,10 +114,10 @@ export function toolOpensWhileHeld(match, tool) {
 // PB-235 AC4: the refusal a mid-war hold gives aid. "Start the clock first." is the right sentence
 // for the other tools and the wrong one here: the player has a clock, it is held, and the manual
 // (p.14) is why aid is the tool they are reaching for before it starts. The sentence names the state
-// the tool needs (the pre-game) and the state the room is in (a mid-war hold), and it deliberately
-// does NOT offer a cease-fire: this build has no cease-fire state (`CEASEFIRE_NOTE` says the tool
-// "changes nothing", config `notes.readiness` records no peace state), so naming one would promise a
-// state the player cannot enter. AC2 is the PM's ruling, not this string.
+// the tool needs (the pre-game) and the state the room is in (a mid-war hold). It deliberately does
+// NOT offer a cease-fire: PB-200 makes a cease fire a PROPOSAL the opponent answers, not a state a
+// held room can enter, so naming one would promise a door this sentence cannot open. AC2 is the
+// PM's ruling, not this string.
 export const AID_HELD_MID_WAR = "Foreign aid is used in the pre-game; the clock is held mid-war.";
 
 // Deduct a priced tool's cost from the seat's pool, in integer millions. Validation of whether a
@@ -238,7 +243,7 @@ export function kitBriefing(match, side) {
     foes > 0, foes > 0 ? null : "There is nothing to reveal.");
   add("aid", "Foreign aid", "Turns the nation of the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner; the manual says the player selects the city, that a city inside the opponent's home country can never be a target (p.30), and that a nation moves one step at a time, hostile to neutral and neutral to allied, with more gifts needed the more cities it has. It also says the other side can give aid to the same nation, negating your efforts: a gift from the other side to the same nation cancels one gift you had banked there. That arithmetic and the one-for-one cancel are a " + STAND_IN + ": the archive never printed either count.",
     turnable > 0, turnable > 0 ? null : (homeKnown ? "There is no city to turn." : AID_HOME_UNKNOWN));
-  add("ceasefire", "Cease fire", "Accepted, and it changes nothing: no movement, no damage, no income.", true);
+  add("ceasefire", "Cease fire", "A proposal: your opponent must agree to it, or the war continues. Until they answer, nothing changes.", true);
 
   if (eraHas(match && match.era, "nuke")) {
     const radiusText = Number.isFinite(radius) && radius >= 1
@@ -389,6 +394,46 @@ function aidTarget(match, side, target) {
   return { site };
 }
 
+// PB-200: the cease fire on the table, as one seat reads it. Null when nobody has offered one.
+// `yours` and `canAnswer` are the seat's own two facts: an offer is answered by the OTHER side, and
+// a seat that offered it waits. The page draws its buttons from this, never from its own copy.
+export function ceasefireOf(match, side) {
+  const truce = match && match.ceasefire && typeof match.ceasefire === "object" ? match.ceasefire : null;
+  if (!truce || typeof truce.status !== "string") return null;
+  const by = truce.by === "blue" || truce.by === "red" ? truce.by : null;
+  return {
+    status: truce.status,
+    by,
+    round: Number.isInteger(truce.round) ? truce.round : null,
+    answeredRound: Number.isInteger(truce.answeredRound) ? truce.answeredRound : null,
+    yours: by !== null && by === side,
+    canAnswer: truce.status === "pending" && by !== null && by !== side,
+  };
+}
+
+// PB-200 AC1-AC3: the opponent's answer. Only the side that did NOT offer can answer, and only
+// while the offer is pending. Accept ends the match with `winReason.kind === "ceasefire"` (no
+// winner: a truce is not a victory); decline leaves the board exactly as it was and the war runs on.
+// The caller owns the clock, the note and the sockets - this function only writes the match.
+export function answerCeasefire(match, side, accept) {
+  if (!match) return { error: "There is no match." };
+  if (!["blue", "red"].includes(side)) return { error: "Unknown side: " + side + "." };
+  if (match.over) return { error: "The match is over." };
+  const read = ceasefireOf(match, side);
+  if (!read || read.status !== "pending") return { error: "There is no cease fire on the table." };
+  if (read.yours) return { error: "You proposed it; your opponent answers it." };
+  const round = Number(match.round) || 0;
+  match.ceasefire.status = accept ? "accepted" : "declined";
+  match.ceasefire.answeredRound = round;
+  if (!accept) {
+    return { ok: true, accepted: false, events: [{ type: "ceasefire_declined", side, by: read.by, round, note: CEASEFIRE_DECLINED_NOTE }] };
+  }
+  match.over = true;
+  match.winner = null;
+  match.winReason = { kind: "ceasefire", by: read.by, round };
+  return { ok: true, accepted: true, events: [{ type: "ceasefire_accepted", side, by: read.by, round, note: CEASEFIRE_NOTE }] };
+}
+
 // One tool use. Returns { ok, events } or { error }.
 export function useTool(match, side, tool, target) {
   if (!match) return { error: "There is no match." };
@@ -473,8 +518,15 @@ export function useTool(match, side, tool, target) {
   }
 
   if (name === "ceasefire") {
-    // Accepted, and deliberately changes nothing: no movement, no damage, no income.
-    events.push({ type: "ceasefire", side, round, note: CEASEFIRE_NOTE });
+    // PB-200: a PROPOSAL, not an ending. The opponent answers it (answerCeasefire), and the war
+    // runs on until they do. One offer at a time: a second click while one is pending is refused
+    // rather than queued, so there is never a stack of offers to answer.
+    const open = ceasefireOf(match, side);
+    if (open && open.status === "pending") {
+      return { error: open.yours ? "Your cease fire is already with your opponent." : "A cease fire is already on the table; answer it." };
+    }
+    match.ceasefire = { by: side, round, status: "pending", answeredRound: null };
+    events.push({ type: "ceasefire_proposed", side, round, note: CEASEFIRE_PROPOSED_NOTE });
     return { ok: true, events };
   }
 

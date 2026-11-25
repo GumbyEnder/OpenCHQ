@@ -96,8 +96,14 @@ export function logLines(match, side, events, round) {
   const lines = [];
   const turn = Number.isFinite(Number(round)) ? Number(round) : Number(match && match.round) || 0;
   const every = Number(payEvery()) || 0;
+  // PB-200 AC4: a line's round is the event's OWN round when the event carries one. A tool or an
+  // answer is used between rounds and drained into the next one, so the frame it arrives in is one
+  // round ahead of the fact it reports - the shape that made a cease fire read as event r1 / log r2.
+  // Events with no round field (an escort, a scramble, an income line built by a caller) keep the
+  // frame's round, which is what every earlier card pinned.
+  let lineTurn = turn;
   const push = (text) => {
-    if (text) lines.push({ round: turn, text });
+    if (text) lines.push({ round: lineTurn, text });
   };
 
   // PB-123: overrun events are grouped per cell per side before the loop, so two units lost on one
@@ -155,6 +161,11 @@ export function logLines(match, side, events, round) {
     if (!event || !event.type) continue;
     const mine = event.side === side;
     const theirs = SIDES.includes(event.side) && event.side !== side;
+    // PB-200 AC4: this event's own round, when it names one.
+    const ownRound = event.round;
+    lineTurn = ownRound !== null && ownRound !== undefined && ownRound !== "" && Number.isInteger(Number(ownRound))
+      ? Number(ownRound)
+      : turn;
 
     switch (event.type) {
       case "income": {
@@ -384,8 +395,24 @@ export function logLines(match, side, events, round) {
         if (mine) push("a recon satellite has burned its last booster fuel and fallen out of orbit");
         else if (legible(match, side, event)) push("an enemy satellite fell out of orbit");
         break;
-      case "ceasefire":
-        if (mine) push("cease fire accepted; nothing changes");
+      case "ceasefire": // an event written before PB-200: the old tool accepted on the spot
+        if (mine) push("cease fire accepted; the war is over");
+        break;
+      // PB-200: an offer, a refusal and an agreement are three different facts, and each seat reads
+      // them in its own voice. The offer is public (it was made to the other seat), so both sides get
+      // a line; only the proposer reads the refusal as a refusal of its own offer.
+      case "ceasefire_proposed":
+        if (mine) push("cease fire proposed; your opponent must agree");
+        else push("the enemy proposed a cease fire; answer it in the kit");
+        break;
+      case "ceasefire_declined":
+        // `mine` is the seat reading the log; the event's `side` is the DECLINER (late.mjs files it
+        // with side = the answering seat, by = the proposer). So the decliner owns the act.
+        if (mine) push("you declined the cease fire; the war goes on");
+        else push("your cease fire was declined; the war goes on");
+        break;
+      case "ceasefire_accepted":
+        push("cease fire agreed; the war is over");
         break;
       case "aid":
         // PB-228: a gift buys a step for the city's nation, and it can be banked without turning

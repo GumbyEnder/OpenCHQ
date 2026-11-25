@@ -20,7 +20,7 @@ import { combatRules, enemyRouteSteps, payEvery, roundSeconds as roundLength, si
 import { metersFor, oilReadout } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
-import { kitBriefing } from "./late.mjs";
+import { kitBriefing, ceasefireOf } from "./late.mjs";
 import { ensureStrength } from "./combat.mjs";
 import { holderOf as capitalHolder } from "./capitals.mjs";
 import { ownershipOf } from "./territory.mjs";
@@ -224,6 +224,9 @@ function seatStatus(match, side) {
     // The late kit with its consequences in words: the nuke's guard radius, the launch limit left,
     // and every stand-in named as one. A tool a player cannot understand is a rule they cannot use.
     kit: kitBriefing(match, side),
+    // PB-200: the cease fire on the table as this seat reads it - pending/declined/accepted, who
+    // offered it, and whether this seat may answer. The page draws its buttons from this.
+    ceasefire: ceasefireOf(match, side),
   };
 }
 
@@ -368,10 +371,17 @@ export function capitalListOf(match) {
 // has a winner but no capital to name, and says so instead of inventing one.
 export function resultOf(match) {
   if (!match || !match.over) return null;
-  const reason = match.winReason && match.winReason.kind === "capitals" ? match.winReason : null;
+  const kind = match.winReason && typeof match.winReason.kind === "string" ? match.winReason.kind : null;
+  const reason = kind === "capitals" ? match.winReason : null;
+  // PB-200 AC3: a cease fire ends the match with its own reason and no winner. A truce is not a
+  // victory, so `winner` stays null and the end screen says so instead of printing a winner.
+  const truce = kind === "ceasefire" ? match.winReason : null;
   return {
     winner: match.winner || null,
-    reason: reason ? "capitals" : (match.winner ? "resignation" : "over"),
+    reason: truce ? "ceasefire" : reason ? "capitals" : (match.winner ? "resignation" : "over"),
+    ceasefire: truce
+      ? { by: truce.by ?? null, round: truce.round ?? null }
+      : null,
     lastCapital: reason
       ? { siteId: reason.siteId ?? null, name: String(reason.name || ""), from: reason.from || null, round: reason.round ?? null }
       : null,
@@ -386,6 +396,13 @@ export function resultNote(match) {
   const result = resultOf(match);
   if (!result) return "The match is over.";
   const who = sideWord(result.winner);
+  if (result.reason === "ceasefire") {
+    // Both sides agreed, so neither won: the sentence names the round and says so plainly.
+    const at = result.ceasefire && Number.isInteger(result.ceasefire.round)
+      ? " at round " + result.ceasefire.round
+      : "";
+    return "The war ended by cease fire" + at + ". Neither side won.";
+  }
   if (result.reason === "capitals" && result.lastCapital && result.lastCapital.name) {
     const n = result.capitals.length;
     return who + " wins: " + result.lastCapital.name + " fell at round " + result.lastCapital.round +

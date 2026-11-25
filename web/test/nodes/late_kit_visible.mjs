@@ -132,10 +132,17 @@ export async function run() {
     if (!/aid/i.test(aidLine[0].text)) fail("the log does not name aid: " + aidLine[0].text);
     eq("aid is not the other seat's news when he cannot see it", logLines(m, "red", aid.events, 4).length, 1);
 
-    // Cease-fire is recorded even though it changes nothing.
+    // PB-200: a cease-fire is a proposal, and BOTH seats read a line for it - the offerer is told it
+    // is waiting on the opponent, the opponent is told there is an offer to answer.
     const cf = useTool(m, "blue", "ceasefire", null);
     if (cf.error) fail("the cease-fire was refused: " + cf.error);
-    if (!logLines(m, "blue", cf.events, 4).length) fail("a cease-fire produced no log line");
+    const ownLine = logLines(m, "blue", cf.events, 4);
+    const foeLine = logLines(m, "red", cf.events, 4);
+    if (!ownLine.length) fail("a cease-fire produced no line for the side that offered it");
+    if (!/proposed/i.test(ownLine[0].text)) fail("the offerer is not told the offer is pending: " + ownLine[0].text);
+    if (!foeLine.length) fail("the opponent is not told a cease-fire was proposed");
+    if (!/cease fire/i.test(foeLine[0].text)) fail("the opponent's line does not name the offer: " + foeLine[0].text);
+    if (m.over) fail("a cease-fire proposal ended the match without an answer");
   }
 
   // --- an era without the kit offers none of it ---------------------------------------------
