@@ -27,7 +27,8 @@ import {
   purseSummaryParts,
   purseText,
   refreshSelection,
-  refusalText,
+  refusalGround,
+  refusalLine,
   restrictedTargetRefusal,
   routeRequest,
   selectionNote,
@@ -2894,11 +2895,19 @@ function connect() {
       // The server's sentence is what the player reads. It is never swallowed, and a queued
       // order that was refused says which one.
       settleOrder(message.id);
-      const refusal = refusalText(message);
+      // PB-242 AC2: the sentence the server sent stays byte-identical and is what the player reads;
+      // the ground the aim read is appended as its own clause on the SAME line, because a lake and
+      // the open sea both refusing with one sentence is the defect this ticket is about. The field
+      // arrived dead before the lobby copy-through: main.mjs forwarded reason/terrain as null and
+      // this handler had nothing to print. Naming the ground inside the sentence itself is PB-240's.
+      const refusal = refusalLine(message);
       // PB-044 (T-021 AC8): the player reads the sentence, never the internal order id. The id
       // stays in the console, where a developer can still trace a queued order.
       if (message.id) console.debug("[order " + message.id + "] " + refusal);
       say(refusal);
+      // The Log panel keeps a line for the refusal too, so it survives the flash going away.
+      const ground = refusalGround(message);
+      if (ground) noteLog([{ round: room && room.round ? room.round : 0, text: ground }]);
       // PB-177 item 4: the refusal re-derives the note instead of leaving the previous offer up, and
       // the hovered cell is remembered by key so a route reply still in flight cannot restore it.
       refusedHover = hoverKey || (preview && preview.to

@@ -391,6 +391,27 @@ export function refusalText(message) {
   return text || REFUSED;
 }
 
+// PB-242 AC2: the ground an aim read, printed as its own line beside the refusal.
+//
+// The sentence itself may not name the terrain yet — PM 9011 §1(b) keeps that wording in PB-240 —
+// so the page prints the field the server sent instead of rewording the server's sentence. Empty
+// when a frame names no ground (an order refusal, a capital-ring refusal, a mapping gap), so
+// nothing is invented for those.
+export function refusalGround(message) {
+  const terrain = message && typeof message.terrain === "string" ? message.terrain.trim() : "";
+  return terrain ? "Ground: " + terrain + "." : "";
+}
+
+// The line the player actually reads when an order is refused: the server's sentence untouched,
+// with the ground the aim read appended as its own clause. Two functions, not one, because the
+// sentence is PB-240's wording and must stay byte-identical on its own — this one only decides how
+// the flash is assembled. A frame that names no ground returns the sentence exactly.
+export function refusalLine(message) {
+  const sentence = refusalText(message);
+  const ground = refusalGround(message);
+  return ground ? sentence + " " + ground : sentence;
+}
+
 // ---- the shop's half ---------------------------------------------------------------------
 // The panel draws only what the server sent: prices and the refusal sentence come from the
 // shop payload, and the player's own pool comes from the seat. No figure is invented here and

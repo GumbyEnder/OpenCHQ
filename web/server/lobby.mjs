@@ -787,7 +787,18 @@ export function createLobby() {
       };
     }
     const result = useTool(room.match, mine, String(message.tool ?? ""), message.to || null);
-    if (!result || result.error) return { error: (result && result.error) || "That tool was refused." };
+    if (!result || result.error) {
+      // PB-242 AC2: a refusal carries WHY it refused (`reason`) and, for a cell the territory map
+      // leaves unassigned, whether the ground was water or land (`terrain`). Rebuilding the reply
+      // with only `error` here dropped both fields, so main.mjs's passthrough forwarded two nulls
+      // and a lake read to a player exactly like the open sea - the one distinction this ticket is
+      // about. Copy them through; the sentence itself is not touched (its wording is PB-240's).
+      return {
+        error: (result && result.error) || "That tool was refused.",
+        reason: (result && result.reason) ?? null,
+        terrain: (result && result.terrain) ?? null,
+      };
+    }
     // A tool is used between rounds; its line belongs to the round that follows it, the same way an
     // escort order and a mission do.
     if (Array.isArray(result.events) && result.events.length) {
