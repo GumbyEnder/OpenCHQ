@@ -575,7 +575,7 @@ export function hasFreeUnitSlot(match) {
 // readiness elsewhere - the readiness timer the port already models, not a latch on a piece. So
 // there is no gate here and none in config; the only difficulty lever left is 0xe94c.
 
-function botBuy(match, side, events, urgentSite = null) {
+function botBuy(match, side, events, urgentSite = null, level = null) {
   const seat = match.sides && match.sides[side];
   if (!seat) return false;
   const price = priceOf("infantry");
@@ -616,14 +616,25 @@ function botBuy(match, side, events, urgentSite = null) {
   // still unready, and a bot obeys the same readiness rule as the player (T-011 AC6).
   // When a site of ours is under threat, the original buys AT that site instead
   // (FUN_107e_1612, decompiled.c 1644-1657), so the threatened site is the anchor.
+  //
+  // PB-262: the anchor is where the level shows. decompiled.c 1632 re-draws from another of our
+  // sites while `*(int *)0x1a0 < 5` and the picked site's 0x10ae timer is nonzero; at level 5 that
+  // guard is false and the AI buys at the picked site with its timer still running. So level 5 may
+  // take an UNREADY own cell, but only at the anchor site - the exception is about the site the
+  // AI chose, never a licence to buy at any unready city.
+  const drawLevel = Number.isInteger(Number(level)) ? Number(level) : null;
+  const anchored = drawLevel !== null && drawLevel >= 5 && urgentSite
+    && Number.isFinite(Number(urgentSite.x)) && Number.isFinite(Number(urgentSite.y));
   const sites = urgentSite ? [urgentSite]
     : (match.sites || []).filter((site) => site && site.owner === side);
   let target = null;
   let best = Infinity;
   for (let id = 0; id < mask.mask.length; id++) {
-    if (mask.mask[id] !== 1) continue;
     const x = id % CELL_W;
     const y = (id - x) / CELL_W;
+    const state = mask.mask[id];
+    const onAnchor = anchored && x === Number(urgentSite.x) && y === Number(urgentSite.y);
+    if (state !== 1 && !(onAnchor && state >= 2)) continue;
     let gap = 0;
     for (const site of sites) {
       const dx = Math.abs(Number(site.x) - x);
@@ -639,7 +650,7 @@ function botBuy(match, side, events, urgentSite = null) {
 
   let bought;
   try {
-    bought = buy(match, side, "infantry", target.x, target.y, board);
+    bought = buy(match, side, "infantry", target.x, target.y, board, drawLevel);
   } catch {
     return false;
   }
@@ -744,7 +755,7 @@ export function ordersFor(match, side) {
   // Reinforce first, so a unit bought this round can march this round. The buy goes to the
   // threatened site when there is one (FUN_107e_1612) and spends one pass action; it also spends a
   // repeat where one is left and never refuses on the counter (1649-1651).
-  if (spent < budget && botBuy(match, side, events, threatened.length ? threatened[0].site : null)) {
+  if (spent < budget && botBuy(match, side, events, threatened.length ? threatened[0].site : null, level)) {
     spent += 1;
     spendRepeat(repeat);
     syncRepeatPool();

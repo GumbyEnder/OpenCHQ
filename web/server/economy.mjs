@@ -211,7 +211,7 @@ function dropValue(list, value) {
 
 // --- buying ------------------------------------------------------------------------------
 
-export function buy(match, side, kind, x, y, board = null) {
+export function buy(match, side, kind, x, y, board = null, level = null) {
   if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) {
     return { error: "There is no match to buy into." };
   }
@@ -232,11 +232,19 @@ export function buy(match, side, kind, x, y, board = null) {
   const cy = Number(y);
   if (!Number.isInteger(cx) || !Number.isInteger(cy)) return { error: "A purchase needs whole cells." };
 
+  // PB-262: the AI's level travels into the buy. decompiled.c 1632 is
+  // `*(int *)0x1a0 < 5 && *(char *)(site + 0x10ae) != 0` -> FUN_107e_307a(site, 0) (1635), i.e.
+  // levels 2-4 re-draw from ANOTHER of our sites when the site the AI picked is still counting
+  // down, and level 5 buys at the picked site anyway. The level changes which site's unit the buy
+  // draws from; it changes no price and no readiness arithmetic (1441 still charges the price).
+  const drawLevel = Number.isInteger(Number(level)) ? Number(level) : null;
+  const allowUnreadySite = drawLevel !== null && drawLevel >= 5;
+
   // Where it may stand is the placement module's rule (D-019, and D-025's coastal berths). That
   // module also owns the two occupancy layers, so "Two pieces cannot share a cell" is no longer
   // asked here: a plane and the ground unit in the same city are on different layers (T-021).
   // The page paints the cells that same module returns.
-  const placement = canPlace(match, side, unitKind, cx, cy, board);
+  const placement = canPlace(match, side, unitKind, cx, cy, board, { allowUnreadySite });
   if (placement.error) return { error: placement.error, site: placement.site ? placement.site.id : null };
 
   if (!Number.isFinite(seat.cash) || seat.cash < price) {
@@ -286,6 +294,7 @@ export function buy(match, side, kind, x, y, board = null) {
     ok: true,
     piece,
     readiness,
+    level: drawLevel,
     // PB-044: the message names the place, not the coordinates. `label` is the site's own name,
     // or its kind and the nearest named city for an unnamed berth.
     site: home && home.id !== undefined ? home.id : null,

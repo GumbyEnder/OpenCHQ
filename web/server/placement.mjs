@@ -598,7 +598,7 @@ export function placementRefusal(kind, domain, rule = "", detail = "") {
   return head + "that is not " + what + "." + (rule ? " " + rule : "");
 }
 
-export function canPlace(match, side, kind, x, y, board) {
+export function canPlace(match, side, kind, x, y, board, options = {}) {
   const result = placementMask(match, side, kind, board);
   if (result.error) return result;
   const cx = Number(x);
@@ -684,7 +684,13 @@ export function canPlace(match, side, kind, x, y, board) {
   // PB-165: anything but 1 is unready - 2 (yellow, soon) and 3 (red, a long wait) are both
   // refused, and the refusal names the round either way. The colour is presentation; the rule is
   // the same one.
-  if (value !== 1) {
+  //
+  // PB-262: the ORIGINAL's buy at 1632 is `(0x1a0 < 5) && (site's 0x10ae != 0)` -> re-draw from
+  // another site (FUN_107e_307a, 1635). The readiness guard there is a LEVEL-5 EXCEPTION, not a
+  // universal refusal: above level 4 the AI buys at the site it picked while that site's timer is
+  // still running. `allowUnreadySite` is that branch and only the bot's level-5 buy passes it;
+  // a player's click and every level 2-4 buy keep the refusal below.
+  if (value !== 1 && options.allowUnreadySite !== true) {
     return { error: unreadyRefusal(site, label), domain, site, readyRound: readyRoundOf(site) };
   }
   // The cell the unit actually lands on (D-026): the footprint cell the player clicked. For a
