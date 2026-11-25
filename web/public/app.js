@@ -2622,13 +2622,30 @@ const DIALOG_PAINTERS = {
   war(body) {
     const dl = document.createElement("dl");
     dl.className = "dlgrid";
+    // PB-245 (manual printed p.31): "A counter in Monitor One tells you how much time remains in
+    // mandatory peace; after that, either player can start the war by pressing Begin Hostilities/
+    // Cease Fire." p.32 War Status: "only after the mandatory time has elapsed." The counter is the
+    // server's own `peace` object - the page never recomputes a deadline.
+    const peace = room.peace;
     definition(dl, "Blue", room.blue ? (room.blue.kind === "bot" ? "Bot" : room.blue.username) : "—");
     definition(dl, "Red", room.red ? (room.red.kind === "bot" ? "Bot" : room.red.username) : "—");
     definition(dl, "You", room.you || "—");
     definition(dl, "Era", eraName(room.era));
     definition(dl, "Clock", room.clock || "—");
     definition(dl, "Round", String(room.round));
+    if (peace && peace.active) {
+      const left = Math.max(0, Math.trunc(Number(peace.remaining) || 0));
+      definition(dl, peace.coldWar ? "Cold war" : "Cease-fire",
+        left > 0 ? left + (left === 1 ? " round of mandatory peace left" : " rounds of mandatory peace left")
+          : "the mandatory peace has elapsed");
+    }
     body.append(dl);
+    if (peace && peace.active) {
+      const peacetime = document.createElement("p");
+      peacetime.className = "dialogfoot";
+      peacetime.textContent = "Peacetime: transfers are instant, oil is neither used nor generated, cities do not go unready, cash still accrues, and the enemy is invisible except to an Intel Scan.";
+      body.append(peacetime);
+    }
     // The era's capitals, with the holder the server's site records carry, and - once the match is
     // over - which of them fell last. This is the same list the end screen reads, so a player can
     // check the sentence against the board without leaving the panel.
@@ -2657,6 +2674,21 @@ const DIALOG_PAINTERS = {
     run.type = "button";
     run.textContent = room.clock === "running" ? "Hold the clock" : "Run the clock";
     run.addEventListener("click", () => send({ op: room.clock === "running" ? "hold" : "run" }));
+    // PB-245 (p.31-32): Begin Hostilities / Cease Fire, exactly as the manual's War Status names it.
+    // The server owns the mandatory counter and the refusal; the button is only disabled while the
+    // server says the counter is still running, so a click can never be the page's own guess about
+    // the deadline. Without this control an accepted cease fire is a war the page cannot restart.
+    if (peace && peace.active) {
+      const begin = document.createElement("button");
+      begin.type = "button";
+      begin.textContent = "Begin Hostilities";
+      begin.disabled = peace.canResume !== true;
+      begin.title = peace.canResume
+        ? "Start the war again. Both sides leave the peace."
+        : "The mandatory peace has not elapsed yet.";
+      begin.addEventListener("click", () => send({ op: "resume_war" }));
+      group.append(begin);
+    }
     const leave = document.createElement("button");
     leave.type = "button";
     leave.className = "ghost";

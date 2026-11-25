@@ -446,7 +446,12 @@ export function logLines(match, side, events, round) {
         push("cease fire agreed; the war is at peace");
         break;
       case "peace_broken":
-        push("the peace is broken; the war is on again");
+        // PB-245b (p.31-32): the seat that pressed Begin Hostilities reads what it did; the OTHER
+        // seat reads the sentence naming the breaker, which is the one line p.31's "one message to
+        // the other player" owes it. The sentence is carried on the event (peace.mjs), so the two
+        // seats cannot read two different accounts of the same act.
+        if (mine) push("you began hostilities; the war is on again");
+        else push(String(event.note || "the peace is broken; the war is on again"));
         break;
       case "aid":
         // PB-228: a gift buys a step for the city's nation, and it can be banked without turning

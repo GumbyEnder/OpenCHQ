@@ -936,6 +936,11 @@ export function createLobby() {
     if (!result || result.error) {
       return { error: (result && result.error) || "That was refused.", remaining: (result && result.remaining) || 0 };
     }
+    // PB-245b (frodo 9236 §5): the note the agreement left behind - "Cease fire accepted. The war is
+    // at peace." - used to outlive the restart, so the War panel went on announcing a peace that no
+    // longer stood. It is CLEARED, not rewritten: the break already has one line in each seat's log,
+    // and a second sentence here would be the page telling the same act twice.
+    room.note = "";
     queueEvents(room, result.events);
     saveRoom(room);
     room.dirty = false;

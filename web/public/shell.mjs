@@ -55,6 +55,18 @@ export function stripInfoParts(room) {
     const paused = room.clock === "running" && Number(room.speed) === 0;
     parts.push({ text: paused ? "paused" : room.clock, phase: true });
   }
+  // PB-245 (manual printed p.31): "A counter in Monitor One tells you how much time remains in
+  // mandatory peace; after that, either player can start the war by pressing Begin Hostilities/
+  // Cease Fire" (p.32 War Status). This strip is the page's monitor row, so the counter rides it:
+  // the label names the condition, the number is the rounds left, and a war simply has no part.
+  const peace = room.peace;
+  if (peace && peace.active) {
+    const left = Math.max(0, Math.trunc(Number(peace.remaining) || 0));
+    parts.push({
+      text: (peace.coldWar ? "cold war" : "cease-fire") +
+        (left > 0 ? ", " + left + (left === 1 ? " round" : " rounds") + " left" : ", war may resume"),
+    });
+  }
   if (room.over) {
     // The reason belongs in the strip too: the round bar stops for a resignation and for a capital
     // win alike, and "blue won" alone is the same sentence for both.

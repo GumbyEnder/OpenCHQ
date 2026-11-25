@@ -70,6 +70,10 @@ export function peaceOf(match) {
     untilRound,
     remaining: Math.max(0, untilRound - round),
     canResume: match.peace.active === true && round >= untilRound,
+    // The label Monitor One's counter prints. An agreed cease fire is a cease fire; a scenario that
+    // OPENS at peace (PB-245b, p.31 "At the start of the game, this is called the cold war") sets
+    // its own flag, and until then this reads false and the counter says "cease-fire".
+    coldWar: match.peace.coldWar === true,
     by: SIDES.includes(match.peace.by) ? match.peace.by : null,
     brokenBy: SIDES.includes(match.peace.brokenBy) ? match.peace.brokenBy : null,
   };
