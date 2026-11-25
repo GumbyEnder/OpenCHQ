@@ -148,6 +148,8 @@ export function appendFrame(room, events, handle = sharedDb) {
     strengths,
     owners,
   };
+  // The round a match ended on carries the state its digest is taken over (AC1).
+  if (match.over) frame.state = finalStateOf(match);
   const blob = gz(frame);
   handle
     .prepare("INSERT OR REPLACE INTO match_rounds (match_id, round, payload) VALUES (?, ?, ?)")
@@ -163,10 +165,7 @@ export function finishFilm(room, handle = sharedDb, now = new Date()) {
   const match = room.match;
   const existing = handle.prepare("SELECT final_digest FROM matches WHERE id = ?").get(String(room.id));
   if (existing && existing.final_digest) return { id: String(room.id), digest: existing.final_digest, already: true };
-  const final = packMatch(match);
-  final.over = match.over === true;
-  final.winner = match.winner ?? null;
-  final.winReason = match.winReason ?? null;
+  const final = finalStateOf(match);
   const blob = gz(final);
   const digest = digestOf(final);
   const frames = handle.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(payload)), 0) AS bytes FROM match_rounds WHERE match_id = ?").get(String(room.id));
@@ -178,6 +177,20 @@ export function finishFilm(room, handle = sharedDb, now = new Date()) {
     )
     .run(now.toISOString(), String(match.winner ?? ""), Number(match.round) || 0, blob, digest, bytes, String(room.id));
   return { id: String(room.id), digest, bytes, rounds: Number(match.round) || 0 };
+}
+
+// AC1 needs the last REPLAY FRAME to hash to the recorded digest, which means the frame has to carry
+// the state the digest is taken over. One function builds it, the last frame stores it, and
+// `finishFilm` hashes the same object - so the two cannot drift apart. Earlier rounds carry no state:
+// the per-round strengths/owners are enough to animate them, and a full state per round would triple
+// the stored bytes for nothing.
+export function finalStateOf(match) {
+  const state = packMatch(match);
+  if (!state) return null;
+  state.over = match.over === true;
+  state.winner = match.winner ?? null;
+  state.winReason = match.winReason ?? null;
+  return state;
 }
 
 export function filmMeta(roomId, handle = sharedDb) {

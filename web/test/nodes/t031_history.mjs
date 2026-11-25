@@ -93,13 +93,21 @@ export async function run() {
   match.over = true;
   match.winner = "blue";
   match.clock = "held";
+  // The round a match ended on is appended WITH its state, which is what AC1 hashes.
+  history.appendFrame(room, [], handle);
   const ended = history.finishFilm(room, handle, new Date("2026-11-25T01:00:00.000Z"));
-  const finalState = history.packMatch(match);
-  finalState.over = true;
-  finalState.winner = "blue";
-  finalState.winReason = match.winReason ?? null;
-  const expected = createHash("sha256").update(history.canonicalJson(finalState)).digest("hex");
+  const expected = createHash("sha256").update(history.canonicalJson(history.finalStateOf(match))).digest("hex");
   eq(ended.digest, expected, "the recorded digest is the canonical hash of the final state");
+
+  // ---- AC1: the last replay frame hashes to the recorded digest ------------------------
+  const framesAfter = history.framesOf(room.id, handle);
+  const lastFrame = framesAfter[framesAfter.length - 1];
+  eq(Boolean(lastFrame.frame.state), true, "the closing frame carries the state the digest is taken over");
+  eq(history.digestOf(lastFrame.frame.state), ended.digest,
+    "AC1: the last replay frame's canonical hash equals the final_digest written when the match ended");
+  // And the earlier frames do not pay for it: no state before the closing round.
+  const earlierWithState = framesAfter.slice(0, -1).filter((row) => row.frame.state);
+  eq(earlierWithState.length, 0, "a mid-match frame carries no full state");
   const again = history.finishFilm(room, handle);
   eq(again.already === true && again.digest === ended.digest, true, "a second finish call cannot overwrite the digest");
   const row = handle.prepare("SELECT ended_at, winner, rounds, stored_bytes, final_digest FROM matches WHERE id = ?").get(room.id);
