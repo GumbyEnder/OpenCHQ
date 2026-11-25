@@ -2,9 +2,13 @@
 
 Source: `decompiled.c`, the Ghidra export at
 `/mnt/nas/Projects/Command HQ/modern/docs/ghidra/export/decompiled.c` (read 2026-11-13; the same
-program as the project `~/agents/game/ghidra-probe/CHQ.rep`, `CHQ_unpacked.EXE`). Line numbers below
-are that file's. Addresses are segment:offset as Ghidra names them. Anything marked UNVERIFIED is
-something the bytes did not settle — not a guess wearing a measurement's clothes.
+program as the project `~/agents/game/ghidra-probe/CHQ.rep`, `CHQ_unpacked.EXE`). That copy is
+1,596,459 B, **md5 547f99f9**, and every line number below means *that* file. A second export exists
+at `/tmp/chq-export-backup/decompiled.c` (1,595,932 B, md5 5c7b185c) which agrees through line 1200
+and then drifts — it puts `0xe94c` at 3407/3412/3435 and the two setters at 13223/15149 — so a
+grader on the other copy must re-find each cite by content, not by number. Addresses are
+segment:offset as Ghidra names them. Anything marked UNVERIFIED is something the bytes did not
+settle — not a guess wearing a measurement's clothes.
 
 ## 1. Where the AI acts
 
@@ -18,7 +22,7 @@ per-site score row for all `0x54` = 84 sites, then runs the piece pass:
 ```
 
 `ai_command_process` is `FUN_107e_4616 @ 107e:4616` (line 3679). The defence itself is
-`FUN_107e_0bd6 @ 107e:0bd6` (lines 1124-1302). Its loop (1173-1204) does this:
+`FUN_107e_0bd6 @ 107e:0bd6` (lines 1126-1268). Its loop (1173-1204) does this:
 
 * `0xe942` = `0xc350 ^ 0xc0` — the side taking this turn (1146);
 * `0xe47e` = one flagged site from a two-entry table (1147);
@@ -31,47 +35,71 @@ per-site score row for all `0x54` = 84 sites, then runs the piece pass:
   * two other routines this task does not cover (`FUN_107e_1ace`, `FUN_107e_1bec`, 1194-1201);
 * after acting, rescore the sites it touched (1235-1237).
 
-### 1a. The pass ceiling is the constant 3; `0xe94c` is a repeat counter, not a per-pass budget
+### 1a. The pass ceiling is the constant 3 (combat tail 4); `0xe94c` is a repeat counter
 
-The site loop's own bookkeeping, quoted from `decompiled.c`:
+The routine keeps **one** counter, `local_c`, initialised once (1142) and incremented at fourteen
+sites. Every gate on it reads that same counter — it is not three separate budgets:
 
 ```
-1142:  local_c = 0;                                   /* successful actions this pass */
-1144:  local_8 = 0;                                   /* site visits this pass        */
-1188:        local_c = local_c + 1;                     /* buy succeeded                */
-1192:        local_c = local_c + 1;                     /* dispatch succeeded           */
-1195:        local_c = local_c + 1;                     /* FUN_107e_1ace                */
-1199:        local_c = local_c + 1;                     /* FUN_107e_1bec                */
-1202:      if ((2 < local_c) || (9 < local_8)) goto LAB_107e_0d8e;
-1203:      local_8 = local_8 + 1;
+1142:  local_c = 0;                      /* the one action counter this pass                */
+1188:  local_c = local_c + 1;           /* 0bd6 site loop: buy (FUN_107e_1612)             */
+1192:  local_c = local_c + 1;           /* 0bd6 site loop: dispatch (FUN_107e_1750)        */
+1195:  local_c = local_c + 1;           /* FUN_107e_1ace                                   */
+1199:  local_c = local_c + 1;           /* FUN_107e_1bec                                   */
+1209:  local_c = local_c + 1;           /* era-gated FUN_107e_51b6 (1207-1208)             */
+1213:  local_c = local_c + 1;           /* era-gated FUN_107e_5500 (1211)                  */
+1218:  local_c = local_c + iVar4;       /* ai_turn_process(3 - local_c) at 1217            */
+1222:  local_c = local_c + iVar4;       /* execute_combat(4 - local_c) at 1221             */
+1226:  local_c = local_c + iVar4;       /* select_combat_targets()                         */
+1244:  local_c = local_c + 1;           /* FUN_107e_1ede                                   */
+1247:  local_c = local_c + 1;           /* FUN_107e_3a40                                   */
+1251:  local_c = local_c + 3;           /* FUN_107e_251c / calculate_combat                */
+1254:  local_c = local_c + 1;           /* while-loop FUN_107e_1ace                        */
+1265:  local_c = local_c + iVar4;       /* resolve_combat(local_e, 1)                      */
 ```
 
-So the pass ends at **three successful actions** or **ten site visits**, whichever comes first
-(1202), and the later stages of the same routine cap combat calls separately at four
-(`local_c < 4`, 1220-1231; `ai_turn_process(3 - local_c)` at 1217). `FUN_107e_0bd6` (1124-1302) contains **no read of `0xe94c` or
-`0x1a0`**: the three is a constant at every level.
+The `local_c < 3` reads are **nine**: 1194, 1197, 1208, 1211, 1217, 1241, 1246, 1249 and the
+`while` at 1253. Two lines that look like a third and fourth source of the number are not: 1200 is
+`bVar2 = true`, and 1202 is the exit test `(2 < local_c) || (9 < local_8)` — the ten is the
+site-visit cap on `local_8` (1203), not an action budget.
 
-`0xe94c` is written once per AI turn from the level, `0x1a0 * 2 - 4`
-(`*(char *)0xe94c = *(char *)0x1a0 * '\x02' + -4;`, 13232 and 15158), and is a per-turn **repeat**
-counter:
+The combat tail is gated at **four**, not three: 1220, 1224, 1228 and 1256 test `local_c < 4`, and
+`resolve_combat` is handed the remainder `4 - local_c` (1257, 1262, 1264). The single non-counter
+gate in the body is **era**: `0x19e == 3 || 0x19e == 2` (1207) around `FUN_107e_51b6` (1208) and
+`FUN_107e_5500` (1211). `0x19e` is the era index, never a level.
+
+`FUN_107e_0bd6` (1126-1268) contains **no read of `0xe94c` or `0x1a0`** — grepped over the span,
+not eyeballed — so the three, the four and the era branch are the same at every level.
+
+`0xe94c` is written once per AI turn from the level,
+`*(char *)0xe94c = *(char *)0x1a0 * 2 - 4`, under `if (1 < *(int *)0x1a0)` (13231-13232 and
+15157-15158), so **level 1 never sets it** and levels 2-5 read `0/2/4/6`. It is spent in two
+places and read in two:
 
 ```
 1649:        if (*(char *)0xe94c != '\0') {
-1650:          *(char *)0xe94c = *(char *)0xe94c + -1;   /* FUN_107e_1612: buy, then spend a repeat */
+1650:          *(char *)0xe94c = *(char *)0xe94c + -1;   /* FUN_107e_1612: the buy, never a refusal */
 3410:    if (*(char *)0xe94c == '\0') {
-3411:      auStack_1a[local_4] = local_c;                /* dispatch: record the destination cell  */
-...
-3415:      *(char *)0xe94c = *(char *)0xe94c + -1;       /* else: spend a repeat                   */
-3438:    if ((*(int *)0x1478 == 0) && (*(char *)0xe94c == '\0')) {
+3411:      auStack_1a[local_4] = local_c;                /* army pass: record the destination cell */
+3415:      *(char *)0xe94c = *(char *)0xe94c + -1;       /* else: spend a repeat, do NOT record     */
+3438:    if ((*(int *)0x1478 == 0) && (*(char *)0xe94c == '\0')) {   /* FUN_2dfc_1874, STAND-IN */
 ```
 
-i.e. while `0xe94c` is nonzero a successful action only decrements it and the target stays
-eligible; once it reaches zero the acted cell is recorded and excluded (3410-3411) and
-`FUN_2dfc_1874` is called (3438). The port reads that as **how many units one dispatch action
-may send to the same site** — 1 + e94c, so 1 / 3 / 5 / 7 at levels 2-5 — while one dispatch to
-one site still costs exactly one of the pass's three actions. The mapping of a decoded counter
-onto a group size is a labelled port reading; the counter itself, its level formula and the
-constant three are decoded.
+That is the whole ledger: **seven lines** in the export touch `0xe94c` (1649, 1650, 3410, 3415,
+3438, 13232, 15158). A recorded cell is then struck out of the next iteration's candidates
+(3392-3400 compares against the recorded list and writes `0xf` at 3398), so it cannot be chosen
+again; a repeat spends the counter and leaves the cell eligible. One counter is shared across the
+pass, not one per cell.
+
+**Where the port spends it.** The repeat lives in the *army* pass (`ai_turn_process @ 107e:3bd0`,
+3230-3422 — it is what receives the remainder at 1217 and loops up to `param_1` dispatches at
+3417-3420) and in the buy. It does **not** live in 0bd6's defence dispatch: `FUN_107e_1750` sends
+exactly one unit and the call costs one action. `web/server/bot.mjs` therefore spends the counter
+on a successful march dispatch (`spendRepeat`, 3410-3416) and on a successful buy (1649-1651), and
+excludes a recorded cell from the next dispatch's candidates (3392-3400). `repeatPool = e94c`, so
+1 / 3 / 5 / 7 dispatches may take the same destination cell at levels 2-5. `FUN_2dfc_1874` (3438)
+is reached only at `e94c == 0` with `0x1478 == 0`, i.e. after the budget is spent, and stays
+**STAND-IN** in the port.
 
 ## 2. What counts as a threat
 
@@ -108,8 +136,9 @@ Gates, in order:
   (1628; STRUCTS.md line 191 — the same 40x-price table the shop uses);
 * a free unit slot exists (`FUN_1ac5_0008(0) != 0xff`, 1629);
 * the site's own cell is reachable by `calculate_movement_cost`, or the site is one of ours with a
-  garrison flag / past index 0x3f (1632-1634). If not, it asks `FUN_107e_307a(site, 0)` for another
-  of our sites (1635) and re-tests that one (1642-1645).
+  **running readiness countdown** / past index 0x3f (1632-1634). `0x10ae` is that countdown, not a
+  garrison latch (see §9.1). If the test fails it asks `FUN_107e_307a(site, 0)` for another of our
+  sites (1635) and re-tests that one (1642-1645).
 
 Then `FUN_107e_40a8(site, x, y, 0)` (1647; body 3426-3448) issues sprite-command 5 at the site's
 cell — i.e. **creates a unit on the site** — and charges `byte[0x2e16 + slot] * -0x28` (40x the price
@@ -209,10 +238,59 @@ This is the march, not a ported AI routine, so it is labelled as behaviour rathe
 
 ## 9. T-032 Part B: what the port now reads, and the A7 unknowns as shipped
 
-The five-opponent table, the level gate (1 < 0x1a0), the spare-action budget `0xe94c = level*2-4`,
+The five-opponent table, the level gate (1 < 0x1a0), the army-repeat counter `0xe94c = 0x1a0*2-4`,
 calculate_combat's force edge (> 11 strength units inside 30 cells), the ship/air target set and the
 25/20/15 threat radii are ported in `web/server/bot.mjs` from `config/game.json` (`bot` block). The
 values and their provenance strings live there; this document is the reading they were taken from.
+
+### 9.1 The citation, line by line (the one a later reader should use)
+
+The block that settles each number is §1a; this is the same reading in the form a gate can cite.
+Every line number is `decompiled.c` in this document's source tree, re-read at the span it names.
+
+| Claim | Where |
+|---|---|
+| `FUN_107e_0bd6` spans 1126-1268 | 1126 is the signature, 1268 the closing brace; 1124 is the banner and 1272 opens `FUN_107e_0f58` |
+| one shared action counter | initialised at 1142; incremented at 1188, 1192, 1195, 1199, 1209, 1213, 1218, 1222, 1226, 1244, 1247, 1251 (+3), 1254, 1265 |
+| budget 3, level-independent | nine reads of the same counter: 1194, 1197, 1208, 1211, 1217, 1241, 1246, 1249, 1253 (`while`); exit test `2 < local_c || 9 < local_8` at 1202 |
+| combat tail 4 | 1220, 1224, 1228, 1256 test `local_c < 4`; `resolve_combat` handed `4 - local_c` at 1257, 1262, 1264 |
+| the era gate | 1207 `0x19e == 3 \|\| 0x19e == 2` around `FUN_107e_51b6` (1208) and `FUN_107e_5500` (1211) — era, not level |
+| no level in 0bd6 | zero reads of `0xe94c` or `0x1a0` in 1126-1268 (grep over the span) |
+| `0xe94c` set from the level | 13231-13232 and 15157-15158, both under `if (1 < *(int *)0x1a0)`; value `0x1a0*2 - 4` |
+| `0xe94c` ledger | seven lines: 1649, 1650, 3410, 3415, 3438, 13232, 15158 |
+| an extra action is a repeat | 3410-3416: spend without recording while nonzero, record at zero; 3392-3400 strikes the recorded cell (0xf at 3398) |
+| the repeat's true owner | `ai_turn_process @ 107e:3bd0` (3230-3422), which takes the remainder at 1217 and loops to `param_1` at 3417-3420; plus the buy at 1649-1651 |
+| `FUN_2dfc_1874` | 3438, only at `e94c == 0` and `0x1478 == 0` — **STAND-IN** |
+| `FUN_107e_1612` spans 1607-1657 | gates 1620-1629, origin branch 1632-1634, buy at 1647-1652 |
+| a level read inside the buy | 1632 `*(int *)0x1a0 < 5` — inside the branch that decides *which site's* unit the buy draws from, not whether the buy happens |
+| `FUN_107e_1750` spans 1661-1778 | no `0x1a0`, no `0xe94c` |
+| the free slot gates BOTH paths | `FUN_1ac5_0008` at 8105-8136: `param < 5` walks the 100 records at 0x906 and returns the first empty index, or 0xff when full (8115-8118, 8132-8133). The buy tests it at 1629 and the army pass returns on it at 3385 — both call it, so the port checks both; a full table is 100 pieces and is a board bound, not a production cap |
+
+The 1632 read is why the "1612 has no level gate" shorthand is retired: the buy happens without a
+level, but the site it draws from is chosen with one.
+
+**`0x10ae` is settled — it is a countdown, and the "garrison flag" reading is retired.** The export
+gives 0x10ae 30 references and not one pairs the byte with a piece:
+
+```
+4856:  for (local_1c = 0; local_1c < 0x40; local_1c++)
+4857:    if (*(char *)(local_1c + 0x10ae) != '\0') &&
+4858:      (*(char *)(local_1c + 0x10ae) = *(char *)(local_1c + 0x10ae) + -1,
+4859:       *(char *)(local_1c + 0x10ae) == '\0' || *(char *)(local_1c + 0x10ae) == '\x14') ...
+9178:  *(undefined1 *)(uVar9 + 0x10ae) = 0xf;        /* the capture handler FUN_1c0d_02ce */
+```
+
+One decrement a round over 64 slots, firing a notice at 20 and at 0 (4856-4862); the capture handler
+writes 15 (9178); the reads are `!= 0` (1632), `< 10` (2246, 2381), `== 0 || 0x1478 != 0` in site
+selection (2694, 3340) and `< 0x15` (24262, 24362); four sites clear it to 0 (12214, 12245, 12365,
+13858). That is the readiness timer `web/server/readiness.mjs:58` already models (15 on capture,
+decaying one a round), not a latch.
+
+Two consequences, both stated rather than assumed: **(a)** 1632 most plainly reads "the site is still
+counting down, so draw the buy's unit from another of our sites", and the level-5 garrison row stays
+**STAND-IN** with 1632 as its nearest basis; **(b)** if the timer reading is the only one, then
+`bot.levelFiveGarrisonGate` has no byte basis at all, and C1's level 4 vs 5 delta is a repeat count
+only — 4 vs 6. That is a scope call for the PM, not something this file decides.
 
 A7's unknowns, and what each one is in the shipped port. An entry marked STAND-IN is not claimed as
 recovered, and the mark is in `config/game.json` `bot.standIns` as well as here, so a reader who never

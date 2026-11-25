@@ -7,20 +7,22 @@
 //
 // B1: five opponents in DS:0x4fea order, ANOTHER HUMAN = 0, level 1 labelled "Stands still:
 // practice". B2: level 1 never enters the AI pass, so 50 rounds of orders and buys are empty.
-// B3: e94c = level*2-4 (0/2/4/6) is the REPEAT pool, and 0bd6 allows THREE successful actions a
-// pass at every level (decompiled.c 1188-1203). One dispatch action sends 1 + e94c units to a site,
-// so a pass sends 1/3/5/7 units a site at levels 2-5. B6: the starting-money spinner is independent
-// of the level and exists for 2023 too.
+// B3: e94c = level*2-4 (never set at level 1, so 0/2/4/6 at levels 2-5) is the ARMY pass's repeat
+// counter (ai_turn_process 3410-3416) and the buy spends it (1649-1651); 0bd6 allows THREE
+// successful actions a pass at every level (1126-1268, nine `local_c < 3` reads) plus the combat-4
+// tail, and reads the counter nowhere. B7: the buy path calls the free-slot check (1629).
+// B6: the starting-money spinner is independent of the level and exists for 2023 too.
 
 import { openMatch } from "../../server/match.mjs";
 import { tickMatch } from "../../server/tick.mjs";
-import { ordersFor } from "../../server/bot.mjs";
+import { UNIT_RECORDS, marchOne, ordersFor, spendRepeat } from "../../server/bot.mjs";
 import { readFileSync } from "node:fs";
 import {
   botDeviations,
   botStandIns,
   defaultOpponentLevel,
-  dispatchGroupSize,
+  dispatchRepeatLimit,
+  dispatchRepeatPool,
   handicapDefault,
   opponentLevels,
   opponents,
@@ -74,6 +76,22 @@ function budgetRoom(level, sparePerSite = 8) {
   return match;
 }
 
+// One blue land piece south of the red capital. The approach ring is the same on every run, so a
+// cell recorded by one dispatch can be checked against the next dispatch's choice.
+function marchRoom() {
+  return {
+    era: "1942",
+    round: 1,
+    pieces: [piece("blue1", "blue", 100, 30)],
+    sites: [],
+    capitals: { blue: { x: 20, y: 40 }, red: { x: 100, y: 40 } },
+    capitalSet: { list: [] },
+    sides: { blue: { cash: 0, bought: 0 }, red: { cash: 0, bought: 0 } },
+    seats: { blue: { kind: "bot" }, red: { kind: "human" } },
+    opponentLevel: 3,
+  };
+}
+
 // One pass action is a buy OR one dispatch to a site, no matter how many units that dispatch sends.
 function countActions(events) {
   const buys = events.filter((event) => event.type === "bot_buy").length;
@@ -123,38 +141,75 @@ export async function run(ctx) {
     }
   }
 
-  // ---- B3. e94c = level*2 - 4 is the REPEAT pool; the pass is three actions at every level ----
+  // ---- B3. 0xe94c is the ARMY pass's repeat counter; 0bd6 is a constant three ----------------
+  //
+  // Decoded here: the counter's values (never set at level 1, 0/2/4/6 at 2-5), the constant three
+  // plus the combat-4 tail in 0bd6, and what one step of 3410-3416 does on each branch. The reach
+  // of the counter into the army pass is the port's mapping of that step, and the events carry
+  // `repeat` / `recorded` so a leg can count the two apart.
   {
-    const budgets = [2, 3, 4, 5].map((level) => spareActionBudget(level));
-    if (JSON.stringify(budgets) !== JSON.stringify([0, 2, 4, 6])) say("spareActionBudget is not 0/2/4/6", budgets);
+    const budgets = [1, 2, 3, 4, 5].map((level) => spareActionBudget(level));
+    if (JSON.stringify(budgets) !== JSON.stringify([0, 0, 2, 4, 6])) {
+      say("the e94c counter is not 0 at levels 1-2 and 0/2/4/6 at levels 2-5", budgets);
+    }
     if (spareActionPassCap() !== 3) say("the 0bd6 pass cap is not three", spareActionPassCap());
-    const groups = [2, 3, 4, 5].map((level) => dispatchGroupSize(level));
-    if (JSON.stringify(groups) !== JSON.stringify([1, 3, 5, 7])) say("dispatch group sizes are not 1/3/5/7", groups);
+    const limits = [2, 3, 4, 5].map((level) => dispatchRepeatLimit(level));
+    if (JSON.stringify(limits) !== JSON.stringify([1, 3, 5, 7])) say("the repeat limits are not 1/3/5/7", limits);
 
+    // The defence pass does not carry the level: three actions, one unit each, at every level.
     for (const level of [2, 3, 4, 5]) {
       const match = budgetRoom(level);
       const events = ordersFor(match, "blue");
-      // Three threatened sites, so the pass's three actions all land: one dispatch per site at
-      // EVERY level. That is the constant from 0bd6 (1188-1203), not e94c.
       const actions = countActions(events);
       if (actions !== 3) say("level " + level + " spent " + actions + " pass actions instead of 3", events);
-      // The level lever is how many units one action sends to the same site: 1 + e94c.
       const sent = countDefend(events);
-      const expected = 3 * dispatchGroupSize(level);
-      if (sent !== expected) say("level " + level + " sent " + sent + " units, not " + expected, events);
-      // And no single dispatch action may exceed the group size.
-      const perSite = new Map();
-      for (const event of events.filter((row) => row.type === "bot_defend")) {
-        perSite.set(event.site, (perSite.get(event.site) || 0) + 1);
-      }
-      for (const [site, count] of perSite) {
-        if (count > dispatchGroupSize(level)) {
-          say("level " + level + " sent " + count + " units to " + site + " in one action", [...perSite]);
-        }
-      }
+      if (sent !== 3) say("level " + level + " sent " + sent + " defenders, not one per pass action", events);
     }
-    // The old model's 0/2/3/3 was refuted by the bytes: level 2 acts (3 actions) even though its
-    // repeat pool is zero, and levels 4/5 differ by the units a dispatch carries, not by a budget.
+
+    // Both branches of 3410-3416. A repeat spends the counter and leaves the cell eligible; the step
+    // that finds the counter empty records the cell.
+    {
+      const cell = { x: 21, y: 41 };
+      const key = "21,41";
+      const state = { pool: dispatchRepeatPool(5), recorded: new Set() };
+      for (let n = 1; n <= 6; n++) {
+        const step = spendRepeat(state, cell);
+        if (!step.repeat || step.recorded) say("repeat " + n + " at level 5 did not spend the counter", step);
+        if (state.recorded.has(key)) say("a repeat recorded the cell, so it could not be picked again", [...state.recorded]);
+      }
+      if (state.pool !== 0) say("level 5's six repeats did not drain the counter", state.pool);
+      const last = spendRepeat(state, cell);
+      if (last.repeat || !last.recorded || !state.recorded.has(key)) {
+        say("the dispatch after the counter ran out did not record the cell", last);
+      }
+      const empty = { pool: 0, recorded: new Set() };
+      const first = spendRepeat(empty, cell);
+      if (first.repeat || !empty.recorded.has(key)) say("a zero counter did not record its first cell", first);
+      // The buy spends a repeat too, and records nothing (1649-1651).
+      const buyState = { pool: 2, recorded: new Set() };
+      spendRepeat(buyState);
+      if (buyState.pool !== 1 || buyState.recorded.size !== 0) say("the buy did not spend one repeat", buyState);
+    }
+
+    // Through the march, which is the routine the counter lives in: with a repeat left the second
+    // dispatch takes the same cell; with the counter at zero the first dispatch records the cell and
+    // the second must take a different one.
+    for (const [level, sameCell] of [[5, true], [2, false]]) {
+      const match = marchRoom();
+      const army = match.pieces.find((unit) => unit.side === "blue");
+      const capital = { x: 100, y: 40 };
+      const state = { pool: dispatchRepeatPool(level), recorded: new Set() };
+      const firstTo = marchOne(match, "blue", army, capital, [], { skip: state.recorded });
+      if (!firstTo) say("level " + level + ": the army did not march at all", match.pieces.length);
+      const step = spendRepeat(state, firstTo);
+      if (level === 2 && !step.recorded) say("level 2's first dispatch did not record its cell", step);
+      if (level === 5 && step.recorded) say("level 5's first dispatch recorded its cell", step);
+      army.path = [];
+      const secondTo = marchOne(match, "blue", army, capital, [], { skip: state.recorded });
+      const same = secondTo && secondTo.x === firstTo.x && secondTo.y === firstTo.y;
+      if (sameCell && !same) say("level " + level + " refused a cell it had not recorded", { firstTo, secondTo });
+      if (!sameCell && same) say("level " + level + " re-picked a cell it had recorded", { firstTo, secondTo });
+    }
   }
 
   // ---- B2. level 1 never enters the AI pass: 50 rounds, no orders, no buys --------------------
@@ -240,5 +295,32 @@ export async function run(ctx) {
     for (const token of ["ownership counters", "staging arrays", "garrison-buy"]) {
       if (!standIns.some((line) => String(line).toLowerCase().includes(token))) say("A7 STAND-IN missing: " + token, standIns);
     }
+  }
+
+  // ---- B7. the buy path calls the free-slot check, and a full table refuses (1629) -------------
+  {
+    const full = budgetRoom(3, 0);
+    full.sides.blue.cash = 1e6;
+    while (full.pieces.length < UNIT_RECORDS) {
+      full.pieces.push(piece("filler" + full.pieces.length, "blue", 10 + (full.pieces.length % 40),
+        60 + Math.floor(full.pieces.length / 40)));
+    }
+    const events = ordersFor(full, "blue") || [];
+    if (events.some((event) => event.type === "bot_buy")) say("a full unit table still bought a piece", events.length);
+    const refused = events.filter((event) => event.type === "bot_skip" && /free unit (slot|record)/.test(String(event.reason)));
+    if (refused.length !== 2) {
+      say("the free-slot gates did not both report: expected the 1629 buy note and the 3385 dispatch note, saw " + refused.length,
+        events.filter((event) => event.type === "bot_skip"));
+    }
+    if (!refused.some((event) => /1629/.test(String(event.reason)))) say("the buy did not refuse at 1629", refused);
+    if (!refused.some((event) => /3385/.test(String(event.reason)))) say("the army pass did not return at 3385", refused);
+    if (events.some((event) => event.type === "bot_order")) say("a full table still dispatched");
+
+    // The control: the same fixture with a slot free does buy, so the leg is not measuring a board
+    // that refuses for some other reason.
+    const room = budgetRoom(3, 0);
+    room.sides.blue.cash = 1e6;
+    const buys = (ordersFor(room, "blue") || []).filter((event) => event.type === "bot_buy");
+    if (buys.length !== 1) say("the same fixture with a free slot did not buy", buys.length);
   }
 }

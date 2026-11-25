@@ -36,7 +36,7 @@ import { openMatch } from "../web/server/match.mjs";
 import { tickMatch } from "../web/server/tick.mjs";
 import { ordersFor } from "../web/server/bot.mjs";
 import { ordersFor as prePortOrdersFor } from "../web/server/bot-c20dba7.mjs";
-import { dispatchGroupSize, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
+import { dispatchRepeatLimit, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
 
 const CITY_KINDS = new Set(["city", "capital"]);
 
@@ -224,7 +224,7 @@ const report = {
   levers: {
     spareActionBudget: [2, 3, 4, 5].map((level) => [level, spareActionBudget(level)]),
     passCap: spareActionPassCap(),
-    dispatchGroupSize: [2, 3, 4, 5].map((level) => [level, dispatchGroupSize(level)]),
+    armyRepeatLimit: [2, 3, 4, 5].map((level) => [level, dispatchRepeatLimit(level)]),
     productionCap: "none (T-032 B7: the unitCap lever was withdrawn; nothing can bind)",
   },
   pairs: [],

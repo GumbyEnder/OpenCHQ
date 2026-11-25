@@ -688,17 +688,21 @@ export function spareActionPassCap() {
   return Number.isInteger(value) && value > 0 ? value : 3;
 }
 
-// 0xe94c = level*2 - 4 per turn. It is a REPEAT counter, not the pass allowance: each successful
-// action decrements it while it is nonzero, and only at == 0 is the acted cell recorded so it is
-// not re-targeted (FUN_107e_1612, decompiled.c 1649-1651; the dispatch routine, 3401-3415). The
-// port reads it as how many EXTRA units one dispatch action may send to the same site, so a pass
-// sends 1 / 3 / 5 / 7 units a site at levels 2-5.
+// 0xe94c = level*2 - 4 per turn, SET only when `1 < 0x1a0` (decompiled.c 13231-13232 and
+// 15157-15158), so level 1 never sets it and levels 2-5 read 0/2/4/6. It is the ARMY pass's repeat
+// allowance, not the defence pass's: `ai_turn_process @ 107e:3bd0` (3230-3422) dispatches a mission
+// and, on success, decrements 0xe94c while it is nonzero (3415) WITHOUT recording the destination
+// cell; the cell is recorded only when the counter is already zero (3410-3412), and a recorded cell
+// is struck out of the next iteration's candidate table (3392-3400, the 0xf at 3398). The buy
+// spends the same counter and never refuses on it (1649-1651). `FUN_107e_0bd6` (1126-1268) reads
+// neither 0xe94c nor 0x1a0, so the defence pass is the same at every level.
 export function dispatchRepeatPool(level) {
   return spareActionBudget(level);
 }
 
-// How many units one dispatch action may send to one site: the first unit plus the repeat pool.
-export function dispatchGroupSize(level) {
+// How many dispatches one destination cell may take before it is recorded and excluded: the first
+// dispatch plus the repeats, so 1 / 3 / 5 / 7 units to the same cell at levels 2-5.
+export function dispatchRepeatLimit(level) {
   return 1 + dispatchRepeatPool(level);
 }
 
