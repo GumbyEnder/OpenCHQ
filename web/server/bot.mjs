@@ -730,7 +730,9 @@ export function ordersFor(match, side) {
   // 0xe94c for this turn: set only when 1 < 0x1a0 (decompiled.c 13231-13232, 15157-15158), so a
   // level-1 seat never even sets it. It is how many army dispatches may repeat a destination cell
   // before that cell is recorded and struck out of the candidate table (3392-3400, 3410-3412), not
-  // the pass allowance above.
+  // the pass allowance above. The two compose: 1216-1218 enters the army pass only while
+  // `local_c < 3` and hands it `3 - local_c`, so a cell can take at most
+  // min(1 + 0xe94c, 3 - spent) dispatches in one turn, not 1 + 0xe94c.
   const repeat = { pool: dispatchRepeatPool(level), recorded: new Set() };
   let spent = 0;
   // Reinforce first, so a unit bought this round can march this round. The buy goes to the
@@ -765,8 +767,14 @@ export function ordersFor(match, side) {
   // HOLD_STALL_ROUNDS rounds - the per-step counter advance() keeps - is re-planned onto a fresh
   // goal instead of reporting "moving" forever. marchOne picks the nearest free approach cell, so a
   // destination that is still held is skipped and another one is chosen.
+  // 1216-1218: the army pass is entered only while `local_c < 3` and receives `3 - local_c`; the
+  // routine returns on `param_1 <= local_4` at 3417-3420 and the caller adds the dispatches back
+  // into the same counter (`local_c = local_c + iVar4`, 1218). So the march loop is budgeted by
+  // what the buy and the defence pass left, and each dispatch it issues spends one of those.
+  let armyBudget = Math.max(0, budget - spent);
   for (const piece of mine) {
     if (armyTableFull) break;
+    if (armyBudget <= 0) break;
     if (piece.domain !== "land") continue;
     if (claimed.has(piece.id)) continue;
     if (hasPath(piece)) {
@@ -786,6 +794,8 @@ export function ordersFor(match, side) {
     const destination = marchOne(match, side, piece, focus, events, { skip: repeat.recorded });
     if (!destination) continue;
     const step = spendRepeat(repeat, destination);
+    armyBudget -= 1;
+    spent += 1;
     // Say which branch ran, so a leg can count repeats and records apart from each other.
     const filed = events[events.length - 1];
     if (filed && filed.type === "bot_order" && filed.pieceId === piece.id) {

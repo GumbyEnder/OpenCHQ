@@ -96,10 +96,29 @@ pass, not one per cell.
 3417-3420) and in the buy. It does **not** live in 0bd6's defence dispatch: `FUN_107e_1750` sends
 exactly one unit and the call costs one action. `web/server/bot.mjs` therefore spends the counter
 on a successful march dispatch (`spendRepeat`, 3410-3416) and on a successful buy (1649-1651), and
-excludes a recorded cell from the next dispatch's candidates (3392-3400). `repeatPool = e94c`, so
-1 / 3 / 5 / 7 dispatches may take the same destination cell at levels 2-5. `FUN_2dfc_1874` (3438)
-is reached only at `e94c == 0` with `0x1478 == 0`, i.e. after the budget is spent, and stays
-**STAND-IN** in the port.
+excludes a recorded cell from the next dispatch's candidates (3392-3400).
+
+The pool composes with 0bd6's pass budget; it does not replace it. 1216-1218 calls
+`ai_turn_process(3 - local_c)` only while `local_c < 3`, and the routine returns at 3417-3420 on
+`param_1 <= local_4`, so the army pass can issue at most `3 - spent` dispatches, where `spent`
+already counts the buy and the defence pass; 1218 adds each dispatch back into the same counter.
+The reachable figures for one turn are therefore:
+
+```
+repeats            <= min(0xe94c, 3 - spent)
+dispatches         <= 3 - spent
+dispatches to one  <= min(1 + 0xe94c, 3 - spent)
+destination cell
+```
+
+At levels 2-5 with nothing else spent that is 1 / 3 / 3 / 3 dispatches to one cell, not 1 / 3 / 5 / 7:
+a pool of 4 or 6 cannot be spent in one turn because the pass itself ends at three dispatches. A
+turn whose buy or defence already took an action can see at most `3 - spent` more. The port's march
+loop enforces this (`armyBudget = budget - spent`, decremented per dispatch); the earlier cut walked
+every idle piece and never added a march order to `spent`, which made the repeats column in a census
+measure the port's own loop rather than the binary's allowance. `FUN_2dfc_1874` (3438) is reached
+only at `e94c == 0` with `0x1478 == 0`, i.e. after the budget is spent, and stays **STAND-IN** in
+the port.
 
 ## 2. What counts as a threat
 
@@ -258,7 +277,7 @@ Every line number is `decompiled.c` in this document's source tree, re-read at t
 | no level in 0bd6 | zero reads of `0xe94c` or `0x1a0` in 1126-1268 (grep over the span) |
 | `0xe94c` set from the level | 13231-13232 and 15157-15158, both under `if (1 < *(int *)0x1a0)`; value `0x1a0*2 - 4` |
 | `0xe94c` ledger | seven lines: 1649, 1650, 3410, 3415, 3438, 13232, 15158 |
-| an extra action is a repeat | 3410-3416: spend without recording while nonzero, record at zero; 3392-3400 strikes the recorded cell (0xf at 3398) |
+| an extra action is a repeat | 3410-3416: spend without recording while nonzero, record at zero; 3392-3400 strikes the recorded cell (0xf at 3398). The pass bounds it: 1216-1218 hands `3 - local_c` and 3417-3420 returns on `param_1 <= local_4`, so `min(e94c, 3 - spent)` repeats is the reachable figure |
 | the repeat's true owner | `ai_turn_process @ 107e:3bd0` (3230-3422), which takes the remainder at 1217 and loops to `param_1` at 3417-3420; plus the buy at 1649-1651 |
 | `FUN_2dfc_1874` | 3438, only at `e94c == 0` and `0x1478 == 0` — **STAND-IN** |
 | `FUN_107e_1612` spans 1607-1657 | gates 1620-1629, origin branch 1632-1634, buy at 1647-1652 |
@@ -290,7 +309,9 @@ Two consequences, both stated rather than assumed: **(a)** 1632 most plainly rea
 counting down, so draw the buy's unit from another of our sites", and the level-5 garrison row stays
 **STAND-IN** with 1632 as its nearest basis; **(b)** if the timer reading is the only one, then
 `bot.levelFiveGarrisonGate` has no byte basis at all, and C1's level 4 vs 5 delta is a repeat count
-only — 4 vs 6. That is a scope call for the PM, not something this file decides.
+only — 4 vs 6. With the army pass bounded at `3 - spent` (1216-1218), neither 4 nor 6 can be spent
+in one turn, so the observable level 4 vs level 5 delta is the garrison gate alone. That is a scope
+call for the PM, not something this file decides.
 
 A7's unknowns, and what each one is in the shipped port. An entry marked STAND-IN is not claimed as
 recovered, and the mark is in `config/game.json` `bot.standIns` as well as here, so a reader who never

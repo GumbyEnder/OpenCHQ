@@ -92,11 +92,15 @@ function marchRoom() {
   };
 }
 
-// One pass action is a buy OR one dispatch to a site, no matter how many units that dispatch sends.
+// One pass action is a buy OR one dispatch to a site OR one army dispatch: 1216-1218 enters the
+// army pass with `3 - local_c` and adds what it issues back into the same counter, so a march order
+// is a pass action like any other. This counted only buys and distinct defend sites, which is why
+// no arm here could see a march order before the B3 re-cut.
 function countActions(events) {
   const buys = events.filter((event) => event.type === "bot_buy").length;
   const sites = new Set(events.filter((event) => event.type === "bot_defend").map((event) => event.site));
-  return buys + sites.size;
+  const marches = events.filter((event) => event.type === "bot_order").length;
+  return buys + sites.size + marches;
 }
 
 function countDefend(events) {
@@ -153,8 +157,21 @@ export async function run(ctx) {
       say("the e94c counter is not 0 at levels 1-2 and 0/2/4/6 at levels 2-5", budgets);
     }
     if (spareActionPassCap() !== 3) say("the 0bd6 pass cap is not three", spareActionPassCap());
+    // The reachable form, not the raw pool: 1 + e94c is 1/3/5/7, but the army pass is handed
+    // `3 - local_c` (1216-1218) and every dispatch goes back into that counter, so a cell cannot
+    // take more than `min(1 + e94c, 3 - spent)` dispatches in one turn.
     const limits = [2, 3, 4, 5].map((level) => dispatchRepeatLimit(level));
-    if (JSON.stringify(limits) !== JSON.stringify([1, 3, 5, 7])) say("the repeat limits are not 1/3/5/7", limits);
+    if (JSON.stringify(limits) !== JSON.stringify([1, 3, 3, 3])) {
+      say("the reachable same-cell limits with nothing spent are not 1/3/3/3", limits);
+    }
+    const afterOne = [2, 3, 4, 5].map((level) => dispatchRepeatLimit(level, 1));
+    if (JSON.stringify(afterOne) !== JSON.stringify([1, 2, 2, 2])) {
+      say("one spent action did not cap the same-cell limit at 2", afterOne);
+    }
+    const afterTwo = [2, 3, 4, 5].map((level) => dispatchRepeatLimit(level, 2));
+    if (JSON.stringify(afterTwo) !== JSON.stringify([1, 1, 1, 1])) {
+      say("two spent actions did not cap the same-cell limit at 1", afterTwo);
+    }
 
     // The defence pass does not carry the level: three actions, one unit each, at every level.
     for (const level of [2, 3, 4, 5]) {
@@ -210,6 +227,56 @@ export async function run(ctx) {
       if (sameCell && !same) say("level " + level + " refused a cell it had not recorded", { firstTo, secondTo });
       if (!sameCell && same) say("level " + level + " re-picked a cell it had recorded", { firstTo, secondTo });
     }
+  }
+
+  // ---- B3 (re-cut). The army pass is bounded by what the pass had left ------------------------
+  //
+  // 1216-1218 calls the army pass only while `local_c < 3` and hands it `3 - local_c`; 1218 adds the
+  // dispatches back into the same counter. Before this re-cut the port's loop walked every idle
+  // piece: measured at 76d3b8a, 9/11/13/14 land orders in the opening turn at levels 2-5, against a
+  // pass that allows three actions in total. The same 40-round campaign is now capped at three,
+  // and the control (a fixture with actions already spent) at three minus those actions.
+  {
+    const cap = spareActionPassCap();
+    for (const level of [2, 3, 4, 5]) {
+      const match = openMatch("1942");
+      match.seats = { blue: { username: "Bot", kind: "bot" }, red: { username: "Ada", kind: "human" } };
+      match.opponentLevel = level;
+      match.clock = "running";
+      let worstMarch = 0;
+      const over = [];
+      let turns = 0;
+      for (let round = 1; round <= 40; round++) {
+        const events = ordersFor(match, "blue") || [];
+        const buys = events.filter((event) => event.type === "bot_buy").length;
+        const defends = events.filter((event) => event.type === "bot_defend").length;
+        const marches = events.filter((event) => event.type === "bot_order").length;
+        const room = Math.max(0, cap - (buys + defends));
+        turns += 1;
+        if (marches > room) over.push({ round, marches, buys, defends, room });
+        if (marches > worstMarch) worstMarch = marches;
+        tickMatch(match);
+        if (match.over) break;
+      }
+      if (over.length) {
+        say("level " + level + " issued army dispatches past the pass budget on " + over.length + " of " + turns + " turns", over.slice(0, 3));
+      }
+      // The busiest turn must reach the cap, not merely stay under it: the opening board has more
+      // idle land pieces than three, so a worst turn below three means the bound is not exercised.
+      if (worstMarch !== cap) say("level " + level + "'s busiest turn issued " + worstMarch + " army dispatches, not the cap of " + cap, worstMarch);
+    }
+
+    // A turn that has already bought and defended: the army gets the remainder, not a fresh three.
+    const spentMatch = budgetRoom(3);
+    spentMatch.sides.blue.cash = 1e6;
+    const spentEvents = ordersFor(spentMatch, "blue") || [];
+    const spentBuys = spentEvents.filter((event) => event.type === "bot_buy").length;
+    const spentDefends = spentEvents.filter((event) => event.type === "bot_defend").length;
+    const spentMarches = spentEvents.filter((event) => event.type === "bot_order").length;
+    if (spentBuys !== 1) say("the spent-turn control did not buy once", spentBuys);
+    if (spentDefends !== 2) say("the spent-turn control defended " + spentDefends + " sites, not the two the buy left", spentDefends);
+    if (spentMarches !== 0) say("the spent-turn control still marched " + spentMarches + " pieces with no pass action left", spentMarches);
+    if (countActions(spentEvents) !== cap) say("the spent-turn control counted " + countActions(spentEvents) + " actions, not " + cap, spentEvents.length);
   }
 
   // ---- B2. level 1 never enters the AI pass: 50 rounds, no orders, no buys --------------------

@@ -700,10 +700,16 @@ export function dispatchRepeatPool(level) {
   return spareActionBudget(level);
 }
 
-// How many dispatches one destination cell may take before it is recorded and excluded: the first
-// dispatch plus the repeats, so 1 / 3 / 5 / 7 units to the same cell at levels 2-5.
-export function dispatchRepeatLimit(level) {
-  return 1 + dispatchRepeatPool(level);
+// How many dispatches one destination cell can take in a turn. The raw pool plus one is 1/3/5/7 at
+// levels 2-5, but the pass itself ends at three: 1216-1218 enters the army pass only while
+// `local_c < 3` and hands it `3 - local_c`, which already carries the buy and the defence pass, and
+// every dispatch is added back (1218). The reachable figure is therefore
+// `min(1 + e94c, 3 - spent)` — 1/3/3/3 at levels 2-5 with nothing else spent, fewer after a buy or a
+// defence. `spent` is the number of pass actions already taken this turn.
+export function dispatchRepeatLimit(level, spent = 0) {
+  const taken = Math.max(0, Math.floor(Number(spent) || 0));
+  const room = Math.max(0, spareActionPassCap() - taken);
+  return Math.min(1 + dispatchRepeatPool(level), room);
 }
 
 export function botAttackRangeCells() {
