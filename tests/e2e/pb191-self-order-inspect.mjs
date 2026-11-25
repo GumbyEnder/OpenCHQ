@@ -173,6 +173,52 @@ try {
   const r0 = await room();
   mark(ERA + " blue match open", Boolean(r0 && r0.id), "id " + (r0 && r0.id) + " round " + (r0 && r0.round));
 
+  // ---- PB-245b (PM 9238 §2): 1986 opens in the COLD WAR ----------------------------------------
+  // p.31's "select it twice, then select its destination" takes precedence over PB-175's
+  // second-click city inspect - the design conflict PB-245b named and PM accepted. So this leg pins
+  // the precedence at peace FIRST, then presses Begin Hostilities and grades PB-191's self-click
+  // under the wartime gesture it was written for. The shipped config prints no mandatory length, so
+  // the counter is 0 and the press is legal at once.
+  if (r0.peace && r0.peace.active) {
+    const own = (r0.pieces || []).filter((p) => p.side === "blue" && p.domain !== "air" && p.kind !== "aircraft");
+    const mine = own[0];
+    mark("the 1986 open is the cold war, and own landed pieces are there to click",
+      Boolean(mine), "peace " + JSON.stringify(r0.peace) + ", " + own.length + " own landed piece(s)");
+    if (!mine) throw new Error("no blue landed piece at the cold-war open");
+    const at = await page.evaluate(({ x, y }) => window.__chq.cellToScreen(x, y), mine);
+    await page.mouse.click(at.x, at.y);
+    await sleep(250);
+    await sleep(1100);   // the selection toast must expire, or the second line could be stale
+    await page.mouse.click(at.x, at.y);
+    await sleep(500);
+    const armedToast = await toast();
+    const armedNote = await note();
+    const armedLine = (String(armedToast) + " " + String(armedNote)).trim();
+    mark("a SECOND select at peace arms a starting destination, not the city inspect",
+      /Destination mode/.test(armedLine), armedLine);
+    await page.keyboard.press("Escape");
+    await sleep(250);
+    await page.click('#nav button[data-dialog="war"]');
+    await page.waitForFunction(() => {
+      const b = [...document.querySelectorAll("#dialogBody button")]
+        .find((x) => x.textContent.trim() === "Begin Hostilities");
+      return Boolean(b && !b.disabled);
+    }, null, { timeout: 15000, polling: 100 });
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll("#dialogBody button")]
+        .find((x) => x.textContent.trim() === "Begin Hostilities");
+      b.click();
+    });
+    await page.waitForFunction(() => {
+      const r = window.__chq.room();
+      return Boolean(r && r.peace && r.peace.active === false);
+    }, null, { timeout: 20000, polling: 100 });
+    await page.keyboard.press("Escape");
+    await sleep(300);
+    mark("Begin Hostilities put the war on for this seat, and the counter is gone",
+      await page.evaluate(() => window.__chq.room().peace.active === false), "peace.active false");
+  }
+
   // ---- buy one infantry onto a ready city cell ------------------------------------------------
   await page.click('#nav button[data-dialog="buy"]');
   await sleep(250);
