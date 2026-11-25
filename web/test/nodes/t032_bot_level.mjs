@@ -242,7 +242,6 @@ export async function run(ctx) {
   // pass that allows three actions in total. The same 40-round campaign is now capped at three,
   // and the control (a fixture with actions already spent) at three minus those actions.
   {
-    const cap = spareActionPassCap();
     for (const level of [2, 3, 4, 5]) {
       // PB-258: the budget this build actually hands the passes is the faithful three plus the
       // port lever. With bot.portLevers false levelCap IS cap; the lever arm is t032_port_lever.
@@ -274,7 +273,10 @@ export async function run(ctx) {
       if (worstMarch !== levelCap) say("level " + level + "'s busiest turn issued " + worstMarch + " army dispatches, not the effective cap of " + levelCap, worstMarch);
     }
 
-    // A turn that has already bought and defended: the army gets the remainder, not a fresh three.
+    // A turn that has already bought and defended: the army gets the REMAINDER, not a fresh pass.
+    // PB-258: the remainder is measured against the budget this build runs (faithful 3 plus the port
+    // lever at level 3). The fixture has three threatened sites, so the defence pass spends the rest.
+    const levelCap3 = effectivePassCap(3);
     const spentMatch = budgetRoom(3);
     spentMatch.sides.blue.cash = 1e6;
     const spentEvents = ordersFor(spentMatch, "blue") || [];
@@ -282,9 +284,11 @@ export async function run(ctx) {
     const spentDefends = spentEvents.filter((event) => event.type === "bot_defend").length;
     const spentMarches = spentEvents.filter((event) => event.type === "bot_order").length;
     if (spentBuys !== 1) say("the spent-turn control did not buy once", spentBuys);
-    if (spentDefends !== 2) say("the spent-turn control defended " + spentDefends + " sites, not the two the buy left", spentDefends);
+    if (spentDefends !== Math.min(3, levelCap3 - spentBuys)) {
+      say("the spent-turn control defended " + spentDefends + " sites, not the " + (levelCap3 - spentBuys) + " the buy left", spentDefends);
+    }
     if (spentMarches !== 0) say("the spent-turn control still marched " + spentMarches + " pieces with no pass action left", spentMarches);
-    if (countActions(spentEvents) !== cap) say("the spent-turn control counted " + countActions(spentEvents) + " actions, not " + cap, spentEvents.length);
+    if (countActions(spentEvents) !== levelCap3) say("the spent-turn control counted " + countActions(spentEvents) + " actions, not " + levelCap3, spentEvents.length);
   }
 
   // ---- B3 (the pool carries). 0xe94c is seeded once per game, not once per turn ---------------
