@@ -615,11 +615,25 @@ export function canPlace(match, side, kind, x, y, board) {
   // sentence and would be false at peace.
   const peaceLand = peaceActive(match) && domain === "land" && layer === "ground";
   if (!value && peaceLand) {
+    // PB-253: a cell this side already stands on is held, not merely "not offered" - the mask is a
+    // placement mask, so an occupied cell is 0 for the same reason an enemy region is. Reading the
+    // peace sentence off that 0 called the reader's own city "the enemy's ground" (measured on the
+    // 2023 open: "Can't place infantry here: that ground is the enemy's." over Seattle, blue).
+    // The stack rule gets its own sentence before the territory detail is consulted.
+    const standing = siteAt(match, cx, cy);
+    const own = standing && standing.owner === side
+      ? standing
+      : placementSite(match, side, kind, cx, cy, board);
+    if (own && occupiedSet(match, layer).has(cx + "," + cy)) {
+      return { error: placementRefusal(kind, domain, result.rule, siteLabel(match, own) + " already holds a unit."), domain, site: own };
+    }
     if (isWaterCell(board, cx, cy)) {
       return { error: placementRefusal(kind, domain, result.rule, "that is water, and a land unit needs ground."), domain };
     }
+    // The detail is about who ELSE holds the ground: the reader's own region is not "the enemy's"
+    // even when a piece of another layer makes the cell unavailable.
     const owner = ownerAt(match, cx, cy);
-    const detail = owner === "blue" || owner === "red"
+    const detail = owner && owner !== side
       ? "that ground is the enemy's."
       : "that ground is neutral.";
     return { error: placementRefusal(kind, domain, PEACE_PRODUCTION_REFUSED, detail), domain };

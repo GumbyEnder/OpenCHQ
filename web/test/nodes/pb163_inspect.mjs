@@ -8,9 +8,18 @@
 //   1. the sentence itself, as a pure function: name, kind, holder, and the round the server wrote;
 //   2. the served page's click path: outside Buy mode a site click says that sentence and returns,
 //      and the only path that sends a buy is still the `if (buying)` arm;
-//   3. the wire fact the sentence depends on: the frame the purchase itself produces already
-//      carries the site's readyRound, so a click straight after a buy reads the truth without a
-//      sync. No server change is needed for this - the view spreads the match's site records.
+//   3. the wire fact the sentence depends on, in the two states a match can be in:
+//      3a. at peace (the 1986 open, PB-245b / p.31): production does not tire cities, so the
+//          purchase's own frame carries NO timer and the sentence reads "Ready" - asserted as the
+//          rule, not as a missing field;
+//      3b. once the war is resumed: the purchase's own frame carries the site's readyRound, so a
+//          click straight after a buy reads the truth without a sync. No server change is needed
+//          for this - the view spreads the match's site records.
+//
+// PB-253: arm 3b used to run at the open, where the match is at peace, so the expected value came
+// from the wartime formula (22) while the server correctly wrote nothing. The two reds under the
+// extract were this fixture and a real refusal-message defect in placement.mjs; the classify
+// artifact is /mnt/nas/host-ops/openchq/pb253/classify/.
 //
 // The round-0 numbers are the decoded formula's (PB-154): 1986 Blue, infantry 10 b, Detroit pools
 // 12 listed records into a 5-round timer.
@@ -116,9 +125,9 @@ export async function run(ctx) {
   socket.send({ op: "bot", era: "1986", side: "blue" });
   const opened = await socket.wait((m) => m.op === "room" && m.room && m.room.mode === "bot", "bot room");
   eq(opened.room.clock, "held", "a fresh 1986 match opens with the clock held");
-  const occupied = new Set((opened.room.pieces || []).map((piece) => piece.x + "," + piece.y));
 
-  // What the formula says the purchase will do, computed on a fresh copy of the same era table.
+  // The formula's own numbers, computed on a fresh copy of the same era table (a synthetic match
+  // is fine HERE because it is asking the wartime formula a wartime question).
   const sites = matchSites("1986", board);
   const detroitSites = matchSites("1986", board);
   if (!detroitSites.find((site) => site.name === "Detroit")) fail("the 1986 extract has no Detroit record");
@@ -131,8 +140,42 @@ export async function run(ctx) {
   eq(detroitPool.rounds, 5, "the decoded formula gives Detroit's infantry a 5-round timer");
   eq(detroitPool.sites.length, 11, "Detroit's pool is 11 unique sites");
 
+  // ---- 3a. at peace: the purchase frame carries NO timer, because none was written ------------
+  // PB-245b: the 1986 open IS the cold war, and p.31 says producing units does not tire cities
+  // during peacetime. So the wire is measured in the state a fresh match actually starts in, and
+  // the absence of a timer is asserted as the rule rather than accepted as a missing field.
+  eq(Boolean(opened.room.peace && opened.room.peace.active), true,
+    "a fresh 1986 match opens at the cold war, so the peacetime production rule is in force");
   socket.send({ op: "placement", kind: "infantry" });
-  const mask = await socket.wait((m) => m.op === "placement" && m.kind === "infantry", "placement mask");
+  const peaceMask = await socket.wait((m) => m.op === "placement" && m.kind === "infantry", "placement mask at peace");
+  const peaceAt = decodeCell(peaceMask, new Set((opened.room.pieces || []).map((piece) => piece.x + "," + piece.y)), sites);
+  if (!peaceAt) fail("the peacetime placement mask offered no free cell on a producing site");
+  const peaceFrom = socket.box.length;
+  socket.send({ op: "buy", id: "pb163-peace-buy", kind: "infantry", x: peaceAt.x, y: peaceAt.y });
+  const peaceBought = await socket.wait(
+    (m) => (m.op === "bought" && m.id === "pb163-peace-buy") || m.op === "error",
+    "the peacetime purchase", peaceFrom);
+  if (peaceBought.op !== "bought") fail("a 1986 Blue seat could not buy infantry at peace: " + JSON.stringify(peaceBought));
+  const peaceFrame = await socket.wait(
+    (m) => m.op === "room" && m.room && Number(m.room.round) === 0, "the peacetime purchase's room frame", peaceFrom);
+  const peaceRecord = (peaceFrame.room.sites || []).find((site) => site.id === peaceAt.site.id);
+  if (!peaceRecord) fail("the peacetime purchase's frame has no record for " + peaceAt.site.name);
+  eq(Number(peaceRecord.readyRound) || 0, 0,
+    "peacetime production writes no timer, so the purchase's frame carries none (" + peaceAt.site.name + ")");
+  eq(siteInspectText(peaceRecord, Number(peaceFrame.room.round)),
+    peaceAt.site.name + " — " + String(peaceRecord.kind) + ", blue. Ready.",
+    "at peace the inspect sentence reads ready, which is the rule rather than a missing field");
+
+  // ---- 3b. war resumed: the purchase frame carries the timer ----------------------------------
+  const warFrom = socket.box.length;
+  socket.send({ op: "resume_war" });
+  const warFrame = await socket.wait(
+    (m) => m.op === "room" && m.room && m.room.peace && m.room.peace.active === false, "the war resumed frame", warFrom);
+  eq(warFrame.room.peace.active, false, "the acting seat's own frame leaves the cold war");
+
+  const occupied = new Set((warFrame.room.pieces || []).map((piece) => piece.x + "," + piece.y));
+  socket.send({ op: "placement", kind: "infantry" });
+  const mask = await socket.wait((m) => m.op === "placement" && m.kind === "infantry", "placement mask at war", warFrom);
   const at = decodeCell(mask, occupied, sites);
   if (!at) fail("the placement mask offered no free cell on a producing site (city/base/capital); " +
     "a dock or ship cell has no production timer to measure");
@@ -149,7 +192,7 @@ export async function run(ctx) {
     expectedTable.find((site) => site.id === boughtSite.id),
     "infantry",
   );
-  if (!(expected.rounds > 0)) fail("the formula gave " + boughtSite.name + " a zero timer; the wire would prove nothing");
+  if (!(expected.rounds > 0)) fail("the formula gave " + boughtSite.name + " a zero timer at war; the wire would prove nothing");
 
   const from = socket.box.length;
   socket.send({ op: "buy", id: "pb163-buy", kind: "infantry", x: at.x, y: at.y });
@@ -172,5 +215,5 @@ export async function run(ctx) {
     "the inspection sentence reads the timer out of the purchase's own frame");
 
   socket.close();
-  console.log("pb163_inspect: sentence, click path and the purchase frame's timer all bound");
+  console.log("pb163_inspect: sentence, click path and the purchase frame's timer all bound in both states (peace: none written; war: readyRound on the wire)");
 }
