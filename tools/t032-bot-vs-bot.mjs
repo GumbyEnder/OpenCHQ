@@ -38,7 +38,7 @@
 // seed parity so both seats still play both levels ten times each.
 //
 // Usage:
-//   node tools/t032-bot-vs-bot.mjs [--era 1942|2023] [--seeds mirror|distinct] [--rounds 50]
+//   node tools/t032-bot-vs-bot.mjs [--era 1918|1942|1986|2023] [--seeds mirror|distinct] [--rounds 50]
 //                                 [--matches 20] [--out <path>] [--pairs 3:2,4:3,5:4]
 //                                 [--c3] [--seed-base 1942]
 
@@ -448,11 +448,13 @@ for (const [a, b] of PAIRS) {
 }
 
 if (RUN_C3) {
-  // Pre-port bot vs level 3, over the same seed plan as a pairing, so the comparison is like-for-like
-  // across eras. The pre bot plays both sides, so the positional bias is the only asymmetry; the
+  // Pre-port bot vs level 3, over the SAME seed plan as the pairs (PM 9420 §3: "same seeds for every
+  // pair"). The C3 block used to run at SEED_BASE + 1000, which made its 2023 capitals a different
+  // set of boards from the 3v2/4v3/5v4 blocks; with the offset gone every block on an era samples the
+  // same seeds. The pre bot plays both sides, so the positional bias is the only asymmetry; the
   // level-3 seat is the shipped bot.
   const rows = [];
-  for (const { seed, levels } of seedPlan("pre", 3, MATCHES, SEED_BASE + 1000)) {
+  for (const { seed, levels } of seedPlan("pre", 3, MATCHES, SEED_BASE)) {
     const row = playMatch({ seed, index: rows.length + 1, levels });
     row.winnerLevel = row.verdict === "draw" ? "draw" : String(row.levels[row.verdict]);
     rows.push(row);
