@@ -11,7 +11,9 @@
 //     (the PM's live repro: 2023 blue round 1, in 600 < out 850, short=false);
 //   - the chip keeps its colour but loses the flash, or the flash is written in JS as a second
 //     copy of the predicate;
-//   - the sentence goes back to naming the reserve as part of the condition.
+//   - the sentence goes back to naming the reserve as part of the condition;
+//   - the chip keeps its pulse but loses the red (a deleted `color:` or `inherit` survives a
+//     class+animation-only page leg), or the reduced-motion block drops the colour with the pulse.
 //
 // The page's own halves (class toggle from the server flag, the blink, the stop at In >= Out) are
 // pinned here by source + CSS; the live page is the e2e leg beside it.
@@ -123,6 +125,22 @@ export async function run() {
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
   if (!/animation:\s*none/.test(reduced.slice(0, reduced.indexOf("}")))) {
     fail("the reduced-motion block does not drop the animation");
+  }
+  // ---- the colour is the red (p.6 l.118, p.27 l.841: the word flashes RED) -------------------
+  // The flash is motion; the warning itself is the colour, and the base rule is the only place it
+  // is written. A mutant that deletes `color:` or sets it to `inherit` leaves the chip blinking in
+  // the purse's ordinary green while the suite and a class/animation-only page leg stay green.
+  const red = block.match(/(?:^|[;{\s])color:\s*([^;]+);/);
+  if (!red) fail("the oilshort chip has no colour declaration at all: " + block);
+  if (!/^#ff6b5e$/i.test(red[1].trim())) {
+    fail("the oilshort chip's colour is not the warning red: " + red[1].trim());
+  }
+  if (/inherit|currentcolor/i.test(red[1])) fail("the oilshort chip inherits its colour: " + red[1]);
+  // …and the reduced-motion block drops the pulse ONLY: it must not touch the colour, or the one
+  // warning a motion-sensitive player sees disappears with the animation.
+  const reduceBlock = reduced.slice(0, reduced.indexOf("}"));
+  if (/(?:^|[;{\s])color\s*:/.test(reduceBlock)) {
+    fail("the reduced-motion block overrides the warning colour, so the red is lost with the pulse: " + reduceBlock);
   }
   // A page that computed the deficit itself would be a second answer; the class is the only writer.
   if (/in\s*<\s*out/.test(app)) fail("app.js re-tests the flow itself instead of trusting the flag");
