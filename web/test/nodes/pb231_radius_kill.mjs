@@ -94,8 +94,9 @@ export async function run() {
   must(event.type === "blast", "the event is a blast");
   must(event.radius === radius, "the event carries the config radius, got " + event.radius);
   must(event.side === "blue", "the event names the firer");
-  must(String(event.note).includes(String(radius)) && String(event.note).includes(STAND_IN),
-    "the event says the radius is a " + STAND_IN + ": " + event.note);
+  // PB-244: the note prints the radius; the stand-in provenance is config's (asserted above).
+  must(String(event.note).includes(String(radius)), "the blast note does not print the radius: " + event.note);
+  must(!String(event.note).includes(STAND_IN), "the blast note hands the player a developer tag: " + event.note);
 
   // AC: fail closed. No cell, an off-map cell, a bad radius, a finished match and no match all refuse.
   must(!blastHits(board, null).ok, "a blast without a cell must refuse");

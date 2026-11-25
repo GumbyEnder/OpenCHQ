@@ -90,8 +90,10 @@ export async function run(ctx) {
   assertShippedNukesArmed();
   eq("the shipped ring is the stand-in 2", exclusionRadius(), 2);
   must(/2 cells/.test(capitalText()), "the shipped sentence must read the shipped 2: " + capitalText());
-  must(new RegExp(STAND_IN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(capitalText()),
-    "the ring sentence must call its size a stand-in: " + capitalText());
+  // PB-244: the sentence prints the ring size and hands the player no tag; the stand-in provenance
+  // stays in config.nukes.exclusionSource, which the next line still asserts.
+  must(!/\b(UNVERIFIED|UNMEASURED|STAND-IN)\b/.test(capitalText()),
+    "the ring sentence hands the player a developer tag: " + capitalText());
   must(/decompiled\.c|STAND-IN/.test(String(rules().nukes.exclusionSource)),
     "config nukes.exclusionSource must say where the 2 came from");
 
@@ -135,7 +137,8 @@ export async function run(ctx) {
       const restoreGone = withNukes(true, { exclusion: null });
       try {
         eq("a missing ring answers null, not a literal", exclusionRadius(), null);
-        eq("the sentence does not invent a number", /cells is a/.test(capitalText()), true);
+        // PB-244 dropped the trailing "is a stand-in" clause, so the shape is "cells is its size".
+        eq("the sentence does not invent a number", /cells is its size\./.test(capitalText()), true);
         must(/\? cells/.test(capitalText()), "the sentence must not print a number it does not have: " + capitalText());
         const built = fixture();
         const cells = ringCells(built, 2);

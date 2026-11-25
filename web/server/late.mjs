@@ -207,9 +207,11 @@ export function nukeStatus(match, side) {
 // The tools existed and the buttons existed; the consequences were only in this file. A player could
 // fire a nuke without being told what its blast does, or wonder why a launch was refused. This
 // briefing is the text: a label, a sentence, whether the tool is available right now, and for a
-// nuke the radius the config guards and how many launches are left. Anything the archive never
-// printed is called STAND-IN in the sentence itself, not in a comment.
-export const STAND_IN = "STAND-IN";
+// nuke the radius the config guards and how many launches are left.
+//
+// PB-244: the sentences are written for a player. What the archive never printed is recorded in
+// config (the `note`/`source` fields on nukes, blast and satellite, and the `...Source` keys under
+// `air`), not printed as a tag - a maintainer reads the tunable, a player reads the rule.
 
 export function kitBriefing(match, side) {
   const cfg = (rules().nukes || {});
@@ -241,13 +243,13 @@ export function kitBriefing(match, side) {
 
   add("intel", "Intel scan", "Every enemy unit is revealed for one round, and the other side is told it was read.",
     foes > 0, foes > 0 ? null : "There is nothing to reveal.");
-  add("aid", "Foreign aid", "Turns the nation of the city you pick - an enemy's or a neutral one. The archive's own note says aid flips a city's owner; the manual says the player selects the city, that a city inside the opponent's home country can never be a target (p.30), and that a nation moves one step at a time, hostile to neutral and neutral to allied, with more gifts needed the more cities it has. It also says the other side can give aid to the same nation, negating your efforts: a gift from the other side to the same nation cancels one gift you had banked there. That arithmetic and the one-for-one cancel are a " + STAND_IN + ": the archive never printed either count.",
+  add("aid", "Foreign aid", "Turns the nation of the city you pick - an enemy's or a neutral one - into one that fights for you. The manual says the player selects the city, that a city inside the opponent's home country can never be a target (p.30), and that a nation moves one step at a time, hostile to neutral and neutral to allied, with more gifts needed the more cities it has. It also says the other side can give aid to the same nation, negating your efforts: a gift from the other side to the same nation cancels one gift you had banked there.",
     turnable > 0, turnable > 0 ? null : (homeKnown ? "There is no city to turn." : AID_HOME_UNKNOWN));
   add("ceasefire", "Cease fire", "A proposal: your opponent must agree to it, or the war continues. Until they answer, nothing changes.", true);
 
   if (eraHas(match && match.era, "nuke")) {
     const radiusText = Number.isFinite(radius) && radius >= 1
-      ? `A capital and the ${radius} cells around it cannot be targeted. That radius is a ${STAND_IN}: the archive kept a guard but never printed its size.`
+      ? `A capital and the ${radius} cells around it cannot be targeted.`
       : "No home-ground guard is set in this match.";
     const limitText = `Launches stop once this side has ${lead} more fired than the other side (Manual p.30). ` +
       `This side may fire ${left} more before the other side answers.`;
@@ -257,7 +259,7 @@ export function kitBriefing(match, side) {
     const zone = killRadius();
     const zoneText = zone === null
       ? "This build's nuke has no kill radius configured, so a launch is refused."
-      : `The blast levels everything within ${zone} cells of the aim point — both sides' units, cities, bases and oil fields — and leaves wasteland, where attrition can kill. ${zone} is a ${STAND_IN}: the manual says "within three spaces" and the shape is read as a square.`;
+      : `The blast levels everything within ${zone} cells of the aim point — both sides' units, cities, bases and oil fields — and leaves wasteland, where attrition can kill. The manual says "within three spaces"; this build reads that as a square of ${zone} cells.`;
     const homeText = "Your own home country cannot be targeted, even where it has been invaded.";
     // PB-156: the global count is not decoration. Every launch feeds it, and it is what turns the
     // sky on both sides: income can be skipped from the first detonation, the warning comes at 5,

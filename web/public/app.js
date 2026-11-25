@@ -1941,7 +1941,7 @@ function toolRow(room) {
               : mission.mode === "bomb"
                 ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius (" + (briefing.restrictedReach || "?") + " cells); the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
-                ? "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED."
+                ? "Pick a friendly city, base or carrier cell within the transfer range; the aircraft rebases there."
                 : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
         button.addEventListener("click", () => {
           // A strike hits the cell the player names, not the base the plane sits on. A transfer
@@ -1950,7 +1950,7 @@ function toolRow(room) {
           if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb") {
             pendingMission = mission.mode;
             say(mission.mode === "transfer"
-              ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
+              ? "Transfer: pick a friendly city, base or carrier cell."
               : mission.mode === "bomb"
                 ? bombArmText(briefing.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("
@@ -2521,7 +2521,7 @@ const DIALOG_PAINTERS = {
                 + (plane.restrictedReach || "?") + " cells); away for " + mission.rounds + " rounds."
               : mission.rounds > 0
               ? "Away for " + mission.rounds + " rounds."
-              : "Pick a friendly city, base or carrier cell within the stand-in reach (UNMEASURED); the aircraft rebases there. The round cost is UNVERIFIED.";
+              : "Pick a friendly city, base or carrier cell within the transfer range; the aircraft rebases there.";
         button.disabled = !plane.ready;
         button.addEventListener("click", () => {
           // A strike, a bombing run or a transfer is aimed: the air dialog names the plane and
@@ -2538,7 +2538,7 @@ const DIALOG_PAINTERS = {
             }
             pendingMission = mission.mode;
             say(mission.mode === "transfer"
-              ? "Transfer: pick a friendly city, base or carrier cell (stand-in reach, UNMEASURED)."
+              ? "Transfer: pick a friendly city, base or carrier cell."
               : mission.mode === "bomb"
                 ? bombArmText(plane.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("

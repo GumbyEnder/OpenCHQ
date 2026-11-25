@@ -189,10 +189,10 @@ export function economyModel(room) {
 export function reserveLine(meter) {
   const held = meter.held === null ? "unknown" : String(meter.held);
   const rate = meter.rate === null ? "rate unknown" : String(meter.rate) + " a round";
-  // Steel is an owner-designed second resource, not something the 1990 game had. Say so on the
-  // readout itself so nobody reads it as a recovered rule.
-  const original = meter.kind === "steel" ? " · non-original stand-in" : "";
-  return meter.kind + ": " + held + " held · " + rate + (meter.dry ? " · dry" : "") + original;
+  // PB-244: steel is an owner-designed second resource, and "non-original stand-in" is a note for a
+  // maintainer, not something to print at a player. The provenance lives in config.resources.steel
+  // ("choice": "non-original ..."), where whoever tunes the number will read it.
+  return meter.kind + ": " + held + " held · " + rate + (meter.dry ? " · dry" : "");
 }
 
 // The oil budget in the player's words: the reserve, and what the next round puts in and takes

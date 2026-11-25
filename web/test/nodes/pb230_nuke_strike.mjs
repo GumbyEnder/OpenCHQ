@@ -238,7 +238,9 @@ export async function run(ctx) {
       const ring = Number(rules().nukes.exclusion);
       const inside = nukeTarget(match, "blue", { x: cap.x + ring, y: cap.y });
       eq("the ring cell is refused", inside.error, capitalText());
-      must(String(inside.error).includes(STAND_IN), "the capital refusal does not call its radius a " + STAND_IN);
+      // PB-244: the refusal names the ring size; the fact that the size is a stand-in lives in config.
+      must(!String(inside.error).includes(STAND_IN), "the capital refusal hands the player a developer tag");
+      must(String(inside.error).includes(String(ring)), "the capital refusal does not print the ring size: " + inside.error);
       const outside = nukeTarget(match, "blue", { x: cap.x + ring + 1, y: cap.y });
       must(!outside.error, "one cell past the ring was refused: " + outside.error);
       // Blue's own capital as well: the guard is home ground, not one side's.
@@ -450,7 +452,9 @@ export async function run(ctx) {
       const event = (result.events || []).find((e) => e.type === "nuke");
       eq("the event lists what died", event.killed.map((p) => p.id).sort(), ["corner-e", "corner-w", "own"]);
       eq("the event names the radius", event.radius, radius);
-      must(String(event.note).includes(STAND_IN), "the launch line does not call the radius a " + STAND_IN);
+      // PB-244: the launch line prints the radius and the shape; no tag.
+      must(!String(event.note).includes(STAND_IN), "the launch line hands the player a developer tag");
+      must(String(event.note).includes(String(radius)), "the launch line does not print the radius: " + event.note);
       must(/wasteland/.test(String(event.note)), "the launch line does not say what it leaves");
       // PM 8963 / frodo 8962 §6: the retired sentence must not survive anywhere in the events.
       must(!(result.events || []).some((e) => /paints nothing|deals no damage/.test(String(e.note || ""))),

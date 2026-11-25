@@ -47,7 +47,7 @@ export const NUKE_EXCLUSION_UNKNOWN = "This build's capital ring has no radius c
 export function capitalText(radius = exclusionRadius()) {
   const cells = Number.isInteger(radius) ? radius : "?";
   return "Too close to a capital. SDI/ABM keeps a ring around every capital; " + cells +
-    " cells is a " + STAND_IN + " (the archive kept the guard but never printed its size).";
+    " cells is its size.";
 }
 export const NUKE_HOME_COUNTRY = "That cell is in your own home country. A nuke may not be used on home ground, " +
   "even where it has been invaded.";
@@ -415,6 +415,6 @@ export function nukeNote(strike) {
   const sites = strike.sites.length;
   return `Nuke at ground zero: ${pieces} unit${pieces === 1 ? "" : "s"} and ${sites} ` +
     `site${sites === 1 ? "" : "s"} destroyed within ${strike.radius} cells ` +
-    `(${strike.radius} is a ${STAND_IN}; the kill zone is read as a square). ` +
+    `(the kill zone is read as a square). ` +
     `The ground there is wasteland.`;
 }

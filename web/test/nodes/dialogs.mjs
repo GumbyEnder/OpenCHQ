@@ -4,6 +4,7 @@
 // did not exist. Everything they print comes from the room the server sent: prices from the shop row,
 // the payday from the seat's own `income`, the purse from the seat. This asserts the row building,
 // the counts, the words, and that the payday the dialogue shows is the one the economy module counts.
+import { readFileSync } from "node:fs";
 import { NAV, buyRows, economyModel, logWindow, navFor, reserveLine, untypedCount } from "../../public/dialogs.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
@@ -118,14 +119,17 @@ export async function run(ctx) {
 
   // A rate nobody recovered says so instead of printing a number.
   eq("a missing rate is said in words",
-    reserveLine(model.reserves[1]), "steel: unknown held · rate unknown · non-original stand-in");
+    reserveLine(model.reserves[1]), "steel: unknown held · rate unknown");
   eq("a known rate is printed", reserveLine(model.reserves[0]), "fuel: 9997 held · 1 a round");
-  // Steel is not a recovered rule; the readout must say so where the player sees it.
-  if (!reserveLine(model.reserves[1]).includes("non-original")) {
-    fail("the steel readout is not labelled non-original");
+  // PB-244: "non-original" was a maintainer's note printed at the player. The readout names the
+  // resource and its numbers; the fact that steel is an owner-designed addition lives in
+  // config.resources.steel.choice, which this arm still checks.
+  if (/non-original|stand-in/i.test(reserveLine(model.reserves[1]))) {
+    fail("the steel readout hands the player a developer tag: " + reserveLine(model.reserves[1]));
   }
-  if (reserveLine(model.reserves[0]).includes("non-original")) {
-    fail("the fuel readout was labelled non-original");
+  const steelConfig = JSON.parse(readFileSync(new URL("../../../config/game.json", import.meta.url), "utf8")).resources.steel;
+  if (!/non-original/i.test(String(steelConfig.choice))) {
+    fail("config.resources.steel lost the non-original provenance");
   }
 
   // --- the server sends the figure the dialogue prints -----------------------

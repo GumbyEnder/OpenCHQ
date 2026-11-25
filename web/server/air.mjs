@@ -67,7 +67,7 @@ const BOMB_SITE_KINDS = new Set(["city", "base", "facility", "capital"]);
 
 export const STRIKE_NOTE = "Air strike.";
 export const BOMB_NOTE = "Bombing run.";
-export const REACH_NOTE = "Stand-in reach. The aircraft range was not recovered.";
+export const REACH_NOTE = "Reach is limited by the aircraft's range.";
 export const PARADROP_NOTE = "Paradrop. The infantry pays its strength cost.";
 
 // The site kinds an air unit may be based at. ONE list, exported, because three rules read the same
@@ -192,7 +192,7 @@ export function airBriefing(match, side) {
 // air.transferRounds, UNVERIFIED (air.transferRoundsSource) - the manual prints none, so 0 is an
 // assumption recorded in Q50, not a recovered rule. How many aircraft may base on one site is
 // Q50's first sub-item and is deliberately NOT capped here.
-export const TRANSFER_NOTE = "Transfer. The aircraft rebases; the original's transfer range (stand-in reach, UNMEASURED) and round cost (UNVERIFIED) were not recovered.";
+export const TRANSFER_NOTE = "Transfer. The aircraft rebases to the base you pick.";
 
 // An aircraft based at a city, base or capital is DESTROYED when that site is captured, not stranded
 // or displaced. This is a RECOVERED RULE, not the remake's choice: Manual printed p.10 ("City
@@ -237,7 +237,7 @@ export function transferPlane(match, side, pieceId, target) {
 
   const reach = airReach();
   if (reach > 0 && chebyshev(plane, { x: wx, y }) > reach) {
-    return { error: "That site is out of the aircraft's transfer range (" + reach + " cells; stand-in reach, UNMEASURED)." };
+    return { error: "That site is out of the aircraft's transfer range (" + reach + " cells)." };
   }
 
   const from = { x: Number(plane.x), y: Number(plane.y) };
@@ -347,7 +347,7 @@ export function sendMission(match, side, pieceId, mode, target) {
           error: "That target is " + away + " cells from the aircraft; " + what
             + " must be inside the restricted air radius (" + restricted
             + " cells). Only a transfer may use the maximum radius (" + max
-            + " cells). Both radii are port values, UNVERIFIED.",
+            + " cells).",
         };
       }
     }

@@ -3,7 +3,7 @@
 // The tools worked and the buttons existed, but the nuke's guard radius, the launch limit and the
 // fact that a launch does nothing were only readable in late.mjs. This node puts them on the page
 // and in the round log, marks every unascertained number STAND-IN, and makes a refusal say why.
-import { STAND_IN, kitBriefing, nukeStatus, useTool } from "../../server/late.mjs";
+import { kitBriefing, nukeStatus, useTool } from "../../server/late.mjs";
 import { logLines } from "../../server/log.mjs";
 import { rules } from "../../server/rules.mjs";
 import { forSeat } from "../../server/view.mjs";
@@ -60,7 +60,10 @@ export async function run() {
     }
 
     const nuke = kit.find((entry) => entry.name === "nuke");
-    if (!nuke.text.includes(STAND_IN)) fail("the nuke text does not mark a stand-in");
+    // PB-244: the sentence names the rule (the manual's "within three spaces", read as a square) and
+    // leaves the provenance to config; a developer tag in a briefing is a defect, not a signal.
+    if (/\b(UNVERIFIED|UNMEASURED|STAND-IN)\b/.test(nuke.text)) fail("the nuke text still hands the player a developer tag");
+    if (!/square/.test(nuke.text)) fail("the nuke text no longer says how the shape is read: " + nuke.text);
     if (Number.isFinite(radius) && radius >= 1) {
       if (!nuke.text.includes(String(radius))) fail("the nuke text does not print the config's radius: " + nuke.text);
     }

@@ -114,7 +114,7 @@ export function radiusKill(match, at, options = {}) {
     y: hits.cell.y,
     radius,
     killed,
-    note: `Blast of ${radius} cells. The ${radius} is a ${STAND_IN}: the archive kept the rule but never printed the count.`,
+    note: `Blast of ${radius} cells.`,
   };
   return { ok: true, radius, killed, events: [event] };
 }

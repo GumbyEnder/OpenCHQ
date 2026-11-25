@@ -286,7 +286,14 @@ export async function run(ctx) {
   if (!brief) fail("the kit briefing lost its aid row");
   if (!/you pick/i.test(brief.text)) fail("the aid briefing does not say the player picks the city: " + brief.text);
   if (!/one step at a time/i.test(brief.text)) fail("the aid briefing does not describe the staged nation: " + brief.text);
-  if (!brief.text.includes("STAND-IN")) fail("the aid briefing does not label the gift arithmetic a stand-in: " + brief.text);
+  // PB-244: the briefing says the rule, not the tag; the gift arithmetic's provenance is config's
+  // (`loyalty.note`, `sources.loyalty`), so this arm checks the rule is stated and no tag leaks.
+  if (/\b(UNVERIFIED|UNMEASURED|STAND-IN)\b|archive's note/i.test(brief.text)) {
+    fail("the aid briefing hands the player a developer tag: " + brief.text);
+  }
+  if (!/gift/i.test(brief.text) || !/cancel/i.test(brief.text)) {
+    fail("the aid briefing no longer states the gift rule: " + brief.text);
+  }
   // PB-227: when every city left to sway sits in the opponent's home country, the row must say so
   // rather than offer a button whose every click is refused.
   const homeOnly = fresh();
