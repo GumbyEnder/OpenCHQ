@@ -290,6 +290,26 @@ function say(text) {
   flashLine.say(text);
 }
 
+// PB-250/PB-251: the cease fire on the table is this seat's own fact (`room.seat.ceasefire`), so
+// every frame carries the offer and every frame carries the ANSWER too. The proposal line
+// ("until they do, the war continues") is true only while the offer is pending; once the opponent
+// answers - the bot's seat included - the answer replaces it, or the proposer reads a sentence
+// about a war that has already stopped. The wording is the server's own log sentence, one act
+// described one way.
+function sayTruceAnswer(before, after) {
+  const was = before && before.seat ? before.seat.ceasefire : null;
+  const now = after && after.seat ? after.seat.ceasefire : null;
+  if (!was || was.status !== "pending" || !was.yours) return;
+  if (!now) {
+    // The offer left the table without a status of its own (a resume clears it): do not leave the
+    // proposal sentence standing over a board that has moved on.
+    say("the cease fire is off the table.");
+    return;
+  }
+  if (now.status === "declined") say("your cease fire was declined; the war goes on");
+  else if (now.status === "accepted") say("cease fire agreed; the war is at peace");
+}
+
 // The end of a match said once, in the player's own terms.
 //
 // The reason and the capital list come off the server's `result`, never off what this page can see:
@@ -2085,6 +2105,7 @@ function paintLog(list) {
 // than patching a guess.
 function applyDelta(delta) {
   if (!room || !delta) return;
+  const previous = room;
   const next = Number(delta.round) || 0;
   const here = Number(room.round) || 0;
   const advanced = next !== here;
@@ -2131,6 +2152,10 @@ function applyDelta(delta) {
     over: delta.over === undefined ? room.over : Boolean(delta.over),
     winner: delta.winner === undefined ? room.winner : delta.winner,
     result: delta.result === undefined ? room.result : delta.result,
+    // PB-250: the peace state rides every delta now, because a bot answers between rounds and the
+    // seat's ceasefire flips on the same frame. Without this the strip and the War panel kept the
+    // pre-answer peace (and the enemy kept drawing) until the next 20-round whole frame.
+    peace: delta.peace === undefined ? room.peace : delta.peace,
   };
   // PB-170b: the same re-bind the whole-room branch does (PB-170), because this branch also
   // replaces the piece objects. Before this, an id that was still on the board kept the
@@ -2150,6 +2175,7 @@ function applyDelta(delta) {
   if (advanced && placement && buying) send({ op: "placement", kind: buying });
   renderRoom();
   drawMatch();
+  sayTruceAnswer(previous, room);
 }
 
 function showPlay(on) {
@@ -3318,6 +3344,7 @@ function connect() {
     } else if (message.op === "declined") {
       say(message.by + " declined.");
     } else if (message.op === "room") {
+      const previousRoom = room;
       if (!room || !message.room || room.id !== message.room.id) {
         log = emptyLog();
         logView.pinned = true;
@@ -3361,6 +3388,7 @@ function connect() {
       renderPeople();
       renderRoom();
       drawMatch();
+      sayTruceAnswer(previousRoom, room);
     } else if (message.op === "ack") {
       settleOrder(message.id);
       // What a command actually did, in the server's own words.
