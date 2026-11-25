@@ -150,10 +150,22 @@ export function appendFrame(room, events, handle = sharedDb) {
   };
   // The round a match ended on carries the state its digest is taken over (AC1).
   if (match.over) frame.state = finalStateOf(match);
+  // A round can be appended twice: the tick writes it, and the round that ENDS the match is written
+  // once more so its frame carries the closing state (AC1). The second write must not erase the first
+  // one's events - a film whose last round lost its kills would be a film that lies. So an empty
+  // incoming event list keeps the events already stored for that round.
+  const round = Number(match.round) || 0;
+  if (!frame.events.length) {
+    const existing = handle
+      .prepare("SELECT payload FROM match_rounds WHERE match_id = ? AND round = ?")
+      .get(String(room.id), round);
+    const previous = existing ? ungz(existing.payload) : null;
+    if (previous && Array.isArray(previous.events) && previous.events.length) frame.events = previous.events;
+  }
   const blob = gz(frame);
   handle
     .prepare("INSERT OR REPLACE INTO match_rounds (match_id, round, payload) VALUES (?, ?, ?)")
-    .run(String(room.id), Number(match.round) || 0, blob);
+    .run(String(room.id), round, blob);
   return { round: frame.round, bytes: blob.length };
 }
 
@@ -213,6 +225,54 @@ export function framesOf(roomId, handle = sharedDb, from = 0, to = Number.POSITI
     .prepare("SELECT round, payload FROM match_rounds WHERE match_id = ? AND round >= ? AND round <= ? ORDER BY round")
     .all(String(roomId), Number(from) || 0, Number.isFinite(to) ? Number(to) : 2147483647);
   return rows.map((row) => ({ round: row.round, frame: ungz(row.payload) }));
+}
+
+// ---- step 2: what an account may read -------------------------------------------------
+// A film opens only for FINISHED matches (room 7683 condition 1) and only for the account that sat in
+// it (condition 2). Every reader takes the username, never a user id: the rows store handles, and a
+// lookup that trusts a caller-supplied id is a lookup that leaks someone else's war.
+
+export function listFor(username, handle = sharedDb, limit = 50) {
+  const name = String(username || "");
+  if (!name) return [];
+  const rows = handle
+    .prepare(
+      `SELECT id, era, mode, blue_user, red_user, started_at, ended_at, winner, rounds, schema,
+              final_digest, stored_bytes
+       FROM matches
+       WHERE ended_at IS NOT NULL AND (blue_user = ? OR red_user = ?)
+       ORDER BY ended_at DESC, id DESC LIMIT ?`,
+    )
+    .all(name, name, Math.max(1, Math.min(200, Number(limit) || 50)));
+  return rows.map((row) => ({ ...row, stored_bytes: Number(row.stored_bytes || 0) }));
+}
+
+// One film's header and start state, or null. A live match is not a film, and somebody else's film is
+// not found - the two answers are the same on purpose.
+export function filmFor(username, roomId, handle = sharedDb) {
+  const name = String(username || "");
+  if (!name) return null;
+  const row = handle
+    .prepare(
+      `SELECT id, era, mode, blue_user, red_user, started_at, ended_at, winner, rounds, schema,
+              final_digest, stored_bytes, start_state
+       FROM matches
+       WHERE id = ? AND ended_at IS NOT NULL AND (blue_user = ? OR red_user = ?)`,
+    )
+    .get(String(roomId), name, name);
+  if (!row) return null;
+  const { start_state: blob, ...meta } = row;
+  return { ...meta, stored_bytes: Number(meta.stored_bytes || 0), start: ungz(blob) };
+}
+
+// A page asks for a window, never "everything": 400-round matches exist, and a client that pulls all
+// of one in a single answer is a client that stalls on a phone. 200 frames per call, clamped.
+export function framesFor(username, roomId, handle = sharedDb, from = 0, to = Number.POSITIVE_INFINITY) {
+  if (!filmFor(username, roomId, handle)) return null;
+  const lo = Math.max(0, Number(from) || 0);
+  const hi = Number.isFinite(to) ? Math.max(lo, Number(to)) : lo + 199;
+  const capped = Math.min(hi, lo + 199);
+  return framesOf(roomId, handle, lo, capped);
 }
 
 // Real file bytes: the sqlite file and its wal/shm beside it. NOT the platform's allocation number.
