@@ -289,11 +289,49 @@ async function economyDialog(page) {
   await page.click("#dialogClose");
 }
 
+// PB-245b (manual printed p.31): 1986 and 2023 OPEN in the cold war, so the order flow below is a
+// wartime flow and the harness has to leave the peace first - the same Begin Hostilities a player
+// presses (p.32 War Status). A 1918/1942 run has no peace and this is a no-op.
+async function beginHostilities(page) {
+  const peace = await page.evaluate(() => (window.__chq.room() || {}).peace || null);
+  if (!peace || peace.active !== true) return;
+  await page.click('.navbtn[data-dialog="war"]');
+  await page.waitForFunction(() => {
+    const btn = [...document.querySelectorAll("#dialogBody button")]
+      .find((b) => /Begin Hostilities/i.test(b.textContent));
+    return Boolean(btn) && btn.disabled === false;
+  }, null, { timeout: 10000, polling: 100 }).catch(() => {});
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("#dialogBody button")]
+      .find((b) => /Begin Hostilities/i.test(b.textContent));
+    if (btn) btn.click();
+  });
+  await page.waitForFunction(() => {
+    const p = (window.__chq.room() || {}).peace;
+    return !p || p.active !== true;
+  }, null, { timeout: 10000, polling: 100 }).catch(() => {});
+  await page.click("#dialogClose").catch(() => {});
+  // A reload between "leave the peace" and the order flow: the page comes back on the same match
+  // with no dialog, no armed mode and no stale selection, and the war the server now holds is the
+  // war the page reads. (The peace itself survives a reload - the state is the match's.)
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => window.__chq && window.__chq.room(), null, { timeout: 25000, polling: 100 }).catch(() => {});
+  await page.waitForFunction(() => {
+    const peace = (window.__chq.room() || {}).peace;
+    return !peace || peace.active !== true;
+  }, null, { timeout: 15000, polling: 100 }).catch(() => {});
+}
+
 async function moveOrder(page) {
   const room = await roomOf(page);
   const mine = (room.pieces || []).find((p) => p.side === room.you && p.domain === "land");
   check(Boolean(mine), "the seat has a land piece to order");
   if (!mine) return null;
+  // PB-245b: at peace the SECOND select of a piece arms its starting destination (p.31), and the
+  // purchase leaves the bought unit selected - so a "first" click on the piece would be the second
+  // select. Escape clears the selection; this arm is about the first select and the walk it orders.
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForFunction(() => window.__chq.state().selected === null, null, { timeout: 5000 }).catch(() => {});
   await clickCell(page, { x: mine.x, y: mine.y });
   await page.waitForFunction(() => window.__chq.state().selected !== null, null, { timeout: 10000 });
   const selected = await page.evaluate(() => window.__chq.state().selected);
@@ -301,7 +339,10 @@ async function moveOrder(page) {
   // Ask the server for a plan over the neighbours and take the first one it accepts. The page
   // previews on hover; a refused cell says so and is not clicked.
   let accepted = null;
-  for (let radius = 1; radius <= 6 && !accepted; radius++) {
+  // PB-245b: radius 1 can be inside the selected unit's BADGE BOX at the world fit (T-028/PB-175:
+  // a click picks a piece by its icon, not by one cell), so the "destination" click re-selected the
+  // unit and sent nothing. Start at 2 cells, which is outside the badge at this viewport.
+  for (let radius = 2; radius <= 7 && !accepted; radius++) {
     for (const [dx, dy] of [[radius, 0], [0, radius], [-radius, 0], [0, -radius], [radius, radius], [-radius, -radius]]) {
       const cell = { x: (mine.x + dx + 320) % 320, y: Math.max(0, Math.min(135, mine.y + dy)) };
       await hoverCell(page, cell);
@@ -319,7 +360,16 @@ async function moveOrder(page) {
   const ordered = await page.waitForFunction((from) => window.__chq.wire().slice(from).some((line) => /^ordered/.test(line)),
     before, { timeout: 15000 }).then(() => true).catch(() => false);
   const said = await toast(page);
-  check(ordered || /Order sent/.test(said), "the move order is accepted by the server", said);
+  const diag = await page.evaluate((from) => ({
+    wire: window.__chq.wire().slice(from).slice(-2),
+    selected: window.__chq.state().selected,
+    armed: window.__chq.state().armedDestination,
+    toast: window.__chq.toast(),
+    note: window.__chq.note(),
+    peace: (window.__chq.room() || {}).peace && window.__chq.room().peace.active,
+  }), before);
+  check(ordered || /Order sent/.test(said), "the move order is accepted by the server",
+    said + " :: " + JSON.stringify(diag));
   return accepted;
 }
 
@@ -474,6 +524,13 @@ const main = async () => {
       PLAY_ERA, { timeout: 20000 });
     const opened = await roomOf(page);
     check(Boolean(opened), "the " + PLAY_ERA + " match to play is open");
+
+    // PB-245b: leave the cold war before the wartime order flow (a no-op for 1918/1942).
+    await beginHostilities(page);
+    check(await page.evaluate(() => {
+      const peace = (window.__chq.room() || {}).peace;
+      return !peace || peace.active !== true;
+    }), "the match is at war before the order flow", "era " + PLAY_ERA);
 
     await buyInfantry(page);
     await economyDialog(page);

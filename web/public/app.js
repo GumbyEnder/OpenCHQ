@@ -3757,6 +3757,9 @@ window.__chq = {
   state: () => ({
     buying,
     selected: selected ? selected.id : null,
+    // PB-245b: the piece whose second select armed a starting destination, so a leg can see the
+    // gesture's state instead of inferring it from a missing wire message.
+    armedDestination: pendingDestination,
     placement: Boolean(placement),
     placementSnap: placement ? placement.snap : null,
     placementBox: placement ? placement.box : null,
