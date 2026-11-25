@@ -15,9 +15,11 @@
 // Pruning is step 2 and is not tested here because it does not exist yet - the commit says why.
 
 import { DatabaseSync } from "node:sqlite";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const name = "t031_history";
 
@@ -134,6 +136,119 @@ export async function run() {
   eq(usage.matches, 1, "one film in the store");
   eq(usage.finished, 1, "and it is finished");
   eq(usage.filmBytes > 0, true, "the per-match stored_bytes is reported for the prune's decision");
+
+  // ---- 7. the film survives a restart (frodo 9117 §2) --------------------------------
+  // `loadRooms()` returns objects with NO `film` key and `recordFilm()` early-returns on a falsy
+  // `room.film`, so before the restore initialiser a match that crossed a deploy stopped
+  // recording at the restart, `finishFilm` never ran, `ended_at` stayed null and the war never
+  // reached `listFor`. This is a REAL restore, not a mock: a child process owns its own store
+  // (`OPENCHQ_WEB_DATA` points at a temp dir, so a player's database is never touched), builds a
+  // film, saves the room the way a deploy drain does, then a lobby is created over that same
+  // store and the production beat is run. A second room with no `matches` row pins the other
+  // half: restore must NOT invent a film, because `startFilm` upserts and its ON CONFLICT would
+  // rewrite `start_state` with a mid-match paint.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(here, "..", "..", "..");
+  const serverUrl = pathToFileURL(path.join(repoRoot, "web", "server")).href;
+  const restoreDir = mkdtempSync(path.join(tmpdir(), "openchq-t031-restore-"));
+  const childSource = `
+const u = (name) => ${JSON.stringify(serverUrl)} + "/" + name;
+const history = await import(u("history.mjs"));
+const { db } = await import(u("db.mjs"));
+const rooms = await import(u("rooms.mjs"));
+const { openMatch } = await import(u("match.mjs"));
+const { tickMatch } = await import(u("tick.mjs"));
+const { matchSites } = await import(u("board.mjs"));
+const { createLobby } = await import(u("lobby.mjs"));
+const { gunzipSync: gunzip } = await import("node:zlib");
+const report = {};
+const hex = (blob) => Buffer.from(blob).toString("hex");
+const count = (sql, ...args) => db.prepare(sql).get(...args).n;
+
+const filmRoom = {
+  id: "restore-film",
+  mode: "human",
+  era: "1942",
+  clock: "running",
+  speed: 1,
+  resume: true,
+  seats: { blue: { username: "ada", kind: "human" }, red: { username: "grace", kind: "human" } },
+  match: openMatch("1942", matchSites("1942")),
+};
+history.startFilm(filmRoom, db);
+report.startState = hex(db.prepare("SELECT start_state FROM matches WHERE id = ?").get(filmRoom.id).start_state);
+filmRoom.match.clock = "running";
+for (let i = 0; i < 2; i += 1) {
+  const step = tickMatch(filmRoom.match);
+  history.appendFrame(filmRoom, step.events, db);
+}
+report.roundBefore = filmRoom.match.round;
+report.framesBefore = count("SELECT COUNT(*) AS n FROM match_rounds WHERE match_id = ?", filmRoom.id);
+// A drain marks the room to resume; the row's clock is running. That is the deploy case.
+rooms.saveRoom(filmRoom);
+
+const bareRoom = {
+  id: "restore-nofilm",
+  mode: "human",
+  era: "1942",
+  clock: "running",
+  speed: 1,
+  resume: true,
+  seats: { blue: { username: "bob", kind: "human" }, red: { username: "eve", kind: "human" } },
+  match: openMatch("1942", matchSites("1942")),
+};
+bareRoom.match.clock = "running";
+for (let i = 0; i < 2; i += 1) tickMatch(bareRoom.match);
+rooms.saveRoom(bareRoom);
+report.bareRoundBefore = bareRoom.match.round;
+
+// The restart: a new lobby over the same store, then the beat that records frames.
+const lobby = createLobby();
+const t0 = Date.now();
+lobby.tickRooms(t0);
+lobby.tickRooms(t0 + 20000);
+const filmAfter = lobby.debugRoom("restore-film");
+const bareAfter = lobby.debugRoom("restore-nofilm");
+report.filmRoundAfter = filmAfter ? filmAfter.round : null;
+report.bareRoundAfter = bareAfter ? bareAfter.round : null;
+report.framesAfter = count("SELECT COUNT(*) AS n FROM match_rounds WHERE match_id = ?", "restore-film");
+report.newestRound = db.prepare("SELECT MAX(round) AS r FROM match_rounds WHERE match_id = ?").get("restore-film").r;
+report.startStateAfter = hex(db.prepare("SELECT start_state FROM matches WHERE id = ?").get("restore-film").start_state);
+report.bareRows = count("SELECT COUNT(*) AS n FROM matches WHERE id = ?", "restore-nofilm");
+const bareRow = db.prepare("SELECT start_state FROM matches WHERE id = ?").get("restore-nofilm");
+report.bareStartRound = bareRow ? JSON.parse(gunzip(Buffer.from(bareRow.start_state)).toString("utf8")).round : null;
+report.bareFrames = count("SELECT COUNT(*) AS n FROM match_rounds WHERE match_id = ?", "restore-nofilm");
+report.bareNewest = db.prepare("SELECT MAX(round) AS r FROM match_rounds WHERE match_id = ?").get("restore-nofilm").r;
+lobby.flushAll();
+db.close();
+console.log("RESTORE_REPORT " + JSON.stringify(report));
+`;
+  const childRun = spawnSync(process.execPath, ["--input-type=module", "-e", childSource], {
+    cwd: repoRoot,
+    env: { ...process.env, OPENCHQ_WEB_DATA: restoreDir },
+    encoding: "utf8",
+    timeout: 120000,
+  });
+  if (childRun.status !== 0) {
+    fail("the restore child exited " + childRun.status + ": " + String(childRun.stderr || childRun.stdout).slice(-1200));
+  }
+  const line = String(childRun.stdout || "").split("\n").find((row) => row.startsWith("RESTORE_REPORT "));
+  if (!line) fail("the restore child printed no report: " + String(childRun.stdout).slice(-800) + String(childRun.stderr).slice(-800));
+  const restored = JSON.parse(line.slice("RESTORE_REPORT ".length));
+  eq(restored.framesBefore, 2, "two rounds were filmed before the restart");
+  eq(restored.filmRoundAfter, restored.roundBefore + 1, "the restored room's beat advanced one round");
+  eq(restored.framesAfter, restored.framesBefore + 1, "a frame was written for the round after the restart");
+  eq(restored.newestRound, restored.filmRoundAfter, "the new frame belongs to that round");
+  eq(restored.startStateAfter, restored.startState,
+    "round 0's start_state was NOT rewritten: restore re-arms the recorder, it does not reopen the film");
+  eq(restored.bareRoundAfter > restored.bareRoundBefore, true,
+    "the film-less room ran under the same beat (" + restored.bareRoundBefore + " -> " + restored.bareRoundAfter + ")");
+  // The no-row arm: a room that predates the recorder is filmed from the restart on, and its start
+  // state says WHICH round that was - it does not claim round 0.
+  eq(restored.bareRows, 1, "a restored room with no matches row opens a film at the restart");
+  eq(restored.bareStartRound, restored.bareRoundBefore, "the opened film's start state names the round it opened at");
+  eq(restored.bareFrames, 1, "and the round after the restart is recorded for it");
+  eq(restored.bareNewest, restored.bareRoundAfter, "the film-less room's first frame is the round the beat ran");
 
   handle.close();
 }

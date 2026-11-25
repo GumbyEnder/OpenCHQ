@@ -14,7 +14,7 @@ import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
 // T-031 step 1: the War Films recorder. A film is a recording of a finished match; nothing here is
 // read by a live page, and every call is wrapped so a storage fault can never stop a match.
-import { appendFrame, finishFilm, startFilm } from "./history.mjs";
+import { appendFrame, armRestoredFilm, finishFilm, startFilm } from "./history.mjs";
 import { scanActiveFor, scanAnyActive } from "./scan.mjs";
 import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
 import { isSatelliteKind, shopFor } from "./shop.mjs";
@@ -244,6 +244,11 @@ export function createLobby() {
       saveRoom(room);
     }
     stampSeats(room);
+    // T-031 (frodo 9117 §5): a room that comes back from the store must keep filming, or the film
+    // stops at the deploy and `finishFilm` never runs, so the war never appears in the player's
+    // films. This re-arms the recorder ONLY when its header row already exists - see
+    // armRestoredFilm: re-opening would rewrite round 0's paint.
+    armRestoredFilm(room);
     rooms.set(room.id, room);
     for (const seat of Object.values(room.seats ?? {})) {
       if (seat && seat.kind === "human" && seat.username) seatOf.set(seat.username, room.id);
