@@ -215,7 +215,11 @@ export function produce(match, side, kind, sites = 1) {
   }
   const rate = rateOf(kind);
   if (rate === null) {
-    return { error: `The rate for ${kind} was never recovered.`, kind, rate: null };
+    // PB-244 (frodo 9108 §7): the refusal states the rule and stops there. "was never recovered" is a
+    // note about the port, not about the war; the provenance for it lives at `notes.<kind>` in
+    // config/game.json, and the node beside this one asserts that it is still there. A player who is
+    // told the rate is unknown does not need to be told who failed to find it.
+    return { error: `No rate is recorded for ${kind}.`, kind, rate: null };
   }
   const count = Number(sites);
   if (!Number.isFinite(count) || count < 0) return { error: `Not a number of sites: ${sites}.` };

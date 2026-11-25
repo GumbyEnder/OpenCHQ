@@ -26,7 +26,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const GIVEN = (process.argv.find((v) => v.startsWith("--url=")) || "").slice(6).replace(/\/+$/, "") ||
   (process.env.E2E_URL || "").replace(/\/+$/, "");
-const OUT = path.resolve((process.argv.find((v) => v.startsWith("--out=")) || "").slice(7) ||
+const OUT = path.resolve((process.argv.find((v) => v.startsWith("--out=")) || "").slice(6) ||
   path.join(process.env.HOME || ".", "agents", "game", "notes", "pb240"));
 mkdirSync(OUT, { recursive: true });
 

@@ -91,7 +91,18 @@ export async function run(ctx) {
   const before = meter(match, "blue", "steel").held;
   const paid = produce(match, "blue", "steel", 3);
   must(paid && paid.error, "a kind with no rate paid something anyway: " + JSON.stringify(paid));
-  must(/never recovered/.test(paid.error), "an unknown rate must say so: " + paid.error);
+  must(/no rate is recorded/i.test(paid.error), "an unknown rate must say so plainly: " + paid.error);
+  // PB-244 (frodo 9108 §7): the refusal is the player's sentence and nothing else. "was never
+  // recovered" was a note about the port, so it moved to the kind's own config note — and this arm
+  // proves both halves: the sentence is plain, and the doubt still exists where a maintainer looks.
+  must(!/recovered|archive|STAND-IN|UNVERIFIED|UNMEASURED/i.test(paid.error),
+    "the refusal hands the player a maintainer's note: " + paid.error);
+  const gameConfig = JSON.parse(readFileSync(configPath(), "utf8"));
+  for (const kindName of ["steel", "fuel"]) {
+    const provenance = String((gameConfig.notes || {})[kindName] || "");
+    must(/never recovered|no yield is set/i.test(provenance),
+      "config notes." + kindName + " no longer records that its rate was never recovered");
+  }
   eq(meter(match, "blue", "steel").held, before, "a refused payout must not change the reserve");
 
   // ---- a round burns every kind the scenario carries --------------------------------------
@@ -136,7 +147,7 @@ export async function run(ctx) {
     must(tinSpent && tinSpent.ok === true, "a configured kind could not be consumed: " + JSON.stringify(tinSpent));
     eq(tinSpent.held, 4, "a configured kind after spending");
     const tinPaid = produce(tinMatch, "blue", "tin", 1);
-    must(tinPaid && /never recovered/.test(String(tinPaid.error)), "a configured kind paid without a rate");
+    must(tinPaid && /no rate is recorded/i.test(String(tinPaid.error)), "a configured kind paid without a rate");
     upkeepResources(tinMatch);
     eq(meterOf(tinMatch, "blue", "tin").held, 2, "a configured kind must burn what config says");
   } finally {

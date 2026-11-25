@@ -2387,8 +2387,8 @@ const DIALOG_PAINTERS = {
     const untyped = untypedCount(room);
     if (untyped > 0) {
       body.append(note(untyped === 1
-        ? "One of your units has no type recorded: it is part of the opening force, whose order of battle was never recovered."
-        : untyped + " of your units have no type recorded: they are part of the opening force, whose order of battle was never recovered."));
+        ? "One of your units has no type recorded: it is part of the opening force."
+        : untyped + " of your units have no type recorded: they are part of the opening force."));
     }
   },
 

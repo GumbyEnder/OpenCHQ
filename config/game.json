@@ -491,6 +491,7 @@
     }
   },
   "notes": {
+    "openingRoster": "T-007 / PB-244: the archive's order of battle for the opening force was never recovered, so an opening unit the roster cannot type stays untyped and the Buy panel tells the player only that it has no type. That provenance clause sat in the player's sentence until PB-244 (frodo 9108 \u00a77); it lives here now, where the next person reading `rosters` will find it.",
     "roundSeconds": "5 s chosen 2026-11-06 by the owner, and a DELIBERATE DEVIATION: the original's round is 119.5 s of game time and does not shorten with speed (measured 2026-11-12, T-008; see `measured` above and docs/re/MOVEMENT.md). At 1 cell per round the Washington-Moscow march is ~104 cells, about 8.7 minutes. The original felt like a campaign, not a 24-second war, and 0.14 s made income land every 3.5 s.",
     "payEvery": "Rounds between income payments. 1: a city pays every round (Manual p.27).",
     "prices": "Manual p.28 lists these in billions. config stores the manual's billions; rules.priceOf() converts with money.perBillion and returns integer millions so no float drifts. The sub/cruiser/carrier row order comes from the p.28 icons and is UNVERIFIED until a DOSBox capture.",
