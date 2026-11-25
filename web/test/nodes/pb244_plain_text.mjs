@@ -118,15 +118,24 @@ export async function run() {
   if (!/rebases to the base you pick\.$/.test(TRANSFER_NOTE)) fail("the transfer note lost its sentence: " + TRANSFER_NOTE);
 
   // ---- the provenance moved, it did not evaporate --------------------------------------
+  // ONE KEY AT A TIME. The first version of this arm asked whether the tag appeared "somewhere in
+  // config", and a mutant that blanked one sentence's provenance survived it, because a second key
+  // still carried the word. A key that loses its doubt is the actual defect, so each number the
+  // sweep touched is checked at the key that owns it.
   const config = JSON.parse(readFileSync(root + "../config/game.json", "utf8"));
-  const sources = JSON.stringify(config.air || {}) + JSON.stringify(config.sources || {});
-  if (!/UNMEASURED/.test(sources)) fail("config no longer records which air number was never measured");
-  if (!/UNVERIFIED/.test(sources)) fail("config no longer records which numbers are unverified");
-  if (!/STAND-IN/.test(JSON.stringify(config.satellite || {}) + JSON.stringify(config.blast || {}))) {
-    fail("config no longer records which counts are stand-ins");
-  }
-  // And the shop's killer provenance, moved there by PB-240(c).
-  if (!/UNVERIFIED/.test(String(config.sources.prices.killerSat))) {
-    fail("config.sources.prices.killerSat lost the UNVERIFIED provenance");
+  const wants = [
+    ["air.reachSource", config.air && config.air.reachSource, /UNMEASURED|STAND-IN/],
+    ["air.transferRoundsSource", config.air && config.air.transferRoundsSource, /UNVERIFIED/],
+    ["air.restrictedReachSource", config.air && config.air.restrictedReachSource, /UNVERIFIED|STAND-IN/],
+    ["nukes.exclusionSource", config.nukes && config.nukes.exclusionSource, /STAND-IN|decompiled|UNVERIFIED/],
+    ["blast.source", config.blast && config.blast.source, /STAND-IN|NOT recovered|not recovered|UNVERIFIED/],
+    ["satellite.note", config.satellite && config.satellite.note, /STAND-IN|UNMEASURED|UNVERIFIED/],
+    ["resources.steel.choice", config.resources && config.resources.steel && config.resources.steel.choice, /non-original/],
+    ["sources.prices.killerSat", config.sources && config.sources.prices && config.sources.prices.killerSat, /UNVERIFIED/],
+  ];
+  for (const [key, value, pattern] of wants) {
+    if (typeof value !== "string" || !pattern.test(value)) {
+      fail("config " + key + " no longer records what was never recovered (the tag moved, it must land)");
+    }
   }
 }
