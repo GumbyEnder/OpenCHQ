@@ -73,6 +73,15 @@ export async function run(ctx) {
     const strong = cells[3];
     addPiece(match, "strong1", "red", strong.x + 1, strong.y);
     addPiece(match, "strong2", "red", strong.x - 1, strong.y);
+    // T-032 B4: an assault needs a force advantage > 11 strength units inside 30 cells. The ring
+    // alone outnumbers one army by ten to one, which is correctly a stall now, so the fixture
+    // brings the army's own group: twelve 100-strength escorts within three to six cells. Nothing
+    // is placed on a ring cell or on the army's own cell.
+    for (let i = 0; i < 12; i++) {
+      const ox = 3 + (i % 4);
+      const oy = -5 + Math.floor(i / 4) * 4;
+      addPiece(match, "escort" + i, "blue", capital.x + ox, Math.max(0, capital.y + oy));
+    }
 
     const targets = assaultCells(match, army, capital);
     if (targets.length < 6) fail("the ring should offer every held cell, got " + targets.length);
@@ -91,6 +100,12 @@ export async function run(ctx) {
     if (strongDefenders.defenders <= minDefenders) fail("the reinforcement was not counted");
     if (targets[0].x === strong.x && targets[0].y === strong.y) fail("the reinforced cell was picked first");
     if (targets.some((cell) => cell.x === army.x && cell.y === army.y)) fail("a target sits on the army's own cell");
+    // The force edge travels with the target. With the escorts in place every ring cell clears it;
+    // t032_bot_combat's first arm removes the edge and expects the stall, which is the other side
+    // of B4.
+    if (targets.some((cell) => cell.attackAllowed !== true)) {
+      fail("a ring target does not carry its force-edge flag: " + JSON.stringify(targets.slice(0, 3)));
+    }
 
     // The order is actually given, and it is flagged as an assault rather than a march. marchOne is
     // driven directly because the endgame state is not reachable through ordersFor's own focus.

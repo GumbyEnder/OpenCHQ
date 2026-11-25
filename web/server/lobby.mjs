@@ -17,7 +17,7 @@ import { logLines } from "./log.mjs";
 // read by a live page, and every call is wrapped so a storage fault can never stop a match.
 import { appendFrame, armRestoredFilm, closeFilm, startFilm } from "./history.mjs";
 import { scanActiveFor, scanAnyActive } from "./scan.mjs";
-import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
+import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX, defaultOpponentLevel, opponentLevelOf, opponentName } from "./rules.mjs";
 import { isSatelliteKind, shopFor } from "./shop.mjs";
 import { buySatellite, orderSatellite, planSatellite, satelliteById } from "./satellite.mjs";
 import { compatUnitKind } from "./migrate.mjs";
@@ -307,6 +307,11 @@ export function createLobby() {
       blue: { username: room.seats.blue.kind === "bot" ? "Bot" : nameOf(room.seats.blue.username), kind: room.seats.blue.kind },
       red: { username: room.seats.red.kind === "bot" ? "Bot" : nameOf(room.seats.red.username), kind: room.seats.red.kind },
       round: room.match ? room.match.round : 0,
+      // T-032 B1: which of the five opponents this bot room seated, so the page and a hand-check
+      // read the same name the server acts on.
+      bot: room.match && Number.isInteger(room.match.opponentLevel)
+        ? { level: room.match.opponentLevel, name: opponentName(room.match.opponentLevel) }
+        : null,
       // The speed this room runs at, and the round length that follows from it. Both seats see the
       // number, because either seat may change it (Manual p.34: the game speed is an agreed
       // setting, not a hidden one).
@@ -631,15 +636,29 @@ export function createLobby() {
     const era = room.era;
     // A new game keeps the handicap the player chose, unless the era has no spinner.
     const spinner = room.match && room.match.handicap ? room.match.handicap.billions : undefined;
+    // ... and the opponent level, so "New game" does not silently re-seat a different opponent.
+    const level = room.match ? room.match.opponentLevel : undefined;
     endRoom(room, nameOf(username) + " started a new game.");
-    return startBot(username, era, mine, spinner);
+    return startBot(username, era, mine, spinner, level);
   }
 
-  function startBot(username, era, side, handicap) {
+  function startBot(username, era, side, handicap, level) {
     if (seatOf.has(username)) return { error: "Leave the current match first." };
     const mine = sideOf(side);
     const other = mine === "blue" ? "red" : "blue";
     const year = eraOf(era);
+    // T-032 B1: the original's setup lists five computer opponents (DS:0x4fea order). A request
+    // naming none gets the lobby default; a request naming something that is not one of the five
+    // is refused rather than coerced, because "level 9" silently becoming level 3 is a different
+    // game than the one the player picked.
+    let opponentLevel = defaultOpponentLevel();
+    if (level !== undefined && level !== null && String(level) !== "") {
+      const wanted = opponentLevelOf(level);
+      if (wanted === null) {
+        return { error: "The opponent must be one of the five computer levels (1 to 5)." };
+      }
+      opponentLevel = wanted;
+    }
     // The original's setup asked for the OPPONENT'S STARTING MONEY with a three-digit spinner and
     // used it as a handicap (Manual p.17). The lobby asks the same question with the era's
     // recovered default. 2023 has no spinner at all, so a value sent for it is ignored rather than
@@ -672,8 +691,10 @@ export function createLobby() {
         blue: { username: "Bot", kind: "bot" },
         red: { username: "Bot", kind: "bot" },
       },
-      match: opened(year, sitesForMatch(year),
-        spinner === null ? {} : { handicapSide: other, opponentPool: spinner }),
+      match: opened(year, sitesForMatch(year), {
+        ...(spinner === null ? {} : { handicapSide: other, opponentPool: spinner }),
+        opponentLevel,
+      }),
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
@@ -1572,7 +1593,7 @@ export function createLobby() {
     // lose a purchase when the roster split hulls into cruiser and carrier. The alias lives in
     // migrate.mjs, next to the save migration that does the same rename.
     if (message) message.kind = compatUnitKind(message.kind);
-    if (op === "bot") return startBot(username, message.era, message.side, message.handicap);
+    if (op === "bot") return startBot(username, message.era, message.side, message.handicap, message.level);
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
     if (op === "order") return order(username, message);

@@ -221,11 +221,15 @@ export function openMatch(era, sites = [], options = {}) {
   }));
   // The era's own seats, read from the file rows joined to those sites (T-013b).
   const seats = eraSeats(year, opening);
+  // T-032 Part B: the opponent level the lobby seated. Stored on the match so the bot's two
+  // levers survive a reload; a match opened without one reads the lobby default in bot.mjs.
+  const level = Number(options && options.opponentLevel);
   return {
     era: year,
     round: 0,
     roundSeconds: roundSeconds(),
     clock: "held",
+    ...(Number.isInteger(level) ? { opponentLevel: level } : {}),
     pieces: openingPieces(year, seats),
     // The satellites that are already in orbit at round 0 (PM 8913 §2). Outside `pieces` on
     // purpose: they block no cell, take no fire and capture nothing (manual p.29 L924, L930).

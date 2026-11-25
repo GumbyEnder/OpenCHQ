@@ -11,7 +11,15 @@ import { filmFor, framesFor, listFor } from "./history.mjs";
 import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
 import { boardPayload, fontPayload } from "./board.mjs";
 import { territoryGeometry } from "./territory.mjs";
-import { handicapSpec, roundSeconds, startPool } from "./rules.mjs";
+import {
+  defaultOpponentLevel,
+  handicapSpec,
+  opponentLevels,
+  opponents,
+  roundSeconds,
+  spareActionBudget,
+  startPool,
+} from "./rules.mjs";
 import { createLobby } from "./lobby.mjs";
 import { acceptWebSocket } from "./ws.mjs";
 import { localName } from "./names.mjs";
@@ -211,6 +219,15 @@ const server = createServer(async (req, res) => {
       eras,
       startPool: pool,
       handicap: { unit: spec.unit, min: spec.min, max: spec.max, step: spec.step, defaults: spec.defaults },
+      // T-032 B1: the five computer opponents in the order the original's setup printed them,
+      // plus ANOTHER HUMAN (level 0) as the two-human entry. Served so the lobby page types none
+      // of the names and cannot drift from the server's own validation.
+      bot: {
+        opponents: opponents(),
+        levels: opponentLevels(),
+        defaultLevel: defaultOpponentLevel(),
+        spareActions: Object.fromEntries(opponentLevels().map((level) => [level, spareActionBudget(level)])),
+      },
       note: "Handicap is the OPPONENT'S starting money (Manual p.17); 2023 has no spinner.",
     });
     return;

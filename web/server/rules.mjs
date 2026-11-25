@@ -619,3 +619,108 @@ export function opponentPool(era, spinnerBillions = null) {
   }
   return startPool(era);
 }
+
+// --- opponent level and the bot's two levers (T-032 Part B) --------------------------------
+//
+// The original's setup lists five computer opponents in DS:0x4fea order, plus ANOTHER HUMAN as
+// entry zero (T-032 Part A, docs/re/AI.md). The lobby, the server's validation and the node tests
+// all read this one table; nothing types the names a second time.
+export function botSpec() {
+  const block = rules().bot || {};
+  return block && typeof block === "object" ? block : {};
+}
+
+export function opponents() {
+  const list = Array.isArray(botSpec().opponents) ? botSpec().opponents : [];
+  return list
+    .filter((row) => row && Number.isInteger(Number(row.level)))
+    .map((row) => ({
+      level: Number(row.level),
+      name: String(row.name || ""),
+      label: String(row.label || ""),
+      order: Number.isFinite(Number(row.order)) ? Number(row.order) : Number(row.level),
+    }))
+    .sort((a, b) => a.order - b.order);
+}
+
+// The five playable computer levels, in the order the original's setup printed them. ANOTHER
+// HUMAN is level 0 and is a two-human seat, not a computer opponent.
+export function opponentLevels() {
+  return opponents().filter((row) => row.level >= 1).map((row) => row.level);
+}
+
+export function defaultOpponentLevel() {
+  const value = Number(botSpec().defaultLevel);
+  const levels = opponentLevels();
+  return Number.isInteger(value) && levels.includes(value) ? value : (levels[2] ?? 3);
+}
+
+// Normalises a requested level. Returns null for anything that is not one of the five computer
+// levels; the caller decides whether null means "default" or "refuse".
+export function opponentLevelOf(value) {
+  const level = Number(value);
+  return Number.isInteger(level) && opponentLevels().includes(level) ? level : null;
+}
+
+export function opponentName(level) {
+  const row = opponents().find((entry) => entry.level === Number(level));
+  return row ? row.name : null;
+}
+
+// 0xe94c = level*2 - 4 (DECODED, T-032 Part A). Zero for level 2 by the bytes, not by omission.
+export function spareActionBudget(level) {
+  const spec = botSpec().spareActionBudget || {};
+  const normalized = opponentLevelOf(level);
+  if (normalized === null) return 0;
+  const multiplier = Number.isFinite(Number(spec.multiplier)) ? Number(spec.multiplier) : 2;
+  const offset = Number.isFinite(Number(spec.offset)) ? Number(spec.offset) : -4;
+  return Math.max(0, normalized * multiplier + offset);
+}
+
+// FUN_107e_0bd6 visits at most three sites per pass (DECODED, decompiled.c 1194-1202), so a
+// level whose budget is larger than three still spends at most three actions in one pass.
+export function spareActionPassCap() {
+  const value = Number(botSpec().spareActionPassCap);
+  return Number.isInteger(value) && value > 0 ? value : 3;
+}
+
+export function botAttackRangeCells() {
+  const value = Number(botSpec().attackRangeCells);
+  return Number.isFinite(value) && value > 0 ? value : 30;
+}
+
+export function forceAdvantageUnits() {
+  const value = Number(botSpec().forceAdvantageUnits);
+  return Number.isFinite(value) ? value : 11;
+}
+
+export function botThreatRadii() {
+  const spec = botSpec();
+  const positive = (value, fallback) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback);
+  return {
+    capital: positive(spec.capitalThreatRadius, 25),
+    ownSite: positive(spec.ownSiteThreatRadius, 20),
+    otherSite: positive(spec.otherSiteThreatRadius, 15),
+  };
+}
+
+export function botUnitCap() {
+  const value = Number(botSpec().unitCap);
+  return Number.isInteger(value) && value >= 0 ? value : 6;
+}
+
+export function levelFiveGarrisonGate() {
+  return botSpec().levelFiveGarrisonGate !== false;
+}
+
+// Every value the remake chose rather than recovered. The T-032 card names the same list; a new
+// tuning number must land here and there, not in a comment.
+export function botDeviations() {
+  const list = botSpec().deviations;
+  return Array.isArray(list) ? list.map(String) : [];
+}
+
+export function botStandIns() {
+  const list = botSpec().standIns;
+  return Array.isArray(list) ? list.map(String) : [];
+}

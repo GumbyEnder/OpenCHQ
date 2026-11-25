@@ -203,6 +203,47 @@
       "9999": 150
     }
   },
+  "bot": {
+    "opponents": [
+      { "level": 0, "name": "ANOTHER HUMAN", "label": "A second human seat", "order": 0 },
+      { "level": 1, "name": "SGT. STAN STIL", "label": "Stands still: practice", "order": 1 },
+      { "level": 2, "name": "CAP. LUKE WARM", "label": "Marches, spends no spare actions", "order": 2 },
+      { "level": 3, "name": "COL. BUCK ZEAL", "label": "Medium", "order": 3 },
+      { "level": 4, "name": "GEN. WIN MOORE", "label": "Three site actions a pass", "order": 4 },
+      { "level": 5, "name": "MARS GOD OF WAR", "label": "Three site actions and the garrison buy gate", "order": 5 }
+    ],
+    "opponentOrder": [1, 2, 3, 4, 5],
+    "defaultLevel": 3,
+    "spareActionBudget": {
+      "multiplier": 2,
+      "offset": -4,
+      "source": "DECODED (T-032 Part A, docs/re/AI.md): 0xe94c = level*2 - 4, so 0/2/4/6 for levels 2-5. The defence pass FUN_107e_0bd6 spends one spare action per successful buy or dispatch (decompiled.c 1649-1651) and visits at most three sites per pass (1194-1202)."
+    },
+    "spareActionPassCap": 3,
+    "forceAdvantageUnits": 11,
+    "forceAdvantageSource": "DECODED (T-032 Part A, docs/re/AI.md section A4): calculate_combat requires a force advantage strictly greater than 11 strength units before a land attack is ordered.",
+    "attackRangeCells": 30,
+    "attackRangeSource": "DECODED (T-032 Part A, docs/re/AI.md section A4): calculate_combat sums force inside 30 cells. The remake counts the same 30-cell radius with X wrapping at the board half-width.",
+    "capitalThreatRadius": 25,
+    "ownSiteThreatRadius": 20,
+    "otherSiteThreatRadius": 15,
+    "threatRadiusSource": "DECODED (T-015 Part B, docs/re/AI.md section 2): 0x19 = 25 for the 0xe47e flagged site, 0x14 = 20 for a site of ours with kind nibble < 3, 0xf = 15 otherwise.",
+    "levelFiveGarrisonGate": true,
+    "levelFiveGarrisonGateSource": "STAND-IN. T-032 A7 records a level-5 garrison-buy exclusion that the bytes did not settle. The remake implements the most literal reading - at level 5 the bot does not buy a defender at a site that already holds one of its own dug-in pieces - and this row, not a comment, is the mark.",
+    "unitCap": 6,
+    "unitCapSource": "DELIBERATE DEVIATION (pacing, not fidelity): the remake caps how many pieces the bot PRODUCES so a browser 67-round play-test still shows the army growing. The original has no such cap; the value is a tuning choice, listed on the T-032 card.",
+    "deviations": [
+      "unitCap 6: the remake stops producing after six bought pieces. The original has no production cap; six is a browser-paced choice so a 67-round play-test shows a growing army without flooding a 100-piece board.",
+      "defaultLevel 3: a lobby request that names no level gets COL. BUCK ZEAL (3), the level the pre-T-032 bot's behaviour is compared against (T-032 Part C AC3). The original's setup always asked; nothing recovered names a default, so this is our choice, not the game's.",
+      "level 2 label: 'Marches, spends no spare actions' is lobby text, not a recovered string. Levels 4 and 5 labels describe the decoded lever they carry. Only level 1's label ('Stands still: practice') is fixed by T-032 B1, and 'Medium' for level 3 comes from the PM ruling in room 7706."
+    ],
+    "standIns": [
+      "A7 ownership counters (four counters): not read by the port. The bot reads site.owner and piece.side; STAND-IN.",
+      "A7 10-byte staging arrays (two): not modelled. Orders go straight through move.issueOrder; STAND-IN.",
+      "A7 level-5 garrison-buy exclusion: implemented as levelFiveGarrisonGate above and marked STAND-IN; no DOSBox capture settles the exclusion's exact shape."
+    ],
+    "notes": "T-032 Part B. The ONLY difficulty levers shipped are the e94c spare-action budget and the level-5 garrison gate; no per-level price or strength bonus exists anywhere in the bot (no rows to add - the absence is the contract). Opponent starting money stays the Manual p.17 spinner and is independent of the level."
+  },
   "prices": {
     "infantry": 10,
     "tank": 20,

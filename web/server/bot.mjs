@@ -12,9 +12,21 @@
 // stubs, so every call is wrapped: a refusal becomes a note, never a crash.
 
 import { CELL_H, CELL_W, boardPayload, resolveDataRoot } from "./board.mjs";
-import { laneGraph, seaRoute } from "./lanes.mjs";
+import { seaRoute } from "./lanes.mjs";
 import { issueOrder, wrapDelta, wrapX, HOLD_STALL_ROUNDS } from "./move.mjs";
-import { isRefused, priceOf } from "./rules.mjs";
+import {
+  botAttackRangeCells,
+  botThreatRadii,
+  botUnitCap,
+  defaultOpponentLevel,
+  forceAdvantageUnits,
+  isRefused,
+  levelFiveGarrisonGate,
+  opponentLevelOf,
+  priceOf,
+  spareActionBudget,
+  spareActionPassCap,
+} from "./rules.mjs";
 import { buy, seedOwners } from "./economy.mjs";
 import { placementMask } from "./placement.mjs";
 
@@ -60,11 +72,11 @@ function terrainAt(x, y) {
   return grid[Number(y) * CELL_W + wrapX(x)] ?? null;
 }
 
-function heldByOther(match, piece, x, y) {
+function occupantAt(match, piece, x, y) {
   const wx = wrapX(x);
-  return (match.pieces || []).some(
-    (unit) => unit.id !== piece.id && wrapX(unit.x) === wx && Number(unit.y) === Number(y)
-  );
+  return (match.pieces || []).find(
+    (unit) => unit && unit.id !== piece.id && wrapX(unit.x) === wx && Number(unit.y) === Number(y)
+  ) || null;
 }
 
 // The cells a walker can finish on beside the capital, nearest the army first. The capital
@@ -79,7 +91,13 @@ function approachCells(match, piece, capital) {
       const x = wrapX(capital.x + ox);
       const y = Number(capital.y) + oy;
       if (y < 0 || y >= CELL_H) continue;
-      if (heldByOther(match, piece, x, y)) continue;
+      // A piece never shares a cell with a friend. An enemy-held cell is reachable only as an
+      // attack, so it enters the list only when calculate_combat's force edge clears (T-032 B4).
+      const occupant = occupantAt(match, piece, x, y);
+      if (occupant) {
+        if (occupant.side === piece.side) continue;
+        if (!landAttackAllowed(match, piece.side, { x, y })) continue;
+      }
       const id = terrainAt(x, y);
       if (id !== null && isRefused(id)) continue;
       const gap = Math.max(Math.abs(wrapDelta(piece.x, x)), Math.abs(Number(piece.y) - y));
@@ -118,7 +136,8 @@ export function assaultCells(match, piece, capital) {
           Math.max(Math.abs(wrapDelta(other.x, x)), Math.abs(Number(other.y) - y)) <= 1,
       ).length;
       const gap = Math.max(Math.abs(wrapDelta(piece.x, x)), Math.abs(Number(piece.y) - y));
-      out.push({ x, y, gap, defenders: friends, holder: holder.id });
+      out.push({ x, y, gap, defenders: friends, holder: holder.id,
+        attackAllowed: landAttackAllowed(match, piece.side, { x, y }) });
     }
   }
   out.sort((a, b) => a.defenders - b.defenders || a.gap - b.gap);
@@ -181,7 +200,10 @@ export function marchOne(match, side, piece, capital, events) {
   if (cells.length === 0) {
     // The ring is full: attack its weakest point rather than stand still. Units do not stack, so
     // there is no cell to queue on and no order to give except the one the engine calls an attack.
-    const targets = assaultCells(match, piece, capital);
+    // T-032 B4: an attack still needs calculate_combat's force edge, so a ringed capital with no
+    // edge is a stall and says so instead of feeding pieces into a losing exchange.
+    const ring = assaultCells(match, piece, capital);
+    const targets = ring.filter((cell) => cell.attackAllowed);
     for (const cell of targets.slice(0, 3)) {
       let result;
       try {
@@ -197,7 +219,7 @@ export function marchOne(match, side, piece, capital, events) {
     }
     events.push(note(side, piece.id, targets.length
       ? "ringed, and no attack could be issued"
-      : "no approach cell beside the capital"));
+      : (ring.length ? "ringed, and no attack has the force edge" : "no approach cell beside the capital")));
     return;
   }
   let last = "no path";
@@ -211,7 +233,14 @@ export function marchOne(match, side, piece, capital, events) {
       continue;
     }
     if (result && result.ok && Array.isArray(result.path) && result.path.length > 0) {
-      events.push({ type: "bot_order", side, pieceId: piece.id, to: { x: cell.x, y: cell.y }, path: result.path });
+      // An approach cell that is enemy-held IS an attack: the engine treats the move as one, and
+      // the event must say so (T-032 B4). Flagging only the full-ring branch left an attack that
+      // reached a ring cell through the march path indistinguishable from a walk.
+      const holder = occupantAt(match, piece, cell.x, cell.y);
+      const assault = Boolean(holder && holder.side !== piece.side);
+      events.push({ type: "bot_order", side, pieceId: piece.id, to: { x: cell.x, y: cell.y },
+        path: result.path, ...(assault ? { assault: true, defenders: assaultCells(match, piece, capital)
+          .find((row) => row.x === cell.x && row.y === cell.y)?.defenders ?? 0 } : {}) });
       return;
     }
     last = (result && result.error) || "no path";
@@ -226,6 +255,9 @@ export function marchOne(match, side, piece, capital, events) {
       y: Math.max(0, Math.min(CELL_H - 1, Number(piece.y) + Math.round((Number(capital.y) - Number(piece.y)) * fraction))),
     };
     if (mid.x === wrapX(piece.x) && mid.y === Number(piece.y)) continue;
+    // A staged mid-point is still a cell an order lands on; the force gate applies to it too.
+    const occupant = occupantAt(match, piece, mid.x, mid.y);
+    if (occupant && (occupant.side === piece.side || !landAttackAllowed(match, side, mid))) continue;
     let result;
     try {
       result = issueOrder(match, side, piece.id, mid.x, mid.y);
@@ -254,9 +286,9 @@ export function marchOne(match, side, piece, capital, events) {
 // positive when it belongs to the site's owner and negative when it does not (decompiled.c
 // 1487-1507, 1442-1465). A site of ours therefore scores negative when enemies near it outweigh its
 // friends, and the defence routines only fire on a negative score (decompiled.c 1190).
-const DEFEND_RADIUS_SITE = 15; // local_28 = 0xf, decompiled.c 1355-1356
-const DEFEND_RADIUS_OWN_CITY = 20; // local_28 = 0x14 when our site kind < 3, 1352-1353
-const DEFEND_RADIUS_CAPITAL = 25; // local_28 = 0x19 for the flagged site at 0xe47e, 1358-1359
+const DEFEND_RADIUS_SITE = botThreatRadii().otherSite; // local_28 = 0xf, decompiled.c 1355-1356
+const DEFEND_RADIUS_OWN_CITY = botThreatRadii().ownSite; // local_28 = 0x14 when our site kind < 3, 1352-1353
+const DEFEND_RADIUS_CAPITAL = botThreatRadii().capital; // local_28 = 0x19 for the flagged site at 0xe47e, 1358-1359
 const DEFEND_REACH = 0x9c4; // local_18 starts at 2500 = 50 cells squared, decompiled.c 1687-1688
 const DEFEND_MIN = 8; // "8 < local_8": closer than 3 cells is already a fight, 1720
 const DEFEND_MIN_INFANTRY = 0x18; // and 0x18 for kind 3 (infantry), same line
@@ -268,6 +300,76 @@ function squaredDistance(a, b) {
   if (dx > CELL_W / 2) dx = CELL_W - dx;
   const dy = Number(a.y) - Number(b.y);
   return dx * dx + dy * dy;
+}
+
+// ---- opponent level and the force threshold (T-032 Part B) ----------------
+//
+// The level is a property of the seat, not of the caller: `match.opponentLevel` is stamped by the
+// lobby (lobby.startBot) and survives a reload with the rest of the match. A missing field reads as
+// the lobby's default, so a room opened before T-032 keeps playing the way it did.
+export function botLevel(match) {
+  const raw = match && (match.opponentLevel ?? (match.bot && match.bot.level));
+  const level = opponentLevelOf(raw);
+  return level === null ? defaultOpponentLevel() : level;
+}
+
+// A level-1 opponent never enters the AI pass at all: the original gates the turn hook on
+// `1 < 0x1a0` (T-032 Part A, docs/re/AI.md section 1). Level 1 is the practice opponent, not a
+// quiet version of level 2.
+export function entersAiPass(level) {
+  return Number(level) > 1;
+}
+
+function insideRange(a, b, cells) {
+  return squaredDistance(a, b) <= cells * cells;
+}
+
+// calculate_combat's force sum: friendly strength minus hostile strength inside the attack
+// radius, counted in strength units. Strength is 0..maxStrength in the remake, so the original's
+// "more than 11 strength units" compares directly.
+export function forceAdvantage(match, side, target) {
+  if (!match || !Array.isArray(match.pieces) || !target) return 0;
+  const range = botAttackRangeCells();
+  let mine = 0;
+  let theirs = 0;
+  for (const piece of match.pieces) {
+    if (!piece) continue;
+    const strength = Number(piece.strength);
+    if (!Number.isFinite(strength) || strength <= 0) continue;
+    if (!insideRange(target, piece, range)) continue;
+    if (piece.side === side) mine += strength;
+    else theirs += strength;
+  }
+  return mine - theirs;
+}
+
+// A land attack is ordered only with a force advantage strictly greater than 11 strength units
+// inside 30 cells (calculate_combat, T-032 A4). Moving onto an enemy-held cell IS an attack in
+// this engine, so the gate sits on the order, not on a separate attack verb.
+export function landAttackAllowed(match, side, target) {
+  if (!target) return false;
+  if (!Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.y))) return false;
+  return forceAdvantage(match, side, target) > forceAdvantageUnits();
+}
+
+// select_combat_targets: ships and air target only ships and air, never land (T-032 A4). A ship's
+// target set is the enemy's ships; an aircraft may also strike enemy ships. Land pieces are never
+// in the set, so a bot cruiser cannot be ordered to sail at a city.
+export function selectCombatTargets(match, side) {
+  if (!match || !Array.isArray(match.pieces)) return [];
+  const enemy = match.pieces.filter((piece) => piece &&
+    piece.side !== side && (piece.domain === "sea" || piece.domain === "air"));
+  const out = [];
+  for (const attacker of match.pieces) {
+    if (!attacker || attacker.side !== side) continue;
+    if (attacker.domain !== "sea" && attacker.domain !== "air") continue;
+    const allowed = enemy
+      .filter((target) => (attacker.domain === "sea" ? target.domain === "sea" : true))
+      .map((target) => ({ attacker, target, distance: Math.round(Math.sqrt(squaredDistance(attacker, target))) }))
+      .sort((a, b) => a.distance - b.distance);
+    if (allowed.length) out.push(allowed[0]);
+  }
+  return out;
 }
 
 function threatRadius(site) {
@@ -343,59 +445,71 @@ export function threatenedSites(match, side) {
 // or closer than 9 squared). The original issues one order per pass and marks the site defended.
 // A site cell its own garrison already stands on refuses the order, so the fallback is the nearest
 // free neighbour — a bot decision, not a combat rule.
-export function defendSites(match, side, events, threatened = null) {
+export function defendSites(match, side, events, threatened = null, limit = 1) {
   const claimed = new Set();
   const rows = threatened || threatenedSites(match, side);
-  if (rows.length === 0) return claimed;
-  const { site } = rows[0];
+  const budget = Math.max(0, Math.floor(Number(limit) || 0));
+  if (rows.length === 0 || budget === 0) return { claimed, actions: 0 };
   // Built once per pass: the candidate filter asks per piece.
   const held = capitalCells(match, side);
+  let actions = 0;
 
-  const candidates = (match.pieces || [])
-    .filter((piece) => piece && piece.side === side && piece.domain === "land" &&
-      !hasPath(piece) && Number(piece.strength) > 0)
-    // A dug-in garrison standing on its own capital is not a spare defender: sending it at a
-    // threatened neighbour empties the capital, and a lone tank then walks in. Measured live on
-    // ad71410: Paris' garrison left at r6 and the tank took Paris at r20
-    // (local/t015-shots/t015-garrison-handcheck.json); pinned in nodes/t015_capital.mjs 3b.
-    .filter((piece) => !holdsOwnCapital(match, side, piece, held))
-    .map((piece) => ({ piece, d2: squaredDistance(piece, site) }))
-    // `8 < local_8`, and `0x18 < local_8` for kind 3 (infantry) — decompiled.c 1720.
-    .filter((row) => row.d2 > (row.piece.kind === "infantry" ? DEFEND_MIN_INFANTRY : DEFEND_MIN) &&
-      row.d2 <= DEFEND_REACH)
-    .sort((a, b) => a.d2 - b.d2);
-  if (candidates.length === 0) return claimed;
+  // 0bd6 walks the sites in score order and acts on each threatened one until its spare actions
+  // run out (decompiled.c 1174-1202). The pass cap (three) is applied by the caller, so this loop
+  // stops at `limit`.
+  for (const row of rows) {
+    const site = row.site;
+    const candidates = (match.pieces || [])
+      .filter((piece) => piece && piece.side === side && piece.domain === "land" &&
+        !hasPath(piece) && Number(piece.strength) > 0 && !claimed.has(piece.id))
+      // A dug-in garrison standing on its own capital is not a spare defender: sending it at a
+      // threatened neighbour empties the capital, and a lone tank then walks in. Measured live on
+      // ad71410: Paris' garrison left at r6 and the tank took Paris at r20
+      // (local/t015-shots/t015-garrison-handcheck.json); pinned in nodes/t015_capital.mjs 3b.
+      .filter((piece) => !holdsOwnCapital(match, side, piece, held))
+      .map((piece) => ({ piece, d2: squaredDistance(piece, site) }))
+      // `8 < local_8`, and `0x18 < local_8` for kind 3 (infantry) — decompiled.c 1720.
+      .filter((candidate) => candidate.d2 > (candidate.piece.kind === "infantry" ? DEFEND_MIN_INFANTRY : DEFEND_MIN) &&
+        candidate.d2 <= DEFEND_REACH)
+      .sort((a, b) => a.d2 - b.d2);
+    if (candidates.length === 0) continue;
 
-  const targets = [{ x: site.x, y: site.y }];
-  for (let oy = -1; oy <= 1; oy++) {
-    for (let ox = -1; ox <= 1; ox++) {
-      if (ox === 0 && oy === 0) continue;
-      const y = Number(site.y) + oy;
-      if (y < 0 || y >= CELL_H) continue;
-      targets.push({ x: wrapX(Number(site.x) + ox), y });
-    }
-  }
-
-  for (const { piece, d2 } of candidates) {
-    for (const target of targets) {
-      let result;
-      try {
-        result = issueOrder(match, side, piece.id, target.x, target.y);
-      } catch (err) {
-        continue;
-      }
-      if (result && result.ok && Array.isArray(result.path) && result.path.length > 0) {
-        events.push({
-          type: "bot_defend", side, pieceId: piece.id, site: site.id ?? site.name ?? null,
-          threat: rows[0].threat, distance: Math.round(Math.sqrt(d2)),
-          to: target, path: result.path,
-        });
-        claimed.add(piece.id);
-        return claimed;
+    const targets = [{ x: site.x, y: site.y }];
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        if (ox === 0 && oy === 0) continue;
+        const y = Number(site.y) + oy;
+        if (y < 0 || y >= CELL_H) continue;
+        targets.push({ x: wrapX(Number(site.x) + ox), y });
       }
     }
+
+    let sent = false;
+    for (const { piece, d2 } of candidates) {
+      for (const target of targets) {
+        let result;
+        try {
+          result = issueOrder(match, side, piece.id, target.x, target.y);
+        } catch (err) {
+          continue;
+        }
+        if (result && result.ok && Array.isArray(result.path) && result.path.length > 0) {
+          events.push({
+            type: "bot_defend", side, pieceId: piece.id, site: site.id ?? site.name ?? null,
+            threat: row.threat, distance: Math.round(Math.sqrt(d2)),
+            to: target, path: result.path,
+          });
+          claimed.add(piece.id);
+          actions += 1;
+          sent = true;
+          break;
+        }
+      }
+      if (sent) break;
+    }
+    if (actions >= budget) break;
   }
-  return claimed;
+  return { claimed, actions };
 }
 
 // A bot that only ever moves its opening two pieces is a bot a reviewer cannot see acting, and
@@ -405,34 +519,49 @@ export function defendSites(match, side, events, threatened = null) {
 // The cap counts what the bot PRODUCED, not what it owns: an era that opens with the original's
 // army (1942: 29-31 pieces) already sits over any total-piece cap, and counting the army would stop
 // the bot buying forever (T-013b).
-const BOT_UNIT_CAP = 6;
+const BOT_UNIT_CAP = botUnitCap();
+
+// A dug-in piece of ours standing on `site`'s own cell. The level-5 garrison-buy exclusion
+// (T-032 A7, marked STAND-IN in config) is the one gate beyond the spare-action budget.
+function siteHasGarrison(match, side, site) {
+  if (!site) return false;
+  return (match.pieces || []).some((piece) => piece && piece.side === side &&
+    piece.domain === "land" && piece.entrenched === true &&
+    Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y));
+}
 
 function botBuy(match, side, events, urgentSite = null) {
   const seat = match.sides && match.sides[side];
-  if (!seat) return;
-  if (Number(seat.bought || 0) >= BOT_UNIT_CAP) return;
+  if (!seat) return false;
+  if (Number(seat.bought || 0) >= BOT_UNIT_CAP) return false;
+  const level = botLevel(match);
+  // Level-5 gate (STAND-IN, T-032 A7): do not buy a defender at a site its own dug-in garrison
+  // already holds. Level 5 is the only level that carries the gate.
+  if (level >= 5 && levelFiveGarrisonGate() && urgentSite && siteHasGarrison(match, side, urgentSite)) {
+    return false;
+  }
   const price = priceOf("infantry");
-  if (!Number.isFinite(price) || !Number.isFinite(seat.cash) || seat.cash < price) return;
+  if (!Number.isFinite(price) || !Number.isFinite(seat.cash) || seat.cash < price) return false;
 
   let board;
   try {
     board = boardPayload();
   } catch {
-    return;
+    return false;
   }
   // Ownership is what placement reads, and the economy seeds it lazily.
   try {
     seedOwners(match);
   } catch {
-    return;
+    return false;
   }
   let mask;
   try {
     mask = placementMask(match, side, "infantry", board);
   } catch {
-    return;
+    return false;
   }
-  if (mask.error || !mask.mask) return;
+  if (mask.error || !mask.mask) return false;
 
   // Prefer a cell near a site this side holds, so the new unit joins the war rather than
   // appearing in a corner. Mask byte 1 is a ready city or base; 2 is a friendly site that is
@@ -458,17 +587,19 @@ function botBuy(match, side, events, urgentSite = null) {
     }
     if (!sites.length && !target) target = { x, y };
   }
-  if (!target) return;
+  if (!target) return false;
 
   let bought;
   try {
     bought = buy(match, side, "infantry", target.x, target.y, board);
   } catch {
-    return;
+    return false;
   }
   if (bought && bought.ok) {
     events.push({ type: "bot_buy", side, kind: "infantry", at: { x: bought.piece.x, y: bought.piece.y }, pieceId: bought.piece.id });
+    return true;
   }
+  return false;
 }
 
 // PB-250: how many CITIES a seat holds. The manual's cease-fire question is about ground held, so
@@ -521,14 +652,30 @@ export function ordersFor(match, side) {
   const capital = match.capitals && match.capitals[foe];
   if (!capital || !Number.isInteger(capital.x) || !Number.isInteger(capital.y)) return events;
 
+  // T-032 B2: the turn hook is gated on 1 < 0x1a0. Level 1 is not a slow opponent, it is the
+  // practice opponent that never acts: no orders, no buys, one note so the room can say why.
+  const level = botLevel(match);
+  if (!entersAiPass(level)) {
+    events.push({ type: "bot_skip", side, level, reason: "level 1 stands still: the AI pass is gated on 1 < 0x1a0" });
+    return events;
+  }
+
   const mine = match.pieces.filter((piece) => piece && piece.side === side);
   // A site of ours under attack is answered before the march, and answered by a unit the march
   // then leaves alone (that is what the original's per-site pass does: 0bd6, decompiled.c 1186-1213).
   const threatened = threatenedSites(match, side);
+  // e94c = level*2 - 4 spare actions a pass (0/2/4/6 for levels 2-5), and 0bd6 visits at most
+  // three sites per pass, so the effective per-pass budget is the smaller of the two.
+  const budget = Math.min(spareActionBudget(level), spareActionPassCap());
+  let spent = 0;
   // Reinforce first, so a unit bought this round can march this round. The buy goes to the
-  // threatened site when there is one (FUN_107e_1612).
-  botBuy(match, side, events, threatened.length ? threatened[0].site : null);
-  const claimed = defendSites(match, side, events, threatened);
+  // threatened site when there is one (FUN_107e_1612) and spends one spare action.
+  if (spent < budget && botBuy(match, side, events, threatened.length ? threatened[0].site : null)) {
+    spent += 1;
+  }
+  const defence = defendSites(match, side, events, threatened, budget - spent);
+  const claimed = defence.claimed;
+  spent += defence.actions;
   // One focus for the whole army: a weak point of the enemy line once there is contact, the
   // capital until then.
   const focus = focusTarget(match, side, foe, capital);
@@ -561,34 +708,21 @@ export function ordersFor(match, side) {
     marchOne(match, side, piece, focus, events);
   }
 
-  // One sail: a ship that already has a path is left alone. Only an idle ship is routed. The
-  // destination is a lane waypoint near the enemy capital - not the enemy ship's own cell,
-  // which its crew occupies - so the sail is a real lane route rather than a refused order.
-  const waypoints = (() => {
-    try {
-      return laneGraph(dataRootFor(match)).waypoints || [];
-    } catch {
-      return [];
-    }
-  })();
-  const nearestLane = (target) => {
-    let best = null;
-    let bestDist = Infinity;
-    for (const point of waypoints) {
-      const dx = Math.abs(point.x - target.x);
-      const wrap = Math.min(dx, 320 - dx);
-      const dist = Math.max(wrap, Math.abs(point.y - target.y));
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = point;
-      }
-    }
-    return best;
-  };
-  const seaTarget = nearestLane(capital) || { x: capital.x, y: capital.y };
+  // select_combat_targets: a ship is pointed only at the enemy's ships. Sailing at a capital is a
+  // land attack, and the archive never gives a ship one (T-032 B4). With no enemy hull afloat the
+  // ship holds, and says so.
+  const seaTargets = selectCombatTargets(match, side).filter((row) => row.attacker.domain === "sea");
+  const seaTargetFor = new Map(seaTargets.map((row) => [row.attacker.id, row.target]));
   for (const piece of mine) {
     if (piece.domain !== "sea") continue;
     if (hasPath(piece)) continue;
+
+    const enemyShip = seaTargetFor.get(piece.id) || null;
+    if (!enemyShip) {
+      events.push(note(side, piece.id, "no enemy ship to engage"));
+      continue;
+    }
+    const seaTarget = { x: Number(enemyShip.x), y: Number(enemyShip.y) };
 
     let route = null;
     try {

@@ -164,3 +164,28 @@ This is the march, not a ported AI routine, so it is labelled as behaviour rathe
   fixed. The original's garrison stays on the city and fights there (`duel-original.txt`).
 * `FUN_107e_1750`'s own distance gate already leaves the on-site garrison out of a defender
   dispatch (`8 < distance²`, and `0x18 < distance²` for infantry), so the two rules do not fight.
+
+## 9. T-032 Part B: what the port now reads, and the A7 unknowns as shipped
+
+The five-opponent table, the level gate (1 < 0x1a0), the spare-action budget `0xe94c = level*2-4`,
+calculate_combat's force edge (> 11 strength units inside 30 cells), the ship/air target set and the
+25/20/15 threat radii are ported in `web/server/bot.mjs` from `config/game.json` (`bot` block). The
+values and their provenance strings live there; this document is the reading they were taken from.
+
+A7's unknowns, and what each one is in the shipped port. An entry marked STAND-IN is not claimed as
+recovered, and the mark is in `config/game.json` `bot.standIns` as well as here, so a reader who never
+opens this file still sees it:
+
+| A7 unknown | In the port | Mark |
+|---|---|---|
+| four ownership counters | not read; the bot uses `site.owner` and `piece.side` | STAND-IN |
+| two 10-byte staging arrays | not modelled; orders go straight through `move.issueOrder` | STAND-IN |
+| level-5 garrison-buy exclusion | `bot.levelFiveGarrisonGate`: at level 5 the bot does not buy a defender at a site its own dug-in piece already holds | STAND-IN |
+
+A DOSBox check that would clear one: capture `0xe94c` before and after a level-5 buy at a garrisoned
+site (if the buy is refused, the counter does not fall). Until that exists, the gate stays marked.
+
+What Part B deliberately did NOT add, and why: no per-level price or strength bonus (the bytes show
+none; the only levers are `0xe94c` and the level-5 gate), and no config "peace multiplier" (RE-E4
+ruled against inventing one). The remake's production cap and the default lobby level are listed as
+DELIBERATE DEVIATIONs on the T-032 card and in `bot.deviations`, not here as fidelity.

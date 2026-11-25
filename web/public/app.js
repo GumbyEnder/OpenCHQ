@@ -3611,8 +3611,29 @@ document.querySelector("#password").addEventListener("submit", async (event) => 
 const launchForm = document.querySelector("#launch");
 const eraSelect = launchForm ? launchForm.querySelector('select[name="era"]') : null;
 const handicapInput = launchForm ? launchForm.querySelector('input[name="handicap"]') : null;
+const levelSelect = launchForm ? launchForm.querySelector('select[name="level"]') : null;
 const handicapNote = document.getElementById("handicapNote");
 let setupTable = null;
+
+// T-032 B1: the five computer opponents come from /api/setup in DS:0x4fea order. The page types
+// none of the names, so the lobby cannot offer an opponent the server would refuse.
+function applyOpponents() {
+  if (!levelSelect || !setupTable) return;
+  const botTable = setupTable.bot || {};
+  const rows = Array.isArray(botTable.opponents) ? botTable.opponents.filter((row) => Number(row.level) >= 1) : [];
+  if (!rows.length) return;
+  const chosen = levelSelect.value;
+  levelSelect.replaceChildren();
+  for (const row of rows) {
+    const option = document.createElement("option");
+    option.value = String(row.level);
+    option.textContent = row.name + " (" + row.level + ")" + (row.label ? " - " + row.label : "");
+    levelSelect.appendChild(option);
+  }
+  const fallback = String(botTable.defaultLevel || 3);
+  const keep = rows.some((row) => String(row.level) === chosen);
+  levelSelect.value = keep ? chosen : fallback;
+}
 
 function applyHandicap() {
   if (!setupTable || !eraSelect || !handicapInput) return;
@@ -3647,6 +3668,7 @@ fetch("/api/setup")
   .then((data) => {
     setupTable = data;
     applyHandicap();
+    applyOpponents();
   })
   .catch(() => {});
 
@@ -3654,6 +3676,10 @@ document.querySelector("#launch").addEventListener("submit", (event) => {
   event.preventDefault();
   const fields = new FormData(event.target);
   const message = { op: "bot", era: fields.get("era"), side: fields.get("side") };
+  // The opponent level is its own control and independent of the starting-money spinner (T-032
+  // B6): the same level with a different spinner is a different handicap, not a different AI.
+  const level = Number(fields.get("level"));
+  if (Number.isInteger(level) && level >= 1) message.level = level;
   // A disabled field sends nothing: the server then uses the era's default, which is the same
   // number the field would have carried.
   if (handicapInput && !handicapInput.disabled && String(handicapInput.value).trim() !== "") {
