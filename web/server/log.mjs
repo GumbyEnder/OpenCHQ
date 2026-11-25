@@ -8,7 +8,8 @@
 // amount is whatever the economy paid.
 
 import { CELL_W } from "./board.mjs";
-import { millionsPerBillion, payEvery, sightCells } from "./rules.mjs";
+import { announceFromCities, millionsPerBillion, payEvery, sightCells } from "./rules.mjs";
+import { countryName } from "./countries.mjs";
 import { unitNoun, unitPhrase } from "../public/units.mjs";
 import { resourceSpec } from "./resources.mjs";
 import { forSeat } from "./view.mjs";
@@ -69,6 +70,26 @@ function legible(match, side, event) {
     if (near(from, cell) <= radius) return true;
   }
   return false;
+}
+
+// PB-236: is the nation a gift landed in "large" enough for the manual's public announcement? The
+// event carries the nation's own city count (`late.useTool` sets `cities` from `nationOf`), so the
+// round log never re-counts the board and cannot disagree with the gift that made the line. A cut
+// the config cannot supply returns null, and an unreadable cut announces nothing rather than
+// guessing which side of it a nation sits on.
+function largeNation(event) {
+  const cut = announceFromCities();
+  if (cut === null) return false;
+  const cities = Number(event && event.cities);
+  return Number.isFinite(cities) && cities >= cut;
+}
+
+// The nation's name for the announcement line. The baked country table is the same one the aid note
+// uses, so the name a player reads here is the name the payer's own line carried.
+function nationLabel(event) {
+  const country = event && event.country !== null && event.country !== undefined ? Number(event.country) : null;
+  const named = country === null ? null : countryName(country);
+  return named || "A nation";
 }
 
 function siteOf(match, id) {
@@ -421,7 +442,19 @@ export function logLines(match, side, events, round) {
           const step = event.turned === "neutral" ? " (its nation went neutral)"
             : event.turned === "allied" ? " (its nation came over)" : "";
           push("aid reached " + (event.name || "a city") + step);
-        } else if (legible(match, side, event)) push("enemy aid reached a city");
+        } else if (largeNation(event) && legible(match, side, event)) {
+          // PB-236 (manual p.30: "only large countries make it known that they have received
+          // foreign aid"). A gift into a nation at or above the size cut is public, and the line
+          // names the NATION and nothing else: not the giver, not the amount, not the standing it
+          // moved. A gift into a smaller nation says nothing at all to the other seat, which is
+          // the whole of the rule. The size test is deliberately independent of `cancelled` and
+          // `turned`: a gift that cancelled a rival's banked one is announced by the nation's SIZE,
+          // not by the cancel, so the log cannot leak a counter that the manual keeps quiet.
+          //
+          // Fog is the other gate and it is unchanged: `legible()` still decides whether this seat
+          // knows the city at all, so "large and unseen" stays silent.
+          push(nationLabel(event) + " reports receiving foreign aid");
+        }
         break;
       case "bomb_hit": {
         // PB-157: the raider reads what it took; the owner reads the loss. The owner's branch is

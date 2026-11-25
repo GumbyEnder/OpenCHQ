@@ -402,6 +402,21 @@ export function enemyRouteSteps() {
   return Number(rules().enemyRouteSteps);
 }
 
+// PB-236: the size cut behind manual p.30's "only large countries make it known that they have
+// received foreign aid". The manual prints no cut, so this is a STAND-IN in config
+// (`loyalty.announceFromCities`) and not a constant here. A nation with AT LEAST this many cities
+// is large and its gift is public; below it the gift is quiet.
+//
+// A cut that cannot be read returns null and the round log announces NOTHING: the log cannot tell a
+// large nation from a small one, and inventing public knowledge is worse than staying silent. The
+// suite pins the shipped value, so a deleted or non-integer key reds in the node suite rather than
+// quietly muting the rule forever.
+export function announceFromCities() {
+  const cfg = rules().loyalty || {};
+  const value = Number(cfg.announceFromCities);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : null;
+}
+
 // --- combat block (T-003) -------------------------------------------------------------------
 //
 // Every number the strength model uses lives in config.combat, and every key there carries its

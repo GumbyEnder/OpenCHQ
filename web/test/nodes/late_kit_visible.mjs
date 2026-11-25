@@ -130,7 +130,14 @@ export async function run() {
     const aidLine = logLines(m, "blue", aid.events, 4);
     if (!aidLine.length) fail("aid produced no log line");
     if (!/aid/i.test(aidLine[0].text)) fail("the log does not name aid: " + aidLine[0].text);
-    eq("aid is not the other seat's news when he cannot see it", logLines(m, "red", aid.events, 4).length, 1);
+    // PB-236 moved this arm's class. The other seat's aid line is now gated by the nation's SIZE
+    // (manual p.30: only large countries make it known) on top of `legible()`. This fixture's
+    // city has no country byte, so `nationOf` makes it a ONE-city nation - below the cut whatever
+    // the cut is - and red has a piece standing on the very cell, so fog is satisfied and the size
+    // gate is the only thing left. The old assertion here was `length, 1`, which pinned the
+    // un-gated announcement PB-236 removes; the positive half (a large nation, in sight) lives in
+    // pb236_aid_announce arms 1 and 2.
+    eq("aid into a one-city nation is not the other seat's news", logLines(m, "red", aid.events, 4).length, 0);
 
     // PB-200: a cease-fire is a proposal, and BOTH seats read a line for it - the offerer is told it
     // is waiting on the opponent, the opponent is told there is an offer to answer.
