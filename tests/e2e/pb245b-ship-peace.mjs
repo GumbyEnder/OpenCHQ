@@ -131,6 +131,53 @@ async function main() {
     Boolean(atWarOpen.peace) && atWarOpen.peace.active === true && atWarOpen.peace.coldWar === true &&
       atWarOpen.round === 0, JSON.stringify(atWarOpen.peace) + " round " + atWarOpen.round);
 
+  // frodo 9271 §3: leave the cold war BEFORE the arm, the way the other 245b legs do. This leg is
+  // the war -> peace -> war control the PB-245 ship row cites, so the cease fire below has to be
+  // proposed from a WAR, not from the cold war the era opens in. One real press on the War panel's
+  // own Begin Hostilities, both seats out, then the arm runs unchanged.
+  //
+  // RED presses this one, and blue keeps the final press, on purpose: the round log dedupes by
+  // round+text, so a repeat of "you began hostilities; the war is on again" by the same seat at the
+  // same round would leave the final row with no new line to read. Different seats, different
+  // sentences, no collision.
+  await red.click('.navbtn[data-dialog="war"]');
+  await red.waitForSelector("#dialogBody", { timeout: 10000 });
+  const coldPanel = await red.evaluate(() => {
+    const body = document.getElementById("dialogBody");
+    const begin = [...body.querySelectorAll("button")].find((b) => /^Begin Hostilities$/.test(b.textContent.trim()));
+    return { hasBegin: Boolean(begin), disabled: begin ? begin.disabled : null };
+  });
+  mark("the cold war offers Begin Hostilities at round 0, the counter elapsed",
+    coldPanel.hasBegin && coldPanel.disabled === false, "disabled=" + coldPanel.disabled);
+  await red.evaluate(() => {
+    const begin = [...document.querySelectorAll("#dialogBody button")].find((b) => /^Begin Hostilities$/.test(b.textContent.trim()));
+    if (!begin) throw new Error("the cold war has no Begin Hostilities button");
+    begin.click();
+  });
+  for (const seat of [blue, red]) {
+    await seat.waitForFunction(() => {
+      const room = window.__chq.room();
+      return Boolean(room && room.peace && room.peace.active === false);
+    }, null, { timeout: 25000, polling: 100 });
+  }
+  const coldLeft = await red.evaluate(() => ({
+    peace: window.__chq.room().peace,
+    strip: (document.getElementById("stripInfo").textContent || "").trim(),
+  }));
+  const coldLeftBlue = await blue.evaluate(() => ({
+    peace: window.__chq.room().peace,
+    strip: (document.getElementById("stripInfo").textContent || "").trim(),
+  }));
+  mark("one press ends the cold war for BOTH seats, and the war is on",
+    coldLeft.peace.active === false && coldLeft.peace.brokenBy === "red" &&
+      coldLeftBlue.peace.active === false && coldLeftBlue.peace.brokenBy === "red",
+    "red=" + JSON.stringify(coldLeft.peace) + " blue=" + JSON.stringify(coldLeftBlue.peace));
+  mark("the cold-war counter is gone from the strip while the war runs",
+    !/cold war|war may resume/i.test(coldLeft.strip) && !/cold war|war may resume/i.test(coldLeftBlue.strip),
+    "red=" + coldLeft.strip + " | blue=" + coldLeftBlue.strip);
+  await red.keyboard.press("Escape");
+  await sleep(250);
+
   // Run the clock: the cease-fire tool is a wartime act and the server refuses it on a held clock.
   await blue.click("#clockBtn");
   await blue.waitForFunction(() => window.__chq.room() && window.__chq.room().clock === "running", null,
