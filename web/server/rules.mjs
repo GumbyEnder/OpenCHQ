@@ -732,10 +732,6 @@ export function botThreatRadii() {
   };
 }
 
-export function levelFiveGarrisonGate() {
-  return botSpec().levelFiveGarrisonGate !== false;
-}
-
 // Every value the remake chose rather than recovered. The T-032 card names the same list; a new
 // tuning number must land here and there, not in a comment.
 export function botDeviations() {

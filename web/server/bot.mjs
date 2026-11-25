@@ -21,7 +21,6 @@ import {
   dispatchRepeatPool,
   forceAdvantageUnits,
   isRefused,
-  levelFiveGarrisonGate,
   opponentLevelOf,
   priceOf,
   spareActionPassCap,
@@ -554,8 +553,9 @@ export function defendSites(match, side, events, threatened = null, limit = 1) {
 // as a bot_buy event so the server log and the owner's debug view both show it.
 //
 // NO PRODUCTION CAP. The original has none - 0bd6 and the buy routine FUN_107e_1612 read no piece
-// count, only money, a free slot and the site - and T-032 AC5 allows only the e94c lever plus the
-// level-5 gate. The earlier `unitCap 6` was a browser pacing choice and is withdrawn, not raised.
+// count, only money, a free slot and the site - and T-032 AC5 allows only the e94c lever (the
+// level-5 garrison gate was refused by 0x10ae and removed). The earlier `unitCap 6` was a browser
+// pacing choice and is withdrawn, not raised.
 
 // A free unit slot: `FUN_1ac5_0008 @ 1ac5:0008` (decompiled.c 8105-8136). For a combat kind it
 // scans the 100 unit records at 0x906 for the first zero byte (8115) and returns 0xff when every
@@ -569,24 +569,15 @@ export function hasFreeUnitSlot(match) {
   return pieces.length < UNIT_RECORDS;
 }
 
-// A dug-in piece of ours standing on `site`'s own cell. The level-5 garrison-buy exclusion
-// (T-032 A7, marked STAND-IN in config) is the one gate beyond the e94c repeat pool.
-function siteHasGarrison(match, side, site) {
-  if (!site) return false;
-  return (match.pieces || []).some((piece) => piece && piece.side === side &&
-    piece.domain === "land" && piece.entrenched === true &&
-    Number(piece.x) === Number(site.x) && Number(piece.y) === Number(site.y));
-}
+// T-032 A7 / PM ruling (room 9370): the level-5 "garrison-buy exclusion" is REFUSED, not ported.
+// 0x10ae is a once-per-round countdown over 64 slots (4856-4862), written to 15 by the capture
+// handler (9178), read by the buy at 1632 as "still counting down, draw from another site" and by
+// readiness elsewhere - the readiness timer the port already models, not a latch on a piece. So
+// there is no gate here and none in config; the only difficulty lever left is 0xe94c.
 
 function botBuy(match, side, events, urgentSite = null) {
   const seat = match.sides && match.sides[side];
   if (!seat) return false;
-  const level = botLevel(match);
-  // Level-5 gate (STAND-IN, T-032 A7): do not buy a defender at a site its own dug-in garrison
-  // already holds. Level 5 is the only level that carries the gate.
-  if (level >= 5 && levelFiveGarrisonGate() && urgentSite && siteHasGarrison(match, side, urgentSite)) {
-    return false;
-  }
   const price = priceOf("infantry");
   if (!Number.isFinite(price) || !Number.isFinite(seat.cash) || seat.cash < price) return false;
 

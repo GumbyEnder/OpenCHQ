@@ -72,7 +72,9 @@ for (const level of [1, 2, 3, 4, 5]) {
     cellsRecorded: 0,
     turnsWithRepeats: 0,
     turnsPoolExhausted: 0,
-    maxDispatchesInOneTurn: 0,
+    maxLandOrdersInOneTurn: 0,
+    maxSameCellInOneTurn: 0,
+    maxSameCellRepeatsInOneTurn: 0,
     maxRepeatsInOneTurn: 0,
     maxRepeatsWithNothingSpent: 0,
     maxRepeatsWithActionSpent: 0,
@@ -98,7 +100,18 @@ for (const level of [1, 2, 3, 4, 5]) {
     row.buys += buys;
     row.defends += defends;
     if (repeats > 0) row.turnsWithRepeats += 1;
-    if (orders.length > row.maxDispatchesInOneTurn) row.maxDispatchesInOneTurn = orders.length;
+    if (orders.length > row.maxLandOrdersInOneTurn) row.maxLandOrdersInOneTurn = orders.length;
+    // Same-cell count, because the gate row reads "repeats" both as "dispatches that spent the
+    // counter" (three is possible) and as "dispatches to one cell beyond the first" (two).
+    const perCell = new Map();
+    for (const order of orders) {
+      const key = order.to.x + "," + order.to.y;
+      perCell.set(key, (perCell.get(key) || 0) + 1);
+    }
+    for (const count of perCell.values()) {
+      if (count > row.maxSameCellInOneTurn) row.maxSameCellInOneTurn = count;
+      if (count - 1 > row.maxSameCellRepeatsInOneTurn) row.maxSameCellRepeatsInOneTurn = count - 1;
+    }
     if (repeats > row.maxRepeatsInOneTurn) row.maxRepeatsInOneTurn = repeats;
     if (repeats > 0 && spent === 0 && repeats > row.maxRepeatsWithNothingSpent) row.maxRepeatsWithNothingSpent = repeats;
     if (repeats > 0 && spent > 0 && repeats > row.maxRepeatsWithActionSpent) row.maxRepeatsWithActionSpent = repeats;

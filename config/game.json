@@ -210,7 +210,7 @@
       { "level": 2, "name": "CAP. LUKE WARM", "label": "Marches; no army repeats", "order": 2 },
       { "level": 3, "name": "COL. BUCK ZEAL", "label": "Medium", "order": 3 },
       { "level": 4, "name": "GEN. WIN MOORE", "label": "Army repeats: up to three a cell", "order": 4 },
-      { "level": 5, "name": "MARS GOD OF WAR", "label": "Army repeats: up to three a cell, and the garrison buy gate", "order": 5 }
+      { "level": 5, "name": "MARS GOD OF WAR", "label": "Army repeats: up to three a cell", "order": 5 }
     ],
     "opponentOrder": [1, 2, 3, 4, 5],
     "defaultLevel": 3,
@@ -229,18 +229,15 @@
     "ownSiteThreatRadius": 20,
     "otherSiteThreatRadius": 15,
     "threatRadiusSource": "DECODED (T-015 Part B, docs/re/AI.md section 2): 0x19 = 25 for the 0xe47e flagged site, 0x14 = 20 for a site of ours with kind nibble < 3, 0xf = 15 otherwise.",
-    "levelFiveGarrisonGate": true,
-    "levelFiveGarrisonGateSource": "STAND-IN. T-032 A7 records a level-5 garrison-buy exclusion that the bytes did not settle. The remake implements the most literal reading - at level 5 the bot does not buy a defender at a site that already holds one of its own dug-in pieces - and this row, not a comment, is the mark.",
     "deviations": [
       "defaultLevel 3: a lobby request that names no level gets COL. BUCK ZEAL (3), the level the pre-T-032 bot's behaviour is compared against (T-032 Part C AC3). The original's setup always asked; nothing recovered names a default, so this is our choice, not the game's.",
-      "level 2-5 labels: presentation text, not recovered strings. Level 1's label ('Stands still: practice') is fixed by T-032 B1 and level 3's 'Medium' by the PM ruling in room 7706. The other three were rewritten in this cut because the e94c re-cut changed what the levels do: the labels now name the army pass's repeat allowance (none / five dispatches to one cell / seven plus the garrison gate) instead of the old, wrong 'three site actions' or 'massed dispatch to a site' stories."
+      "level 2-5 labels: presentation text, not recovered strings. Level 1's label ('Stands still: practice') is fixed by T-032 B1 and level 3's 'Medium' by the PM ruling in room 7706. Level 4 and 5's labels were rewritten in this cut because the e94c re-cut changed what the levels can do: the pool above 2 cannot be spent through a three-dispatch pass, so both say 'up to three a cell' and neither claims five or seven. The level-5 garrison gate those labels used to mention is refused by 0x10ae (room 9370) and gone from config and code."
     ],
     "standIns": [
       "A7 ownership counters (four counters): not read by the port. The bot reads site.owner and piece.side; STAND-IN.",
-      "A7 10-byte staging arrays (two): not modelled. Orders go straight through move.issueOrder; STAND-IN.",
-      "A7 level-5 garrison-buy exclusion: implemented as levelFiveGarrisonGate above and marked STAND-IN; no DOSBox capture settles the exclusion's exact shape."
+      "A7 10-byte staging arrays (two): not modelled. Orders go straight through move.issueOrder; STAND-IN."
     ],
-    "notes": "T-032 Part B. The ONLY difficulty levers shipped are the e94c army-repeat counter and the level-5 garrison gate; the three-action defence pass (combat tail four) is the same constant at every level (0bd6, decompiled.c 1126-1268), there is NO piece-production cap (the earlier unitCap 6 is withdrawn), and no per-level price or strength bonus exists anywhere in the bot (no rows to add - the absence is the contract). The 100-record unit table (FUN_1ac5_0008, 8105-8136) is a board bound, not a production cap: the buy refuses on a full table (1629). Opponent starting money stays the Manual p.17 spinner and is independent of the level."
+    "notes": "T-032 Part B. The only difficulty lever shipped is the e94c army-repeat counter, and the three-dispatch pass caps it: a pool above 2 cannot be spent in one turn (config spareActionBudget.source, docs/re/AI.md 1a). The level-5 garrison gate is REFUSED by 0x10ae, which is a once-per-round countdown, and is gone from config and code (PM ruling, room 9370). The three-action defence pass (combat tail four) is the same constant at every level (0bd6, decompiled.c 1126-1268), there is NO piece-production cap (the earlier unitCap 6 is withdrawn), and no per-level price or strength bonus exists anywhere in the bot (no rows to add - the absence is the contract). The 100-record unit table (FUN_1ac5_0008, 8105-8136) is a board bound, not a production cap: the buy refuses on a full table (1629). Opponent starting money stays the Manual p.17 spinner and is independent of the level."
   },
   "prices": {
     "infantry": 10,

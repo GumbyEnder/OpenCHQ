@@ -305,13 +305,15 @@ selection (2694, 3340) and `< 0x15` (24262, 24362); four sites clear it to 0 (12
 13858). That is the readiness timer `web/server/readiness.mjs:58` already models (15 on capture,
 decaying one a round), not a latch.
 
-Two consequences, both stated rather than assumed: **(a)** 1632 most plainly reads "the site is still
-counting down, so draw the buy's unit from another of our sites", and the level-5 garrison row stays
-**STAND-IN** with 1632 as its nearest basis; **(b)** if the timer reading is the only one, then
-`bot.levelFiveGarrisonGate` has no byte basis at all, and C1's level 4 vs 5 delta is a repeat count
-only — 4 vs 6. With the army pass bounded at `3 - spent` (1216-1218), neither 4 nor 6 can be spent
-in one turn, so the observable level 4 vs level 5 delta is the garrison gate alone. That is a scope
-call for the PM, not something this file decides.
+Two findings, both measured rather than assumed: **(a)** 1632 most plainly reads "the site is still
+counting down, so draw the buy's unit from another of our sites" — 0x10ae is the readiness countdown,
+so there is no garrison latch to port; **(b)** the level-5 garrison-buy exclusion therefore has no
+byte basis at all and is **refused**, not marked: `bot.levelFiveGarrisonGate`, its config row, its
+export and its call are removed (PM ruling, room 9370), and the A7 list no longer carries it. With
+the army pass bounded at `3 - spent` (1216-1218), neither the 4 nor the 6 can be spent in one turn
+either, so levels 4 and 5 now behave identically within a turn: the only lever is `0xe94c` and only
+0/2 of it is reachable. C1's level 4 vs level 5 delta is consequently empty, which is a scope call
+for the PM (room 9370 §2), not something this file decides.
 
 A7's unknowns, and what each one is in the shipped port. An entry marked STAND-IN is not claimed as
 recovered, and the mark is in `config/game.json` `bot.standIns` as well as here, so a reader who never
@@ -321,12 +323,14 @@ opens this file still sees it:
 |---|---|---|
 | four ownership counters | not read; the bot uses `site.owner` and `piece.side` | STAND-IN |
 | two 10-byte staging arrays | not modelled; orders go straight through `move.issueOrder` | STAND-IN |
-| level-5 garrison-buy exclusion | `bot.levelFiveGarrisonGate`: at level 5 the bot does not buy a defender at a site its own dug-in piece already holds | STAND-IN |
+| level-5 garrison-buy exclusion | no gate in config or code: 0x10ae is a once-per-round countdown over 64 slots (4856-4862), written to 15 by the capture handler (9178), read `!= 0` at 1632 and `< 10` / `< 0x15` elsewhere — readiness, not a latch on a piece | REFUSED |
 
-A DOSBox check that would clear one: capture `0xe94c` before and after a level-5 buy at a garrisoned
-site (if the buy is refused, the counter does not fall). Until that exists, the gate stays marked.
+No DOSBox check is owed for the garrison gate — the byte reading refused it, and the behaviour arm in
+`web/test/nodes/t032_bot_level.mjs` now pins the opposite: level 5 buys at a threatened site that
+already holds its own dug-in piece. The remaining STAND-INs are the counters and the staging arrays.
 
 What Part B deliberately did NOT add, and why: no per-level price or strength bonus (the bytes show
-none; the only levers are `0xe94c` and the level-5 gate), and no config "peace multiplier" (RE-E4
+none; the only lever is `0xe94c`, and only 0/2 of it is reachable through the three-dispatch pass),
+and no config "peace multiplier" (RE-E4
 ruled against inventing one). The remake's production cap and the default lobby level are listed as
 DELIBERATE DEVIATIONs on the T-032 card and in `bot.deviations`, not here as fidelity.

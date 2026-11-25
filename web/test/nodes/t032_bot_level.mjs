@@ -349,7 +349,8 @@ export async function run(ctx) {
   // ---- B7/B8. the card's deviations and STAND-INs are in config and not only in prose --------
   {
     const deviations = botDeviations();
-    // B7: AC5 allows only the e94c lever plus the level-5 gate, so there is NO production cap at
+    // B7: AC5 allows only the e94c lever (the level-5 garrison gate was refused by 0x10ae and is
+    // gone), so there is NO production cap at
     // all - not a small one and not one raised out of the way. The config row is gone, the code
     // reads no cap, and no deviation claims one.
     const config = JSON.parse(readFileSync(new URL("../../../config/game.json", import.meta.url), "utf8"));
@@ -359,8 +360,30 @@ export async function run(ctx) {
     if (/BOT_UNIT_CAP|botUnitCap|seat\.bought\s*\|\|/.test(botSource)) say("bot.mjs still enforces a production cap");
     if (!deviations.some((line) => /defaultLevel/i.test(line))) say("the default level is missing from the deviation list", deviations);
     const standIns = botStandIns();
-    for (const token of ["ownership counters", "staging arrays", "garrison-buy"]) {
+    for (const token of ["ownership counters", "staging arrays"]) {
       if (!standIns.some((line) => String(line).toLowerCase().includes(token))) say("A7 STAND-IN missing: " + token, standIns);
+    }
+    // 0x10ae is a once-per-round countdown, not a garrison latch (PM ruling, room 9370), so the
+    // level-5 garrison-buy gate is REFUSED, not marked: it is gone from config, rules and bot, and
+    // the A7 list no longer carries it. These are greps because a reinstated key or call must red.
+    if (standIns.some((line) => /garrison/i.test(String(line)))) say("a garrison STAND-IN is back in config", standIns);
+    if (config.bot.levelFiveGarrisonGate !== undefined) say("a level-5 garrison gate is back in config", config.bot.levelFiveGarrisonGate);
+    const rulesSource = readFileSync(new URL("../../server/rules.mjs", import.meta.url), "utf8");
+    if (/levelFiveGarrisonGate|siteHasGarrison/.test(rulesSource)) say("rules.mjs still names the level-5 garrison gate");
+    if (/levelFiveGarrisonGate|siteHasGarrison/.test(botSource)) say("bot.mjs still carries the level-5 garrison gate");
+
+    // And the removal is behaviour, not only deleted text: level 5, a threatened site that already
+    // holds our own dug-in piece, cash in hand - the buy still happens. The retired gate refused
+    // exactly this turn, so a reinstated gate reds here without reading any source string.
+    const garrisoned = budgetRoom(5);
+    garrisoned.sides.blue.cash = 1e6;
+    for (const site of garrisoned.sites) {
+      garrisoned.pieces.push(piece("hold:" + site.id, "blue", site.x, site.y, { entrenched: true }));
+    }
+    const heldEvents = ordersFor(garrisoned, "blue") || [];
+    if (!heldEvents.some((event) => event.type === "bot_buy")) {
+      say("level 5 refused a buy at a garrisoned threatened site, so the 0x10ae gate is still live",
+        heldEvents.filter((event) => event.type === "bot_skip"));
     }
   }
 
