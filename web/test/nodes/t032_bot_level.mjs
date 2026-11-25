@@ -15,7 +15,7 @@
 
 import { openMatch } from "../../server/match.mjs";
 import { tickMatch } from "../../server/tick.mjs";
-import { UNIT_RECORDS, marchOne, ordersFor, spendRepeat } from "../../server/bot.mjs";
+import { UNIT_RECORDS, effectivePassCap, marchOne, ordersFor, spendRepeat } from "../../server/bot.mjs";
 import { readFileSync } from "node:fs";
 import {
   botDeviations,
@@ -173,14 +173,19 @@ export async function run(ctx) {
       say("two spent actions did not cap the same-cell limit at 1", afterTwo);
     }
 
-    // The defence pass does not carry the level: three actions, one unit each, at every level.
+    // The defence pass does not carry the level in the ORIGINAL: three actions, one unit each, at
+    // every level. PB-258 adds the port-only lever (PB-258 / T-032 Part D, Shane option B), so the
+    // shipped bound is the faithful three plus the lever table; the faithful-three arm with the
+    // flag off is pinned in t032_port_lever (D1), not re-implemented here.
     for (const level of [2, 3, 4, 5]) {
       const match = budgetRoom(level);
       const events = ordersFor(match, "blue");
       const actions = countActions(events);
-      if (actions !== 3) say("level " + level + " spent " + actions + " pass actions instead of 3", events);
+      const cap = effectivePassCap(level);
+      if (actions > cap) say("level " + level + " spent " + actions + " pass actions, over the effective cap " + cap, events);
+      if (actions < spareActionPassCap()) say("level " + level + " spent only " + actions + " pass actions, under the faithful 3", events);
       const sent = countDefend(events);
-      if (sent !== 3) say("level " + level + " sent " + sent + " defenders, not one per pass action", events);
+      if (sent > cap) say("level " + level + " sent " + sent + " defenders, over the effective cap", events);
     }
 
     // Both branches of 3410-3416. A repeat spends the counter and leaves the cell eligible; the step
@@ -239,6 +244,9 @@ export async function run(ctx) {
   {
     const cap = spareActionPassCap();
     for (const level of [2, 3, 4, 5]) {
+      // PB-258: the budget this build actually hands the passes is the faithful three plus the
+      // port lever. With bot.portLevers false levelCap IS cap; the lever arm is t032_port_lever.
+      const levelCap = effectivePassCap(level);
       const match = openMatch("1942");
       match.seats = { blue: { username: "Bot", kind: "bot" }, red: { username: "Ada", kind: "human" } };
       match.opponentLevel = level;
@@ -251,9 +259,9 @@ export async function run(ctx) {
         const buys = events.filter((event) => event.type === "bot_buy").length;
         const defends = events.filter((event) => event.type === "bot_defend").length;
         const marches = events.filter((event) => event.type === "bot_order").length;
-        const room = Math.max(0, cap - (buys + defends));
+        const room = Math.max(0, levelCap - (buys + defends));
         turns += 1;
-        if (marches > room) over.push({ round, marches, buys, defends, room });
+        if (marches > room) over.push({ round, marches, buys, defends, room, levelCap });
         if (marches > worstMarch) worstMarch = marches;
         tickMatch(match);
         if (match.over) break;
@@ -263,7 +271,7 @@ export async function run(ctx) {
       }
       // The busiest turn must reach the cap, not merely stay under it: the opening board has more
       // idle land pieces than three, so a worst turn below three means the bound is not exercised.
-      if (worstMarch !== cap) say("level " + level + "'s busiest turn issued " + worstMarch + " army dispatches, not the cap of " + cap, worstMarch);
+      if (worstMarch !== levelCap) say("level " + level + "'s busiest turn issued " + worstMarch + " army dispatches, not the effective cap of " + levelCap, worstMarch);
     }
 
     // A turn that has already bought and defended: the army gets the remainder, not a fresh three.

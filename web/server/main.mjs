@@ -12,6 +12,7 @@ import { attemptKey, blocked, noteFailure, noteSuccess } from "./auth.mjs";
 import { boardPayload, fontPayload } from "./board.mjs";
 import { territoryGeometry } from "./territory.mjs";
 import {
+  botSpec,
   defaultOpponentLevel,
   handicapSpec,
   opponentLevels,
@@ -227,6 +228,10 @@ const server = createServer(async (req, res) => {
         levels: opponentLevels(),
         defaultLevel: defaultOpponentLevel(),
         spareActions: Object.fromEntries(opponentLevels().map((level) => [level, spareActionBudget(level)])),
+        // PB-258: the help line is data, not a page literal, so the lobby text and the table the
+        // server runs cannot disagree (D5). The faithful 2/4/6 repeat allowance stays here and in
+        // spareActions; the level LABELS carry the port lever.
+        portLeverHelp: String(botSpec().portLeverHelp || ""),
       },
       note: "Handicap is the OPPONENT'S starting money (Manual p.17); every era carries the spinner, 2023 included.",
     });

@@ -16,6 +16,7 @@ import { seaRoute } from "./lanes.mjs";
 import { issueOrder, wrapDelta, wrapX, HOLD_STALL_ROUNDS } from "./move.mjs";
 import {
   botAttackRangeCells,
+  botSpec,
   botThreatRadii,
   defaultOpponentLevel,
   dispatchRepeatPool,
@@ -685,6 +686,42 @@ export function botCeasefireAnswer(match, side) {
   return citiesHeld(match, side) < citiesHeld(match, by);
 }
 
+// PB-258 (T-032 Part D) - THE PORT-ONLY STRENGTH LEVER. Shane ruled option B (PM room 9405, review
+// and approval 9408 §2): the port gets a per-level strength lever that is a DELIBERATE DEVIATION
+// from the original, labelled in config and in docs/re/AI.md.
+//
+// It is ONE table and ONE read, both here, and it changes nothing about what an action DOES:
+// issueOrder, the force-advantage edge of 11, prices, income, readiness and fog are untouched and
+// unread by this path. It changes only how many times the bot asks the faithful pass for an action
+// in one turn, so the defence pass (:752) and the army pass (:781) - both budgeted by
+// `budget - spent` - may answer more threatened sites and file more dispatches. Nothing manufactures
+// a unit, money, sight or a combat edge, which is the D3 contract.
+//
+// The quantity is the original's own: 0xe94c = level*2 - 4 is seeded at new-game setup and the
+// binary spends it on repeats to the SAME cell. The deviation spends the same allowance on whole
+// extra dispatches instead - one number, redirected, not a second counter. The faithful reporting
+// helpers in rules.mjs (spareActionPassCap, dispatchRepeatLimit) are NOT changed: they stay the
+// figure the tools and tests quote, and the census prints capFaithful and capEffective side by side
+// so the two can never be confused (PM 9408 §2).
+//
+// D1: with `bot.portLevers` false (or absent) this returns 0 and `budget` is exactly
+// spareActionPassCap(), i.e. the shipped 2423ae6 path, not a parallel implementation.
+// D2: the table is 0 at levels 1-2, so a level-1 skip and a level-2 march are byte-identical.
+export function portLeverFor(level) {
+  const spec = botSpec();
+  if (!spec || spec.portLevers !== true) return 0;
+  const table = spec.portLevelLever;
+  if (!table || typeof table !== "object") return 0;
+  const extra = Number(table[String(level)]);
+  return Number.isInteger(extra) && extra > 0 ? extra : 0;
+}
+
+// What a pass may actually spend this turn: the decoded three plus the port lever. rules.mjs keeps
+// reporting the faithful cap; this is the only place the two are added.
+export function effectivePassCap(level) {
+  return spareActionPassCap() + portLeverFor(level);
+}
+
 export function ordersFor(match, side) {
   const events = [];
   if (!match || !SIDES.has(side)) return events;
@@ -728,7 +765,11 @@ export function ordersFor(match, side) {
   // incremented at 1188, 1192, 1195, 1199, 1209, 1213, 1218, 1222, 1226, 1244, 1247, 1251 (+3),
   // 1254 and 1265; the combat tail is gated at 4 (1220, 1224, 1228, 1256, `4 - local_c` at
   // 1257/1262/1264). Nothing in 1126-1268 reads 0xe94c or 0x1a0.
-  const budget = spareActionPassCap();
+  //
+  // PB-258: the ONE read of the port lever. With `bot.portLevers` false the sum is the faithful 3
+  // (D1); at levels 3-5 it is 3 + 1/2/3, the deliberate deviation (D2: 0 at levels 1-2). rules.mjs
+  // still reports the faithful cap - this line is the only place the two are added.
+  const budget = spareActionPassCap() + portLeverFor(level);
   // 0xe94c for this turn: set only when 1 < 0x1a0 (decompiled.c 13231-13232, 15157-15158), so a
   // level-1 seat never even sets it. It is how many army dispatches may repeat a destination cell
   // before that cell is recorded and struck out of the candidate table (3392-3400, 3410-3412), not

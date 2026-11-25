@@ -366,3 +366,55 @@ none; the only lever is `0xe94c`, and only 0/2 of it is reachable through the th
 and no config "peace multiplier" (RE-E4
 ruled against inventing one). The remake's production cap and the default lobby level are listed as
 DELIBERATE DEVIATIONs on the T-032 card and in `bot.deviations`, not here as fidelity.
+
+
+## 10. DEVIATIONS: PB-258, the port-only strength lever (deliberate, not recovered)
+
+The original's difficulty split is weak and it is faithfully weak: the pass allowance is the constant
+three in `FUN_107e_0bd6` at every level (§1a, §9.1), and the only level-scaled quantity is
+`0xe94c = level*2 - 4`, which the three-dispatch pass mostly caps. T-032 Part C measured that result and
+left AC1/AC3 open; Shane then ruled option B (PM room 9405, 15:19 ET), and PM 9408 §2 approved the shape:
+the port gets a per-level strength lever that is a **DELIBERATE DEVIATION** from the original.
+
+**The lever.** `config/game.json` → `bot.portLevers: true` and `bot.portLevelLever = {1:0, 2:0, 3:1,
+4:2, 5:3}`. One read, in `web/server/bot.mjs` at the pass budget:
+
+```
+const budget = spareActionPassCap() + portLeverFor(level);
+```
+
+`spareActionPassCap()` stays the decoded three; `portLeverFor` returns 0 unless the flag is true and the
+level has a positive entry. Levels 3-5 may then answer more threatened sites and file more dispatches in
+one turn, because the buy, the defence pass and the army pass already split one scalar budget.
+
+**What it is not.** The lever changes how many times the bot asks the faithful code for an action, never
+what an action does. `issueOrder`, the force-advantage edge of 11, `selectCombatTargets`, `siteThreat`,
+`priceOf`, `cityIncome`, readiness and fog are untouched and unread by the lever path; a test arm
+(`web/test/nodes/t032_port_lever.mjs`) asserts both the one read and the absence of those identifiers in
+the lever body. No damage multiplier, no extra income, no free unit, no sight through fog, no hidden
+information, no combat-resolution change.
+
+**Why it is the original's own quantity.** `0xe94c` is seeded once per game at new-game setup and spent
+on repeats to the SAME cell (3410-3416, 1649-1651). The deviation spends the same allowance on whole
+extra dispatches instead. One number, one name, redirected consumer - which is exactly the deviation to
+label, and it keeps the faithful reading as the base.
+
+**D1, in code.** With `bot.portLevers` false `portLeverFor` returns 0 and the executed path is
+`spareActionPassCap()` - the shipped 2423ae6 path, not a parallel implementation. The flag is read once,
+and the test compares the flag-off event stream with a config that never had the keys.
+
+**Reporting is split, on purpose.** `web/server/rules.mjs` keeps the faithful helpers
+(`spareActionPassCap`, `dispatchRepeatLimit`) because tools and tests quote them; the census prints
+`capFaithful` and `capEffective` side by side so the two figures can never be confused (PM 9408 §2,
+§6).
+
+**Two levers struck before coding** (frodo, room 9407; PM kept them struck in 9408 §2):
+
+- *Level 5 skips a defender when the site scores negative but no hostile is inside its radius.* Cannot
+  fire: `siteThreat` sums `floor(strength/25)` over pieces inside the radius with all weights >= 0, so a
+  negative score REQUIRES a hostile piece already inside; the predicate is unsatisfiable.
+- *Re-read the target score after each dispatch.* No-op: `ordersFor` files orders by setting `piece.path`
+  and pieces do not move until the tick, so the enemy set (and `focusTarget`) is constant within a pass.
+
+The stair is calibrated by `n` in the table only. Widening `n` is port-only and stays inside this
+deviation; it is not a second lever.

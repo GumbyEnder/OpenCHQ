@@ -3613,6 +3613,7 @@ const eraSelect = launchForm ? launchForm.querySelector('select[name="era"]') : 
 const handicapInput = launchForm ? launchForm.querySelector('input[name="handicap"]') : null;
 const levelSelect = launchForm ? launchForm.querySelector('select[name="level"]') : null;
 const handicapNote = document.getElementById("handicapNote");
+const levelNote = document.getElementById("levelNote");
 let setupTable = null;
 
 // T-032 B1: the five computer opponents come from /api/setup in DS:0x4fea order. The page types
@@ -3633,6 +3634,10 @@ function applyOpponents() {
   const fallback = String(botTable.defaultLevel || 3);
   const keep = rows.some((row) => String(row.level) === chosen);
   levelSelect.value = keep ? chosen : fallback;
+  // PB-258: the level note is served from config (bot.portLeverHelp), so the page cannot drift from
+  // the table the server runs. It carries the original's faithful 2/4/6 repeat allowance, while the
+  // labels above carry the port lever.
+  if (levelNote) levelNote.textContent = String(botTable.portLeverHelp || "");
 }
 
 function applyHandicap() {

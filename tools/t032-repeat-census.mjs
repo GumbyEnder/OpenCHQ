@@ -31,7 +31,7 @@ import path from "node:path";
 import { boardPayload, matchSites } from "../web/server/board.mjs";
 import { openMatch } from "../web/server/match.mjs";
 import { tickMatch } from "../web/server/tick.mjs";
-import { ordersFor } from "../web/server/bot.mjs";
+import { effectivePassCap, ordersFor } from "../web/server/bot.mjs";
 import { dispatchRepeatPool, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
 
 const args = process.argv.slice(2);
@@ -72,6 +72,8 @@ const out = {
   board: USE_SITES ? "era board (matchSites)" : "empty opening (openMatch default)",
   rounds: ROUNDS,
   passCap: cap,
+  passCapFaithful: cap,
+  passCapEffective: Object.fromEntries([1, 2, 3, 4, 5].map((level) => [level, effectivePassCap(level)])),
   reachableRule: "per turn: repeats <= min(pool, 3 - spent), dispatches <= 3 - spent, same-cell <= min(1 + pool, 3 - spent); spent is the buy plus the defence pass; pool is 0xe94c, seeded once per game and carried across turns",
   levels: [],
 };
@@ -81,12 +83,19 @@ for (const level of [1, 2, 3, 4, 5]) {
   match.seats = { blue: { username: "Bot", kind: "bot" }, red: { username: "Ada", kind: "human" } };
   match.opponentLevel = level;
   match.clock = "running";
+  // PB-258: the faithful cap and the cap this build actually runs are printed side by side (PM
+  // 9408 §2/§6). rules.mjs keeps the faithful figure; effectivePassCap adds the port lever. With
+  // bot.portLevers false the two are equal and every column below is the faithful census.
+  const capFaithful = cap;
+  const capEffective = effectivePassCap(level);
   const row = {
     level,
     poolSeededAtMatchStart: dispatchRepeatPool(level),
     spareActionBudget: spareActionBudget(level),
-    reachableRepeatsInOneTurn: Math.min(dispatchRepeatPool(level), cap),
-    reachableSameCellDispatches: Math.min(1 + dispatchRepeatPool(level), cap),
+    capFaithful,
+    capEffective,
+    reachableRepeatsInOneTurn: Math.min(dispatchRepeatPool(level), capEffective),
+    reachableSameCellDispatches: Math.min(1 + dispatchRepeatPool(level), capEffective),
     turns: 0,
     dispatches: 0,
     repeatsObserved: 0,
@@ -120,7 +129,7 @@ for (const level of [1, 2, 3, 4, 5]) {
     const buys = events.filter((event) => event.type === "bot_buy").length;
     const defends = events.filter((event) => event.type === "bot_defend").length;
     const spent = buys + defends;
-    const room = Math.max(0, cap - spent);
+    const room = Math.max(0, capEffective - spent);
     row.turns += 1;
     row.dispatches += orders.length;
     row.repeatsObserved += repeats;
@@ -209,7 +218,7 @@ for (const level of [2, 3, 4, 5]) {
     const orders = events.filter((event) => event.type === "bot_order");
     const repeats = orders.filter((event) => event.repeat === true).length;
     const spent = buys + defends;
-    const room = Math.max(0, cap - spent);
+    const room = Math.max(0, effectivePassCap(level) - spent);
     probes.push({
       level,
       turn: label,

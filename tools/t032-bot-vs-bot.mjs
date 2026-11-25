@@ -50,6 +50,7 @@ import { ordersFor as prePortOrdersFor } from "../web/server/bot-c20dba7.mjs";
 import { buy } from "../web/server/economy.mjs";
 import { issueOrder } from "../web/server/move.mjs";
 import { dispatchRepeatLimit, dispatchRepeatPool, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
+import { effectivePassCap } from "../web/server/bot.mjs";
 
 const CITY_KINDS = new Set(["city", "capital"]);
 
@@ -393,6 +394,10 @@ const report = {
   levers: {
     spareActionBudget: [2, 3, 4, 5].map((level) => [level, spareActionBudget(level)]),
     passCap: spareActionPassCap(),
+    // PB-258: the faithful cap and the cap this build runs, side by side. With bot.portLevers false
+    // the two agree; with it true these are the budget the bot's passes actually receive.
+    passCapFaithful: spareActionPassCap(),
+    passCapEffective: [1, 2, 3, 4, 5].map((level) => [level, effectivePassCap(level)]),
     armyRepeatPool: [2, 3, 4, 5].map((level) => [level, dispatchRepeatPool(level)]),
     armyRepeatReachable: [2, 3, 4, 5].map((level) => [level, dispatchRepeatLimit(level)]),
     productionCap: "none (T-032 B7: the unitCap lever was withdrawn; nothing can bind)",
