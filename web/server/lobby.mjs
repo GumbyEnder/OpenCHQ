@@ -12,6 +12,9 @@ import { AID_HELD_MID_WAR, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool 
 import { buy, seedOwners } from "./economy.mjs";
 import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
+// T-031 step 1: the War Films recorder. A film is a recording of a finished match; nothing here is
+// read by a live page, and every call is wrapped so a storage fault can never stop a match.
+import { appendFrame, finishFilm, startFilm } from "./history.mjs";
 import { scanActiveFor, scanAnyActive } from "./scan.mjs";
 import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX } from "./rules.mjs";
 import { isSatelliteKind, shopFor } from "./shop.mjs";
@@ -49,6 +52,32 @@ function stampSeats(room) {
 
 // The one seat a username holds. A socket may act as this seat and no other, so the side is
 // never read from the message body.
+// One place that talks to the store, so the match loop carries one line and not four. A storage
+// error is LOGGED with a prefix a log search can find; it is never swallowed into silence, because a
+// finished match with no film is worse than a stated failure (frodo's condition 5, room 7697).
+function recordFilm(room, events) {
+  try {
+    if (!room || !room.film) return;
+    appendFrame(room, events);
+    if (room.match && room.match.over) {
+      finishFilm(room);
+      room.film = false;
+    }
+  } catch (err) {
+    console.warn(`[history] frame not recorded for room ${room && room.id}: ${err && err.message ? err.message : err}`);
+  }
+}
+
+function openFilm(room) {
+  try {
+    const started = startFilm(room);
+    room.film = Boolean(started);
+  } catch (err) {
+    room.film = false;
+    console.warn(`[history] film not opened for room ${room && room.id}: ${err && err.message ? err.message : err}`);
+  }
+}
+
 function seatUsername(room, username) {
   if (!room || !room.seats) return null;
   for (const side of ["blue", "red"]) {
@@ -618,6 +647,7 @@ export function createLobby() {
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
     stampSeats(room);
+    openFilm(room);
     rooms.set(room.id, room);
     saveRoom(room);
     seatOf.set(username, room.id);
@@ -690,6 +720,7 @@ export function createLobby() {
     room.seats[mine] = { username: inviteRow.from, kind: "human" };
     room.seats[other] = { username, kind: "human" };
     stampSeats(room);
+    openFilm(room);
     rooms.set(room.id, room);
     saveRoom(room);
     seatOf.set(inviteRow.from, room.id);
@@ -1096,6 +1127,8 @@ export function createLobby() {
       }
       const result = tickMatch(room.match);
       room.match = result.match;
+      // T-031: the round is recorded from the tick's OWN events, before anything else reads them.
+      recordFilm(room, result.events);
       room.dirty = true;
       tellRoom(room);
       if (result.events && result.events.length) events.push({ roomId: room.id, events: result.events });
