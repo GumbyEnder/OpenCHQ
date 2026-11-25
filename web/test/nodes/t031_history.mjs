@@ -202,6 +202,61 @@ for (let i = 0; i < 2; i += 1) tickMatch(bareRoom.match);
 rooms.saveRoom(bareRoom);
 report.bareRoundBefore = bareRoom.match.round;
 
+// A war that ended inside the drain window (frodo 9140 §8): over and winner are saved, the closing
+// frame never landed, so the film row still has ended_at and final_digest null. recordFilm does the
+// append and the finish in one step, so this is exactly the state a kill (or a failed append) leaves.
+const drainRoom = {
+  id: "restore-drain",
+  mode: "human",
+  era: "1942",
+  clock: "held",
+  speed: 1,
+  resume: true,
+  seats: { blue: { username: "carl", kind: "human" }, red: { username: "dora", kind: "human" } },
+  match: openMatch("1942", matchSites("1942")),
+};
+history.startFilm(drainRoom, db);
+drainRoom.match.clock = "running";
+for (let i = 0; i < 2; i += 1) {
+  const step = tickMatch(drainRoom.match);
+  history.appendFrame(drainRoom, step.events, db);
+}
+drainRoom.match.over = true;
+drainRoom.match.winner = "blue";
+drainRoom.match.clock = "held";
+rooms.saveRoom(drainRoom);
+const drainBefore = db.prepare("SELECT ended_at, final_digest FROM matches WHERE id = ?").get(drainRoom.id);
+report.drainEndedBefore = drainBefore.ended_at;
+report.drainDigestBefore = drainBefore.final_digest;
+report.drainFramesBefore = count("SELECT COUNT(*) AS n FROM match_rounds WHERE match_id = ?", drainRoom.id);
+
+// The control: a film that DID finish before the restart. Restore must leave its timestamp and digest
+// exactly as stored - finishFilm is idempotent on final_digest, not a re-finish.
+const doneRoom = {
+  id: "restore-done",
+  mode: "human",
+  era: "1942",
+  clock: "held",
+  speed: 1,
+  resume: true,
+  seats: { blue: { username: "erik", kind: "human" }, red: { username: "fran", kind: "human" } },
+  match: openMatch("1942", matchSites("1942")),
+};
+history.startFilm(doneRoom, db);
+doneRoom.match.clock = "running";
+for (let i = 0; i < 2; i += 1) {
+  const step = tickMatch(doneRoom.match);
+  history.appendFrame(doneRoom, step.events, db);
+}
+doneRoom.match.over = true;
+doneRoom.match.winner = "red";
+doneRoom.match.clock = "held";
+history.finishFilm(doneRoom, db, new Date("2026-11-25T01:00:00.000Z"));
+rooms.saveRoom(doneRoom);
+const doneBefore = db.prepare("SELECT ended_at, final_digest FROM matches WHERE id = ?").get(doneRoom.id);
+report.doneEndedBefore = doneBefore.ended_at;
+report.doneDigestBefore = doneBefore.final_digest;
+
 // The restart: a new lobby over the same store, then the beat that records frames.
 const lobby = createLobby();
 const t0 = Date.now();
@@ -219,6 +274,13 @@ const bareRow = db.prepare("SELECT start_state FROM matches WHERE id = ?").get("
 report.bareStartRound = bareRow ? JSON.parse(gunzip(Buffer.from(bareRow.start_state)).toString("utf8")).round : null;
 report.bareFrames = count("SELECT COUNT(*) AS n FROM match_rounds WHERE match_id = ?", "restore-nofilm");
 report.bareNewest = db.prepare("SELECT MAX(round) AS r FROM match_rounds WHERE match_id = ?").get("restore-nofilm").r;
+const drainAfter = db.prepare("SELECT ended_at, final_digest FROM matches WHERE id = ?").get("restore-drain");
+report.drainEndedAfter = drainAfter.ended_at;
+report.drainDigestAfter = drainAfter.final_digest;
+report.drainFramesAfter = count("SELECT COUNT(*) AS n FROM match_rounds WHERE match_id = ?", "restore-drain");
+const doneAfter = db.prepare("SELECT ended_at, final_digest FROM matches WHERE id = ?").get("restore-done");
+report.doneEndedAfter = doneAfter.ended_at;
+report.doneDigestAfter = doneAfter.final_digest;
 lobby.flushAll();
 db.close();
 console.log("RESTORE_REPORT " + JSON.stringify(report));
@@ -249,6 +311,19 @@ console.log("RESTORE_REPORT " + JSON.stringify(report));
   eq(restored.bareStartRound, restored.bareRoundBefore, "the opened film's start state names the round it opened at");
   eq(restored.bareFrames, 1, "and the round after the restart is recorded for it");
   eq(restored.bareNewest, restored.bareRoundAfter, "the film-less room's first frame is the round the beat ran");
+  // The drain window (frodo 9140 §8): a war saved as over with the film's close never written is
+  // FINISHED at restore, from the state the store holds - not left as an abandoned film for the
+  // prune to delete, and not appended to.
+  eq([restored.drainEndedBefore, restored.drainDigestBefore], [null, null],
+    "the setup is the drain window: over, saved, film row still open");
+  eq(typeof restored.drainEndedAfter === "string" && restored.drainEndedAfter.length > 0, true,
+    "a war that ended inside the drain window is finished on restore, not left abandoned");
+  eq(typeof restored.drainDigestAfter === "string" && restored.drainDigestAfter.length === 64, true,
+    "and it carries the end digest a film needs to be listed");
+  eq(restored.drainFramesAfter, restored.drainFramesBefore,
+    "restore finishes the film; it does not append a frame to a finished war");
+  eq([restored.doneEndedAfter, restored.doneDigestAfter], [restored.doneEndedBefore, restored.doneDigestBefore],
+    "a film that already finished is left exactly as stored: finishFilm is idempotent on final_digest");
 
   handle.close();
 }

@@ -226,6 +226,19 @@ export function armRestoredFilm(room, handle = sharedDb) {
   // A finished match's film is already closed; re-arming it would append a frame to a finished film.
   if (room.match.over) {
     room.film = false;
+    // The drain window (frodo 9140 §8): `recordFilm` appends the closing frame and calls
+    // `finishFilm` in one step, so a process death (or an append that throws and is caught above)
+    // between the two saves a room that is over with the film's `ended_at` still null - invisible to
+    // `listFor` for the life of the room, then deleted by the prune's abandoned arm rather than
+    // finished. Close it here, from the state the store already holds. `finishFilm` is idempotent
+    // (it returns `already: true` on a row that carries `final_digest`, without writing), so a film
+    // that did finish is left byte-identical; `filmExists` keeps a war that predates the recorder
+    // from being reported as a film it never had (the UPDATE would match no row).
+    try {
+      if (filmExists(room.id, handle)) finishFilm(room, handle);
+    } catch (err) {
+      console.warn(`[history] finished room ${room.id} keeps an open film: ${err && err.message ? err.message : err}`);
+    }
     return false;
   }
   try {
