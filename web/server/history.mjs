@@ -205,6 +205,49 @@ export function finalStateOf(match) {
   return state;
 }
 
+// ---- restore: a match that crossed a deploy keeps its film -----------------------------
+//
+// `recordFilm` returns early on `!room.film`, and `room.film` lived only in the process. Every deploy
+// restarts the process, so a match that spanned one stopped recording at the restart, `finishFilm`
+// never ran, `ended_at` stayed null, and `listFor` never showed the war: the player's match had no
+// film at all, and asking for it answered the 404 a stranger's film gets (frodo 9117 §5).
+//
+// The fix is an INITIALISER, not an open: `startFilm` upserts, and its ON CONFLICT rewrites
+// `start_state` - so re-opening a film whose round 0 is already stored would replace the paint a
+// replay starts from with a mid-match state, which is worse than the gap. So a restored room re-arms
+// ONLY when the header row already exists; a room with no film stays unfilmed, exactly as before.
+export function filmExists(roomId, handle = sharedDb) {
+  const row = handle.prepare("SELECT 1 AS one FROM matches WHERE id = ?").get(String(roomId));
+  return Boolean(row && row.one);
+}
+
+export function armRestoredFilm(room, handle = sharedDb) {
+  if (!room || !room.id || !room.match) return false;
+  // A finished match's film is already closed; re-arming it would append a frame to a finished film.
+  if (room.match.over) {
+    room.film = false;
+    return false;
+  }
+  try {
+    if (filmExists(room.id, handle)) {
+      // The header row IS the film: set the flag and leave the row untouched. `startFilm` upserts,
+      // and its ON CONFLICT rewrites `start_state` - re-opening here would repaint round 0 with a
+      // mid-match state, which is worse than the gap.
+      room.film = true;
+      return true;
+    }
+    // No row: this room predates the recorder (or its open failed). Open the film at this round
+    // rather than leave the war permanently dark - and because `packMatch` carries `match.round`,
+    // the stored start state says which round the film begins at instead of claiming round 0.
+    room.film = Boolean(startFilm(room, handle));
+    return room.film;
+  } catch (err) {
+    room.film = false;
+    console.warn(`[history] film not re-armed for room ${room.id}: ${err && err.message ? err.message : err}`);
+    return false;
+  }
+}
+
 export function filmMeta(roomId, handle = sharedDb) {
   const row = handle
     .prepare(
