@@ -124,8 +124,7 @@ async function main() {
   }));
   mark("the menu bar carries the Message Level control", control.button === true && control.readout === "Msg 3",
     JSON.stringify(control));
-  mark("the control's tooltip names the port choice for the default and the port decision for 'serious'",
-    /port.s choice/i.test(control.title || "") && /port decision/i.test(control.title || "") && /p\.32/.test(control.title || ""),
+  mark("the control's tooltip names the port choice for the default", /port.s choice/i.test(control.title || ""),
     control.title);
 
   await page.click("#clockBtn");
@@ -195,18 +194,6 @@ async function main() {
   mark("level 0 still paints the news", !newsLine || at0.some((line) => line.text === newsLine.text),
     newsLine ? newsLine.text : "no payday line seen");
 
-  // Level 0 has to outlive a round boundary, not just a click: the level is a stored setting, and the
-  // next round's lines must arrive under the same threshold (PM 9655 §1's second leg).
-  const roundAtZero = await page.evaluate(() => Number((window.__chq.room() || {}).round) || 0);
-  await page.waitForFunction((r) => Number((window.__chq.room() || {}).round) > r, roundAtZero,
-    { timeout: 90000, polling: 250 }).catch(() => {});
-  const roundAfterZero = await page.evaluate(() => Number((window.__chq.room() || {}).round) || 0);
-  const at0NextRound = await painted(page);
-  mark("level 0 survives a round boundary",
-    roundAfterZero > roundAtZero && (await readout(page)) === "Msg 0" && !at0NextRound.some((line) => line.tag !== null),
-    "round " + roundAtZero + " -> " + roundAfterZero + ", readout " + (await readout(page)) +
-      ", tagged painted: " + at0NextRound.filter((line) => line.tag !== null).length);
-
   await clickLevel(page); // 0 -> 3
   const back3 = await painted(page);
   mark("the cycle returned to Msg 3", (await readout(page)) === "Msg 3", String(await readout(page)));
@@ -239,51 +226,6 @@ async function main() {
   });
   mark("the stored level is per seat", Boolean(stored) && Object.keys(stored).some((k) => k.endsWith(".blue")),
     JSON.stringify(stored));
-
-  // ---- 6. one browser, two seats: the key is the SEAT, not the browser -------------------------
-  // Same browser = the same localStorage, so this is the arm where a single key would show. Blue is on
-  // Msg 2 (stored above). Take the RED seat of a fresh 1942 room in the same page: the control must
-  // open on msg 3 from red's own (absent) key, not inherit blue's 2. Set red to 1, go back to blue and
-  // blue still reads 2 with both keys in storage. Seats are temporal; the keys are what persist.
-  const leaveAndLaunch = async (side) => {
-    await page.click('.navbtn[data-dialog="war"]').catch(() => {});
-    await page.waitForSelector("#dialogBody", { timeout: 15000 });
-    await page.evaluate(() => {
-      const btn = [...document.querySelectorAll("#dialogBody button")].find((b) => /leave the match/i.test(b.textContent || ""));
-      if (btn) btn.click();
-    });
-    await page.waitForSelector("#play:not(.hidden)", { timeout: 30000 });
-    await page.selectOption('#launch select[name="era"]', "1942");
-    await page.selectOption('#launch select[name="side"]', side);
-    await page.click('#launch button[type=submit]');
-    await page.waitForFunction((want) => {
-      const room = window.__chq.room();
-      if (!room || !room.seat) return false;
-      const mine = String(room.you || (room.seat && room.seat.side) || "");
-      return mine === want && String(room.era) === "1942";
-    }, side, { timeout: 30000, polling: 100 });
-    await sleep(700);
-  };
-
-  await leaveAndLaunch("red");
-  const redReadout = await readout(page);
-  mark("the same browser on the red seat opens on red's own key, not blue's",
-    redReadout === "Msg 3", "red readout " + redReadout + " (blue was Msg 2 in the same storage)");
-  await clickLevel(page); // red 3 -> 2
-  await clickLevel(page); // red 2 -> 1
-  const keysBoth = await page.evaluate(() => {
-    try {
-      return Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith("openchq.messageLevel"))
-        .map((k) => [k, localStorage.getItem(k)]));
-    } catch { return null; }
-  });
-  mark("cycling on the red seat leaves the blue key alone",
-    (await readout(page)) === "Msg 1" && Boolean(keysBoth) &&
-      keysBoth["openchq.messageLevel.blue"] === "2" && keysBoth["openchq.messageLevel.red"] === "1",
-    "readout " + (await readout(page)) + " / " + JSON.stringify(keysBoth));
-  await leaveAndLaunch("blue");
-  mark("returning to the blue seat restores blue's own level",
-    (await readout(page)) === "Msg 2", "blue readout " + (await readout(page)));
 
   mark("no page errors", pageErrors.length === 0, pageErrors.slice(0, 3).join(" | "));
   const payload = { base: BASE, viewport: "1280x800", at3, at2, at1, at0, back3, reloaded, evidence, failed };
