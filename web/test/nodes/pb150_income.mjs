@@ -27,6 +27,7 @@
 import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { eraTable } from "../../server/era.mjs";
+import { atWar } from "../wartime.mjs";
 import { payoutFor, seedOwners, occupy, pay, incomeGate } from "../../server/economy.mjs";
 import { cityIncome } from "../../server/rules.mjs";
 import { siteTypeOf } from "../../server/sitetype.mjs";
@@ -43,15 +44,17 @@ function eq(actual, expected, label, fail) {
   }
 }
 
+// T-035 (RE-E4): the payday is a WARTIME rule, and 1986/2023 open in the cold war (which no longer
+// runs a round at all), so every fixture here leaves the peace before measuring it.
 function opening(era) {
-  const match = openMatch(era, matchSites(era));
+  const match = atWar(openMatch(era, matchSites(era)));
   seedOwners(match);
   return match;
 }
 
 // A synthetic room: no roster, so every count below comes from the sites the test wrote.
 function room(sites) {
-  const match = openMatch("1986", []);
+  const match = atWar(openMatch("1986", []));
   match.sites = sites;
   match.pieces = [];
   match.round = 0;

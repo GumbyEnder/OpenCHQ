@@ -370,10 +370,22 @@ export function peaceRules() {
       rounds[String(scenario)] = Math.floor(n);
     }
   }
-  // 1 means "no change from wartime": the acceleration is unprinted, so the build must not
-  // accelerate on a number nobody measured. A rate is NOT floored - 1.25 is a rate, not a count.
-  const rate = Number(block.cashMultiplier);
-  return { mandatoryRounds: rounds, cashMultiplier: Number.isFinite(rate) && rate >= 0 ? rate : 1 };
+  // T-035 (RE-E4 §2): peacetime income is a flat amount PER TICK at a fixed tick rate, measured in
+  // the original - `FUN_15f4_0cdc @ 15f4:0cdc` pays a flat 10 money units per call, and capture A's
+  // +20/s is two calls a second. It is NOT a multiplier over the wartime payday: the cold war runs
+  // no round to multiply. A missing or non-positive value pays nothing rather than inventing a
+  // rate; the shipped numbers live in config/game.json and carry their own source line.
+  const perTick = Number(block.cashPerTick);
+  const ticks = Number(block.ticksPerSecond);
+  // `FUN_15f4_0cdc` pays the flat amount only while the side's money is under 20000 original units
+  // (500,000 port units) - the cold-war tick has a ceiling, unlike the clamped payday.
+  const cap = Number(block.cashPerTickCap);
+  return {
+    mandatoryRounds: rounds,
+    cashPerTick: Number.isFinite(perTick) && perTick > 0 ? perTick : 0,
+    ticksPerSecond: Number.isFinite(ticks) && ticks > 0 ? ticks : 0,
+    cashPerTickCap: Number.isFinite(cap) && cap > 0 ? cap : null,
+  };
 }
 
 // The placement forgiveness values (T-017). The rule itself is a site kind (D-019, placement.mjs);

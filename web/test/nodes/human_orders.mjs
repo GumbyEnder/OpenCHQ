@@ -118,6 +118,13 @@ export async function run(ctx) {
       fail("a human room has a non-human seat: " + JSON.stringify([blueRoom.room.blue, blueRoom.room.red]));
     }
 
+    // T-035 (RE-E4): 1986 opens in the cold war, which runs NO round. This leg is about a
+    // wartime round, so blue presses Begin Hostilities first (manual printed p.31).
+    let warMark = sa.box.length;
+    sa.send({ op: "resume_war" });
+    await ctx.waitFor(sa.box, warMark, (m) => m.op === "room" && m.room && m.room.id === roomId &&
+      m.room.peace && m.room.peace.active === false, "hostilities began");
+
     // ---- the clock does not hand either human seat bot orders ---------------------------
     // One real round of the shipped clock: if the lobby asked a human seat for bot orders,
     // the armies would have paths and be marching by the time this round lands. The round

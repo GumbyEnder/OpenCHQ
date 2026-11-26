@@ -9,8 +9,8 @@ import { entrench, issueOrder, launchStartingDestinations, planOrder, repair, se
 import { sendMission } from "./air.mjs";
 import { orderEscort } from "./escort.mjs";
 import { AID_HELD_MID_WAR, answerCeasefire, CEASEFIRE_NOTE, nukeStatus, toolOpensWhileHeld, toolsForEra, useTool } from "./late.mjs";
-import { peaceOf, resumeWar } from "./peace.mjs";
-import { buy, seedOwners } from "./economy.mjs";
+import { peaceActive, peaceOf, resumeWar } from "./peace.mjs";
+import { buy, peacePay, seedOwners } from "./economy.mjs";
 import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
 // T-031 step 1: the War Films recorder. A film is a recording of a finished match; nothing here is
@@ -907,6 +907,34 @@ export function createLobby() {
     return events;
   }
 
+  // The clock is dead time without a log. Each human seat gets one beat's events as it could see
+  // them, which is the view's own sight rule applied to events instead of pieces.
+  // PB-196: this runs EVERY round, including one with no events, because logLines refreshes the
+  // seat's sight memory inside the builder; a skipped call would make a stationary unit's cell look
+  // "lost from sight" and re-report it next round. T-035 calls it from the peacetime beat too: that
+  // beat runs no round but still carries events (a truce answered, the money tick).
+  function deliverSeatLog(room, beatEvents) {
+    for (const side of ["blue", "red"]) {
+      const seat = room.seats[side];
+      if (!seat || seat.kind !== "human") continue;
+      const lines = logLines(room.match, side, beatEvents || [], room.match.round);
+      if (lines.length) {
+        // The log outlives the socket: it is part of the room, so a reload shows the match
+        // that has been happening instead of an empty window.
+        if (!room.log) room.log = { blue: [], red: [] };
+        if (!Array.isArray(room.log[side])) room.log[side] = [];
+        room.log[side].push(...lines);
+        // The page draws a window of ROUNDS (dialogs.logWindow). A chatty round is a dozen
+        // contact lines, so a 60-line buffer held only the newest round; keep enough for six
+        // (PB-121) and keep this figure equal to the page's LOG_KEEP.
+        if (room.log[side].length > 240) room.log[side] = room.log[side].slice(-240);
+      }
+      const peer = sockets.get(seat.username);
+      if (!peer || !lines.length) continue;
+      peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
+    }
+  }
+
   // PB-200 AC1-AC3: the opponent answers a cease fire from the kit. It is not a spend, so it is
   // allowed on a held clock (a seat cannot be held hostage by a pause), and it is only ever the
   // OTHER seat's to send. Accept ends the match here rather than at the next tick: the tick skips a
@@ -1322,6 +1350,8 @@ export function createLobby() {
           tellRoom(room);
         }
       }
+      // T-035: the money tick is paced by the room's own beat, so the beat's length is read once.
+      const beatMs = Math.max(20, Math.round(speedSeconds(speedOf(room)) * 1000));
       if (stamp !== null) {
         const speed = speedOf(room);
         // Speed 0: orders and air strikes are still accepted, but game time does not pass.
@@ -1337,7 +1367,7 @@ export function createLobby() {
         if (!speedDue(speed, stamp - lastAt)) continue;
         // Exactly one round per due call, and no backlog: the base interval is 50 ms, so a
         // process that stalled must not fast-forward a match by minutes of rounds.
-        const ms = Math.max(20, Math.round(speedSeconds(speed) * 1000));
+        const ms = beatMs;
         room.tickedAt = lastAt + Math.floor((stamp - lastAt) / ms) * ms;
       }
       // Bot orders belong to bot seats, never to a room mode. A human room has no bot seat,
@@ -1392,10 +1422,15 @@ export function createLobby() {
           }
         }
         let issued = [];
-        try {
-          issued = botOrders(room.match, side) || [];
-        } catch (err) {
-          console.error("bot orders failed:", err && err.message ? err.message : err);
+        // T-035 (RE-E4): no round runs in the cold war, so a bot seat issues no orders there either -
+        // a queued destination would pile up against a round that never comes. The hostilities
+        // declaration just above still runs, because that is how a cold war ends.
+        if (!peaceActive(room.match)) {
+          try {
+            issued = botOrders(room.match, side) || [];
+          } catch (err) {
+            console.error("bot orders failed:", err && err.message ? err.message : err);
+          }
         }
         // Every bot decision is a line an operator can read without opening a browser, and the
         // owner's debug view keeps the last ten. Silent bots are indistinguishable from fog.
@@ -1413,6 +1448,28 @@ export function createLobby() {
           if (room.botActions.length > 10) room.botActions = room.botActions.slice(-10);
         }
       }
+      // T-035 (RE-E4 §1-2): THE COLD WAR RUNS NO ROUND. Capture A's round counter stayed 0 for 150 s
+      // while cash rose on the money tick, so a peacetime room pays that tick and returns: nothing
+      // advances, no fight resolves, no site is taken, no readiness write and no oil charge happens
+      // (upkeep and readiness gate on the same flag), and `match.round` stays where it was. A bot seat
+      // above may have declared hostilities in this beat; then the peace is already over and the
+      // round below runs normally.
+      if (peaceActive(room.match)) {
+        const seconds = (stamp === null ? Math.round(roomSeconds(room) * 1000) : beatMs) / 1000;
+        // Anything queued during this beat (a cease fire the bot just answered, a note a seat
+        // wrote) belongs to the beat that carried it: take it off the buffer and hand it to the log
+        // here, because no round will run to flush it. The tick's own income rides the same list.
+        const queued = Array.isArray(room.match.pendingEvents) ? room.match.pendingEvents.splice(0) : [];
+        const beat = queued.concat(peacePay(room.match, seconds));
+        if (beat.length) {
+          recordFilm(room, beat);
+          room.dirty = true;
+          tellRoom(room);
+          events.push({ roomId: room.id, events: beat });
+          deliverSeatLog(room, beat);
+        }
+        continue;
+      }
       const result = tickMatch(room.match);
       room.match = result.match;
       // T-031: the round is recorded from the tick's OWN events, before anything else reads them.
@@ -1420,30 +1477,7 @@ export function createLobby() {
       room.dirty = true;
       tellRoom(room);
       if (result.events && result.events.length) events.push({ roomId: room.id, events: result.events });
-      // The clock is dead time without a log. Each human seat gets the round as it could see it,
-      // which is the view's own sight rule applied to events instead of pieces.
-      // PB-196: this loop runs EVERY round, including one with no events, because logLines
-      // refreshes the seat's sight memory inside the builder; a skipped call would make a
-      // stationary unit's cell look "lost from sight" and re-report it next round.
-      for (const side of ["blue", "red"]) {
-        const seat = room.seats[side];
-        if (!seat || seat.kind !== "human") continue;
-        const lines = logLines(room.match, side, result.events || [], room.match.round);
-        if (lines.length) {
-          // The log outlives the socket: it is part of the room, so a reload shows the match
-          // that has been happening instead of an empty window.
-          if (!room.log) room.log = { blue: [], red: [] };
-          if (!Array.isArray(room.log[side])) room.log[side] = [];
-          room.log[side].push(...lines);
-          // The page draws a window of ROUNDS (dialogs.logWindow). A chatty round is a dozen
-          // contact lines, so a 60-line buffer held only the newest round; keep enough for six
-          // (PB-121) and keep this figure equal to the page's LOG_KEEP.
-          if (room.log[side].length > 240) room.log[side] = room.log[side].slice(-240);
-        }
-        const peer = sockets.get(seat.username);
-        if (!peer || !lines.length) continue;
-        peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
-      }
+      deliverSeatLog(room, result.events || []);
       if (room.match.over) {
         room.clock = "held";
         room.note = resultNote(room.match);

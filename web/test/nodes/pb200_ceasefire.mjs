@@ -167,6 +167,12 @@ export async function run(ctx) {
   const roomB = await b.wait((m) => m.op === "room" && m.room && m.room.id === roomA.room.id, "bob's room");
   if (roomA.room.id !== roomB.room.id) fail("the two seats landed in different rooms");
 
+  // T-035 (RE-E4): the 1986 room opens in the cold war, which runs NO round; alice begins
+  // hostilities so this leg exercises the wartime rounds it is about (manual printed p.31).
+  markA = a.box.length;
+  a.send({ op: "resume_war" });
+  await a.wait((m) => m.op === "room" && m.room && m.room.peace && m.room.peace.active === false, "hostilities began", markA);
+
   // Round 0.6 s so the log arrives inside a test; then start the clock the way a player does.
   markA = a.box.length;
   a.send({ op: "speed", speed: 6 });

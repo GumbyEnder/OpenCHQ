@@ -608,6 +608,10 @@ export function pay(match) {
   if (!match || !Array.isArray(match.sites) || !match.sides) return [];
   seedOwners(match);
   if (match.over) return [];
+  // T-035 (RE-E4 §1): a cold war runs NO round, so there is no per-round payday to make. Capture A's
+  // round counter `0x1476` stayed 0 for 150 s while cash rose on the money tick; paying a round here
+  // would pay a round the original never ran. peacePay() below is that tick.
+  if (peaceActive(match)) return [];
   const round = Number(match.round);
   const every = Number(payEvery());
   if (!Number.isInteger(round) || !Number.isFinite(every) || every <= 0) return [];
@@ -669,14 +673,14 @@ export function pay(match) {
     const counted = row.cities + Math.max(0, row.capitals - 1);
     const wells = row.wells;
     // Oil short? The original takes the unpaid share off the city count before the payday, so a
-    // side out of oil stops producing income (Manual p.27; FUN_15f4_0664 4727-4762). PB-245:
-    // during peacetime "a side does not use or generate oil" (p.31), so no oil comes off the city
-    // count at all, and "Cash ... still accumulates, and at an accelerated rate" is the multiplier
-    // from config (UNVERIFIED - 1 means no change).
-    const atPeace = peaceActive(match);
-    const oil = atPeace ? { cities: counted, penalty: 0 } : oilIncome(match, side, counted);
+    // side out of oil stops producing income (Manual p.27; FUN_15f4_0664 4727-4762).
+    // T-035: the peacetime oil exemption is not needed HERE - pay() returns before this loop while a
+    // peace is on, because the cold war runs no round; upkeep() skips the whole fuel ledger itself.
+    const oil = oilIncome(match, side, counted);
     const cities = oil.cities;
-    const amount = Math.round(cities * perCity * (atPeace ? peaceRules().cashMultiplier : 1));
+    // T-035 (RE-E4 §2): no peace multiplier. Peacetime income is a flat per-tick amount paid by
+    // peacePay() below; scaling this payday was the invented rule the capture retired.
+    const amount = Math.round(cities * perCity);
     // PB-151: income is a credit, so it clamps at the original's ceiling. The event reports what
     // actually landed, not what the count was worth, so a capped payday is not logged twice over.
     const before = Number.isFinite(seat.cash) ? Number(seat.cash) : 0;
@@ -689,6 +693,52 @@ export function pay(match) {
       event.citiesBeforeOil = counted;
     }
     events.push(event);
+  }
+  return events;
+}
+
+// --- peacetime money tick (T-035) ----------------------------------------------------------
+//
+// RE-E4 capture A (1986 Blue, mode word `0x1478 = 2`, 150 s @ 1 s): the round counter `0x1476`
+// never left 0, the piece-pass cursor never moved, and the cash field `0x148e` rose 2170 -> 5110 in
+// 145 steps of +20. `FUN_15f4_0cdc @ 15f4:0cdc` pays a FLAT 10 money units per call, so the +20/s is
+// two calls a second - there is no peace multiplier in the original and none here.
+//
+// The tick is not a round: the caller (the room's own clock) hands over the seconds that have
+// passed, and this function never touches `match.round`, a piece or a site. The rate is kept exact
+// across a beat that is not a whole number of ticks by carrying the fraction on the peace state, so
+// a 0.7 s beat pays the same per second as a 5 s one.
+export function peacePay(match, seconds) {
+  if (!match || !match.sides || typeof match.sides !== "object") return [];
+  if (match.over || !peaceActive(match)) return [];
+  const { cashPerTick, ticksPerSecond, cashPerTickCap } = peaceRules();
+  const elapsed = Number(seconds);
+  if (!Number.isFinite(elapsed) || elapsed <= 0) return [];
+  if (!(cashPerTick > 0) || !(ticksPerSecond > 0)) return [];
+  const carry = Number(match.peace && match.peace.cashCarry);
+  const worth = (Number.isFinite(carry) ? carry : 0) + cashPerTick * ticksPerSecond * elapsed;
+  const amount = Math.floor(worth);
+  match.peace.cashCarry = Number((worth - amount).toFixed(6));
+  if (amount <= 0) return [];
+  const round = Number(match.round);
+  const events = [];
+  for (const side of SIDES) {
+    const seat = seatOf(match, side);
+    if (!seat) continue;
+    const before = Number.isFinite(seat.cash) ? Number(seat.cash) : 0;
+    // RE-E4 §2: FUN_15f4_0cdc pays only while money < 20000 original units (the shipped cap). A side
+    // at the ceiling keeps its cash and stops ticking; the other side is unaffected.
+    if (cashPerTickCap !== null && before >= cashPerTickCap) continue;
+    const credited = credit(match, side, amount);
+    const paid = Math.max(0, Number(credited) - before);
+    if (!paid) continue;
+    // Same event type as a payday so the log, the film and the seat view read it without a second
+    // shape; `peace: true` and `cities: 0` say why it carries no city count ("paid 0.25b").
+    events.push({
+      type: "income", side, round: Number.isFinite(round) ? round : 0, peace: true,
+      cities: 0, wells: 0, cashWells: 0, amount: paid, gross: amount,
+      ticks: Number((ticksPerSecond * elapsed).toFixed(3)),
+    });
   }
   return events;
 }

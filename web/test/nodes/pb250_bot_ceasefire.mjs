@@ -103,8 +103,11 @@ export async function run() {
     const accepted = gate.debugRoom(blue.id);
     const blueSeat = seatOf(sent);
     const blueRoom = roomFacts(sent);
+    // T-035 (RE-E4): a truce stops the round loop - the beat that carried the answer paid the
+    // money tick instead of advancing a round - so the answer lands at the round it was given in,
+    // not one past it. "Inside three rounds" still holds: one round ran before the offer.
     t.eq("PB-250 AC1: the bot answered inside three rounds (one)",
-      [blueSeat.ceasefire.status, accepted.round], ["accepted", 2]);
+      [blueSeat.ceasefire.status, accepted.round], ["accepted", 1]);
     t.eq("PB-250 AC3: the accepted truce is the SAME peace two humans get",
       [blueRoom.peace.active, blueRoom.peace.by, blueRoom.peace.coldWar, blueRoom.peace.canResume, accepted.over],
       [true, "blue", false, true, false]);
@@ -125,10 +128,12 @@ export async function run() {
     for (let step = 3; step <= 5; step += 1) gate.tickRooms(blue.t0 + step * 5000);
     const kept = gate.debugRoom(blue.id);
     t.eq("PB-250: the bot keeps the truce it accepted (the cold war is the only peace it breaks)",
-      [kept.round >= 4,
-        kept.log.blue.filter((line) => /broken the peace/i.test(line.text) && Number(line.round) > 2).length,
+      [kept.round, kept.log.blue.filter((line) => /broken the peace/i.test(line.text) && Number(line.round) > 2).length,
         Boolean((roomFacts(sent).peace || {}).active)],
-      [true, 0, true]);
+      [accepted.round, 0, true]);
+    // T-035 (RE-E4): and the round does not move while the truce stands - the beat pays the tick.
+    t.eq("PB-250/T-035: a standing truce runs no round (round frozen at the answer)",
+      kept.round, accepted.round);
 
     // ---- DECLINE: the human takes red (17 cities), the bot blue (38) and is ahead ---------------
     sent = [];

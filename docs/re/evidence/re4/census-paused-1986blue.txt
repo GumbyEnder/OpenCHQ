@@ -1,0 +1,4 @@
+base=0x7e42f8428cd0 pid=4004787
+round=0 pass=0 time=65535 film=3 c8cc=69 barmode=0 cash_blue=2000 cash_red=2000 modifier=0 era=2
+blue {'reserve': 3000, 'in': 2200, 'paid': 1870, 'out': 1870}
+red {'reserve': 3000, 'in': 1600, 'paid': 1150, 'out': 1150}

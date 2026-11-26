@@ -626,9 +626,12 @@
     }
   },
   "peace": {
-    "_comment": "PB-245. Manual printed p.31-32: 'Peace lasts for a pre-set amount of time, depending upon the scenario. A counter in Monitor One tells you how much time remains in mandatory peace' and 'Cash, however, still accumulates, and at an accelerated rate.' The page prints NO length and NO rate. Both numbers are UNVERIFIED - neither is evidence. mandatoryRounds is keyed by scenario; an absent key means the page printed no mandatory window for that scenario, not that the window is zero rounds. cashMultiplier 1 means 'no change from wartime'.",
+    "_comment": "PB-245 / T-035. Manual printed p.31-32: 'Peace lasts for a pre-set amount of time, depending upon the scenario. A counter in Monitor One tells you how much time remains in mandatory peace' and 'Cash, however, still accumulates, and at an accelerated rate.' The page prints NO length and NO rate. mandatoryRounds is keyed by scenario; an absent key means the page printed no mandatory window for that scenario, not that the window is zero rounds. PAID PER TICK, NOT MULTIPLIED (T-035, RE-E4 capture A): the cold war runs NO round (0x1476 stayed 0 for 150 s) and pays a flat 10 original cash units twice a second from FUN_15f4_0cdc, so this block carries the per-tick amount and the tick rate instead of a multiplier over wartime income. The 0x148e cash field is in 40ths of a billion (docs/re/ECONOMY_RE.md:163), and money.perBillion is 1000, so 10 units x 1000/40 = 250 port money units per tick; two ticks a second reproduces the capture's +20 units/s (2170 -> 5110 over 149 s).",
     "mandatoryRounds": {},
-    "cashMultiplier": 1
+    "cashPerTick": 250,
+    "ticksPerSecond": 2,
+    "cashPerTickCap": 500000,
+    "_source": "RE-E4 (docs/re/RE_E4.md sections 1-2): evidence/re4/sample-1986blue-peacetime-150s.csv reads mode 2, round counter frozen at 0, cash +20/s; sample-1942blue-control-60s.csv reads mode 0, round 0 -> 5, +62 per round. FUN_15f4_0cdc @ 15f4:0cdc pays the flat 10 only while money < 20000 units (= 500,000 port units at 25 per unit, which is cashPerTickCap), so the cold-war tick stops at the side's 500 b; the mode-1 halving is a different mode and is not modelled here."
   },
   "readiness": {
     "radiusSq": 401,

@@ -79,7 +79,8 @@ function withPeaceConfig(fn, mandatory = MANDATORY) {
   const shipped = JSON.parse(readFileSync(shippedPath, "utf8"));
   const dir = mkdtempSync(path.join(tmpdir(), "openchq-pb245b-"));
   const file = path.join(dir, "game.json");
-  shipped.peace = { ...(shipped.peace || {}), mandatoryRounds: { ...mandatory }, cashMultiplier: 1 };
+  // T-035: the money tick replaced the retired multiplier; these files set it explicitly.
+  shipped.peace = { ...(shipped.peace || {}), mandatoryRounds: { ...mandatory }, cashPerTick: 250, ticksPerSecond: 2 };
   writeFileSync(file, JSON.stringify(shipped, null, 2));
   const before = process.env.OPENCHQ_CONFIG;
   process.env.OPENCHQ_CONFIG = file;

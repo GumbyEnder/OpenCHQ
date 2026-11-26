@@ -591,6 +591,17 @@ async function main() {
   // ---- a dropped client pauses the game, it does not end it ----------------------------
   const survivedId = human.room.id;
   if (!survivedId) fail("human room has no id");
+
+  // T-035 (RE-E4): 1986 opens in the cold war, and the cold war runs NO round - the money tick pays
+  // instead. These legs are about WARTIME rounds, so blue presses Begin Hostilities first, which is
+  // the press a player makes (manual printed p.31). Without it the room sits at round 0 for ever
+  // and no round can arrive.
+  const beforeWar = adaBox.length;
+  wsAda.send(JSON.stringify({ op: "resume_war" }));
+  const warRoom = await waitFor(adaBox, beforeWar,
+    (m) => m.op === "room" && m.room && m.room.id === survivedId && m.room.peace && m.room.peace.active === false,
+    "hostilities began", 4000);
+  if (!warRoom) fail("the cold war never ended on the human room");
   const roundMs = Math.max(1, Number(JSON.parse(readFileSync(path.join(root, "config", "game.json"), "utf8")).roundSeconds) || 5) * 1000;
 
   // Red queues a standing order before it drops, on the cell beside Moscow. A human room runs

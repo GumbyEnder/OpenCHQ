@@ -25,6 +25,7 @@ import { boardPayload } from "../../server/board.mjs";
 import { openMatch } from "../../server/match.mjs";
 import { resetRules, rules, payEvery } from "../../server/rules.mjs";
 import { pay, payoutFor, seedOwners } from "../../server/economy.mjs";
+import { atWar } from "../wartime.mjs";
 import { logLines } from "../../server/log.mjs";
 import { siteTypeOf } from "../../server/sitetype.mjs";
 import { nukeRoll, nukeState } from "../../server/nukes.mjs";
@@ -72,6 +73,9 @@ function fixture({ detonated = 0, seed = 4242 } = {}) {
   const match = openMatch("1986", payload.sites, {});
   match.clock = "running";
   match.round = Math.max(1, Number(payEvery()) || 1);
+  // T-035 (RE-E4): 1986 opens in the cold war, where no round runs and cash comes from the money
+  // tick; this fixture measures the WARTIME payday, so it begins hostilities first (p.31).
+  atWar(match);
   match.over = false;
   match.sides = { blue: { cash: 500000 }, red: { cash: 500000 } };
   match.pieces = [];

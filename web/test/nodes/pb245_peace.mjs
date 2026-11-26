@@ -22,7 +22,8 @@
 //   AC1  accept -> peace; both seats read peace/over/winner; resume refused before the counter,
 //        allowed after it, with its log line on both seats
 //   AC2  production writes no readyRound while at peace (and does write when the war is on)
-//   AC3  the fuel ledger neither charges NOR credits at peace; cash is multiplied by the config rate
+//   AC3  the fuel ledger neither charges NOR credits at peace; a peace round pays no payday and the
+//        per-tick money tick pays the config amount (T-035 / RE-E4: no multiplier)
 //   AC4  enemy troops are invisible at peace; an Intel Scan reveal still crosses that gate
 //   AC5  a peacetime transfer lands in the SAME round with no round cost, a hull transfers on
 //        water, an aircraft lands ready, and the destination may not be neutral or enemy ground
@@ -43,7 +44,7 @@ import { isFriendly, ownersFor, regionLabel } from "../../server/territory.mjs";
 import { forSeat } from "../../server/view.mjs";
 import { logLines } from "../../server/log.mjs";
 import { poolReadiness, readyRoundOf } from "../../server/readiness.mjs";
-import { pay, upkeep } from "../../server/economy.mjs";
+import { pay, peacePay, upkeep } from "../../server/economy.mjs";
 import { meterOf } from "../../server/resources.mjs";
 import { resetRules } from "../../server/rules.mjs";
 
@@ -68,13 +69,16 @@ const shippedPath = path.resolve(here, "..", "..", "..", "config", "game.json");
 
 // The two unprinted numbers, set explicitly for this file only.
 const MANDATORY = { "1986": 3, "2023": 2 };
-const CASH_RATE = 1.25;
+// T-035: the unprinted cash rule is a flat per-tick amount at a fixed tick rate (RE-E4), so the
+// arms below set both explicitly instead of leaning on the shipped figures.
+const PER_TICK = 2500;
+const TICKS_PER_SECOND = 4;
 
 function withPeaceConfig(fn) {
   const shipped = JSON.parse(readFileSync(shippedPath, "utf8"));
   const dir = mkdtempSync(path.join(tmpdir(), "openchq-pb245-"));
   const file = path.join(dir, "game.json");
-  shipped.peace = { ...(shipped.peace || {}), mandatoryRounds: { ...MANDATORY }, cashMultiplier: CASH_RATE };
+  shipped.peace = { ...(shipped.peace || {}), mandatoryRounds: { ...MANDATORY }, cashPerTick: PER_TICK, ticksPerSecond: TICKS_PER_SECOND };
   writeFileSync(file, JSON.stringify(shipped, null, 2));
   const before = process.env.OPENCHQ_CONFIG;
   process.env.OPENCHQ_CONFIG = file;
@@ -119,7 +123,11 @@ export async function run() {
     const shipped = JSON.parse(readFileSync(shippedPath, "utf8"));
     const block = shipped.peace || {};
     eq(block.mandatoryRounds, {}, "the shipped config prints no mandatory length (p.31 prints none)");
-    eq(block.cashMultiplier, 1, "the shipped cash rate is 1: no acceleration on an unmeasured number");
+    // T-035 / RE-E4: the rate is no longer unmeasured. The shipped block carries the measured
+    // per-tick amount and tick rate, and must NOT carry the retired multiplier.
+    eq(block.cashPerTick, 250, "the shipped peacetime tick is 250 port units (10 original units x 1000/40)");
+    eq(block.ticksPerSecond, 2, "the shipped tick rate is 2 a second (capture A: +20 units/s at a flat 10)");
+    eq(Object.hasOwn(block, "cashMultiplier"), false, "the retired peace multiplier is gone from the config");
   }
 
   withPeaceConfig(() => {
@@ -212,19 +220,21 @@ export async function run() {
       eq(Number(peaceMeter.held), peaceBefore, "peacetime neither uses nor generates oil");
     }
     {
+      // T-035 (RE-E4): the cold war runs no round, so a peace payday must NOT exist, and peacetime
+      // income is the flat per-tick amount, not a scale on the wartime figure.
       const war = fresh("1986", 1);
       const peace = fresh("1986", 1);
       truceAccepted(peace);
       const warIncome = pay(war).find((event) => event.type === "income" && event.side === "blue");
-      const peaceIncome = pay(peace).find((event) => event.type === "income" && event.side === "blue");
       ok(warIncome, "the wartime payday produced an income event");
-      ok(peaceIncome, "the peacetime payday produced an income event");
-      eq(peaceIncome.cities >= warIncome.cities, true,
-        "peacetime does not take cities off the payday for oil (" + peaceIncome.cities + " vs " + warIncome.cities + ")");
-      if (warIncome.gross > 0) {
-        eq(peaceIncome.gross, Math.round(warIncome.gross * CASH_RATE),
-          "the cash rate is the config's (" + CASH_RATE + "): peace " + peaceIncome.gross + ", war " + warIncome.gross);
-      }
+      eq(pay(peace).length, 0, "a peacetime round pays no payday: the cold war runs no round");
+      const tick = peacePay(peace, 1).find((event) => event.type === "income" && event.side === "blue");
+      ok(tick, "the peacetime money tick pays an income event");
+      eq(tick.peace, true, "the tick names itself as peacetime income");
+      eq(tick.cities, 0, "the tick carries no city count: FUN_15f4_0cdc pays flat, not per city");
+      eq(tick.gross, PER_TICK * TICKS_PER_SECOND,
+        "one second of ticks pays perTick x ticksPerSecond (" + tick.gross + ")");
+      eq(peacePay(war, 1).length, 0, "the money tick is peacetime-only: a war side is paid by its round");
     }
 
     // ---- AC4: the enemy is invisible at peace, and a scan still crosses it -----------------
