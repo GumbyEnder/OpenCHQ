@@ -314,10 +314,15 @@ export function damageFor(attacker, defender, combat = null) {
   const busy = defender.fighting !== null && defender.fighting !== undefined && defender.fighting !== attacker.id;
   if (attacker.domain !== "sea" && defender.domain !== "sea" && attackFacing && defendFacing && busy) {
     if (String(attackFacing) === String(defendFacing)) {
+      // 7066 is `local_8 <<= 1`: a shift on the integer cell, so d*2 exactly.
       amount *= block.rearMultiplier;
       rear = true;
     } else if (OPPOSITE[String(attackFacing)] !== String(defendFacing)) {
-      amount *= block.flankMultiplier;
+      // 7070 is `local_8 += (int) local_8 / 2`, integer division on the covered cell. The port used
+      // to multiply by 1.5, so a city hit read 19.5 where the original reads 13 + 13/2 = 19. Flank
+      // is now the original's form - d + trunc(d * (multiplier - 1)) - and the config value stays
+      // the lever: 20 -> 30 on a plain, 13 -> 19 and 15 -> 22 where the cell is odd.
+      amount += Math.floor(amount * (Number(block.flankMultiplier) - 1));
       flank = true;
     }
   }

@@ -27,12 +27,13 @@
 //   - the rear branch stops comparing facings               -> rear no longer doubles
 //   - the flank branch treats "facing each other" as flank  -> the front arm reads 30
 //   - the third-piece gate is dropped                       -> an isolated 1v1 takes a bonus
-//   - the city arm stops applying the multiplier after cover-> 19.5/26 come back as 13
+//   - the city arm stops applying the multiplier after cover-> 19/26 come back as 13
 //
-// City note: the port multiplies the COVERED cell by 1.5 (13 -> 19.5) and the original's
-// integer form at 7070 is 13 + (int)13/2 = 19. The city arm pins what the port does today and
-// names the difference so a gate reader can rule on it; it is not a claim that 19.5 is the
-// original's number.
+// City note (PB-287): the original's 7070 is `local_8 += (int) local_8 / 2`, so a covered 13 is
+// 13 + 13/2 = 19, NOT 19.5, and a mountain's 15 is 15 + 15/2 = 22, NOT 22.5. The port multiplied
+// by 1.5 until PB-287; the pin now asserts the original's integer form. The rear is `<<= 1`, exact
+// on an integer cell, so 26 stays 26. Cover itself is already integer (coverFor floors both the
+// (d+1)/3 city form and the d/4 and d/6 mountain forms), which this pin checks arm by arm.
 
 import { CELL_W, boardPayload } from "../../server/board.mjs";
 import { baseDamageFor, damageFor } from "../../server/combat.mjs";
@@ -42,8 +43,10 @@ export const name = "pb285_flank_rear";
 
 const PLAIN = 8;
 const CITY = 6;
+const MOUNTAIN = 10;
 const PLAIN_CELL = { x: 78, y: 50 };  // the open cell the 1986 report used (PB-282)
 const CITY_CELL = { x: 76, y: 60 };   // Havana, a city
+const MOUNTAIN_CELL = { x: 78, y: 46 }; // the mountain cell the PB-282 bake pinned
 const THIRD = { id: "blue:third", side: "blue" };
 
 function unit(id, side, kind, x, y, extra = {}) {
@@ -122,18 +125,43 @@ export async function run(ctx) {
     fail("pb285: a city front is covered " + cityFront.covered + " / amount " + cityFront.amount + ", expected 13 / 13 (20 - (20+1)/3)");
   }
   const cityFlank = exchange(CITY_CELL, "n", "e");
-  if (Number(cityFlank.amount) !== 19.5) {
-    fail("pb285: a city flank is " + cityFlank.amount + ", expected 19.5 (13 x 1.5, cover before the multiplier)");
+  if (Number(cityFlank.amount) !== 19) {
+    fail("pb285: a city flank is " + cityFlank.amount + ", expected 19 (13 + trunc(13/2), cover before the multiplier)");
   }
   const cityRear = exchange(CITY_CELL, "e", "e");
   if (Number(cityRear.amount) !== 26) {
-    fail("pb285: a city rear is " + cityRear.amount + ", expected 26 (13 x 2)");
+    fail("pb285: a city rear is " + cityRear.amount + ", expected 26 (13 << 1)");
   }
-  // The original's integer form at 7070 is 13 + (int)13/2 = 19, not 19.5. Kept as a measured
-  // difference, not a port claim: the pin above records the port's current arithmetic so a
-  // later ruling that adopts the truncation reds this line and updates the number.
+  // The original's integer form at 7070 is 13 + (int)13/2 = 19. PB-287 adopted it, so this is now
+  // the same number the arm above pins rather than a measured difference kept beside it.
   const originalInteger = 13 + Math.floor(13 / 2);
   if (originalInteger !== 19) fail("pb285: the doc's integer flank arithmetic no longer gives 19");
+
+  // ---- PB-287: the truncation is visible on an odd cell, and cover stayed integer --------------
+  // A mountain takes the cell to 15 (20 - 20/4), so the flank is 15 + 7 = 22 and the old x1.5 read
+  // 22.5. This is the arm that separates "faithful" from "close enough" on a board where both
+  // answers are one integer apart.
+  if (terrainAt(board, MOUNTAIN_CELL.x, MOUNTAIN_CELL.y) !== MOUNTAIN) {
+    fail("pb285: " + MOUNTAIN_CELL.x + "," + MOUNTAIN_CELL.y + " is terrain " + terrainAt(board, MOUNTAIN_CELL.x, MOUNTAIN_CELL.y) + ", expected mountain " + MOUNTAIN + " - the board bake moved, re-point the pin");
+  }
+  const mountainFront = exchange(MOUNTAIN_CELL, "w", "e");
+  const mountainFlank = exchange(MOUNTAIN_CELL, "n", "e");
+  const mountainRear = exchange(MOUNTAIN_CELL, "e", "e");
+  if (Number(mountainFront.covered) !== 15 || Number(mountainFront.amount) !== 15) {
+    fail("pb285: a mountain front is covered " + mountainFront.covered + " / amount " + mountainFront.amount + ", expected 15 / 15 (20 - 20/4)");
+  }
+  if (Number(mountainFlank.amount) !== 22) {
+    fail("pb285: a mountain flank is " + mountainFlank.amount + ", expected 22 (15 + trunc(15/2))");
+  }
+  if (Number(mountainRear.amount) !== 30) {
+    fail("pb285: a mountain rear is " + mountainRear.amount + ", expected 30 (15 << 1)");
+  }
+  for (const [label, hit] of [["plain front", front], ["plain flank", flank], ["plain rear", rear],
+    ["city front", cityFront], ["city flank", cityFlank], ["city rear", cityRear],
+    ["mountain front", mountainFront], ["mountain flank", mountainFlank], ["mountain rear", mountainRear]]) {
+    if (!Number.isInteger(Number(hit.covered))) fail("pb285: " + label + " has a non-integer covered cell (" + hit.covered + ") - terrain cover must truncate like the original");
+    if (!Number.isInteger(Number(hit.amount))) fail("pb285: " + label + " has a non-integer amount (" + hit.amount + ") - 7066/7070 are integer ops");
+  }
 
   // ---- config carries the two shipped multipliers (provenance, checked last so a config cut
   //      reds the damage arm above first) ----------------------------------------------------

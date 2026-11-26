@@ -387,7 +387,7 @@
     },
     "flankMultiplier": {
       "value": 1.5,
-      "source": "MEASURED (T-009b, live leg): flank 1.5 is no longer disassembly-only. Three-piece layout so the defender is fighting a third piece (its target link is not the attacker), attacker facing perpendicular to the defender: tank vs entrenched infantry read 30 against the 20 matrix cell on repeats 2 and 3; repeat 1 read 20 with the facing byte re-pinned that pass, and that reading is kept in the log. The same geometry with matched facings reads 40 (rear x2). decompiled.c 7064-7071.",
+      "source": "MEASURED (T-009b, live leg): flank 1.5 is no longer disassembly-only. Three-piece layout so the defender is fighting a third piece (its target link is not the attacker), attacker facing perpendicular to the defender: tank vs entrenched infantry read 30 against the 20 matrix cell on repeats 2 and 3; repeat 1 read 20 with the facing byte re-pinned that pass, and that reading is kept in the log. The same geometry with matched facings reads 40 (rear x2). decompiled.c 7064-7071. PB-287 applies 7070's integer form on the covered cell - d + trunc(d/2), so a city's 13 reads 19 and a mountain's 15 reads 22 - and 1.5 remains the measured ratio the lever carries.",
       "evidenceRef": "docs/re/t009b/flank-2026-11-13.txt (repeats 2 and 3: dmg 30; repeat 1: 20, logged); docs/re/COMBAT.md s11"
     },
     "rearMultiplier": {
