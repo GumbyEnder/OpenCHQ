@@ -6,16 +6,19 @@
 // (FUN_107e_307a, 1635); at level 5 the same site is used. So the level decides WHICH site's unit
 // the buy draws from, and this node pins every side of it:
 //
-//   1-4  the engine: L4 refuses an unready site, L5 draws from it, the click and L1 still refuse.
-//   5    the wiring: botBuy() at L5 takes the unready anchor, and at L4 it does not. This is the
-//        arm the census used to be the only detector for (a bot.mjs `>= 5` -> `>= 6` mutant left
-//        the engine arms green).
-//   6    the human path: a player's buy() at an unready site is refused, so no allowUnreadySite
+//   1-5  the engine: L4 refuses an unready site; a level-5 buy WITHOUT the intent flag refuses
+//        too (level alone is not permission - frodo 9492 §4); the explicit
+//        options.allowUnreadySite buys there; the click and L1 still refuse.
+//   6    the wiring: botBuy() at L5 takes the unready anchor and sets the flag on its event; at
+//        L4 it neither takes the anchor nor sets it. A bot.mjs `>= 5` -> `>= 6` mutant reds the
+//        L5 half, `>= 5` -> `>= 1` reds the L4 half.
+//   7    the human path: a player's buy() at an unready site is refused, so no allowUnreadySite
 //        reaches the shop window; the placement default refuses it too.
 //
 // What breaks if this file is removed: buy() stops taking the level, level 5 goes back to being
-// identical to level 4 on this axis, botBuy stops forwarding the level, and nothing notices if the
-// exception widens to levels 2-4, to every unready site, or to the player's click.
+// identical to level 4 on this axis, botBuy stops forwarding the intent, and nothing notices if
+// the exception widens to levels 2-4, to every unready site, to a bare level-5 caller, or to the
+// player's click.
 export const name = "t032_buy_draw_site";
 
 import { boardPayload, matchSites } from "../../server/board.mjs";
@@ -79,13 +82,51 @@ export async function run(ctx) {
   }
   if (match.sides.blue.cash !== before4) fail("t032_buy_draw_site: a refused buy charged the pool");
 
-  // 2. LEVEL 5 - the same cell and the same timer, and the buy goes through at that site.
-  const before5 = match.sides.blue.cash;
-  const bought = buy(match, "blue", "infantry", site.x, site.y, board, 5);
-  if (!bought || bought.ok !== true) {
-    fail("t032_buy_draw_site: level 5 refused an unready site: " + JSON.stringify(bought));
+  // 2. LEVEL 5 ALONE IS NOT PERMISSION (frodo 9492 §4). The exception is keyed on intent, so a
+  //    caller that passes the number and nothing else is refused. This is the arm that stops the
+  //    rule drifting back to "level >= 5 means any level-5 caller may buy anywhere unready".
+  const levelOnly = buy(match, "blue", "infantry", site.x, site.y, board, 5);
+  if (!levelOnly || levelOnly.error === undefined) {
+    fail("t032_buy_draw_site: a level-5 buy with no intent flag bought at an unready site: "
+      + JSON.stringify(levelOnly));
   }
-  if (bought.site !== site.id) fail("t032_buy_draw_site: level 5 drew from site " + bought.site + ", not " + site.id);
+  if (!/isn't ready/.test(String(levelOnly.error))) {
+    fail("t032_buy_draw_site: the level-5 refusal is not the readiness one: " + levelOnly.error);
+  }
+  if (match.sides.blue.cash !== before4) fail("t032_buy_draw_site: a refused level-5 buy charged the pool");
+
+  // 2b. THE CALLERS ARM (PM 9496 §1, frodo 9495 §3): the same level-5 call from a match whose
+  //     seats are both kind "human" must REFUSE. The exception belongs to the bot's decision, not
+  //     to the seat and not to the number, so a caller that supplies 5 alone gets the readiness
+  //     sentence even when no bot is in the match at all.
+  const humanSeat = unreadyAnchor();
+  if (!humanSeat.site) fail("t032_buy_draw_site: no free blue city for the callers arm");
+  humanSeat.match.seats = { blue: { username: "A", kind: "human" }, red: { username: "B", kind: "human" } };
+  const callers = buy(humanSeat.match, "blue", "infantry", humanSeat.site.x, humanSeat.site.y, humanSeat.board, 5);
+  if (!callers || callers.error === undefined) {
+    fail("t032_buy_draw_site: a non-bot caller at level 5 bought at an unready site: " + JSON.stringify(callers));
+  }
+  if (!/isn't ready/.test(String(callers.error))) {
+    fail("t032_buy_draw_site: the callers-arm refusal is not the readiness one: " + callers.error);
+  }
+
+  // 3. THE EXPLICIT INTENT - options.allowUnreadySite. The same cell, the same timer, and the buy
+  //    goes through at that site, still reporting the level for the record.
+  const allowed = canPlace(match, "blue", "infantry", site.x, site.y, board, { allowUnreadySite: true });
+  if (allowed && allowed.error !== undefined) {
+    fail("t032_buy_draw_site: canPlace with the intent flag refused an unready site: " + allowed.error);
+  }
+  // The placement's own readyRound must describe the site, not assert readiness (frodo 9492 §3):
+  // a success on the allowed branch used to return a constant 0.
+  if (allowed.readyRound !== 9) {
+    fail("t032_buy_draw_site: the placement reported readyRound " + JSON.stringify(allowed.readyRound) + ", not 9");
+  }
+  const before5 = match.sides.blue.cash;
+  const bought = buy(match, "blue", "infantry", site.x, site.y, board, 5, { allowUnreadySite: true });
+  if (!bought || bought.ok !== true) {
+    fail("t032_buy_draw_site: the explicit intent was refused an unready site: " + JSON.stringify(bought));
+  }
+  if (bought.site !== site.id) fail("t032_buy_draw_site: the level-5 draw came from site " + bought.site + ", not " + site.id);
   if (bought.level !== 5) fail("t032_buy_draw_site: the buy did not report its level: " + bought.level);
   if (bought.piece.x !== site.x || bought.piece.y !== site.y) {
     fail("t032_buy_draw_site: the level-5 buy landed at " + bought.piece.x + "," + bought.piece.y);
@@ -94,8 +135,8 @@ export async function run(ctx) {
     fail("t032_buy_draw_site: level 5 changed the charge: " + (before5 - match.sides.blue.cash) + " vs " + price);
   }
 
-  // 3. NO LEVEL (a player's click) - unchanged: the same site still refuses, so the exception is
-  //    the AI's level and never the shop window.
+  // 4. NO LEVEL, NO OPTIONS (a player's click) - the same site still refuses, so the exception is
+  //    the AI's own decision and never the shop window.
   const other = match.sites.find((row) => row && row.owner === "blue" && String(row.kind) === "city"
     && row.id !== site.id && !match.pieces.some((piece) => piece.x === row.x && piece.y === row.y));
   if (!other) fail("t032_buy_draw_site: no second free blue city to test the player's click");
@@ -105,15 +146,16 @@ export async function run(ctx) {
     fail("t032_buy_draw_site: a player's click bought at an unready site: " + JSON.stringify(player));
   }
 
-  // 4. LEVEL 1 - below the gate as well: the exception is 0x1a0 >= 5, not "any level".
+  // 5. LEVEL 1 - below the gate as well: the exception is the level-5 branch, not "any level".
   const low = buy(match, "blue", "infantry", other.x, other.y, board, 1);
   if (!low || low.error === undefined) fail("t032_buy_draw_site: level 1 bought at an unready site");
 
-  // 5. THE WIRING (bot path). botBuy(match, side, events, urgentSite, level) is the caller that
+  // 6. THE WIRING (bot path). botBuy(match, side, events, urgentSite, level) is the caller that
   //    carries the difficulty into 0x1a0. Two fresh matches, one anchor, two levels: at L5 the
-  //    anchor cell is taken and the piece files there; at L4 the anchor cell is not taken (the
-  //    buy may land at another of our cities - that is the re-draw - but never at the anchor).
-  //    A bot.mjs `>= 5` -> `>= 6` mutant reds the L5 half; nothing else in this file does.
+  //    anchor cell is taken, the piece files there, and the bot_buy event carries the intent flag
+  //    the census replays; at L4 the anchor cell is not taken (the buy may land at another of our
+  //    cities - that is the re-draw - but never at the anchor) and no event claims the flag.
+  //    `>= 5` -> `>= 6` reds the L5 half; `>= 5` -> `>= 1` reds the L4 half.
   const wiring5 = unreadyAnchor();
   if (!wiring5.site) fail("t032_buy_draw_site: no free blue city for the wiring arm");
   const cash5 = wiring5.match.sides.blue.cash;
@@ -129,6 +171,9 @@ export async function run(ctx) {
   const note5 = events5.find((event) => event.type === "bot_buy");
   if (!note5 || !note5.at || note5.at.x !== wiring5.site.x || note5.at.y !== wiring5.site.y) {
     fail("t032_buy_draw_site: the level-5 bot_buy event is not at the anchor: " + JSON.stringify(events5));
+  }
+  if (note5.allowUnreadySite !== true) {
+    fail("t032_buy_draw_site: the level-5 bot_buy did not carry the intent flag the census replays");
   }
   if (cash5 - wiring5.match.sides.blue.cash !== price) {
     fail("t032_buy_draw_site: the level-5 bot buy charged " + (cash5 - wiring5.match.sides.blue.cash) + ", not " + price);
@@ -147,12 +192,15 @@ export async function run(ctx) {
     && event.at && event.at.x === wiring4.site.x && event.at.y === wiring4.site.y)) {
     fail("t032_buy_draw_site: a level-4 bot_buy event names the unready anchor");
   }
+  if (events4.some((event) => event.type === "bot_buy" && event.allowUnreadySite === true)) {
+    fail("t032_buy_draw_site: a level-4 bot_buy claimed the unready-site intent: " + JSON.stringify(events4));
+  }
 
-  // 6. THE HUMAN PATH. The click comes in as buy(match, side, kind, x, y, board) with no level
+  // 7. THE HUMAN PATH. The click comes in as buy(match, side, kind, x, y, board) with no level
   //    (lobby.mjs:1514), so the exception must be unreachable from it: the refusal stays the
   //    readiness one, no cash leaves the pool, no piece is filed. Then the same cell through
   //    canPlace with an options object that does NOT grant the escape - the placement default.
-  //    An economy.mjs mutant that treats "no level" as permission reds this arm.
+  //    A buy() that reads "no level" as permission reds this arm.
   const human = unreadyAnchor();
   if (!human.site) fail("t032_buy_draw_site: no free blue city for the human arm");
   const cashH = human.match.sides.blue.cash;
@@ -184,6 +232,7 @@ export async function run(ctx) {
     fail("t032_buy_draw_site: a player's buy reported level " + JSON.stringify(humanBuy.level) + ", not null");
   }
 
-  console.log("t032_buy_draw_site: L4 refuses an unready site, L5 draws from it, the click and L1 still"
-    + " refuse, botBuy takes the anchor at L5 and not at L4, the player's buy is never escaped");
+  console.log("t032_buy_draw_site: L4 refuses an unready site, a bare level 5 refuses too, the explicit"
+    + " intent buys there at the site's own readyRound, the click and L1 refuse, botBuy takes the"
+    + " anchor at L5 and not at L4, the player's buy is never escaped");
 }

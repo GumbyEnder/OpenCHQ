@@ -211,7 +211,7 @@ function dropValue(list, value) {
 
 // --- buying ------------------------------------------------------------------------------
 
-export function buy(match, side, kind, x, y, board = null, level = null) {
+export function buy(match, side, kind, x, y, board = null, level = null, options = null) {
   if (!match || !Array.isArray(match.sites) || !Array.isArray(match.pieces)) {
     return { error: "There is no match to buy into." };
   }
@@ -237,14 +237,17 @@ export function buy(match, side, kind, x, y, board = null, level = null) {
   // levels 2-4 re-draw from ANOTHER of our sites when the site the AI picked is still counting
   // down, and level 5 buys at the picked site anyway. The level changes which site's unit the buy
   // draws from; it changes no price and no readiness arithmetic (1441 still charges the price).
-  // The sentinel matters: "no level" is the human's buy() (lobby.mjs:1514 passes six arguments)
-  // and must stay null. `Number(null)` is 0, so the old one-liner turned a click into level 0 -
-  // harmless today because 0 >= 5 is false, but it made "no level" indistinguishable from a level
-  // argument, and the mutant that reads "no level" as permission exists to keep it that way.
+  //
+  // The escape is keyed on INTENT, never on the number. `level` is a report field here; the one
+  // caller allowed to buy at a site whose timer is still running says so explicitly through
+  // `options.allowUnreadySite`. A level-derived key (`level >= 5`) was reachable by ANY level-5
+  // caller - lobby.mjs:1514 passes no level today, but a future call site that did would hand the
+  // player's click the AI's exception with every arm green (frodo 9492 §4).
   const drawLevel = level === null || level === undefined
     ? null
     : (Number.isInteger(Number(level)) ? Number(level) : null);
-  const allowUnreadySite = drawLevel !== null && drawLevel >= 5;
+  const allowUnreadySite = options !== null && options !== undefined
+    && options.allowUnreadySite === true;
 
   // Where it may stand is the placement module's rule (D-019, and D-025's coastal berths). That
   // module also owns the two occupancy layers, so "Two pieces cannot share a cell" is no longer

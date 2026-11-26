@@ -688,8 +688,9 @@ export function canPlace(match, side, kind, x, y, board, options = {}) {
   // PB-262: the ORIGINAL's buy at 1632 is `(0x1a0 < 5) && (site's 0x10ae != 0)` -> re-draw from
   // another site (FUN_107e_307a, 1635). The readiness guard there is a LEVEL-5 EXCEPTION, not a
   // universal refusal: above level 4 the AI buys at the site it picked while that site's timer is
-  // still running. `allowUnreadySite` is that branch and only the bot's level-5 buy passes it;
-  // a player's click and every level 2-4 buy keep the refusal below.
+  // still running. `allowUnreadySite` is that branch and only a caller that asks for it by name
+  // reaches it (bot.mjs, at the anchor cell, at level 5); a player's click and every level 2-4
+  // buy keep the refusal below.
   if (value !== 1 && options.allowUnreadySite !== true) {
     return { error: unreadyRefusal(site, label), domain, site, readyRound: readyRoundOf(site) };
   }
@@ -704,7 +705,7 @@ export function canPlace(match, side, kind, x, y, board, options = {}) {
     }
     place = { x: berth.x, y: berth.y };
   }
-  return { ...result, site, place, berth, label, readyRound: 0 };
+  return { ...result, site, place, berth, label, readyRound: readyRoundOf(site) };
 }
 
 // "an infantry", "a cruiser" - only used inside a sentence, never as a display name.

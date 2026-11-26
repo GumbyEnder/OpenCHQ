@@ -631,6 +631,9 @@ export function botBuy(match, side, events, urgentSite = null, level = null) {
     : (match.sites || []).filter((site) => site && site.owner === side);
   let target = null;
   let best = Infinity;
+  // Did the buy land ON the anchor cell? That, and only that, is the intent the buy() escape
+  // keys on: a level-5 bot taking the site it picked while that site's timer is still running.
+  let atAnchor = false;
   for (let id = 0; id < mask.mask.length; id++) {
     const x = id % CELL_W;
     const y = (id - x) / CELL_W;
@@ -644,6 +647,7 @@ export function botBuy(match, side, events, urgentSite = null, level = null) {
       if (gap < best) {
         best = gap;
         target = { x, y };
+        atAnchor = onAnchor;
       }
     }
     if (!sites.length && !target) target = { x, y };
@@ -652,12 +656,19 @@ export function botBuy(match, side, events, urgentSite = null, level = null) {
 
   let bought;
   try {
-    bought = buy(match, side, "infantry", target.x, target.y, board, drawLevel);
+    bought = buy(match, side, "infantry", target.x, target.y, board, drawLevel, { allowUnreadySite: atAnchor });
   } catch {
     return false;
   }
   if (bought && bought.ok) {
-    events.push({ type: "bot_buy", side, kind: "infantry", at: { x: bought.piece.x, y: bought.piece.y }, pieceId: bought.piece.id });
+    events.push({
+      type: "bot_buy", side, kind: "infantry",
+      at: { x: bought.piece.x, y: bought.piece.y },
+      pieceId: bought.piece.id,
+      // The replay record for tools/pb262-buy-draw-census.mjs: it files the same buy through the
+      // same options, so the census cannot drift from what the bot decided.
+      allowUnreadySite: atAnchor,
+    });
     return true;
   }
   return false;

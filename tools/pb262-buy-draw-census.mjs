@@ -60,7 +60,17 @@ const ROUNDS = Math.max(1, Number(arg("rounds", 50)));
 const SEED_BASE = Number(arg("seed-base", 1942));
 const OUT = String(arg("out", "/mnt/nas/host-ops/openchq/pb262/buy-draw-census.json"));
 const SHA = git("rev-parse HEAD");
-const DIRTY = git("status --porcelain");
+// `dirty` must be readable by a grader: `true` / `false` / the string `"unknown"`. The old
+// `DIRTY || null` collapsed "clean" and "git status failed" into one token and wrote `null`, which
+// reads as neither (frodo 9492 §2). A failed status is not clean evidence.
+function workingTreeDirty() {
+  try {
+    return git("status --porcelain").length > 0;
+  } catch {
+    return "unknown";
+  }
+}
+const DIRTY = workingTreeDirty();
 const FILE_SHA = git("hash-object web/server/bot.mjs");
 const ENGINE_SHA = git("rev-parse " + SHA + ":web/server/bot.mjs");
 
@@ -106,7 +116,11 @@ function runMatch(era, level, seed) {
           const readyAtPlan = target ? (snap.has(String(target.id)) ? snap.get(String(target.id)) : readyRoundOf(target)) : 0;
           let filed;
           try {
-            filed = buy(match, side, row.kind || "infantry", at.x, at.y, board, level);
+            // Replay the bot's own decision: the escape travels on the event botBuy emitted, not
+            // re-derived here from the level (frodo 9492 §4 - a level key is reachable by any
+            // level-5 caller, so the census would then be grading a different rule than the bot).
+            filed = buy(match, side, row.kind || "infantry", at.x, at.y, board, level,
+              { allowUnreadySite: row.allowUnreadySite === true });
           } catch (err) {
             filed = { error: String((err && err.message) || err) };
           }
@@ -184,7 +198,7 @@ function summarise(block) {
 }
 
 const out = {
-  task: "PB-262", sha: SHA, root: ROOT, dirty: DIRTY || null,
+  task: "PB-262", sha: SHA, root: ROOT, dirty: DIRTY,
   botBlobWorktree: FILE_SHA, botBlobAtSha: ENGINE_SHA,
   engineDiffersFromSha: FILE_SHA !== ENGINE_SHA,
   rounds: ROUNDS, matches: MATCHES, blocks: [], summary: [],
@@ -219,4 +233,5 @@ for (const era of ERAS) {
 }
 writeFileSync(OUT, JSON.stringify(out, null, 1));
 console.log("wrote " + OUT + " sha " + SHA + " bot.mjs blob " + FILE_SHA +
-  " (at sha " + ENGINE_SHA + (FILE_SHA !== ENGINE_SHA ? ", MUTANT" : "") + ") root " + ROOT + " dirty " + (DIRTY ? "yes" : "no"));
+  " (at sha " + ENGINE_SHA + (FILE_SHA !== ENGINE_SHA ? ", MUTANT" : "") + ") root " + ROOT +
+  " dirty " + (DIRTY === "unknown" ? "unknown" : (DIRTY ? "true" : "false")));
