@@ -115,7 +115,11 @@ Three things about the table's shape matter when wiring it:
 1. **Defender's terrain cover** (7043-7062, `bVar2 = byte[target + 0x836]`):
    mountain (10): defender kind 1/3 takes −25 %, kind 2 takes −1/6.
    capital/base/city (4/5/6): defender kind 1/3 takes −(dmg+1)/3, kind 2 takes −dmg/5.
-   **Not wired**: the remake has no per-cell terrain class on a piece, so this is T-009b.
+   **Wired** (corrected 2026-11-26): `web/server/combat.mjs`'s `coverFor()` applies the same
+   integer arithmetic to the defender's cell, inside `damageFor()` before flank/rear; the id sets
+   are `config/game.json` `terrain.cover.value` and the reading is pinned by
+   `web/test/nodes/pb282_damage_cover.mjs` (PB-282, tests-only; 20 plain, 13 city, 13 capital,
+   15 mountain). The earlier "not wired" note described T-009b's state and is superseded.
 2. **Flank / rear** (7064-7071): only when attacker kind < 7, target kind < 5, and the target's own
    link is a *third* piece (not `0xff`, not the attacker). Compare the **attacker's facing** with
    the defender's: same facing → **×2** (rear); otherwise, if the attacker's facing is not the
@@ -305,7 +309,12 @@ except the air strike. Items 1-4 below are historical; the outcome is §11.
 4. The air-strike / wasteland-attrition / sea-range ladder live legs — sea ladder closed (§11 table);
    attrition part-closed, desert **did not fire** (§11 table); air strike still UNMEASURED, event path
    exercised (§11 table).
-5. Runtime wiring still absent: terrain cover (§2.1) and the ship-vs-land cap at >2 cells (§2.3).
+5. Runtime wiring (corrected 2026-11-26): both are wired. Terrain cover is `combat.coverFor()`,
+   called from `damageFor()` before flank/rear, with the id sets in `config/game.json`
+   `terrain.cover.value`; the ship-vs-land cap is the shore-fire branch in `damageFor()`, gated by
+   `config/game.json` `terrain.shoreFire.wired` (range 2, cap 30, halveBelow 25). Cover was
+   measured live (§11); the shore cap stays DISASSEMBLY and is not live-measured
+   (docs/re/T016_TERRAIN.md s5, Q47).
 
 ## 11. T-009b live legs (2026-11-13)
 
