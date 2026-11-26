@@ -3,7 +3,10 @@
 //   (a) a mission leaves the unit inactive for its cost in rounds (air.strikeRounds, 8);
 //   (b) CAP (patrol) costs air.patrolRounds (4);
 //   (c) an INACTIVE unit may still fly CAP, and that CAP ADDS its cost to what the unit owes;
-//   (d) an inactive unit may fly NO other mission - strike, bomb and transfer are all refused.
+//   (d) an inactive unit may fly NO other mission - strike, bomb and transfer are all refused;
+//   (e) the BRIEFING offers exactly what the server accepts: a ready plane lists every mission, an
+//       inactive one lists CAP alone with the added rounds, and the manual's "less effective" clause
+//       rides on a config lever labelled UNVERIFIED (no number invented in code).
 //
 // Costs are read from config, never typed here: air.strikeRounds/air.patrolRounds are the booklet's
 // 8 and 4 and the file wins (air.mjs missionCosts). The pin asserts the ORDERINGS and the refusals,
@@ -21,7 +24,7 @@
 import { warMatch } from "../wartime.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { seedOwners } from "../../server/economy.mjs";
-import { inactiveRounds, sendMission } from "../../server/air.mjs";
+import { airBriefing, inactiveRounds, sendMission } from "../../server/air.mjs";
 import { rules } from "../../server/rules.mjs";
 
 export const name = "pb293_air_inactivity";
@@ -125,17 +128,92 @@ export async function run(ctx) {
     const untilBefore = Number(plane.inactiveUntil);
     const cap = fly(match, plane, "patrol");
     if (cap.error) {
-      fail("pb293 (c) l.773-777 DEVIATION: an inactive plane was refused CAP with "
-        + JSON.stringify(cap.error) + " while it owed " + owed + " rounds. The manual says an inactive unit may fly "
-        + "CAP and that the CAP ADDS " + patrolCost + " rounds. Producer: web/server/air.mjs:280-281 refuses on "
-        + "`remaining > 0` before web/server/air.mjs:42 modeFor is consulted, so the CAP exception has no path. "
-        + "Measured, reported, not fixed (PM 9823).");
+      fail("pb293 (c) l.773-777: an inactive plane was refused CAP with " + JSON.stringify(cap.error)
+        + " while it owed " + owed + " rounds; the manual says an inactive unit may fly CAP (air.mjs:280-290"
+        + " is the gate the fix moved).");
     }
     const after = Number(plane.inactiveUntil);
-    if (!(after >= untilBefore + patrolCost)) {
+    if (!(after === untilBefore + patrolCost)) {
       fail("pb293 (c) l.773-777: CAP while inactive set until " + after + " from " + untilBefore
-        + ", not an ADD of " + patrolCost + " rounds");
+        + "; the manual says the CAP ADDS " + patrolCost + " rounds, so " + (untilBefore + patrolCost)
+        + " was expected. Producer: web/server/air.mjs owedFrom");
     }
-    console.log("pb293 arm (c) ok at l.773-777: CAP while inactive added " + patrolCost + " rounds (" + untilBefore + " -> " + after + ")");
+    if (inactiveRounds(plane, match.round) !== after - match.round) {
+      fail("pb293 (c): the plane's outstanding rounds (" + inactiveRounds(plane, match.round) + ") do not match until "
+        + after + " minus the round " + match.round);
+    }
+    // A ready plane's CAP is still round + cost, not a doubling of an old timer.
+    const fresh = setup();
+    fly(fresh.match, fresh.plane, "patrol");
+    if (Number(fresh.plane.inactiveUntil) !== ROUND + patrolCost) {
+      fail("pb293 (c): a READY plane's CAP set until " + fresh.plane.inactiveUntil + ", expected round " + ROUND
+        + " + " + patrolCost);
+    }
+    // And the round it comes due, it flies again.
+    match.round = after;
+    if (inactiveRounds(plane, match.round) !== 0) fail("pb293 (c): the plane still owes rounds at " + after);
+    const again = fly(match, plane, "patrol");
+    if (again.error) fail("pb293 (c): at round " + after + " a CAP was refused: " + JSON.stringify(again.error));
+    console.log("pb293 arm (c) ok at l.773-777: CAP while inactive added " + patrolCost + " rounds ("
+      + untilBefore + " -> " + after + "), a ready CAP is round + " + patrolCost + ", and the plane flies again at " + after);
+  }
+
+  // ---- (e) l.777 the page's half: the briefing offers what the server accepts -------------------
+  {
+    const ready = setup();
+    const readyLine = airBriefing(ready.match, "blue")[0];
+    const allModes = (readyLine.missions || []).map((mission) => mission.mode).join(",");
+    if (allModes !== "patrol,strike,bomb,transfer") {
+      fail("pb293 (e): a READY plane's briefing lists " + JSON.stringify(allModes)
+        + ", not every mission the server accepts (producer: web/server/air.mjs airBriefing)");
+    }
+
+    const away = setup();
+    fly(away.match, away.plane, "strike");
+    const owed = inactiveRounds(away.plane, away.match.round);
+    const line = airBriefing(away.match, "blue")[0];
+    if (!(line.roundsLeft === owed)) {
+      fail("pb293 (e): the briefing says " + line.roundsLeft + " rounds left where the server charges " + owed);
+    }
+    const offered = (line.missions || []).map((mission) => mission.mode).join(",");
+    if (offered !== "patrol") {
+      fail("pb293 (e) l.777: an inactive plane's briefing still offers " + JSON.stringify(offered)
+        + "; the server refuses every mission but CAP, so the page must not offer them (producer: airBriefing's"
+        + " `allowed` filter)");
+    }
+    const capMission = line.missions[0];
+    if (capMission.allowed !== true) fail("pb293 (e): the offered CAP is not marked allowed");
+    if (!capMission.note || !/adds /.test(capMission.note)) {
+      fail("pb293 (e): the inactive CAP carries no added-rounds note (" + JSON.stringify(capMission.note) + ")");
+    }
+    // The CAP the briefing offers is the CAP the server flies: accepted, and it adds the cost.
+    const untilBefore = Number(away.plane.inactiveUntil);
+    const cap = fly(away.match, away.plane, "patrol");
+    if (cap.error) fail("pb293 (e): the briefing offered a CAP the server refuses: " + JSON.stringify(cap.error));
+    if (Number(away.plane.inactiveUntil) !== untilBefore + patrolCost) {
+      fail("pb293 (e): the offered CAP set until " + away.plane.inactiveUntil + " from " + untilBefore);
+    }
+  }
+
+  // ---- the "less effective" lever: present, labelled, and the same value the event carries -------
+  {
+    const factor = Number(air.inactivePatrolFactor);
+    if (!(Number.isFinite(factor) && factor >= 0 && factor <= 1)) {
+      fail("pb293: config air.inactivePatrolFactor is " + JSON.stringify(air.inactivePatrolFactor)
+        + "; the manual's reduced CAP needs a lever in [0,1]");
+    }
+    if (!/UNVERIFIED/.test(String(air.inactivePatrolFactorSource || ""))) {
+      fail("pb293: air.inactivePatrolFactorSource does not say UNVERIFIED; the amount was never recovered");
+    }
+    const { match, plane } = setup();
+    fly(match, plane, "strike");
+    const cap = fly(match, plane, "patrol");
+    const event = (cap.events || []).find((entry) => entry.type === "cap_while_inactive");
+    if (!event) fail("pb293: a CAP flown while inactive emitted no cap_while_inactive event");
+    if (Number(event.effectiveness) !== factor) {
+      fail("pb293: the event's effectiveness " + event.effectiveness + " is not the config lever " + factor);
+    }
+    console.log("pb293 arm (e) ok: an inactive briefing lists CAP alone (allowed, adds " + patrolCost
+      + " rounds), the server flies it, and the reduced-effectiveness lever is config's " + factor + " (UNVERIFIED)");
   }
 }

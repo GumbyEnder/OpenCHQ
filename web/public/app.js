@@ -2288,12 +2288,16 @@ function toolRow(room) {
         button.textContent = mission.rounds > 0
           ? mission.label + " (" + mission.rounds + "r)"
           : mission.label;
-        button.disabled = !briefing.ready || (needsBase && !briefing.canFly);
-        button.title = !briefing.ready
+        // PB-293: `allowed` is the server's own answer, so the page enables exactly what the server
+        // would accept - an inactive plane may still fly CAP - instead of blanket-disabling by ready.
+        button.disabled = mission.allowed === false || (needsBase && !briefing.canFly);
+        button.title = mission.allowed === false
           ? "This aircraft is away for " + briefing.roundsLeft + " more rounds."
           : needsBase && !briefing.canFly
             ? "No friendly city, dock or ship in reach."
-            : mission.mode === "strike"
+            : mission.note
+              ? mission.note
+              : mission.mode === "strike"
               ? "Pick the target cell on the map inside the restricted air radius ("
                 + (briefing.restrictedReach || "?") + " cells); the aircraft flies there for "
                 + mission.rounds + " rounds."
@@ -2880,9 +2884,11 @@ const DIALOG_PAINTERS = {
         // target outside that circle is refused - the player should learn the rule from the door,
         // not from a refusal after a wasted click. The number is the briefing's, so it is the same
         // circle the server charges.
-        button.title = !plane.ready
+        button.title = mission.allowed === false
           ? "Away for " + plane.roundsLeft + " more rounds."
-          : mission.mode === "bomb"
+          : mission.note
+            ? mission.note
+            : mission.mode === "bomb"
             ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
               + (plane.restrictedReach || "?") + " cells); away for " + mission.rounds + " rounds."
             : mission.mode === "strike"
@@ -2891,7 +2897,7 @@ const DIALOG_PAINTERS = {
               : mission.rounds > 0
               ? "Away for " + mission.rounds + " rounds."
               : "Pick a friendly city, base or carrier cell within the transfer range; the aircraft rebases there.";
-        button.disabled = !plane.ready;
+        button.disabled = mission.allowed === false;
         button.addEventListener("click", () => {
           // A strike, a bombing run or a transfer is aimed: the air dialog names the plane and
           // hands the player the map, because the cell the plane sits on is its base, not the
