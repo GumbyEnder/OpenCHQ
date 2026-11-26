@@ -11,12 +11,15 @@
 //   2. Is the hover path the room's own data? `hoverRoute` returns the route the server sent and
 //      nothing else: a missing key and a tombstoned `[]` both draw nothing, an own unit keeps every
 //      step it was given, and an enemy keeps the server's slice. The client holds NO cap — the pins
-//      below assert the absence, so a later reader does not go looking for one to delete.
+//      below assert the absence, so a later reader does not go looking for one to delete. Both
+//      tombstone arms are here: the `[]` key draws nothing (§2), and a destroyed unit's line is
+//      gone after the next delta (§2b), driven through the server's own `deltaBetween`.
 //   3. Is it wired? The page binds `d`, has a NAV row, and passes both to the painter.
 import { readFileSync } from "node:fs";
 import { BOARD_H, BOARD_W, fitViewport, paintMatch } from "../../public/render.mjs";
 import { hoverRoute } from "../../public/command.mjs";
 import { themeById } from "../../public/themes.mjs";
+import { deltaBetween } from "../../server/lobby.mjs";
 
 export const name = "pb272_show_paths";
 
@@ -169,6 +172,56 @@ export async function run(ctx) {
     eq(fail, "a malformed step is dropped, not drawn as NaN", holes.path, [{ x: 80, y: 44 }, { x: 82, y: 45 }]);
   }
 
+  // --- 2b. tombstone, second arm: a destroyed own unit's line is gone after the next delta ----
+  // PM 9671 §1. The first arm (a `[]` key draws nothing) is above; this is the same route after the
+  // unit dies, through production code end to end: the delta comes from `deltaBetween` (the shadow
+  // shape `setSeatShadow` writes), it is merged the way `applyDelta` merges it, and the painter and
+  // `hoverRoute` are the shipped ones.
+  {
+    const before = room();
+    const shadow = (frame) => ({
+      round: frame.round,
+      clock: frame.clock,
+      note: frame.note,
+      seat: JSON.stringify(undefined),
+      capitals: JSON.stringify(undefined),
+      capitalList: JSON.stringify(undefined),
+      ownership: JSON.stringify(undefined),
+      pieces: Object.fromEntries((frame.pieces || []).map((piece) => [piece.id, JSON.stringify(piece)])),
+      routes: Object.fromEntries(Object.entries(frame.routes || {})
+        .map(([id, steps]) => [id, JSON.stringify(steps)])),
+      sites: Object.fromEntries((frame.sites || []).map((site) => [site.id, site.owner ?? null])),
+    });
+    // The next round: blue:land was destroyed, so it is in neither view.pieces nor view.routes.
+    const after = {
+      ...before,
+      round: before.round + 1,
+      pieces: before.pieces.filter((piece) => piece.id !== "blue:land"),
+      routes: Object.fromEntries(Object.entries(before.routes).filter(([id]) => id !== "blue:land")),
+    };
+    const delta = deltaBetween(shadow(before), after);
+    eq(fail, "the delta tombstones the destroyed unit's route", delta.routes["blue:land"], []);
+    eq(fail, "the delta also reports the piece gone", delta.gone, ["blue:land"]);
+
+    // The premise, so the assertion is not vacuous: the frame the page already held still draws it.
+    ok(fail, "the pre-delta frame still draws the line",
+      hoverRoute({ id: "blue:land", x: 79, y: 44 }, before.routes) !== null);
+
+    // applyDelta's three lines for pieces, gone and routes (app.js, `function applyDelta`).
+    const byId = new Map((before.pieces || []).map((piece) => [piece.id, piece]));
+    for (const id of delta.gone || []) byId.delete(id);
+    const merged = { ...before, pieces: [...byId.values()], routes: { ...before.routes, ...delta.routes } };
+    eq(fail, "a destroyed own unit's line is gone after the next delta",
+      hoverRoute({ id: "blue:land", x: 79, y: 44 }, merged.routes), null);
+    eq(fail, "the dead unit's piece is off the board too",
+      merged.pieces.some((piece) => piece.id === "blue:land"), false);
+    const afterDelta = recorder();
+    const paintedAfter = paintMatch(afterDelta.ctx, board(), merged, {
+      view: fitViewport(320, 136), own: "blue", theme: themeById("C"), showPaths: true,
+    });
+    eq(fail, "the painter draws one line fewer after the delta", paintedAfter.pending, 1);
+  }
+
   // --- 3. painting a hover path: a layer, and the enemy line is exactly from + 3 --------------
   {
     const view = fitViewport(320, 136);
@@ -192,6 +245,9 @@ export async function run(ctx) {
     ok(fail, "the page keeps the toggle off on first load", /let showPaths = false;/.test(app));
     ok(fail, "the page passes the toggle to the painter", /\n\s+showPaths,\n/.test(app));
     ok(fail, "the page passes the hover path to the painter", /hoverPath: room \? hoverRoute\(hoverPiece, room\.routes\) : null/.test(app));
+    // The merge §2b applies by hand: a delta's routes OVERWRITE by key, so the server's `[]`
+    // replaces the dead unit's steps instead of merging beside them.
+    ok(fail, "the page merges a delta's routes by overwrite", /const routes = \{ \.\.\.\(room\.routes \|\| \{\}\), \.\.\.\(delta\.routes \|\| \{\}\) \};/.test(app));
     ok(fail, "the strip has a Show Paths row", /id = "showPathsBtn"/.test(app));
     ok(fail, "the strip has a Satellite Mode row", /id = "satelliteModeBtn"/.test(app));
     ok(fail, "the Satellite row calls the existing view switch", /setViewMode\(viewMode === "satellites" \? "terrain" : "satellites"\)/.test(app));
