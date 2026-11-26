@@ -100,13 +100,11 @@ function stopServer(server) {
 // One measurement pass: every control's border box, the strip's box, both scroll widths, and what
 // a click at each control's centre would hit.
 function measure(page) {
-  return page.evaluate((selectors) => {
+  return page.evaluate((navSelector) => {
     const strip = document.querySelector("#strip");
     const sb = strip.getBoundingClientRect();
     const rows = [];
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (!el) { rows.push({ sel, missing: true }); continue; }
+    const one = (el, sel) => {
       const r = el.getBoundingClientRect();
       const visible = r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
       let hit = null;
@@ -119,29 +117,42 @@ function measure(page) {
         box: { l: Math.round(r.left * 10) / 10, t: Math.round(r.top * 10) / 10, r: Math.round(r.right * 10) / 10, b: Math.round(r.bottom * 10) / 10, w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 },
         hit,
       });
+    };
+    const singles = ["#clockBtn", ".speedctl", "#nav", "#resignBtn", "#newBtn", "#quitBtn", ".gamebtns", ".whoami", ".brand", "#stripInfo", "#purseChip"];
+    for (const sel of singles) {
+      const el = document.querySelector(sel);
+      if (!el) { rows.push({ sel, missing: true }); continue; }
+      one(el, sel);
     }
-    const nav = document.querySelector("#nav");
+    // One row per COMMAND BUTTON, because a control inside a scroll container is not clipped by
+    // getBoundingClientRect: the cluster's box can be inside the strip while its last command's box
+    // sits outside the cluster's window. This is the row that can see the reported defect.
+    const buttons = [...document.querySelectorAll(navSelector + " > *")];
+    buttons.forEach((el, i) => one(el, "navbtn[" + i + "]:" + (el.textContent || "").trim().slice(0, 12)));
+    const nav = document.querySelector(navSelector);
     return {
       strip: { l: sb.left, t: sb.top, r: sb.right, b: sb.bottom, scrollWidth: strip.scrollWidth, clientWidth: strip.clientWidth },
       nav: nav ? { scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, children: nav.children.length } : null,
       rows,
     };
-  }, CONTROLS);
+  }, "#nav");
 }
 
 function checkViewport(width, height, m) {
   const tag = width + "x" + height;
   const strip = m.strip;
-  mark(tag + ": the strip fits its window (#strip scrollWidth === clientWidth)",
+  mark(tag + ": the strip fits its window (#strip scroll width within 1 px of its client width)",
     strip.scrollWidth <= strip.clientWidth + 1, "scrollWidth " + strip.scrollWidth + " clientWidth " + strip.clientWidth);
   if (m.nav) {
-    mark(tag + ": the command cluster is not a scroll window hiding commands (#nav)",
+    mark(tag + ": the command cluster is not a scroll window hiding commands (#nav within 1 px)",
       m.nav.scrollWidth <= m.nav.clientWidth + 1, "scrollWidth " + m.nav.scrollWidth + " clientWidth " + m.nav.clientWidth + ", " + m.nav.children + " commands");
   }
 
   const shown = m.rows.filter((r) => !r.missing && r.visible);
   const missing = m.rows.filter((r) => r.missing || !r.visible);
-  mark(tag + ": every header control is present and has a box", missing.length === 0, missing.map((r) => r.sel + (r.missing ? " missing" : " zero-size")).join(", ") || "all present");
+  const navRows = shown.filter((r) => r.sel.startsWith("navbtn["));
+  mark(tag + ": every header control is present and has a box (" + navRows.length + " command buttons measured individually)",
+    missing.length === 0, missing.map((r) => r.sel + (r.missing ? " missing" : " zero-size")).join(", ") || ("all present, " + navRows.length + " of them command buttons"));
 
   // Horizontal containment is exact (the AC is about a control being cut off at the row's edge).
   // Vertical allows 2 px: a control's line box is taller than the 34 px bar and centres inside it
@@ -179,7 +190,9 @@ function checkViewport(width, height, m) {
 // another's box is not an overlap. The set is fixed and small, so the nesting is listed by hand.
 const NESTED = new Set(["#stripInfo>.brand", "#purseChip>.brand", "speedctl>.speedctl"]);
 function document_contains(a, b) {
-  const inside = { ".brand": ["#stripInfo", "#purseChip"], ".speedctl": [], ".gamebtns": ["#resignBtn", "#newBtn", "#quitBtn"], "#nav": [], ".whoami": [] };
+  const inside = { ".brand": ["#stripInfo", "#purseChip"], ".speedctl": [], ".gamebtns": ["#resignBtn", "#newBtn", "#quitBtn"], ".whoami": [] };
+  if (a === "#nav" && b.startsWith("navbtn[")) return true;
+  if (b === "#nav" && a.startsWith("navbtn[")) return true;
   return (inside[a] || []).includes(b) || (inside[b] || []).includes(a);
 }
 
