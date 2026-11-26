@@ -25,10 +25,17 @@ function missionCosts() {
   // plane may transfer to, never a price in rounds. 0 is read from config like the other two, so
   // the assumption is tunable in one place instead of being written into this module.
   const transfer = Number(air.transferRounds);
+  // Manual p.25 (l.777): a CAP flown while the aircraft is still inactive is LESS EFFECTIVE, but the
+  // amount was never recovered (decompiled.c has no air path at all) and a scramble resolves no
+  // damage here, so there is nothing to scale yet. The file's factor is the lever and its source line
+  // says UNVERIFIED; no reduction is invented in code.
+  const inactivePatrolFactor = Number(air.inactivePatrolFactor);
   return {
     strike: Number.isFinite(strike) && strike > 0 ? Math.floor(strike) : 0,
     patrol: Number.isFinite(patrol) && patrol > 0 ? Math.floor(patrol) : 0,
     transfer: Number.isFinite(transfer) && transfer >= 0 ? Math.floor(transfer) : 0,
+    inactivePatrolFactor: Number.isFinite(inactivePatrolFactor) && inactivePatrolFactor >= 0 && inactivePatrolFactor <= 1
+      ? inactivePatrolFactor : 1,
   };
 }
 
@@ -68,6 +75,7 @@ const BOMB_SITE_KINDS = new Set(["city", "base", "facility", "capital"]);
 export const STRIKE_NOTE = "Air strike.";
 export const BOMB_NOTE = "Bombing run.";
 export const REACH_NOTE = "Reach is limited by the aircraft's range.";
+export const INACTIVE_CAP_NOTE = "Scramble. The aircraft was still away, so this CAP adds its rounds to the time it owes. It is less effective than a fresh one.";
 export const PARADROP_NOTE = "Paradrop. The infantry pays its strength cost.";
 
 // The site kinds an air unit may be based at. ONE list, exported, because three rules read the same
@@ -168,16 +176,21 @@ export function airBriefing(match, side) {
       restrictedReach: restricted > 0 ? restricted : null,
       base: base ? (base.name || base.id) : null,
       canFly: Boolean(base),
+      // PB-293 / manual l.777: a plane that still owes rounds may fly CAP and nothing else, and the
+      // CAP ADDS its own rounds to what it owes. `allowed` is the server's answer, not the page's
+      // guess, and an inactive plane lists the scramble alone - not three choices the server refuses.
       missions: [
-        { mode: "patrol", label: "Scramble (CAP)", rounds: costs.patrol },
-        { mode: "strike", label: "Strike", rounds: costs.strike },
+        { mode: "patrol", label: "Scramble (CAP)", rounds: costs.patrol, allowed: true,
+          note: left === 0 ? null
+            : "Flown while inactive: it adds " + costs.patrol + " rounds to the " + left + " this aircraft already owes." },
+        { mode: "strike", label: "Strike", rounds: costs.strike, allowed: left === 0 },
         // A bombing run hits an empty enemy city, base or oil field (PB-157).
-        { mode: "bomb", label: "Bomb", rounds: costs.strike },
+        { mode: "bomb", label: "Bomb", rounds: costs.strike, allowed: left === 0 },
         // A transfer rebases the plane instead of flying a mission (manual p.22: "Air units may
         // only be transferred to cities, bases, and aircraft carriers"). Its round cost comes from
         // config and is UNVERIFIED (air.transferRoundsSource): the manual never prints one.
-        { mode: "transfer", label: "Transfer", rounds: costs.transfer },
-      ].filter((mission) => mission.mode === "transfer" || mission.rounds > 0),
+        { mode: "transfer", label: "Transfer", rounds: costs.transfer, allowed: left === 0 },
+      ].filter((mission) => mission.allowed && (mission.mode === "transfer" || mission.rounds > 0)),
     };
   });
 }
@@ -278,10 +291,15 @@ export function sendMission(match, side, pieceId, mode, target) {
   if (!isAircraft(plane)) return { error: "Only an aircraft flies a mission." };
 
   const remaining = inactiveRounds(plane, match.round);
-  if (remaining > 0) return { error: `That aircraft is inactive for ${remaining} more rounds.` };
-
   const mission = modeFor(String(mode));
   if (!mission) return { error: "Missions are strike or patrol." };
+  // PB-293, manual l.777: an inactive unit may fly NO mission except CAP, and a CAP flown while
+  // inactive ADDS its cost to what the unit already owes. So the inactivity gate is per mode, not a
+  // blanket refusal: a CAP passes it and pays round + cost on top of the timer it already carries.
+  // The manual also calls that CAP "less effective"; the port's patrol resolves no damage, so there
+  // is no effect to scale and no factor is invented here (UNVERIFIED - see the card).
+  const isCap = String(mode) === "patrol";
+  if (remaining > 0 && !isCap) return { error: `That aircraft is inactive for ${remaining} more rounds.` };
 
   const at = target && Number.isInteger(Number(target.x)) && Number.isInteger(Number(target.y))
     ? { x: Number(target.x), y: Number(target.y) }
@@ -366,7 +384,25 @@ export function sendMission(match, side, pieceId, mode, target) {
   }
 
   const events = [];
-  plane.inactiveUntil = (Number(match.round) || 0) + mission.rounds;
+  // ADD, not reset: a CAP flown while inactive extends the timer the plane already carries.
+  const owedFrom = remaining > 0 && isCap
+    ? Math.max(Number(match.round) || 0, Number(plane.inactiveUntil) || 0)
+    : (Number(match.round) || 0);
+  plane.inactiveUntil = owedFrom + mission.rounds;
+  // The manual's "less effective" has no arithmetic here yet (see missionCosts); the factor and its
+  // UNVERIFIED source travel with the order so a later RE pass has one lever, not a new literal.
+  const capWhileInactive = remaining > 0 && isCap;
+  const effectiveness = capWhileInactive ? missionCosts().inactivePatrolFactor : 1;
+  if (capWhileInactive) events.push({
+    type: "cap_while_inactive",
+    side,
+    pieceId: plane.id,
+    round: Number(match.round) || 0,
+    owedBefore: remaining,
+    owedAfter: inactiveRounds(plane, match.round),
+    effectiveness,
+    note: INACTIVE_CAP_NOTE,
+  });
   plane.facing = plane.facing ?? null;
   events.push({
     type: mission.type,
@@ -377,7 +413,10 @@ export function sendMission(match, side, pieceId, mode, target) {
     y: at.y,
     rounds: mission.rounds,
     until: plane.inactiveUntil,
-    note: mission.type === "strike" ? STRIKE_NOTE : mission.type === "bomb" ? BOMB_NOTE : REACH_NOTE,
+    inactiveBefore: remaining,
+    effectiveness,
+    note: mission.type === "strike" ? STRIKE_NOTE : mission.type === "bomb" ? BOMB_NOTE
+      : (remaining > 0 ? INACTIVE_CAP_NOTE : REACH_NOTE),
   });
 
   // PB-157: a bombing run on an empty enemy site takes money and production, or oil. The

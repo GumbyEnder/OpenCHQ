@@ -163,6 +163,9 @@ export async function run() {
   const wants = [
     ["air.reachSource", config.air && config.air.reachSource, /UNMEASURED|STAND-IN/],
     ["air.transferRoundsSource", config.air && config.air.transferRoundsSource, /UNVERIFIED/],
+    // PB-293: the manual's "a CAP flown while inactive is less effective" has no recovered amount.
+    // The factor is a config lever and this is where its provenance is required to live.
+    ["air.inactivePatrolFactorSource", config.air && config.air.inactivePatrolFactorSource, /UNVERIFIED/],
     ["air.restrictedReachSource", config.air && config.air.restrictedReachSource, /UNVERIFIED|STAND-IN/],
     ["nukes.exclusionSource", config.nukes && config.nukes.exclusionSource, /STAND-IN|decompiled|UNVERIFIED/],
     ["blast.source", config.blast && config.blast.source, /STAND-IN|NOT recovered|not recovered|UNVERIFIED/],
