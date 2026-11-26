@@ -4,11 +4,9 @@
 //   (b) CAP (patrol) costs air.patrolRounds (4);
 //   (c) an INACTIVE unit may still fly CAP, and that CAP ADDS its cost to what the unit owes;
 //   (d) an inactive unit may fly NO other mission - strike, bomb and transfer are all refused;
-//   (e) the BRIEFING carries the server's own answer per mission: every mission stays on the list, a
-//       ready plane allows them all, an inactive one allows CAP alone (with the added-rounds note)
-//       and marks strike/bomb/transfer allowed:false so the PAGE renders them disabled (PM 9850
-//       §4). The manual's "less effective" clause rides on a config lever labelled UNVERIFIED.
-//       The pixels are pinned separately: tests/e2e/pb293-air-inactive-page.mjs.
+//   (e) the BRIEFING offers exactly what the server accepts: a ready plane lists every mission, an
+//       inactive one lists CAP alone with the added rounds, and the manual's "less effective" clause
+//       rides on a config lever labelled UNVERIFIED (no number invented in code).
 //
 // Costs are read from config, never typed here: air.strikeRounds/air.patrolRounds are the booklet's
 // 8 and 4 and the file wins (air.mjs missionCosts). The pin asserts the ORDERINGS and the refusals,
@@ -178,23 +176,10 @@ export async function run(ctx) {
       fail("pb293 (e): the briefing says " + line.roundsLeft + " rounds left where the server charges " + owed);
     }
     const offered = (line.missions || []).map((mission) => mission.mode).join(",");
-    if (offered !== "patrol,strike,bomb,transfer") {
-      fail("pb293 (e) l.777: an inactive plane's briefing lists " + JSON.stringify(offered)
-        + "; every mission must stay on the list so the page can grey the refused ones (PM 9850 §4),"
-        + " never drop them (producer: web/server/air.mjs airBriefing)");
-    }
-    // The refusal is carried per mission, and it is the server's own answer: only CAP is allowed.
-    const allowedModes = (line.missions || []).filter((mission) => mission.allowed === true)
-      .map((mission) => mission.mode).join(",");
-    const refused = (line.missions || []).filter((mission) => mission.mode !== "patrol")
-      .filter((mission) => mission.allowed !== false).map((mission) => mission.mode).join(",");
-    if (allowedModes !== "patrol") {
-      fail("pb293 (e) l.777: an inactive plane's briefing allows " + JSON.stringify(allowedModes)
-        + ", and the server accepts nothing but CAP while it owes rounds");
-    }
-    if (refused !== "") {
-      fail("pb293 (e) l.777: an inactive plane's briefing leaves " + JSON.stringify(refused)
-        + " enabled (allowed is not false); the page would offer a mission the server refuses");
+    if (offered !== "patrol") {
+      fail("pb293 (e) l.777: an inactive plane's briefing still offers " + JSON.stringify(offered)
+        + "; the server refuses every mission but CAP, so the page must not offer them (producer: airBriefing's"
+        + " `allowed` filter)");
     }
     const capMission = line.missions[0];
     if (capMission.allowed !== true) fail("pb293 (e): the offered CAP is not marked allowed");
@@ -228,7 +213,7 @@ export async function run(ctx) {
     if (Number(event.effectiveness) !== factor) {
       fail("pb293: the event's effectiveness " + event.effectiveness + " is not the config lever " + factor);
     }
-    console.log("pb293 arm (e) ok: an inactive briefing lists all four missions and allows only CAP (adds " + patrolCost
+    console.log("pb293 arm (e) ok: an inactive briefing lists CAP alone (allowed, adds " + patrolCost
       + " rounds), the server flies it, and the reduced-effectiveness lever is config's " + factor + " (UNVERIFIED)");
   }
 }

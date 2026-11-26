@@ -178,9 +178,7 @@ export function airBriefing(match, side) {
       canFly: Boolean(base),
       // PB-293 / manual l.777: a plane that still owes rounds may fly CAP and nothing else, and the
       // CAP ADDS its own rounds to what it owes. `allowed` is the server's answer, not the page's
-      // guess. Every mission stays in the list so the page can render the refused ones DISABLED
-      // (PM 9850 §4: the player sees CAP enabled and strike/bomb/transfer greyed, not missing) with
-      // the reason in the title; hiding them would make the page silent about why it cannot strike.
+      // guess, and an inactive plane lists the scramble alone - not three choices the server refuses.
       missions: [
         { mode: "patrol", label: "Scramble (CAP)", rounds: costs.patrol, allowed: true,
           note: left === 0 ? null
@@ -192,7 +190,7 @@ export function airBriefing(match, side) {
         // only be transferred to cities, bases, and aircraft carriers"). Its round cost comes from
         // config and is UNVERIFIED (air.transferRoundsSource): the manual never prints one.
         { mode: "transfer", label: "Transfer", rounds: costs.transfer, allowed: left === 0 },
-      ].filter((mission) => mission.mode === "transfer" || mission.rounds > 0),
+      ].filter((mission) => mission.allowed && (mission.mode === "transfer" || mission.rounds > 0)),
     };
   });
 }
