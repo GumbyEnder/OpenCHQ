@@ -127,6 +127,30 @@ if (FILE_ORDER !== "base" && FILE_ORDER !== "swap") {
   throw new Error("--file-order must be base or swap");
 }
 const FILE_SEQUENCE = FILE_ORDER === "swap" ? ["red", "blue"] : ["blue", "red"];
+// PB-259: does the ORDER a seat's buys are filed in decide the match? Cash is a shared pool inside a
+// round, so buying the same multiset in a different sequence can leave a different subset built. The
+// arm reverses ONLY the bot_buy subsequence of each seat's planned row list: the positions held by
+// orders, defends and replans do not move, so every order still files after the buy whose pieceId it
+// names (the remap is keyed by pieceId, not by position). `base` is byte-identical to the shipped
+// harness; `reverse` is the arm.
+const PIECE_ORDER = String(arg("piece-order", "base"));
+if (PIECE_ORDER !== "base" && PIECE_ORDER !== "reverse") {
+  throw new Error("--piece-order must be base or reverse");
+}
+
+// Reverse the buy subsequence in place: slot k takes the row that was the (n-1-k)th buy.
+function reverseBuys(rows) {
+  if (PIECE_ORDER !== "reverse") return rows;
+  const slots = [];
+  for (let index = 0; index < rows.length; index++) {
+    if (rows[index] && rows[index].type === "bot_buy") slots.push(index);
+  }
+  if (slots.length < 2) return rows;
+  const out = rows.slice();
+  for (let k = 0; k < slots.length; k++) out[slots[k]] = rows[slots[slots.length - 1 - k]];
+  return out;
+}
+
 const OUT = arg("out", "local/evidence/t032c/bot-vs-bot.json");
 
 const board = boardPayload();
@@ -193,7 +217,7 @@ function planOrders(match, side, level) {
 function fileOrders(match, plan, filed, builtIds) {
   const side = plan.side;
   const remap = new Map();
-  for (const row of plan.rows) {
+  for (const row of reverseBuys(plan.rows)) {
     if (row.type === "bot_buy") {
       const at = row.at || {};
       let result;
@@ -320,8 +344,12 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
     red: { buy: 0, order: 0, defend: 0, repeat: 0 },
   };
   let capBound = 0; // no production cap exists (T-032 B7): nothing can bind. Kept as a printed 0.
-  const filing = { refused: [], sequenced: FILE_ORDER };
+  const filing = { refused: [], sequenced: FILE_ORDER, pieceOrder: PIECE_ORDER };
   const filedCounts = { blue: { buy: 0, order: 0, defend: 0 }, red: { buy: 0, order: 0, defend: 0 } };
+  // PB-259: buys per round, per seat. The reversal arm can only bite where a seat files 2+ buys into
+  // the same round; a plan that emits one buy a round makes the arm an identity by construction, and
+  // that has to be a printed measurement rather than an assumption.
+  const buysPerRound = { blue: [], red: [] };
   while (!match.over && match.round < ROUNDS) {
     // A repeat spend and the buy's spend are the same counter (0xe94c): record the pool each side
     // actually held at the end so the session column is measured, not inferred.
@@ -337,6 +365,7 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
       }
       const filed = fileOrders(match, plan, { buy: 0, order: 0, defend: 0, refused: [] }, builtIds);
       filedCounts[side].buy += filed.buy;
+      buysPerRound[side].push(filed.buy);
       filedCounts[side].order += filed.order;
       filedCounts[side].defend += filed.defend;
       filing.refused.push(...filed.refused.map((row) => ({ ...row, side, round: Number(match.round) || 0 })));
@@ -392,6 +421,7 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
     verdictRung,
     filing,
     filed: filedCounts,
+    buysPerRound,
     events,
     repeatPoolEnd: match.botRepeatPool && typeof match.botRepeatPool === "object"
       ? { ...match.botRepeatPool }
@@ -515,6 +545,7 @@ const report = {
   verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else FEWER UNITS LOST (destroyed or zero-strength units; built units are not losses), else draw; no raw total (sites, cities held, pieces alive) is ever read",
   planning: "both seats call ordersFor on their own clone of the same pre-round snapshot, then both order sets are filed into the live match in fileOrder",
   fileOrder: FILE_ORDER,
+  pieceOrder: PIECE_ORDER,
   levers: {
     spareActionBudget: [2, 3, 4, 5].map((level) => [level, spareActionBudget(level)]),
     passCap: spareActionPassCap(),
