@@ -99,15 +99,24 @@ export async function run(ctx) {
   //     seats are both kind "human" must REFUSE. The exception belongs to the bot's decision, not
   //     to the seat and not to the number, so a caller that supplies 5 alone gets the readiness
   //     sentence even when no bot is in the match at all.
-  const humanSeat = unreadyAnchor();
-  if (!humanSeat.site) fail("t032_buy_draw_site: no free blue city for the callers arm");
-  humanSeat.match.seats = { blue: { username: "A", kind: "human" }, red: { username: "B", kind: "human" } };
-  const callers = buy(humanSeat.match, "blue", "infantry", humanSeat.site.x, humanSeat.site.y, humanSeat.board, 5);
-  if (!callers || callers.error === undefined) {
-    fail("t032_buy_draw_site: a non-bot caller at level 5 bought at an unready site: " + JSON.stringify(callers));
-  }
-  if (!/isn't ready/.test(String(callers.error))) {
-    fail("t032_buy_draw_site: the callers-arm refusal is not the readiness one: " + callers.error);
+  //     Scoped so the arm names its own match and board: the whole point is that no bot is in it.
+  {
+    const humanSeat = unreadyAnchor();
+    if (!humanSeat.site) fail("t032_buy_draw_site: no free blue city for the callers arm");
+    const match = humanSeat.match;
+    const board = humanSeat.board;
+    match.seats = { blue: { username: "A", kind: "human" }, red: { username: "B", kind: "human" } };
+    const cash = match.sides.blue.cash;
+    const pieces = match.pieces.length;
+    const callers = buy(match, "blue", "infantry", humanSeat.site.x, humanSeat.site.y, humanSeat.board, 5);
+    if (!callers || callers.error === undefined) {
+      fail("t032_buy_draw_site: a non-bot caller at level 5 bought at an unready site: " + JSON.stringify(callers));
+    }
+    if (!/isn't ready/.test(String(callers.error))) {
+      fail("t032_buy_draw_site: the callers-arm refusal is not the readiness one: " + callers.error);
+    }
+    if (match.sides.blue.cash !== cash) fail("t032_buy_draw_site: the callers-arm refusal charged the pool");
+    if (match.pieces.length !== pieces) fail("t032_buy_draw_site: the callers-arm refusal filed a piece");
   }
 
   // 3. THE EXPLICIT INTENT - options.allowUnreadySite. The same cell, the same timer, and the buy
