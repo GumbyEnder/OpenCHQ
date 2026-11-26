@@ -46,7 +46,7 @@ Do not redo these, and do not weaken their results:
 
 - Era and side, then buy, then Begin. Time starts held. Run, Pause, and Resume. Keys T and P. The HUD shows Turn N. Hold every capital.
 - A second land piece at Norfolk can hold Washington while the first marches to Moscow. The ungarrisoned rule check still ends with the pieces meeting short of one cell and Red holding both capitals.
-- 2023 starts with no army. The stand-in cash pool is 40 billion and is displayed. Cities and oil use the stand-in shuffle. Capitals stay listed. Another era restores the listed layout. The 2023 note has no `$`.
+- 2023 starts with no army. The cash pool is displayed; the web tree ships 600 billion, captured from the original (config `startPool.2023`, PB-265), and 40 billion was the Godot-slice stand-in. Cities and oil use the stand-in shuffle. Capitals stay listed. Another era restores the listed layout. The 2023 note has no `$`.
 - Concealed era: map cities are city-states. Capitals and facilities keep the file owner. The opponent stays hidden until their capital is found. Finding that capital shows them.
 - A land piece already on water, ordered to water, forms a transport and follows the existing sea lanes. A land-to-land order stays on the land route.
 - Intel in 1986 and 2023 reveals every unit and tells the opponent. The intel note must not contain the word `radius`. Other eras refuse intel.
@@ -87,7 +87,7 @@ When a slice changes a sentence that `check_rules.gd` or `play_once.gd` already 
 
 7. First-match coach. Three lines: select your piece, click a destination, press Run. The panel does not block map clicks. Dismiss hides it for the rest of the match. Play reads the three lines, dismisses the panel, and the later clicks still land.
 
-8. Era cards. On the start screen, the selected era shows one sentence. 1918 is infantry and ships. 1942 adds tanks and planes. 1986 adds oil, nukes, satellites, aid, and intel. 2023 is the 1986 tools with no army, the stand-in pool, and the stand-in shuffle. The concealed start hides the opponent until their capital is found. No `$`. Play opens the start screen and reads the 1986 sentence and the concealed sentence.
+8. Era cards. On the start screen, the selected era shows one sentence. 1918 is infantry and ships. 1942 adds tanks and planes. 1986 adds oil, nukes, satellites, aid, and intel. 2023 is the 1986 tools with no army, its captured 600-billion pool, and the stand-in shuffle. The concealed start hides the opponent until their capital is found. No `$`. Play opens the start screen and reads the 1986 sentence and the concealed sentence.
 
 9. Pause menu. Esc opens Resume, Restart, and Quit to the era screen. Restart asks, then does what `R` does. Quit returns to the era screen. The HUD era menu no longer rewrites a live match. Move era choice, Stills, and the speed menu into the pause menu, and retarget every play step that used them so those steps still pass. A menu pick still releases focus. `R` stays immediate.
 
@@ -101,7 +101,7 @@ When a slice changes a sentence that `check_rules.gd` or `play_once.gd` already 
 
 14. Minimap. Draw both capitals, friendly pieces, and contact markers. Clicking the enemy capital centers the map there. Play clicks it and sees Moscow in view. Labels and wrap stay as they are.
 
-15. Spend the pool. Add stand-in prices in `assumptions.gd`: infantry 1 billion, tank twice that, ship 2, submarine 2, aircraft 2, nuke 10. Give 1918, 1942, and 1986 a pool large enough that every purchase the current checks already make still succeeds. Keep the nuke above that pool so 1986 still returns `Not enough money.` 2023 keeps spending from its pool. If 40 is too small for a 2023 purchase the suite already makes, raise `CASH_2023` and update the `40 billion` assertions in the same slice. A match purchase lowers the pool and still tires the city. A short pool refuses the buy. The price line the player reads says `Stand-in` and contains no `$`. Play buys one infantry during a match and reads the lower pool.
+15. Spend the pool. Add stand-in prices in `assumptions.gd`: infantry 1 billion, tank twice that, ship 2, submarine 2, aircraft 2, nuke 10. Give 1918, 1942, and 1986 a pool large enough that every purchase the current checks already make still succeeds. Keep the nuke above that pool so 1986 still returns `Not enough money.` 2023 keeps spending from its pool (600 billion in the web tree, config `startPool.2023`, PB-265; 40 was the Godot-slice stand-in). If the pool is too small for a purchase a check already makes, raise `CASH_2023` and update the same-slice assertions that pin the pool. A match purchase lowers the pool and still tires the city. A short pool refuses the buy. The price line the player reads says `Stand-in` and contains no `$`. Play buys one infantry during a match and reads the lower pool.
 
 16. Oil gauge. In an oil era the HUD shows the reserve and `Short` when the flag is on. Do not change `OIL_RESERVE` or `OIL_BURN`. The oil card still says `Rate unknown`. Play sets the reserve to 1, presses `T`, and reads `Short` on the gauge.
 
