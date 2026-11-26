@@ -37,7 +37,7 @@ import { tickMatch } from "../web/server/tick.mjs";
 import { ordersFor } from "../web/server/bot.mjs";
 import { buy, seedOwners } from "../web/server/economy.mjs";
 import { issueOrder } from "../web/server/move.mjs";
-import { configPath, rules } from "../web/server/rules.mjs";
+import { configPath, resetRules, rules } from "../web/server/rules.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const git = (argv) => {
@@ -70,6 +70,30 @@ if (!OUT) {
 }
 const ROWS_OUT = arg("rows", null);
 const TAG = String(arg("tag", "unknown"));
+// Per-seat activation, for the direction arm: `--seat-flags blue:on,red:off` plans each seat under
+// its own config, so one match is a legged seat against a faithful seat and the mirror is the same
+// run with the flags swapped. rules() is memoised per load; resetRules() is its documented switch.
+const OFF_CFG = arg("off-config", null);
+const SEAT_FLAGS = (() => {
+  const raw = arg("seat-flags", null);
+  const out = { blue: null, red: null };
+  if (!raw) return out;
+  for (const part of String(raw).split(",")) {
+    const [seat, value] = part.split(":");
+    if ((seat === "blue" || seat === "red") && (value === "on" || value === "off")) out[seat] = value;
+  }
+  if ((out.blue === "off" || out.red === "off") && !OFF_CFG) {
+    console.error("--seat-flags with off needs --off-config <path>");
+    process.exit(2);
+  }
+  return out;
+})();
+function activate(seat) {
+  const want = SEAT_FLAGS[seat];
+  if (!want) return;
+  process.env.OPENCHQ_CONFIG = want === "off" ? OFF_CFG : path.resolve(ROOT, "config", "game.json");
+  resetRules();
+}
 
 const SHA = git("rev-parse HEAD");
 const BRANCH = git("rev-parse --abbrev-ref HEAD");
@@ -91,6 +115,32 @@ const rowFile = ROWS_OUT ? openSync(ROWS_OUT, "w") : null;
 
 function siteAtCell(match, x, y) {
   return (match.sites || []).find((site) => site && Number(site.x) === Number(x) && Number(site.y) === Number(y)) || null;
+}
+
+// End-of-block board, for the direction arm: cities held per seat, pieces alive per seat, and which
+// side owns each capital at the final round. `capitalHeld` is true when the seat's own capital is
+// still its own.
+function outcomes(match, startBlue, startRed, boughtBlue, boughtRed) {
+  const sites = (match.sites || []).filter(Boolean);
+  const cities = (side) => sites.filter((site) => site.owner === side).length;
+  const units = (side) => (match.pieces || []).filter((unit) => unit && unit.side === side).length;
+  const capital = {};
+  for (const side of ["blue", "red"]) {
+    const at = match.capitals && match.capitals[side];
+    const site = at ? siteAtCell(match, at.x, at.y) : null;
+    capital[side] = { owner: site ? site.owner : null, held: Boolean(site && site.owner === side) };
+  }
+  return {
+    round: Number(match.round) || 0,
+    over: Boolean(match.over),
+    citiesBlue: cities("blue"), citiesRed: cities("red"),
+    piecesBlue: units("blue"), piecesRed: units("red"),
+    capitalsLostBlue: capital.blue.held ? 0 : 1,
+    capitalsLostRed: capital.red.held ? 0 : 1,
+    // pieces lost = seeded at open + bought along the way - alive at the final round.
+    piecesLostBlue: startBlue + boughtBlue - units("blue"),
+    piecesLostRed: startRed + boughtRed - units("red"),
+  };
 }
 
 function enemyOccupied(match, side, cell) {
@@ -115,10 +165,15 @@ function runBlock(era, level, seed) {
   };
   const digest = createHash("sha256");
   let rounds = 0;
+  const startPieces = {
+    blue: (match.pieces || []).filter((unit) => unit && unit.side === "blue").length,
+    red: (match.pieces || []).filter((unit) => unit && unit.side === "red").length,
+  };
   while (!match.over && match.round < ROUNDS) {
     rounds += 1;
     const plans = {};
     for (const side of ["blue", "red"]) {
+      activate(side);
       const plan = clone(match);
       plan.opponentLevel = level;
       const poolBefore = plan.botRepeatPool && Number.isInteger(plan.botRepeatPool[side])
@@ -185,7 +240,8 @@ function runBlock(era, level, seed) {
     }
     tickMatch(match);
   }
-  return { era, level, seed, rounds, digest: digest.digest("hex"), stats };
+  return { era, level, seed, rounds, digest: digest.digest("hex"),
+    end: outcomes(match, startPieces.blue, startPieces.red, stats.blue.buysFiled, stats.red.buysFiled), stats };
 }
 
 const blocks = [];
@@ -232,9 +288,9 @@ const out = {
   instrument: "tools/pb269-army-pool-census.mjs",
   claim: "E1 changes WHO spends 0xe94c, not how much the bot buys",
   tag: TAG,
-  engine: { sha: SHA, branch: BRANCH, worktreeDirty: DIRTY, botBlob: BOT_BLOB, configPath: CFG, configActivated: FLAG ? "on" : "off", levelThreshold: LEVEL_THRESHOLD },
+  engine: { sha: SHA, branch: BRANCH, worktreeDirty: DIRTY, botBlob: BOT_BLOB, configPath: CFG, configActivated: FLAG ? "on" : "off", levelThreshold: LEVEL_THRESHOLD, seatFlags: SEAT_FLAGS, offConfig: OFF_CFG },
   params: { eras: ERAS, levels: LEVELS, seeds: SEEDS, seedBase: SEED_BASE, rounds: ROUNDS },
-  blocks: blocks.map((b) => ({ era: b.era, level: b.level, seed: b.seed, rounds: b.rounds, digest: b.digest, ...b.stats })),
+  blocks: blocks.map((b) => ({ era: b.era, level: b.level, seed: b.seed, rounds: b.rounds, digest: b.digest, end: b.end, ...b.stats })),
   totals: Object.values(totals).sort((a, b) => (a.era === b.era ? a.level - b.level : a.era < b.era ? -1 : 1)),
 };
 writeFileSync(OUT, JSON.stringify(out, null, 1));
