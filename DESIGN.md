@@ -75,7 +75,7 @@ clicking faster than your opponent.
   carrier, and the concealed era's roster (it uses the 1986 set). Opening money is no longer a
   stand-in: `startPool` holds the per-era pools read off the original's Monitor Four (1918 10,
   1942 50, 1986 50, 2023 600; the concealed era is 50, UNVERIFIED), and `handicap` holds the
-  opponent's starting-money spinner (p.17) - 1918 010, 1942 030, no spinner in 2023, and the
+  opponent's starting-money spinner (p.17) - 1918 010, 1942 030, 2023 600, and the
   0-999/1 range marked UNVERIFIED because no capture ever clicked a digit to its limit.
 - Original art, stills and the unpacked executable never reach a browser.
 - The opening is per era, not one world map. `web/data/eras.json` (baked by `tools/bake_eras.mjs`

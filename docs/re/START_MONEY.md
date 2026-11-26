@@ -19,7 +19,7 @@ in the lobby with the per-era default; `web/test/nodes/start_money.mjs` pins all
 | 1918 | 10b | `startmoney-1918-blue-monitor4-own.png`, `DS:0x148e = 400` | 010 | `startmoney-1918-blue-sgtstan-default.png` |
 | 1942 | 50b | `startmoney-1942-blue-monitor4-own.png`, `DS:0x148e = 2000` | 030 | `startmoney-1942-blue-sgtstan-spinner.png` |
 | 1986 | 50b | `startmoney-1986-blue-monitor4-own.png`, `0x148e = 2000` both sides | 050 | **UNVERIFIED stand-in**: inferred from `0x148e = 2000`; no dialog capture |
-| 2023 | 600b | `startmoney-2023-blue-monitor4-own.png`, `BALANCE: 600` | *none* | Manual p.16: no spinner, setup goes straight to the war room |
+| 2023 | 600b | `startmoney-2023-blue-monitor4-own.png`, `BALANCE: 600` | 600 | `startmoney-2023-blue-spinner-default.png` (OPPONENT'S STARTING MONEY, digits 6/0/0) |
 | `????` | 50b | **UNVERIFIED**: `0x148e = 2000` from memory only; the war room was never reached | 150 | **UNVERIFIED stand-in**: the dialog showed `150` (`0_spinner_9999blue.png`) |
 
 - Server: `web/server/rules.mjs` `startPool(era)`, `handicapSpec()`, `handicapDefault(era)`,
@@ -143,11 +143,25 @@ The opponent's spinner writes that slot at 40 per point (`030` → `1200` → `3
 | 1918 | `010` (REA capture) | **10** | 10 | **.650** | `startmoney-1918-blue-sgtstan-default.png`, `...-monitor4-own.png` |
 | 1942 | **`030`** (new capture) | **50** | **30** | **1.550** | `startmoney-1942-blue-sgtstan-spinner.png`, `...-monitor4-own.png` |
 | 1986 | not photographed; `0x148e = 2000` on both sides ⇒ `050` | **50** | 50 | **1.550** | `startmoney-1986-blue-monitor4-own.png` |
-| 2023 | **no spinner at all** — setup goes straight to the war room | **600** | 600 | **-250** | `startmoney-2023-blue-monitor4-own.png` |
+| 2023 | **`600`** (PB-265 capture; two runs byte-identical) | **600** | 600 | **-250** | `startmoney-2023-blue-spinner-default.png`, `...-monitor4-own.png` |
 | `????` | `150` seen on the dialog | 50 in memory, **war room not reached** | — | — | `0_spinner_9999blue.png` (not copied) |
 
-- 2023 confirms the manual p.16 "large pool": **600 billion** for both sides, no handicap
-  spinner.
+- 2023 confirms the manual p.16 "large pool": **600 billion** for both sides, and its spinner
+  default is **`600`** — captured, not inferred (PB-265).
+- **PB-265 (2026-11-25): the 2023 spinner dialog exists and defaults to 600.** Two fresh walks
+  reached `CRISIS OPTIONS` → 2023 → `2023 SIDE OPTIONS:` BLUE → Return → `OPPONENT'S STARTING
+  MONEY` reading digits `6`/`0`/`0`; Return on OK opened the war room with `BALANCE: 600` and
+  `DS:0x148e = 24000` on **both** sides (24000/40 = 600b). The two dialog frames are
+  byte-identical (`md5 3e04d1b07df071867c4fb7a20f6f760d`), the determinism check on the default.
+  **Why the earlier walk said "no spinner":** the dialog draws **~4.8 s after the side Return**.
+  An onset series at 0.3 s steps shows no box through T0+1.33 s, the outline with empty digit
+  cells at T0+1.33 s, and digits from T0+1.79 s (T0 = 3 s after the keypress, the driver's own
+  sleep). The old walk shot its `0_spinner_<tag>` frame at ~3.2 s, so it photographed a
+  dialog-free screen carrying a 2023 status bar; the frame it filed as that era's war room
+  (`war_e2023blue`) is this dialog at 600. Evidence is
+  `/mnt/nas/host-ops/openchq/pb265-2023-setup/` (RECEIPT.md, evidence/, and the three
+  re-runnable scripts); the dialog PNG is committed as
+  `docs/captures/startmoney-2023-blue-spinner-default.png`.
 - The spinner default is **not the same across eras** (010 / 030), and the player's cash is
   **not the spinner value** (1942: spinner 030, player 50). So the spinner is the opponent's
   handicap, as p.17 says, and the player's opening cash is a per-era constant.

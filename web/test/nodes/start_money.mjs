@@ -22,11 +22,10 @@ const START_MONEY_DOC = path.join(root, "docs", "re", "START_MONEY.md");
 
 // docs/re/START_MONEY.md, table "Era (Blue, SGT. STAN STIL)". In billions.
 const PLAYER_POOL = { 1918: 10, 1942: 50, 1986: 50, 2023: 600, 9999: 50 };
-// The OPPONENT'S starting-money spinner defaults. 1918 010 and 1942 030 are captured; 1986 050 is
-// inferred from DS:0x148e = 2000 on both sides (no dialog capture); 2023 carries the spinner because
-// Manual p.17 applies to all scenarios, and its 600 is a labelled STAND-IN for the undialogued
-// default (the era's own p.16 pool); ???? showed 150 on the dialog and is UNVERIFIED (never reached
-// the war room).
+// The OPPONENT'S starting-money spinner defaults. 1918 010, 1942 030 and 2023 600 are captured
+// (PB-265: docs/captures/startmoney-2023-blue-spinner-default.png reads 6/0/0); 1986 050 is
+// inferred from DS:0x148e = 2000 on both sides (no dialog capture); ???? showed 150 on the dialog
+// and is UNVERIFIED (never reached the war room).
 const SPINNER = { 1918: 10, 1942: 30, 1986: 50, 2023: 600, 9999: 150 };
 
 function decodeCell(message, occupied) {
@@ -79,7 +78,7 @@ export async function run(ctx) {
   if (!/UNVERIFIED/.test(sources["9999"] || "")) fail("the ???? era must be marked UNVERIFIED in sources.startPool");
   console.log("criteria 1-2 ok: per-era player pool wired with a source; 9999 still labelled UNVERIFIED");
 
-  // ---- 3: the spinner - default per era, range and step, and no spinner in 2023 ----------------
+  // ---- 3: the spinner - default per era, range and step; every era including 2023 has one -------
   const spec = handicapSpec();
   eq(spec.unit, "billion", "handicap unit");
   eq(spec.min, 0, "handicap min");
@@ -91,11 +90,16 @@ export async function run(ctx) {
   const handicapSources = (ctx.config.sources && ctx.config.sources.handicap) || {};
   if (!handicapSources.range) fail("sources.handicap has no range entry");
   if (!/UNVERIFIED/.test(handicapSources.range)) fail("the 0-999/1 range must be labelled UNVERIFIED (it was never clicked to either end)");
-  // 2023's value is the one default with no dialog capture, so its source row must say STAND-IN.
-  if (!/STAND-IN/.test(handicapSources["2023"] || "")) {
-    fail("sources.handicap[2023] must label its undialogued default a stand-in");
+  // 2023's default is CAPTURED (PB-265: the dialog reads 6/0/0), so its source row must cite that
+  // capture and must never fall back to a stand-in label.
+  const source2023 = handicapSources["2023"] || "";
+  if (!/CAPTURED/.test(source2023) || !/startmoney-2023-blue-spinner-default\.png/.test(source2023)) {
+    fail("sources.handicap[2023] must cite the captured 6/0/0 dialog (PB-265)");
   }
-  console.log("criterion 3 ok: 1918 010 / 1942 030 / 1986 050 / 2023 600 (STAND-IN) / ???? 150; 0-999 step 1 labelled UNVERIFIED");
+  if (/STAND-IN/.test(source2023)) {
+    fail("sources.handicap[2023] still calls the captured 600 default a stand-in");
+  }
+  console.log("criterion 3 ok: 1918 010 / 1942 030 / 1986 050 / 2023 600 (CAPTURED) / ???? 150; 0-999 step 1 labelled UNVERIFIED");
 
   // ---- 4: the two sides open on different money, and the spinner moves only the opponent ------
   const plain = openMatch("1918", []);
