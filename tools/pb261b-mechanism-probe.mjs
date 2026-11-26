@@ -1,4 +1,9 @@
 // PB-261b mechanism probe: why the early seed changes a FILE era (1942) at all.
+//
+// COMMITTED INSTRUMENT, NOT PRODUCT HARNESS (frodo 9482 §3): this file is committed so the reading is
+// reproducible, but nothing in the shipped server or the bot-vs-bot path imports it and `npm test`
+// does not run it. Grade it as an artifact, never as part of the bot-vs-bot harness.
+//
 // Runs one round of 3v2 planning both ways: (a) lazy seed (pre-fix harness order: snapshot + plan on
 // an unseeded live board) and (b) seeded at open (post-fix order, lobby.mjs `opened`). Prints the
 // planned rows and the board the planner saw.

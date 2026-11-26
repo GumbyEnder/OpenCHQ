@@ -155,6 +155,7 @@ function planOrders(match, side, level) {
   }
   return {
     side,
+    level,
     rows,
     pool: plan.botRepeatPool && typeof plan.botRepeatPool === "object" ? plan.botRepeatPool[side] : undefined,
   };
@@ -171,7 +172,13 @@ function fileOrders(match, plan, filed) {
       const at = row.at || {};
       let result;
       try {
-        result = buy(match, side, row.kind || "infantry", at.x, at.y, board);
+        // PB-262: the level travels into the replay. buy() grew a level argument and botBuy passes
+        // it, so a replay that calls buy() with five arguments re-files the plan under a DIFFERENT
+        // rule: at level 5 the plan may draw from a still-counting-down anchor site and the 5-arg
+        // replay refuses it ("<site> isn't ready"), dropping the buy and every defend row that
+        // names the piece it would have created. Measured at 5v5/1942 before this fix: 116 planned
+        // buys, 84 filed, 28 refused on readiness plus 32 cascaded "No such piece" defends.
+        result = buy(match, side, row.kind || "infantry", at.x, at.y, board, plan.level);
       } catch (err) {
         result = { error: String((err && err.message) || err) };
       }
