@@ -834,12 +834,16 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
   body.in-match .nav .navbtn { padding: 2px 7px; }
 }
 
-/* At 1024x768 the strip's commands alone fill the row, so the wordmark and the account line give
-   way instead of squeezing the brand to nothing: the era/side/purse chip is game state and stays.
-   Sign out lives inside #account; Quit (in .gamebtns) still leaves the match. */
+/* At 1024x768 the strip's commands alone fill the row, so the wordmark and the handle give way
+   instead of squeezing the brand to nothing: the era/side/purse chip is game state and stays.
+   PB-181b (PM 9700 §2): this block used to hide #account outright, which made Sign out unreachable
+   at this width — not off-screen, absent. The cluster stays; only the handle text goes, and the
+   Sign out button carries the full name in its title. Quit (in .gamebtns) still leaves the match,
+   and what gives way is the nav's window (a scroll container since PB-276), never a control. */
 @media (max-width: 1100px) {
   body.in-match .mark { display: none; }
-  body.in-match #account { display: none; }
+  body.in-match #account { display: flex; }
+  body.in-match #account .who { display: none; }
   /* PB-187: at this width the two readouts must both be whole, so the brand is CONTENT-SIZED
      (`flex: 0 0 auto`) instead of a leftover bucket. As `flex: 1 1 120px` the brand box was ~200 px
      while its contents were ~218 px once the round number reached three digits, so #purseChip was

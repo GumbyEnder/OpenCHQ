@@ -1657,6 +1657,9 @@ function renderAccount() {
   button.className = "ghost";
   button.type = "button";
   button.textContent = "Sign out";
+  // PB-181b: at <=1100 px only the handle is hidden (web/public/app.css), so the name a player
+  // would otherwise read in the strip is still one hover away instead of gone with the cluster.
+  button.title = me + " — Sign out";
   button.addEventListener("click", signOut);
   account.append(button);
 }
