@@ -302,9 +302,9 @@ button.ghost {
 /* PB-273: the chat field. Bottom-left, so it never fights the centred flash/result lines, and out of
    the strip entirely — PB-276/PB-181b own that row's geometry. */
 .chatbar {
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
+  /* PB-279: in the footer row, so it can never sit on the caption line under the legend. */
+  position: static;
+  flex: 0 0 auto;
   display: flex;
   gap: 6px;
   align-items: center;
@@ -317,6 +317,20 @@ button.ghost {
 
 .chatbar.hidden {
   display: none;
+}
+
+/* PB-279: the caption and the chat field are one row. The bar keeps its left edge; the caption
+   takes the rest, so no width makes them overlap. */
+.mapfoot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.mapfoot #boardNote {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .chatbar input {
