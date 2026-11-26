@@ -201,7 +201,9 @@ async function main() {
   // Blue proposes from the kit; red's kit turns the same row into the answer. The kit is a panel,
   // so open it the way a player does before reading its buttons.
   await blue.click('.navbtn[data-dialog="kit"]');
-  await blue.waitForSelector('.shop.tools button', { timeout: 25000 });
+  // PB-271: the ROW wait is soft too. A cut that removes toolRow() itself leaves no button to wait
+  // for, and the old `waitForSelector` threw before the summary. The row's absence is now a row.
+  const blueRow = await softWait(blue, () => Boolean(document.querySelector(".shop.tools button")));
   const kitPressed = await blue.evaluate(() => {
     const buttons = [...document.querySelectorAll(".shop.tools button")];
     const button = buttons.find((b) => /^Cease-fire$/.test(b.textContent.trim()));
@@ -209,14 +211,15 @@ async function main() {
     button.click();
     return { pressed: true, seen: buttons.map((b) => b.textContent).join("|") };
   });
-  mark("blue's kit offers Cease-fire and the press lands", kitPressed.pressed,
-    kitPressed.pressed ? "pressed" : "NO Cease-fire button; kit reads " + kitPressed.seen);
+  mark("blue's kit offers Cease-fire and the press lands", blueRow && kitPressed.pressed,
+    !blueRow ? "row absent - the kit builds no .shop.tools button"
+      : kitPressed.pressed ? "pressed" : "NO Cease-fire button; kit reads " + kitPressed.seen);
   await red.click('.navbtn[data-dialog="kit"]');
   await softWait(red, () => {
     const room = window.__chq.room();
     return Boolean(room && room.seat && room.seat.ceasefire && room.seat.ceasefire.canAnswer === true);
   });
-  await red.waitForSelector('.shop.tools button', { timeout: 25000 });
+  const redRow = await softWait(red, () => Boolean(document.querySelector(".shop.tools button")));
   const accept = await red.evaluate(() => {
     const button = [...document.querySelectorAll(".shop.tools button")].find((b) => /^Accept cease-fire$/.test(b.textContent.trim()));
     if (!button) return { pressed: false, title: null };
@@ -224,8 +227,9 @@ async function main() {
     button.click();
     return { pressed: true, title };
   });
-  mark("red's kit offers Accept cease-fire and the press lands", accept.pressed,
-    accept.pressed ? "pressed" : "NO Accept cease-fire button");
+  mark("red's kit offers Accept cease-fire and the press lands", redRow && accept.pressed,
+    !redRow ? "row absent - the kit builds no .shop.tools button"
+      : accept.pressed ? "pressed" : "NO Accept cease-fire button");
   // frodo 9241 §2: the sentence on the button that creates the state must not promise an ending.
   mark("the accept button's title names the peace, not an end to the war",
     accept.pressed && !/war ends/i.test(accept.title) && /peace/i.test(accept.title), String(accept.title));
