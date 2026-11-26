@@ -429,9 +429,9 @@ export async function run(ctx) {
     if (high.sides.blue.cash !== low.sides.blue.cash) say("the player's own pool followed the opponent's spinner", { l2: low.sides.blue.cash, l5: high.sides.blue.cash });
 
     // B6/2023: Manual p.17 applies to all scenarios, so 2023 carries the spinner too. Its default
-    // is a labelled STAND-IN at the era's own 600b pool, and the control moves the OPPONENT only.
+    // is CAPTURED at 600 on the era's own pool (PB-265), and the control moves the OPPONENT only.
     const default2023 = handicapDefault("2023");
-    if (default2023 !== 600) say("2023's spinner default is not the 600b stand-in", default2023);
+    if (default2023 !== 600) say("2023's spinner default is not 2023's captured 600", default2023);
     const plain2023 = openMatch("2023", sites, { opponentLevel: 3, handicapSide: "red" });
     if (plain2023.sides.red.cash !== 600 * 1000) say("2023's opponent does not open on the spinner default", plain2023.sides.red.cash);
     const poor2023 = openMatch("2023", sites, { opponentLevel: 3, handicapSide: "red", opponentPool: 300 });
