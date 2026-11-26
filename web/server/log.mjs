@@ -9,6 +9,7 @@
 
 import { CELL_W } from "./board.mjs";
 import { announceFromCities, millionsPerBillion, payEvery, sightCells } from "./rules.mjs";
+import { isOilField } from "./sitetype.mjs";
 import { countryName } from "./countries.mjs";
 import { unitNoun, unitPhrase } from "../public/units.mjs";
 import { resourceSpec } from "./resources.mjs";
@@ -245,7 +246,7 @@ export function logLines(match, side, events, round) {
         const realName = usableName(event.name) || usableName(site && site.name);
         const cell = site || cellOf(event);
         const place = placeOf(match, cell, side);
-        const name = realName || "a " + String((site && site.kind) || "site");
+        const name = realName || unnamedSitePhrase(site, event.kind, Boolean(place));
         const where = realName || !place ? "" : " " + place;
         const visible = legible(match, side, cell);
         if (event.side === side || (event.from === side && event.side !== side)) {
@@ -609,13 +610,31 @@ function wrapX(x) {
 // A baked dock/facility is named after its own cell ("Dock 260,46"): a map coordinate wearing a
 // place's clothes. PB-121 rejected those for sightings; PB-123 rejects them for every emitter.
 const COORDINATE_SHAPED = /\d+\s*,\s*\d+/;
+// PB-186: the extract names the sites it has no string for after their own row ("site_72"). That is
+// an internal id wearing a name's clothes, the same defect as a coordinate, so it is not a name a
+// player can use - and the type-5 oil fields have no name in the original at all (PB-153).
+const PLACEHOLDER_NAMED = /^site[_\s-]*\d+$/i;
 
 function usableName(name) {
   if (name === null || name === undefined) return null;
   const text = String(name).trim();
-  if (!text || COORDINATE_SHAPED.test(text)) return null;
+  if (!text || COORDINATE_SHAPED.test(text) || PLACEHOLDER_NAMED.test(text)) return null;
   return text;
 }
+
+// The phrase for a site that has no usable name. Type 5 is the oil field (PB-153, one predicate in
+// sitetype.mjs); "the" when a place clause follows ("the oil field 2 cells west of Jerusalem"),
+// "an" when the board offers no landmark. Before this, an unnamed oil field read as "a facility",
+// and the extract's placeholder row name reached the player as "took site_72".
+function unnamedSitePhrase(site, kind, placed) {
+  const word = String((site && site.kind) || kind || "site");
+  if (isOilField(site) || word === "oilfield" || word === "well") {
+    return (placed ? "the" : "an") + " oil field";
+  }
+  if (word === "docks") return "a dock";
+  return "a " + word;
+}
+
 
 // The seat's own cities and capitals are the landmarks a player reads first. When the enemy is
 // nearer a named site the seat does not hold (the board draws every site's name), that site is the
@@ -624,10 +643,9 @@ function usableName(name) {
 function landmarks(match, side) {
   const out = [];
   for (const site of match.sites || []) {
-    if (!site || !site.name) continue;
-    // A baked dock/facility is named after its own cell ("Dock 174,41"). That is a map
-    // coordinate wearing a place's clothes, so it is not a landmark (PB-121).
-    if (/\d+\s*,\s*\d+/.test(site.name)) continue;
+    // PB-186: the same name predicate, so a placeholder row ("site_64") is never a landmark either -
+    // otherwise the fix moves the token from the capture line into "3 cells east of site_64".
+    if (!site || !usableName(site.name)) continue;
     out.push({ site, own: site.owner === side && (site.kind === "city" || site.kind === "capital") });
   }
   return out;
@@ -657,7 +675,12 @@ export function placeOf(match, target, side) {
     }
   }
   if (!best) return null;
-  if (best.distance === 0) return "at " + usableName(best.site.name);
+  if (best.distance === 0) {
+    // The landmark list already refuses unusable names, so this cannot be null on the shipped path;
+    // it is the guard that keeps a future caller from printing "at null" if that filter moves.
+    const at = usableName(best.site.name);
+    return at ? "at " + at : null;
+  }
   const turn = ((Math.atan2(best.dy, best.dx) + 2 * Math.PI) % (2 * Math.PI)) / (Math.PI / 4);
   const direction = COMPASS[Math.round(turn) % 8];
   return best.distance + " cell" + (best.distance === 1 ? "" : "s") + " " + direction + " of " +
