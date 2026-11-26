@@ -23,6 +23,7 @@ import {
   isRefused,
   opponentLevelOf,
   priceOf,
+  rules,
   spareActionPassCap,
 } from "./rules.mjs";
 import { buy, seedOwners } from "./economy.mjs";
@@ -212,12 +213,27 @@ export function spendRepeat(state, cell = null) {
   return { repeat: false, cell: key, recorded: Boolean(key) };
 }
 
+// PORT-ONLY DEVIATION (PB-258 rung (b) / T-032 Part D, PM 9408 §2 and 9428 §3): at levels 4-5 the
+// march tries ALL EIGHT approach cells around the focus before it falls back to a staged march,
+// where the faithful pass tries the nearest four. The original walks the same candidate table at
+// every level (decompiled.c 3392-3400 hands the table to the walker in order and strikes out only
+// the cells it has already recorded), so this is a port deviation, not a decoded rule, and it is
+// gated on `bot.portRingWide`: with the key absent or false the four-cell path runs exactly as it
+// did before this commit. No combat, economy, fog, price or sight value is read or changed here.
+export function portRingWideFor(level) {
+  const spec = rules().bot || {};
+  if (spec.portRingWide !== true) return false;
+  return Number(level) >= 4;
+}
+
 // Exported so the ring case can be driven directly: the endgame state is hard to reach through
 // ordersFor, which picks a focus of its own first.
 export function marchOne(match, side, piece, capital, events, options = {}) {
   // 3392-3400: a destination cell recorded this turn is struck out of the candidate table, so the
   // loop cannot pick it again. `skip` is that table's exclusion.
   const skip = options && options.skip instanceof Set ? options.skip : null;
+  // Rung (b): eight ring cells instead of four, level 4-5, flag on.
+  const wide = Boolean(options && options.ringWide === true);
   const all = approachCells(match, piece, capital);
   const cells = skip ? all.filter((cell) => !skip.has(cellKey(cell))) : all;
   if (cells.length === 0 && all.length > 0) {
@@ -231,7 +247,7 @@ export function marchOne(match, side, piece, capital, events, options = {}) {
     // edge is a stall and says so instead of feeding pieces into a losing exchange.
     const ring = assaultCells(match, piece, capital);
     const targets = ring.filter((cell) => cell.attackAllowed);
-    for (const cell of targets.slice(0, 3)) {
+    for (const cell of targets.slice(0, wide ? 8 : 3)) {
       let result;
       try {
         result = issueOrder(match, side, piece.id, cell.x, cell.y);
@@ -251,7 +267,7 @@ export function marchOne(match, side, piece, capital, events, options = {}) {
   }
   let last = "no path";
   // At most a handful of tries: the nearest face first, then the rest of the ring.
-  for (const cell of cells.slice(0, 4)) {
+  for (const cell of cells.slice(0, wide ? 8 : 4)) {
     let result;
     try {
       result = issueOrder(match, side, piece.id, cell.x, cell.y);
@@ -753,6 +769,7 @@ export function ordersFor(match, side) {
   // 1254 and 1265; the combat tail is gated at 4 (1220, 1224, 1228, 1256, `4 - local_c` at
   // 1257/1262/1264). Nothing in 1126-1268 reads 0xe94c or 0x1a0.
   const budget = spareActionPassCap();
+  const ringWide = portRingWideFor(level);
   // 0xe94c for this turn: set only when 1 < 0x1a0 (decompiled.c 13231-13232, 15157-15158), so a
   // level-1 seat never even sets it. It is how many army dispatches may repeat a destination cell
   // before that cell is recorded and struck out of the candidate table (3392-3400, 3410-3412), not
@@ -822,7 +839,7 @@ export function ordersFor(match, side) {
     }
     // The capital's own dug-in garrison holds its cell; see holdsOwnCapital.
     if (holdsOwnCapital(match, side, piece, garrisonCells)) continue;
-    const destination = marchOne(match, side, piece, focus, events, { skip: repeat.recorded });
+    const destination = marchOne(match, side, piece, focus, events, { skip: repeat.recorded, ringWide });
     if (!destination) continue;
     const step = spendRepeat(repeat, destination);
     armyBudget -= 1;
