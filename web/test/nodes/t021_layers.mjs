@@ -190,8 +190,14 @@ export async function run(ctx) {
     if (!refused.error) fail("a transfer onto an enemy city was allowed");
     const nowhere = transferPlane(match, "blue", "blue:aircraft:1", { x: 70, y: 70 });
     if (!nowhere.error) fail("a transfer onto open ground was allowed");
+    // PB-296a: a transfer is no longer free (air.transferRounds 4, manual p.25 "the air unit becomes
+    // unready"), so the plane the arms above just moved is now inactive and the briefing offers CAP
+    // alone - by PB-293's rule, not by a lost transfer mode. This assertion is about the READY
+    // plane's menu, so it asks a ready plane.
+    const readyPlane = { ...plane, x: 65, y: 99, inactiveUntil: 0 };
     eq("the briefing offers a transfer mode",
-      airBriefing(match, "blue")[0].missions.some((mission) => mission.mode === "transfer"), true);
+      airBriefing(matchWith([CITY, INLAND, BASE], [readyPlane]), "blue")[0].missions
+        .some((mission) => mission.mode === "transfer"), true);
   }
 
   // --- AC1: the walker no longer treats a based plane as solid ground ---------------

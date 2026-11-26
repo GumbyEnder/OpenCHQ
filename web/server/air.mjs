@@ -174,6 +174,13 @@ export function airBriefing(match, side) {
       // the briefing so the PAGE can refuse a far click before it becomes an order; the server
       // refuses it again on its own, which is what makes the rule true for any client.
       restrictedReach: restricted > 0 ? restricted : null,
+      // PB-296a, manual p.25: the loader must be within 3 spaces of the plane's START. The number
+      // ships with the briefing for the same reason the circles do - the page picks a loader and
+      // must test the printed rule, not keep a second copy of it.
+      loadCells: LOAD_CELLS,
+      // True when a friendly carrier holds the plane's own cell: a carrier-based plane can fly no
+      // loaded transfer (the same sentence). The page needs it to say why before the click.
+      carrierBased: basedOnCarrier(match, side, plane),
       base: base ? (base.name || base.id) : null,
       canFly: Boolean(base),
       // PB-293 / manual l.777: a plane that still owes rounds may fly CAP and nothing else, and the
@@ -202,10 +209,29 @@ export function airBriefing(match, side) {
 //
 // The range is the same stand-in `air.reach` the missions use, because the original's transfer
 // range was not recovered (air.reachSource, UNMEASURED); every refusal says so. The round cost is
-// air.transferRounds, UNVERIFIED (air.transferRoundsSource) - the manual prints none, so 0 is an
-// assumption recorded in Q50, not a recovered rule. How many aircraft may base on one site is
-// Q50's first sub-item and is deliberately NOT capped here.
+// air.transferRounds, UNVERIFIED (air.transferRoundsSource) - the manual prints no number, so the
+// file's figure is a stand-in recorded in Q50, not a recovered rule. How many aircraft may base on
+// one site is Q50's first sub-item and is deliberately NOT capped here.
 export const TRANSFER_NOTE = "Transfer. The aircraft rebases to the base you pick.";
+export const TRANSFER_LOADED_NOTE = "Transfer. The infantry rides with the aircraft and both land at the base you pick.";
+
+// PB-296a, manual printed p.25: "A loaded transfer needs infantry within 3 spaces of the plane's
+// START and entrenched, with the destination a friendly city or base inside the restricted radius.
+// A carrier-based plane can do neither a loaded transfer nor a paradrop." The 3 is the printed
+// page's, not a recovered number: config/game.json has no key for it (nothing in the archive reads
+// one), so it is carried here WITH its citation instead of inventing a lever no producer reads.
+export const LOAD_CELLS = 3;
+
+// A plane is carrier-based when a friendly carrier holds the cell it starts on. The berth search
+// already treats that cell as a legal home (baseFor), so this asks the same question the page's
+// "carrier" berth does, for the one rule the printed page ties to it.
+function basedOnCarrier(match, side, plane) {
+  const at = { x: Number(plane.x), y: Number(plane.y) };
+  return (match.pieces || []).some(
+    (unit) => unit && unit !== plane && unit.side === side && unit.kind === "carrier" &&
+      Number(unit.x) === at.x && Number(unit.y) === at.y,
+  );
+}
 
 // An aircraft based at a city, base or capital is DESTROYED when that site is captured, not stranded
 // or displaced. This is a RECOVERED RULE, not the remake's choice: Manual printed p.10 ("City
@@ -233,6 +259,33 @@ export function transferPlane(match, side, pieceId, target) {
   const wx = ((x % CELL_W) + CELL_W) % CELL_W;
   if (y < 0 || y > 135) return { error: "That site is off the map." };
 
+  // PB-296a: `load` names the infantry that rides. The loader is tested from the plane's START, so
+  // the origin is read before anything moves; an unknown key is a refusal, never a silent no-op -
+  // that silence was the whole measured gap.
+  const loadKey = target && (target.load ?? target.loadId);
+  const loaded = loadKey !== undefined && loadKey !== null && String(loadKey) !== "";
+  let rider = null;
+  if (loaded) {
+    rider = match.pieces.find((unit) => unit && String(unit.id) === String(loadKey));
+    if (!rider) return { error: "No such unit to load: " + loadKey + "." };
+    if (rider === plane) return { error: "An aircraft cannot carry itself." };
+    if (rider.side !== side) return { error: "That unit belongs to " + rider.side + "." };
+    if (rider.kind !== "infantry" || rider.domain === "sea" || rider.transport === true) {
+      return { error: "Only infantry can be carried by an aircraft." };
+    }
+    if (basedOnCarrier(match, side, plane)) {
+      return { error: "A carrier-based aircraft cannot make a loaded transfer." };
+    }
+    const away = chebyshev(plane, rider);
+    if (away > LOAD_CELLS) {
+      return { error: "The infantry must be within " + LOAD_CELLS + " cells of the aircraft's start"
+        + " (it is " + away + ")." };
+    }
+    if (rider.entrenched !== true) {
+      return { error: "The infantry must be entrenched before it can be loaded." };
+    }
+  }
+
   // The site on that cell, if any: a friendly city/base/capital/facility is a berth.
   const site = (match.sites || []).find(
     (entry) => entry && Number(entry.x) === wx && Number(entry.y) === y,
@@ -247,9 +300,21 @@ export function transferPlane(match, side, pieceId, target) {
     if (site && site.owner !== side) return { error: "Can't transfer there: " + where + " is not yours." };
     return { error: "Can't transfer there: air units go only to a friendly city, base or carrier." };
   }
+  // Manual printed p.25: a LOADED transfer lands at "a friendly city or base", not on a carrier -
+  // the same sentence that forbids a carrier-based plane from flying one.
+  if (loaded && !siteOk) {
+    return { error: "A loaded transfer lands at a friendly city or base, not on a carrier." };
+  }
 
+  // PB-178 + p.25: only an UNLOADED transfer may use the maximum radius. A loaded one is held to the
+  // restricted circle; `restrictedReach()` reading 0 means the config carries no circle at all, and
+  // the gate then falls back to `reach` rather than silently refusing every loaded order.
   const reach = airReach();
-  if (reach > 0 && chebyshev(plane, { x: wx, y }) > reach) {
+  const circle = loaded ? (restrictedReach() || reach) : reach;
+  if (circle > 0 && chebyshev(plane, { x: wx, y }) > circle) {
+    if (loaded) {
+      return { error: "That site is outside the loaded transfer's restricted radius (" + circle + " cells)." };
+    }
     return { error: "That site is out of the aircraft's transfer range (" + reach + " cells)." };
   }
 
@@ -259,9 +324,21 @@ export function transferPlane(match, side, pieceId, target) {
   plane.path = [];
   plane.pace = 1;
   plane.readyAnnounced = false;
-  // The round cost is charged from config, like the missions': 0 today, tagged UNVERIFIED
-  // (air.transferRoundsSource). A non-zero value in the file charges the plane, so this module
-  // never hard-codes either a free transfer or a price.
+  plane.loaded = null;
+  if (rider) {
+    // The infantry rides and lands on the same cell; a move costs it its entrenchment, which is
+    // move.mjs's own rule for any move order (config combat.entrench: "reverts: a move order").
+    rider.x = wx;
+    rider.y = y;
+    rider.path = [];
+    rider.pace = 1;
+    rider.entrenched = false;
+    rider.movedRound = Number(match.round) || 0;
+  }
+  // The round cost is charged from config, like the missions': the figure is a stand-in tagged
+  // UNVERIFIED (air.transferRoundsSource), and the printed page's "the air unit becomes unready"
+  // means a 0 there is a deficit, not a free order. A non-zero value charges the plane; this module
+  // hard-codes neither a free transfer nor a price.
   const cost = missionCosts().transfer;
   if (cost > 0) plane.inactiveUntil = (Number(match.round) || 0) + cost;
   return {
@@ -274,8 +351,9 @@ export function transferPlane(match, side, pieceId, target) {
       x: wx,
       y: y,
       from,
+      load: rider ? rider.id : null,
       round: Number(match.round) || 0,
-      note: TRANSFER_NOTE,
+      note: rider ? TRANSFER_LOADED_NOTE : TRANSFER_NOTE,
     }],
   };
 }

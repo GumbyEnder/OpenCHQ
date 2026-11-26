@@ -1099,6 +1099,10 @@ let placement = null;
 // Which air order the next map click sends for a selected aircraft: "strike" (the default, and
 // what every pre-T-021 click meant) or "transfer", which rebases the plane on the cell clicked.
 let pendingMission = "strike";
+// PB-296a (manual printed p.25): the infantry a loaded transfer is carrying, picked by clicking it
+// on the map before the destination cell. One slot, cleared by Escape, by any other door, and by the
+// destination click that spends it - so a load can never ride a later, different order.
+let pendingLoad = null;
 // PB-226: the tool whose picker is armed, or null. Foreign aid names its city (Manual p.30), so
 // its button arms this instead of spending blind; the next map click is the target and Escape
 // disarms. One slot for every picker tool, so two doors cannot arm different modes at once.
@@ -1199,6 +1203,8 @@ function clearCommand() {
   pendingMission = nextDoorMode(pendingMission, "cleared");
   // PB-226: the tool picker answers to the same Escape, for the same reason.
   pendingTool = null;
+  // PB-296a: a picked loader is part of the armed door, so it is disarmed with it.
+  pendingLoad = null;
   drawMatch();
 }
 
@@ -1211,6 +1217,42 @@ function atPeace() {
 
 function notAir(piece) {
   return Boolean(piece) && piece.kind !== "aircraft" && piece.domain !== "air";
+}
+
+// PB-296a, manual printed p.25: while a Transfer is armed on a selected aircraft, a click on a
+// friendly infantry is the LOADER, not a change of selection - "the infantry within 3 spaces of the
+// plane's START and entrenched". Returns true when the click was spent here (picked, cleared, or
+// refused with a sentence); false means the clicked piece is no candidate at all and the click is
+// the destination.
+function transferLoaderPick(piece) {
+  if (!piece || piece.kind !== "infantry" || piece.domain === "sea" || piece.transport === true) return false;
+  if (piece.side !== (room && room.you)) return false;
+  if (String(pendingLoad) === String(piece.id)) {
+    pendingLoad = null;
+    say("Load cleared: the next click sends an empty transfer.");
+    return true;
+  }
+  const briefing = ((room && room.seat && room.seat.air) || []).find((plane) => plane.id === selected.id);
+  const width = viewForCanvas().boardW;
+  const span = Math.abs(wrapX(Number(selected.x), width) - wrapX(Number(piece.x), width));
+  const awayCells = Math.max(Math.min(span, width - span), Math.abs(Number(selected.y) - Number(piece.y)));
+  const limit = briefing && Number.isFinite(Number(briefing.loadCells)) ? Number(briefing.loadCells) : 0;
+  if (briefing && briefing.carrierBased === true) {
+    say("A carrier-based aircraft cannot make a loaded transfer. Pick a friendly city, base or carrier cell to fly it empty.");
+    return true;
+  }
+  if (limit > 0 && awayCells > limit) {
+    say("That infantry is " + awayCells + " cells from the aircraft's start; a loader must be within " + limit + ".");
+    return true;
+  }
+  if (piece.entrenched !== true) {
+    say("That infantry is not entrenched. Dig it in first, then load it.");
+    return true;
+  }
+  pendingLoad = String(piece.id);
+  say("Loaded " + piece.id + ": now pick a friendly city or base inside the restricted radius ("
+    + ((briefing && briefing.restrictedReach) || "?") + " cells).");
+  return true;
 }
 
 function askRoute(cell) {
@@ -1304,6 +1346,17 @@ board.addEventListener("click", (event) => {
   // The cell test is the piece's own cell, not the badge box, so a click on a neighbouring cell is
   // still a move order at every zoom (PB-146).
   if (intent && intent.kind === "piece") {
+    // PB-296a: an armed transfer owns this click - the loader first, then the destination (p.25).
+    if (pendingMission === "transfer" && selected && !notAir(selected) &&
+      String(intent.piece.id) !== String(selected.id)) {
+      if (transferLoaderPick(intent.piece)) return;
+      const drop = missionMessage(selected, "transfer", { x: intent.piece.x, y: intent.piece.y });
+      if (drop && pendingLoad) drop.to.load = pendingLoad;
+      pendingLoad = null;
+      if (drop) sendOrder(drop);
+      pendingMission = nextDoorMode(pendingMission, "sent");
+      return;
+    }
     // PB-191: the site is looked up on the PIECE's own cell, not on the floored cell the event
     // produced. Once clickIntent has said "this piece" the click is the piece's own cell by
     // definition (the own-cell rule is the only branch that returns the selected piece), and the
@@ -1387,7 +1440,12 @@ board.addEventListener("click", (event) => {
         return;
       }
     }
+    // PB-296a: the loader was picked by its own click (transferLoaderPick); this click is the
+    // destination, and it spends the load. A carrier-based plane's refusal comes from the server.
     const mission = missionMessage(selected, mode, cell);
+    if (mission && pendingLoad && mode === "transfer") mission.to.load = pendingLoad;
+    // The destination click spends the load, whatever the order turns out to be.
+    pendingLoad = null;
     if (mission) sendOrder(mission);
     // Back to the everyday meaning of a click on an aircraft's map.
     pendingMission = nextDoorMode(pendingMission, "sent");
@@ -2304,7 +2362,7 @@ function toolRow(room) {
               : mission.mode === "bomb"
                 ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius (" + (briefing.restrictedReach || "?") + " cells); the owner loses 125 M and the site is unready 5 rounds (1000 oil for an oil field). The aircraft is away for " + mission.rounds + " rounds."
               : mission.mode === "transfer"
-                ? "Pick a friendly city, base or carrier cell within the transfer range; the aircraft rebases there."
+                ? "Click an entrenched infantry within 3 cells of the aircraft first to fly it loaded (destination inside the restricted radius), or pick a friendly city, base or carrier cell to fly it empty."
                 : "Fly it now; the aircraft is gone for " + mission.rounds + " rounds.";
         button.addEventListener("click", () => {
           // A strike hits the cell the player names, not the base the plane sits on. A transfer
@@ -2312,8 +2370,9 @@ function toolRow(room) {
           // own cell is the right target for it.
           if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb") {
             pendingMission = mission.mode;
+            pendingLoad = null;
             say(mission.mode === "transfer"
-              ? "Transfer: pick a friendly city, base or carrier cell."
+              ? "Transfer: pick an infantry to carry, then a friendly city or base; or click a friendly city, base or carrier cell to fly it empty."
               : mission.mode === "bomb"
                 ? bombArmText(briefing.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("
@@ -2894,9 +2953,9 @@ const DIALOG_PAINTERS = {
             : mission.mode === "strike"
               ? "Pick the target cell inside the restricted air radius ("
                 + (plane.restrictedReach || "?") + " cells); away for " + mission.rounds + " rounds."
-              : mission.rounds > 0
-              ? "Away for " + mission.rounds + " rounds."
-              : "Pick a friendly city, base or carrier cell within the transfer range; the aircraft rebases there.";
+              : mission.mode === "transfer"
+              ? "Click an entrenched infantry within 3 cells of the aircraft first to fly it loaded (destination inside the restricted radius), or pick a friendly city, base or carrier cell to fly it empty; away for " + mission.rounds + " rounds."
+              : "Away for " + mission.rounds + " rounds.";
         button.disabled = mission.allowed === false;
         button.addEventListener("click", () => {
           // A strike, a bombing run or a transfer is aimed: the air dialog names the plane and
@@ -2912,8 +2971,9 @@ const DIALOG_PAINTERS = {
               startSelectionPulse();
             }
             pendingMission = mission.mode;
+            pendingLoad = null;
             say(mission.mode === "transfer"
-              ? "Transfer: pick a friendly city, base or carrier cell."
+              ? "Transfer: pick an infantry to carry, then a friendly city or base; or click a friendly city, base or carrier cell to fly it empty."
               : mission.mode === "bomb"
                 ? bombArmText(plane.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("
@@ -4180,6 +4240,9 @@ window.__chq = {
     // PB-245b: the piece whose second select armed a starting destination, so a leg can see the
     // gesture's state instead of inferring it from a missing wire message.
     armedDestination: pendingDestination,
+    // PB-296a: the infantry a loaded transfer is carrying, so a leg reads the pick instead of
+    // racing a toast that a hover refusal can overwrite.
+    armedLoad: pendingLoad,
     placement: Boolean(placement),
     placementSnap: placement ? placement.snap : null,
     placementBox: placement ? placement.box : null,
