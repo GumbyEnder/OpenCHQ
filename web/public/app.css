@@ -864,16 +864,6 @@ body.in-match .speedctl { display: flex; }
   text-align: center;
 }
 
-/* PB-263: the message level sits with the commands. A fixed slot keeps 3 -> 0 from moving the
-   neighbours (the PB-143 lesson), and the level is in the label itself, so the control always says
-   what it is set to. */
-.navbtn.msgbtn {
-  min-width: 56px;
-  padding: 2px 7px;
-  text-align: center;
-}
-.navbtn.msgbtn[data-level="0"] { color: #8797ab; }
-
 .dialog {
   position: fixed;
   top: calc(var(--strip) + 8px);

@@ -124,15 +124,8 @@ export function logLines(match, side, events, round) {
   // Events with no round field (an escort, a scramble, an income line built by a caller) keep the
   // frame's round, which is what every earlier card pinned.
   let lineTurn = turn;
-  // PB-263: `tag` marks a line as a WARNING, and only a warning. The message level (manual p.32)
-  // hides tagged lines and never hides untagged ones, so a payday, a capture or a fight keeps
-  // reading at every level. The values are the levels' own vocabulary: "spotted", "threat",
-  // "serious".
-  const push = (text, tag) => {
-    if (!text) return;
-    const line = { round: lineTurn, text };
-    if (tag) line.tag = tag;
-    lines.push(line);
+  const push = (text) => {
+    if (text) lines.push({ round: lineTurn, text });
   };
 
   // PB-123: overrun events are grouped per cell per side before the loop, so two units lost on one
@@ -215,11 +208,7 @@ export function logLines(match, side, events, round) {
         if (!Number.isFinite(distance)) break;
         push(distance === 0
           ? "enemy troops are on " + name
-          : "enemy troops " + distance + " cell" + (distance === 1 ? "" : "s") + " from " + name,
-          // PB-263: the alarm carries the level's word. A capital is the object of the war
-          // (manual p.18), so every threat to one is SERIOUS; a plain threat is an approach to a
-          // friendly city that is not yet on its doorstep (tick.mjs marks those `serious: false`).
-          event.serious === false ? "threat" : "serious");
+          : "enemy troops " + distance + " cell" + (distance === 1 ? "" : "s") + " from " + name);
         break;
       }
       case "income_skipped":
@@ -592,7 +581,7 @@ export function logLines(match, side, events, round) {
     const count = visible.filter(
       (other) => other.side !== side && wrapX(other.x) === cell.x && Number(other.y) === cell.y
     ).length;
-    lines.push({ round: turn, key: "sight:" + id, text: sightText(match, side, cell, count), tag: "spotted" });
+    lines.push({ round: turn, key: "sight:" + id, text: sightText(match, side, cell, count) });
   }
   match.sightSeen[side] = [...seenCells];
 

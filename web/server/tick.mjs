@@ -33,51 +33,6 @@ import { wastelandTerrain } from "./nukestrike.mjs";
 // board.
 const ALARM_CELLS = 8;
 
-// PB-263: the city index. This lives in a WeakMap keyed by the match's `sites` array: it is derived
-// data that never enters the saved room, and a reloaded room simply rebuilds it.
-const CITY_THREAT_INDEX = new WeakMap();
-// A shared empty memory, frozen: a side with no threat this round stores no keys at all.
-const EMPTY_CITY_ALARM = Object.freeze({});
-
-function wrapCellX(x) {
-  return ((Number(x) % CELL_W) + CELL_W) % CELL_W;
-}
-
-function cityThreatIndex(match, rebuild) {
-  const sites = match.sites;
-  if (!Array.isArray(sites)) return null;
-  const cached = CITY_THREAT_INDEX.get(sites);
-  if (cached && !rebuild) return cached;
-  const capitals = new Set(
-    ((match.capitalSet && match.capitalSet.list) || []).map((row) => String(row && row.siteId))
-  );
-  const index = { blue: buildCitySide(sites, "blue", capitals), red: buildCitySide(sites, "red", capitals) };
-  CITY_THREAT_INDEX.set(sites, index);
-  return index;
-}
-
-function buildCitySide(sites, side, capitals) {
-  const cities = [];
-  for (const site of sites) {
-    if (!site || site.owner !== side || site.kind !== "city") continue;
-    if (capitals.has(String(site.id))) continue;
-    const x = Number(site.x);
-    const y = Number(site.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    cities.push({ id: String(site.id), name: usableName(site.name) || "a city", x: wrapCellX(x), y });
-  }
-  return { cities };
-}
-
-// A baked dock/facility name is a coordinate wearing a place's clothes (PB-121/PB-123); a city the
-// board names that way is "a city" in a warning line, never "Dock 174,41".
-function usableName(name) {
-  if (name === null || name === undefined) return "";
-  const text = String(name).trim();
-  if (!text || /\d+\s*,\s*\d+/.test(text)) return "";
-  return text;
-}
-
 function capitalName(match, cell) {
   // Indexed, not searched: this ran a 84-row find twice per room per round inside the alarm.
   const site = siteAtCell(match.sites, cell.x, cell.y);
@@ -220,67 +175,7 @@ export function tickMatch(match) {
       }
       if (was && was.distance <= nearest) continue;
       match.alarm[side] = { distance: nearest, round: match.round, name };
-      // `serious: true` is explicit: the log tags a capital threat "serious" at every level above 0
-      // (manual p.18 - the capitals are the object of the war). PB-263.
-      events.push({ type: "threat", side, name, distance: nearest, serious: true });
-    }
-  }
-
-  // PB-263: the manual's level-three promise is "all threats to FRIENDLY CITIES" (p.32), not only
-  // capitals, and its levels need two weights of threat - level 2 shows all of them, level 1 only
-  // the "serious" ones. This pass raises the same `threat` event for a friendly city that is not a
-  // capital when an enemy land piece comes within the alarm radius, once per new closer approach.
-  // A city's threat is SERIOUS when the enemy is standing on it or next to it - the port's reading
-  // of the manual's undefined word (PORT DECISION, UNVERIFIED: docs/re/SYSTEMS.md §21 recovers the
-  // "message level" string and the warning sentences, not the comparison behind "serious").
-  //
-  // Cost: the room's city list is built ONCE per match (WeakMap keyed by the match's own sites
-  // array, so nothing is serialised into the saved room) and rebuilt only in a round that captured a
-  // site, because that is the only thing that changes an owner. Each city then looks at the enemy
-  // land pieces - a city count of tens, not the site table's hundreds.
-  if (capBlue || capRed) {
-    const captured = events.some((event) => event && event.type === "capture");
-    const index = cityThreatIndex(match, captured);
-    if (!match.cityAlarm || typeof match.cityAlarm !== "object") match.cityAlarm = {};
-    const foe = { blue: [], red: [] };
-    for (const piece of match.pieces || []) {
-      if (!piece || piece.domain !== "land") continue;
-      if (piece.side !== "blue" && piece.side !== "red") continue;
-      const y = Number(piece.y);
-      if (!Number.isFinite(y)) continue;
-      foe[piece.side].push({ x: wrapCellX(piece.x), y });
-    }
-    for (const side of ["blue", "red"]) {
-      const own = index ? index[side] : null;
-      const foes = foe[side === "blue" ? "red" : "blue"];
-      if (!own || !own.cities.length || !foes.length) {
-        match.cityAlarm[side] = EMPTY_CITY_ALARM;
-        continue;
-      }
-      const was = match.cityAlarm[side] && typeof match.cityAlarm[side] === "object" ? match.cityAlarm[side] : {};
-      let next = null;
-      for (const site of own.cities) {
-        let nearest = -1;
-        for (const piece of foes) {
-          const rawX = Math.abs(piece.x - site.x);
-          const distance = Math.max(rawX > CELL_W / 2 ? CELL_W - rawX : rawX, Math.abs(piece.y - site.y));
-          if (distance > ALARM_CELLS) continue;
-          if (nearest < 0 || distance < nearest) nearest = distance;
-        }
-        if (nearest < 0) continue;
-        if (!next) next = {};
-        next[site.id] = nearest;
-        if (was[site.id] !== undefined && was[site.id] <= nearest) continue;
-        events.push({
-          type: "threat",
-          side,
-          name: site.name,
-          distance: nearest,
-          site: site.id,
-          serious: nearest <= 1,
-        });
-      }
-      match.cityAlarm[side] = next || EMPTY_CITY_ALARM;
+      events.push({ type: "threat", side, name, distance: nearest });
     }
   }
 

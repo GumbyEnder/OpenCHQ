@@ -96,9 +96,7 @@ export async function run(ctx) {
   const app = await (await fetch(ctx.base + "/app.js")).text();
   const css = await (await fetch(ctx.base + "/app.css")).text();
   for (const call of [
-    // PB-263: the panel paints the buffer through the message-level filter; the claim here is that
-    // it paints all of what it retains, so the call is named with the level it now takes.
-    "paintedLines(log, messageLevel)",
+    "paintedLines(log)",
     'list.id = "roundLog"',
     "scrollAfterPaint(logView",
     "pendingAfterPaint(logView",
