@@ -84,6 +84,12 @@ function seatOf(match, side) {
 
 // caps = 1 + the side's owned capitals (type 1/2) among records 0-63. The +1 is the original's
 // divisor base, so a side with no capital still divides by one.
+//
+// THE MANUAL IS CONTRADICTED HERE, and the binary wins (the same precedence ECONOMY_RE.md 1.3 set
+// for p.27's ships): p.27 says the unready time grows with the number of friendly cities,
+// "especially capitals". The archive puts each owned capital in the DIVISOR of the price term, so an
+// extra capital makes the pot SMALLER. Measured on 1986 blue city 1 with one infantry: 22 rounds
+// alone, 16 with one more ready city, 13 with one more capital (frodo 9833, PM 9835 §2).
 export function capitalDivisor(match, side) {
   const { capitalBase } = readinessRules();
   let capitals = 0;
@@ -124,6 +130,9 @@ function capitalsExempt(match, side) {
 // they come back on, the pooled timer and the ids that were written, so the caller can report
 // exactly what a purchase did. A hull is built at a dock; the site that produces it is the nearest
 // friendly city, base or capital, so the dock itself is never the site that goes unready.
+// One pot, divided by the number of listed sites: that is FUN_2dfc_1874, and it is why a READY
+// neighbour DILUTES the time (p.27's third clause says the opposite - the archive wins, see
+// capitalDivisor's note and docs/re/PLACEMENT.md "Readiness").
 export function poolReadiness(match, side, site, kind) {
   const round = roundOf(match);
   // PB-245, manual printed p.31: "Producing units does not cause cities to become unready during
