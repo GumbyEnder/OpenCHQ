@@ -1,5 +1,7 @@
 import {
-  capitalMarkers, cellToPixel, centerOn, clampZoom, fitViewport, legendEntries, MIN_ZOOM, paintMatch,
+  capitalMarkers, cellToPixel, centerOn, clampZoom, fitCamera, fitViewport, keepCamera, keepSpanCamera,
+  legendEntries,
+  MIN_ZOOM, paintMatch,
   panBy, pixelToCell, paintPlacement, rememberSeen, routePolyline, routeSpan, sightTable, statusLine,
   wrapX, zoomAt, zoomStepBy, badgeAt, renderBadgeSprite,
 } from "./render.mjs";
@@ -495,18 +497,10 @@ function sizeCanvas() {
       camera = null;
       viewForCanvas();
     } else {
+      // PB-280/PB-289: the centre-cell inverse and the zoom cap live in render.mjs's keepCamera, so
+      // the canvas-size path and every other viewport change keep a camera the same way.
       const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
-      // PB-280: the centre cell is the INVERSE of cellToPixel (render.mjs:134), which reads
-      // pixel = left + cell * scale - so the cell under the viewport's centre pixel is
-      // (viewW / 2 - left) / scale. The old form ADDED left, so every canvas-size change that was
-      // not a window resize (a band row arriving, a panel taking height) re-centred a zoomed camera
-      // on a cell that was left/scale cells away from the one the player was looking at.
-      const midX = (old.viewW / 2 - old.left) / old.scale;
-      const midY = (old.viewH / 2 - old.top) / old.scale;
-      camera = { ...fit, scale: Math.max(fit.scale, MIN_ZOOM, Math.min(64, old.scale)) };
-      camera.minScale = Math.max(MIN_ZOOM, fit.scale);
-      camera.left = Math.round(camera.viewW / 2 - midX * camera.scale);
-      camera.top = Math.round(camera.viewH / 2 - midY * camera.scale);
+      camera = keepCamera(old, fit);
     }
   }
   // CSS size fills the box the shell gives it, at the board's aspect: the backing store stays a
@@ -760,7 +754,7 @@ function refit() {
   userCamera = false;
   sizeCanvas();
   const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
-  camera = { ...fit, scale: Math.max(MIN_ZOOM, fit.scale), minScale: Math.max(MIN_ZOOM, fit.scale) };
+  camera = fitCamera(fit);
   drawMatch();
 }
 
@@ -1719,7 +1713,29 @@ window.addEventListener("keydown", (event) => {
 // dark tactical default) has to be named in the button, not only applied to the canvas.
 paintThemeControl();
 
-window.addEventListener("resize", () => refit());
+// PB-289: a window resize is the SAME viewport change as a band row arriving or a panel taking
+// height, so it goes through sizeCanvas - whose keeping branch is PB-280's centre-cell inverse -
+// and repaints. refit() stays the Fit control (key 0, the Fit button): it is the only path that
+// clears userCamera, so a resize can no longer discard a zoomed or recalled camera. A viewport the
+// player never touched still lands on the whole-world fit, because sizeCanvas' !userCamera branch
+// fits. What fails if this is reverted to refit-on-resize: a macro recalled at 1280x800 and then
+// resized to 1024x768 drops from zoom 18 to the 2-3 px whole-world fit (PB-281's page leg stores
+// and recalls at one viewport and never resizes, which is why it stayed green through the bug).
+function resizeViewport() {
+  if (!userCamera) return refit();
+  // The span the player was looking at is read BEFORE the box is rebuilt: once sizeCanvas has run,
+  // the camera's own viewW is the SMALLER canvas, and a cap against that would always pass.
+  const was = camera;
+  sizeCanvas();
+  // A window that got smaller may no longer hold that span, so PB-281's rule caps the zoom here -
+  // the resize keeps the view, not just the point. (sizeCanvas' own PB-280 branch has already kept
+  // the camera for the stage-change path; this overwrites it with the span-preserving one.)
+  const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
+  camera = keepSpanCamera(was, fit);
+  drawMatch();
+}
+
+window.addEventListener("resize", () => resizeViewport());
 
 // PB-173: the strip's clock word goes in a slot of its own (see .stripinfo .phase in app.css), so
 // the painter builds the line out of nodes instead of assigning one string. textContent throughout —

@@ -117,6 +117,87 @@ export function fitViewport(availW, availH, boardW = BOARD_W, boardH = BOARD_H, 
   };
 }
 
+// The camera that shows the whole world, exactly as the painter draws it. `Fit` - key 0, the Fit
+// button and a viewport the player never touched - all end here, so there is one expression for
+// "the whole world at this canvas" instead of three copies that can drift. This is PB-280's Fit
+// expression carried into one place: NO floor and NO rounding beyond the MIN_ZOOM clamp, because a
+// refactor of three copies must not become a tuning change (PM 9810 §3 on frodo 9808 §6). The
+// fractional-dpr case is unreachable today (`fitViewport` already floors at render.mjs:108), but a
+// floor here would be a behaviour decision, and that is its own card if anyone wants it.
+export function fitCamera(fit) {
+  const scale = Math.max(MIN_ZOOM, Number(fit.scale) || MIN_ZOOM);
+  return { ...fit, scale, minScale: Math.max(MIN_ZOOM, scale) };
+}
+
+// A box of cells drawn as large as a viewport allows, centred on a cell. PB-281's rule, single
+// sourced: a stored zoom is honoured unless the box no longer fits the window, in which case it
+// drops to the largest zoom that does, and never below the camera's floor (PB-067). Both the macro
+// recall (macros.mjs cameraForMacro) and PB-289's kept camera go through here, so "the largest that
+// fits" cannot mean two different numbers in two places.
+//
+// The box was stored rounded to 1/1000 cell (captureMacro's round3), so a window that exactly filled
+// the canvas can divide to 17.9997 - 408 / 22.667 at zoom 18 - and floor one step short. Give the
+// fit test a hair under one device pixel of slack.
+export const FIT_SLACK_PX = 0.75;
+
+export function boxCamera(box, view) {
+  const v = view || {};
+  if (!box) return null;
+  const minScale = clampZoom(Number.isFinite(Number(v.minScale)) ? Number(v.minScale) : 1, 1);
+  const viewW = Math.max(1, Number.isFinite(Number(v.viewW)) ? Number(v.viewW) : 1);
+  const viewH = Math.max(1, Number.isFinite(Number(v.viewH)) ? Number(v.viewH) : 1);
+  const w = Math.max(1, Number.isFinite(Number(box.w)) ? Number(box.w) : 1);
+  const h = Math.max(1, Number.isFinite(Number(box.h)) ? Number(box.h) : 1);
+  const fits = Math.max(1, Math.floor(Math.min((viewW + FIT_SLACK_PX) / w, (viewH + FIT_SLACK_PX) / h) + 1e-9));
+  // A preset carries no zoom of its own: it is a box, so it opens as large as this window can show
+  // it. A stored camera keeps the zoom it had unless the box no longer fits.
+  const stored = Number(box.scale);
+  const want = Number.isFinite(stored) && stored > 0 ? Math.min(Math.max(1, Math.round(stored)), fits) : fits;
+  const scale = clampZoom(want, minScale);
+  return {
+    ...v,
+    scale,
+    left: Math.round(viewW / 2 - (Number.isFinite(Number(box.cx)) ? Number(box.cx) : (viewW / 2) / scale) * scale),
+    top: Math.round(viewH / 2 - (Number.isFinite(Number(box.cy)) ? Number(box.cy) : (viewH / 2) / scale) * scale),
+  };
+}
+
+// PB-280: a canvas that changes shape keeps the camera the player set up - the centre cell first,
+// then the zoom, floored by the new whole-world fit. The centre cell is the INVERSE of cellToPixel
+// (pixel = left + cell * scale, so the cell under the middle pixel is (viewW / 2 - left) / scale,
+// not (viewW / 2 + left) / scale). This is the sizeCanvas branch that shipped with PB-280 and its
+// leg pins it: a band row arriving, or a panel taking height, must not move the camera even when the
+// new canvas cannot show the whole span. See keepSpanCamera for the window-resize rule.
+export function keepCamera(old, fit) {
+  if (!old || !Number.isFinite(Number(old.scale)) || !Number(old.scale)) return fitCamera(fit);
+  const scale = Number(old.scale);
+  const midX = (old.viewW / 2 - old.left) / scale;
+  const midY = (old.viewH / 2 - old.top) / scale;
+  const kept = Math.max(fit.scale, MIN_ZOOM, Math.min(KEEP_ZOOM_CEILING, Math.floor(scale)));
+  const camera = { ...fit, scale: kept };
+  camera.minScale = Math.max(MIN_ZOOM, fit.scale);
+  camera.left = Math.round(fit.viewW / 2 - midX * camera.scale);
+  camera.top = Math.round(fit.viewH / 2 - midY * camera.scale);
+  return camera;
+}
+
+// PB-289: a WINDOW resize is the player changing how much world they can see, so it keeps the view
+// they had - the centre cell AND the cell span - and that means the zoom can drop to PB-281's "largest
+// that fits" when the new window is smaller. It is the same boxCamera a macro recall uses, so a
+// resize and a recall cannot disagree about the number. Deliberately NOT wired into sizeCanvas: a
+// stage change is the app re-laying out the same window, which is PB-280's crop, and its leg pins it.
+export function keepSpanCamera(old, fit) {
+  if (!old || !Number.isFinite(Number(old.scale)) || !Number(old.scale)) return fitCamera(fit);
+  const scale = Number(old.scale);
+  return boxCamera({
+    cx: (old.viewW / 2 - old.left) / scale,
+    cy: (old.viewH / 2 - old.top) / scale,
+    w: old.viewW / scale,
+    h: old.viewH / scale,
+    scale,
+  }, { ...fit, minScale: Math.max(MIN_ZOOM, fit.scale) });
+}
+
 // Normalizes a partially built view. Only the fields the painter reads are kept.
 export function makeView(partial = {}, board = null) {
   const boardW = Math.max(1, Math.floor(Number(partial.boardW ?? board?.width) || BOARD_W));
@@ -278,6 +359,9 @@ export const MIN_ZOOM = 1;
 // crisp only if the zoom is expressed in the same units. 32 device px is 16 CSS px on a retina
 // screen and 32 on a plain one.
 export const MAX_ZOOM = 32;
+// The ceiling a KEPT (PB-280) camera is clamped to when the canvas changes shape: the literal
+// sizeCanvas has always used, carried here unchanged so moving that expression is a refactor.
+export const KEEP_ZOOM_CEILING = 64;
 
 // `floor` is the lowest zoom this camera may take. The page passes the whole-world fit, because a
 // camera that will not go below what fits cannot leave the map small in a field of black (PB-067)

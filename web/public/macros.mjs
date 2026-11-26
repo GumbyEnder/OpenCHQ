@@ -11,7 +11,7 @@
 // camera. The page owns the keys, the localStorage write and the repaint; this module is what the
 // node pin grades against the real table.
 
-import { clampZoom } from "./render.mjs";
+import { boxCamera } from "./render.mjs";
 
 // One browser-wide key, the THEME_KEY shape (PB-263's per-seat message level is deliberately a
 // different thing: a message level belongs to a seat, a macro set belongs to the browser — manual
@@ -106,32 +106,10 @@ export function captureMacro(camera, mode) {
 // and the zoom is the stored one unless the whole box no longer fits this window, in which case it
 // drops to the zoom that fits. Never below the whole-world fit — the camera's floor (PB-067).
 export function cameraForMacro(macro, view) {
-  const v = view || {};
+  // PB-281's rule lives in render.mjs boxCamera so PB-289's kept camera and a recall cannot drift;
+  // this wrapper keeps the macro API (null for no macro) and the stored-box shape.
   if (!macro) return null;
-  const minScale = clampZoom(finite(v.minScale, 1), 1);
-  const viewW = Math.max(1, finite(v.viewW, 1));
-  const viewH = Math.max(1, finite(v.viewH, 1));
-  const w = Math.max(1, finite(macro.w, 1));
-  const h = Math.max(1, finite(macro.h, 1));
-  // PB-281: the box was stored rounded to 1/1000 cell (captureMacro's round3), so a window that
-  // exactly filled the canvas can divide to 17.9997 - 408 / 22.667 at zoom 18 - and floor to one
-  // zoom step short. Give the fit test a hair under one device pixel of slack: a box that overshoots
-  // the canvas by less than that is the same window, while a box that is genuinely wider still caps.
-  const FIT_SLACK_PX = 0.75;
-  const fits = Math.max(1, Math.floor(Math.min((viewW + FIT_SLACK_PX) / w, (viewH + FIT_SLACK_PX) / h) + 1e-9));
-  // A preset carries no zoom of its own: it is a box, so it opens as large as this window can show
-  // it. A player's slot keeps the zoom they stored unless the box no longer fits.
-  const stored = Number(macro.scale);
-  const want = Number.isFinite(stored) && stored > 0
-    ? Math.min(Math.max(1, Math.round(stored)), fits)
-    : fits;
-  const scale = clampZoom(want, minScale);
-  return {
-    ...v,
-    scale,
-    left: Math.round(viewW / 2 - finite(macro.cx, (viewW / 2) / scale) * scale),
-    top: Math.round(viewH / 2 - finite(macro.cy, (viewH / 2) / scale) * scale),
-  };
+  return boxCamera({ cx: macro.cx, cy: macro.cy, w: macro.w, h: macro.h, scale: macro.scale }, view);
 }
 
 function round3(value) {
