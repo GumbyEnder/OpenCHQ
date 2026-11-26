@@ -182,6 +182,13 @@ export async function run(ctx) {
     match.round = 13;
     const oilEvents = repairStep(match);
     const order = repair(match, "blue", "blue:inf:oil");
+    // frodo 9828 §5: the ORDER is a second call site with its own path into the site kinds, and a
+    // revert of only that one (his m6) stayed green while the order refused field 64. So the positive
+    // answer is asserted, not just read for the failure text.
+    if (!order || order.ok !== true) {
+      fail("pb290 (c) l.190: the repair ORDER for blue:inf:oil on its own field " + field.id + " did not answer ok ("
+        + JSON.stringify(order && (order.error || order.state)) + ") - web/server/move.mjs repair() is the second call site");
+    }
     // The other half of the same clause: world.json's 35 `oilfield`-kind wells are a drawing, and
     // PB-153 settled that no rule may see them. A unit parked on one must NOT repair, so a future
     // "fix" that simply adds `oilfield` back to a kind list fails here.
