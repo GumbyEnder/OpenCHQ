@@ -29,8 +29,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const GIVEN = (process.argv.find((v) => v.startsWith("--url=")) || "").slice(6).replace(/\/+$/, "") ||
   (process.env.E2E_URL || "").replace(/\/+$/, "");
+// PB-278: a leg run without --out must not write into one operator's home directory - that path
+// only exists on the machine that wrote it, so the next host's run either fails to mkdir or leaves
+// evidence nobody can find. The default is a fresh temp dir; the run prints the path it used.
 const OUT = path.resolve((process.argv.find((v) => v.startsWith("--out=")) || "").slice(6) ||
-  path.join(process.env.HOME || ".", "agents", "game", "notes", "pb263-message-level"));
+  mkdtempSync(path.join(tmpdir(), "openchq-pb263-")));
 mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
