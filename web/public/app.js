@@ -21,6 +21,7 @@ import {
   orderMessage,
   hoverOfferKey,
   hoverOffersOrder,
+  hoverRoute,
   ownPieceAt,
   previewLine,
   oilWarning,
@@ -281,6 +282,11 @@ function startIntelScan() {
   }, 50);
 }
 let hoverKey = "";
+// PB-272: Show Paths is the manual's display command (p.32), a toggle rather than a mode, and it is
+// off on first load — a port choice, said in the button's tooltip. `hoverPiece` is the unit under the
+// pointer, whose route the painter draws on hover (own: full; enemy: the server's 3-step slice).
+let showPaths = false;
+let hoverPiece = null;
 // The cell under the pointer, in board coordinates, or null when the pointer is off the map. Only
 // the debug window reads it (PB-130): a hand check needs to say "cell 118,64" rather than argue
 // about which pixel a badge sat on.
@@ -575,11 +581,44 @@ function setViewMode(next) {
         : "Showing satellites of both sides; click for terrain (P)";
     button.setAttribute("data-next", order);
   }
+  syncSatelliteMode();
   drawMatch();
 }
 
 function cycleViewMode() {
   setViewMode(VIEW_MODES[(VIEW_MODES.indexOf(viewMode) + 1) % VIEW_MODES.length]);
+}
+
+// PB-272: Show Paths is a display toggle (manual p.32). The state is the page's alone: nothing about
+// an order changes, and no frame is sent — the painter just stops or starts drawing the lines the
+// room already carries.
+function toggleShowPaths() {
+  showPaths = !showPaths;
+  syncShowPaths();
+  say(showPaths ? "Show Paths on: every own unit's ordered path is drawn." : "Show Paths off.");
+  drawMatch();
+}
+
+function syncShowPaths() {
+  const button = document.getElementById("showPathsBtn");
+  if (!button) return;
+  button.setAttribute("aria-pressed", showPaths ? "true" : "false");
+  // The strip's own "this command is on" ink, the same class the satellite/theme buttons use, so the
+  // toggle is visible on the page and not only in the DOM.
+  button.classList.toggle("armed", showPaths);
+}
+
+// The row beside the Show Paths key, for Satellite Mode (manual p.32). It calls the same setViewMode
+// the `s` key does — the view is already shipped, so the row adds a way in, not a rule.
+function toggleSatelliteMode() {
+  setViewMode(viewMode === "satellites" ? "terrain" : "satellites");
+}
+
+function syncSatelliteMode() {
+  const button = document.getElementById("satelliteModeBtn");
+  if (!button) return;
+  button.setAttribute("aria-pressed", viewMode === "satellites" ? "true" : "false");
+  button.classList.toggle("armed", viewMode === "satellites");
 }
 
 // PB-224: a satellite flies ABOVE the board, so the server keeps it in `room.satellites` and it
@@ -856,6 +895,10 @@ function drawMatch() {
     selectedId: selected ? selected.id : null,
     selectedPulse: selectPulse,
     preview,
+    // PB-272: the display toggle and the hovered unit's route. Both are the page's own view state;
+    // `hoverPath` is built from `room.routes`, which already holds an enemy's server-side 3-step slice.
+    showPaths,
+    hoverPath: room ? hoverRoute(hoverPiece, room.routes) : null,
     fog: fogFor(view),
     sight: Number(boardPayload.sightCells || 8),
     sightAt: selected,
@@ -882,6 +925,11 @@ function drawMatch() {
     // PB-224 AC5: what the Show Satellites layer actually drew (rings, and rows in the insert box).
     satelliteRings: result.satelliteRings || 0,
     satellites: result.satellites || 0,
+    // PB-272: what the Show Paths gate and the hover route actually drew this frame (0 when off).
+    pending: result.pending || 0,
+    hoverPath: result.hoverPath || 0,
+    // The badges drawn, so a leg can say "the units are still there" without reading pixels.
+    pieces: result.pieces || 0,
   };
   // While a unit is armed, the cells the server will accept are painted underneath everything else.
   if (placement) paintPlacement(ctx, placement, view);
@@ -1266,6 +1314,10 @@ board.addEventListener("click", (event) => {
 const badgeTip = document.getElementById("badgeTip");
 
 function hideBadgeTip() {
+  if (hoverPiece) {
+    hoverPiece = null;
+    drawMatch();
+  }
   if (!badgeTip) return;
   badgeTip.classList.add("hidden");
 }
@@ -1279,6 +1331,11 @@ function hoverBadge(event) {
   const at = screenPoint(event);
   const group = badgeAt(pieces, view, at.x, at.y, { badgeMinPx: BADGE_MIN_PX * dpr() });
   if (!group) return hideBadgeTip();
+  // PB-272: the hovered unit's route follows the badge, and only a change of unit repaints the board.
+  if ((group.top && group.top.id) !== (hoverPiece && hoverPiece.id)) {
+    hoverPiece = group.top || null;
+    drawMatch();
+  }
   const text = badgeHoverText(group);
   if (!text) return hideBadgeTip();
   if (badgeTip.textContent !== text) badgeTip.textContent = text;
@@ -1521,6 +1578,9 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "-" || event.key === "_") return zoomStep(-1);
   if (event.key === "0") return refit();
   if (event.key === "f" || event.key === "F") return setFollow(!following);
+  // Manual p.32, Menu Command Summary: "each unit's path is shown as a line on the screen (this works
+  // in zoom as well)". `d` is free at this sha (PB-272; frodo 9653 §1 re-measured it).
+  if (event.key === "d" || event.key === "D") return toggleShowPaths();
   const move = moves[event.key];
   if (!move) return;
   event.preventDefault();
@@ -3335,6 +3395,32 @@ function buildNav() {
   msg.addEventListener("click", cycleMessageLevel);
   box.append(msg);
   syncMessageLevel();
+  // PB-272: the two commands the manual's menu bar has and this strip did not — Show Paths and
+  // Satellite Mode. Neither opens a dialogue, so both are direct controls beside the commands, same
+  // shape as the message level. The rows exist because the keydown handler deliberately ignores keys
+  // typed into a field: while the chat entry has focus `d` is text, and a row is the only way to
+  // toggle without clicking out of it. There is no on-screen shortcut legend to update — this strip
+  // is the discovery surface.
+  const paths = document.createElement("button");
+  paths.type = "button";
+  paths.id = "showPathsBtn";
+  paths.className = "navbtn pathbtn";
+  paths.textContent = "Paths";
+  paths.title = "Show Paths (D): every own unit's ordered path as a line, in the whole-world view and "
+    + "in zoom. Off on first load is this port's choice; the manual states no default (p.32).";
+  paths.addEventListener("click", toggleShowPaths);
+  box.append(paths);
+  syncShowPaths();
+  const sats = document.createElement("button");
+  sats.type = "button";
+  sats.id = "satelliteModeBtn";
+  sats.className = "navbtn satbtn";
+  sats.textContent = "Satellites";
+  sats.title = "Satellite Mode (S): both sides' satellites and the ground each one scans. The same view "
+    + "the key reaches (manual p.32).";
+  sats.addEventListener("click", toggleSatelliteMode);
+  box.append(sats);
+  syncSatelliteMode();
 }
 
 document.getElementById("dialogClose")?.addEventListener("click", closeDialog);
@@ -3913,6 +3999,8 @@ window.__chq = {
   log: () => log.lines.slice(),
   state: () => ({
     buying,
+    // PB-272: the Show Paths toggle, so a leg reads the page's state rather than a pixel.
+    showPaths,
     selected: selected ? selected.id : null,
     // PB-245b: the piece whose second select armed a starting destination, so a leg can see the
     // gesture's state instead of inferring it from a missing wire message.

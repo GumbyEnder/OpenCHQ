@@ -2074,7 +2074,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
     paintBoard(ctx, board || { width: view.boardW, height: view.boardH }, { scale: view.scale, theme });
     const preview = paintPreview(ctx, opts.preview, flat, opts);
     const groups = paintPieces(ctx, room && room.pieces, flat, opts);
-    const pending = paintPendingOrders(ctx, room, flat, opts);
+    const pending = opts.showPaths ? paintPendingOrders(ctx, room, flat, opts) : 0;
     const selection = paintSelectionMark(ctx, groups, flat, opts);
     const pieces = Array.isArray(room && room.pieces) ? room.pieces.length : 0;
     const capitals = paintCapitals(ctx, capitalMarkers(board, room), flat, capitalOpts(flat, theme, opts));
@@ -2090,10 +2090,20 @@ export function paintMatch(ctx, board, room, opts = {}) {
   // Old orders first and on the ground (PB-060): a path already on the wire belongs under the
   // pieces and under the route the player is hovering now, or the newest line is the one that
   // disappears into the clutter.
-  const pending = paintPendingOrders(ctx, room, view, { ...opts, ink: theme.routeInk });
+  // PB-272: Show Paths is the manual's own display command (p.32, "each unit's path is shown as a
+  // line on the screen (this works in zoom as well)"), and it is a display toggle — off by default
+  // is this port's choice, said in the button's tooltip. It gates the own-unit order lines that were
+  // painted unconditionally before; nothing about the order changes, only whether the line is drawn.
+  const pending = opts.showPaths ? paintPendingOrders(ctx, room, view, { ...opts, ink: theme.routeInk }) : 0;
   layers.push("pending");
   const preview = paintPreview(ctx, opts.preview, view, { ...opts, ink: theme.routeInk, casing: theme.routeCasing });
   layers.push("preview");
+  // PB-272: the hovered unit's route, both sides, read from `room.routes`. An enemy's entry is
+  // already the server's `enemyRouteSteps` slice (view.mjs:80, config/game.json:379 = 3), so the page
+  // draws what it is given and holds no cap of its own.
+  const hoverPath = paintPreview(ctx, opts.hoverPath || null, view,
+    { ...opts, ink: theme.routeInk, casing: theme.routeCasing });
+  if (hoverPath) layers.push("hoverPath");
   // PB-224: the satellite picture is a layer under the badges, and it is only drawn in the Show
   // Satellites view. The badges themselves are in `room.pieces` because the page merges the orbital
   // list into it before painting (app.js piecesOnScreen).
@@ -2149,7 +2159,7 @@ export function paintMatch(ctx, board, room, opts = {}) {
   }
   return { mode, painted, fogged, pieces, groups: groups.length, scanBar,
     siteTicks, capitals, labels: labelled,
-    political, tally, preview, pending, selection, layers, theme: theme.id, message: "", view,
+    political, tally, preview, pending, hoverPath, selection, layers, theme: theme.id, message: "", view,
     satelliteRings, satellites };
 }
 

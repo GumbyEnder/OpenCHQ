@@ -681,6 +681,29 @@ export function hoverOffersOrder(key, refusedKey) {
   return Boolean(key) && key !== refusedKey;
 }
 
+// PB-272: the route a hover draws, from the room's own `routes` map. Own units carry their full path
+// there and a visible enemy carries the server's slice (`view.mjs:80`, `config/game.json:379` = 3), so
+// this helper never caps anything — there is no cap in the client to remove, and that is the property
+// the card preserves. An empty array is the tombstone `lobby.mjs:150` writes for a vanished piece, so
+// `[]` draws nothing, exactly like a key that was never there.
+export function hoverRoute(piece, routes) {
+  if (!piece || !routes || typeof routes !== "object") return null;
+  const steps = routes[String(piece.id)];
+  if (!Array.isArray(steps) || !steps.length) return null;
+  const from = { x: Number(piece.x), y: Number(piece.y) };
+  if (!Number.isFinite(from.x) || !Number.isFinite(from.y)) return null;
+  const path = [];
+  for (const step of steps) {
+    if (!step) continue;
+    const x = Number(step.x);
+    const y = Number(step.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    path.push({ x, y });
+  }
+  if (!path.length) return null;
+  return { from, to: path[path.length - 1], path };
+}
+
 // The two sentences that say a piece is selected. They live here, next to PICK_HINT, because the
 // toast and the board note used to disagree: after a selection the toast still read "Select one of
 // your pieces" while the note named a route (PB-053). One helper per surface, one phrase naming the
