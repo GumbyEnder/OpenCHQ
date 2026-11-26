@@ -588,8 +588,9 @@ export function startPool(era) {
 // adjust the amount of money with which your opponent begins the game"). It is a different number
 // from the player's pool - 1942 starts the player at 50b with the spinner on 030 - so it is
 // stored separately, per era, because the default is not constant (010 in 1918, 030 in 1942).
-// Every era carries the spinner, 2023 included; 2023's 600 default is a labelled STAND-IN (its
-// dialog was never captured) and keeps the opponent's p.16 large pool.
+// Every era carries the spinner, 2023 included; 2023's 600 default is CAPTURED (PB-265:
+// docs/captures/startmoney-2023-blue-spinner-default.png reads 6/0/0, two walks byte-identical)
+// and keeps the opponent's p.16 large pool.
 export function handicapSpec() {
   const block = rules().handicap || {};
   const min = Number(block.min);
