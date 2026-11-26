@@ -172,13 +172,20 @@ function fileOrders(match, plan, filed) {
       const at = row.at || {};
       let result;
       try {
-        // PB-262: the level travels into the replay. buy() grew a level argument and botBuy passes
-        // it, so a replay that calls buy() with five arguments re-files the plan under a DIFFERENT
-        // rule: at level 5 the plan may draw from a still-counting-down anchor site and the 5-arg
-        // replay refuses it ("<site> isn't ready"), dropping the buy and every defend row that
-        // names the piece it would have created. Measured at 5v5/1942 before this fix: 116 planned
-        // buys, 84 filed, 28 refused on readiness plus 32 cascaded "No such piece" defends.
-        result = buy(match, side, row.kind || "infantry", at.x, at.y, board, plan.level);
+        // PB-262: the level AND the intent travel into the replay. buy() grew a level argument at
+        // 463b45c and, from 1fbafff (4/4), the escape from the readiness refusal is keyed on
+        // options.allowUnreadySite, never on the number. botBuy puts that flag on the bot_buy event
+        // it emits (bot.mjs "The replay record for tools/pb262-buy-draw-census.mjs"), so a replay
+        // that passes only six arguments re-files the plan under the REFUSAL rule: at level 5 the
+        // plan may draw from a still-counting-down anchor site and the six-arg replay drops the buy
+        // ("Vladivostok isn't ready: it will be ready at round 22.") plus every defend row naming
+        // the piece it would have created. Measured at 1fbafff, grid off, 1942: 160 refusals over
+        // the 5v2 block (80 buys + 80 cascaded defends) and 610 over 5v1, and the L5 arm then
+        // "lost" the block 10/10 to L2 on pieces lost purely from the dropped buys. Carrying
+        // row.allowUnreadySite -- exactly as tools/pb262-buy-draw-census.mjs:122 already does --
+        // takes every one of those refusals to 0.
+        result = buy(match, side, row.kind || "infantry", at.x, at.y, board, plan.level,
+          { allowUnreadySite: row.allowUnreadySite === true });
       } catch (err) {
         result = { error: String((err && err.message) || err) };
       }
