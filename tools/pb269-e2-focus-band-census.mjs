@@ -100,7 +100,13 @@ try {
 const BOT_BLOB = git("hash-object web/server/bot.mjs");
 const CFG = configPath();
 const BOT = rules().bot || {};
-const FLAG = BOT.portArmyPool === true;
+// Which lever this arm switches. E1 was portArmyPool; E2 is portFocusBand. Reading the E1 key here
+// made the ON arm's own header print configActivated "off" and the stdout row print flag:false while
+// the band was live — the trace, not this field, is what proved the config was active. Report the key
+// name beside the value so a re-grader never has to guess which lever the boolean refers to.
+const LEVER_KEY = "portFocusBand";
+const BAND = BOT[LEVER_KEY];
+const FLAG = BAND !== undefined && BAND !== null && BAND !== false;
 const LEVEL_THRESHOLD = 3;
 
 const board = boardPayload();
@@ -329,7 +335,7 @@ const out = {
   instrument: "tools/pb269-e2-focus-band-census.mjs",
   claim: "E2 changes WHICH point each piece aims at, only within R hexes of the army-wide focus",
   tag: TAG,
-  engine: { sha: SHA, branch: BRANCH, worktreeDirty: DIRTY, botBlob: BOT_BLOB, configPath: CFG, configActivated: FLAG ? "on" : "off", levelThreshold: LEVEL_THRESHOLD, seatFlags: SEAT_FLAGS, offConfig: OFF_CFG },
+  engine: { sha: SHA, branch: BRANCH, worktreeDirty: DIRTY, botBlob: BOT_BLOB, configPath: CFG, leverFlag: LEVER_KEY, configActivated: FLAG ? "on" : "off", focusBand: BAND ?? null, levelThreshold: LEVEL_THRESHOLD, seatFlags: SEAT_FLAGS, offConfig: OFF_CFG },
   params: { eras: ERAS, levels: LEVELS, seeds: SEEDS, seedBase: SEED_BASE, rounds: ROUNDS },
   ledger: TRACE_READY ? "call-site" : "delta-residual",
   trace: TRACE_OUT || null,
@@ -337,4 +343,4 @@ const out = {
   totals: Object.values(totals).sort((a, b) => (a.era === b.era ? a.level - b.level : a.era < b.era ? -1 : 1)),
 };
 writeFileSync(OUT, JSON.stringify(out, null, 1));
-console.log(JSON.stringify({ tag: TAG, out: OUT, rows: ROWS_OUT || null, blocks: blocks.length, flag: FLAG, sha: SHA, dirty: DIRTY }, null, 1));
+console.log(JSON.stringify({ tag: TAG, out: OUT, rows: ROWS_OUT || null, blocks: blocks.length, leverFlag: LEVER_KEY, flag: FLAG, sha: SHA, dirty: DIRTY }, null, 1));
