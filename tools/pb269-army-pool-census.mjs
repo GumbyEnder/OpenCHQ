@@ -34,10 +34,12 @@ import { fileURLToPath } from "node:url";
 import { boardPayload, matchSites } from "../web/server/board.mjs";
 import { openMatch } from "../web/server/match.mjs";
 import { tickMatch } from "../web/server/tick.mjs";
-import { ordersFor } from "../web/server/bot.mjs";
+import * as botModule from "../web/server/bot.mjs";
 import { buy, seedOwners } from "../web/server/economy.mjs";
 import { issueOrder } from "../web/server/move.mjs";
-import { configPath, resetRules, rules } from "../web/server/rules.mjs";
+import { configPath, dispatchRepeatPool, resetRules, rules } from "../web/server/rules.mjs";
+
+const ordersFor = botModule.ordersFor;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const git = (argv) => {
@@ -69,6 +71,7 @@ if (!OUT) {
   process.exit(2);
 }
 const ROWS_OUT = arg("rows", null);
+const TRACE_OUT = arg("trace", null);
 const TAG = String(arg("tag", "unknown"));
 // Per-seat activation, for the direction arm: `--seat-flags blue:on,red:off` plans each seat under
 // its own config, so one match is a legged seat against a faithful seat and the mirror is the same
@@ -112,6 +115,17 @@ const LEVEL_THRESHOLD = 3;
 const board = boardPayload();
 const clone = (value) => structuredClone(value);
 const rowFile = ROWS_OUT ? openSync(ROWS_OUT, "w") : null;
+const traceFile = TRACE_OUT ? openSync(TRACE_OUT, "w") : null;
+// The pool ledger. bot.mjs exposes an out-of-band collector (added in the same commit as this
+// switch); without it every mutation is invisible and the buy/army split can only be inferred from
+// a delta, which is exactly what the trace exists to replace. Fail loudly rather than emit a delta.
+const TRACE_READY = typeof botModule.setPoolTrace === "function";
+if (TRACE_OUT && !TRACE_READY) {
+  console.error("--trace requested but this tree's web/server/bot.mjs has no setPoolTrace export");
+  process.exit(2);
+}
+let turnEvents = [];
+if (TRACE_READY) botModule.setPoolTrace((event) => { turnEvents.push(event); });
 
 function siteAtCell(match, x, y) {
   return (match.sites || []).find((site) => site && Number(site.x) === Number(x) && Number(site.y) === Number(y)) || null;
@@ -159,10 +173,11 @@ function runBlock(era, level, seed) {
   seedOwners(match);
   const stats = {
     blue: { buysPlanned: 0, buysFiled: 0, buyRefuses: 0, armyRepeats: 0, armyRecords: 0,
-      buyPoolSpends: 0, repeatAtDefendedCell: 0, poolStart: null, poolEnd: null },
+      buyPoolSpends: 0, armyPoolSpends: 0, repeatAtDefendedCell: 0, poolSeed: null, poolStart: null, poolEnd: null },
     red: { buysPlanned: 0, buysFiled: 0, buyRefuses: 0, armyRepeats: 0, armyRecords: 0,
-      buyPoolSpends: 0, repeatAtDefendedCell: 0, poolStart: null, poolEnd: null },
+      buyPoolSpends: 0, armyPoolSpends: 0, repeatAtDefendedCell: 0, poolSeed: null, poolStart: null, poolEnd: null },
   };
+  for (const side of ["blue", "red"]) stats[side].poolSeed = dispatchRepeatPool(level);
   const digest = createHash("sha256");
   let rounds = 0;
   const startPieces = {
@@ -178,7 +193,10 @@ function runBlock(era, level, seed) {
       plan.opponentLevel = level;
       const poolBefore = plan.botRepeatPool && Number.isInteger(plan.botRepeatPool[side])
         ? plan.botRepeatPool[side] : null;
+      turnEvents = [];
       const rows = ordersFor(plan, side) || [];
+      const turnPoolEvents = turnEvents;
+      turnEvents = [];
       const poolAfter = plan.botRepeatPool && Number.isInteger(plan.botRepeatPool[side])
         ? plan.botRepeatPool[side] : null;
       if (stats[side].poolStart === null) stats[side].poolStart = poolBefore;
@@ -186,7 +204,15 @@ function runBlock(era, level, seed) {
       const armyRepeats = rows.filter((row) => row.type === "bot_order" && row.repeat === true);
       stats[side].armyRepeats += armyRepeats.length;
       stats[side].armyRecords += rows.filter((row) => row.type === "bot_order" && row.recorded === true).length;
-      if (poolBefore !== null && poolAfter !== null) {
+      // With the ledger installed, attribute every decrement at its call site. Without it, fall
+      // back to the arithmetic residual and say so in the artifact (`ledger` below).
+      if (TRACE_READY) {
+        for (const event of turnPoolEvents) {
+          if (!(event.poolAfter < event.poolBefore)) continue;
+          if (event.spender === "buy") stats[side].buyPoolSpends += event.poolBefore - event.poolAfter;
+          else stats[side].armyPoolSpends += event.poolBefore - event.poolAfter;
+        }
+      } else if (poolBefore !== null && poolAfter !== null) {
         stats[side].buyPoolSpends += Math.max(0, poolBefore - poolAfter - armyRepeats.length);
       }
       for (const row of armyRepeats) {
@@ -194,10 +220,19 @@ function runBlock(era, level, seed) {
         if (enemyOccupied(plan, side, { x: to.x, y: to.y })) stats[side].repeatAtDefendedCell += 1;
       }
       stats[side].buysPlanned += rows.filter((row) => row.type === "bot_buy").length;
-      plans[side] = { plan, rows, round: Number(match.round) || 0 };
+      plans[side] = { plan, rows, round: Number(match.round) || 0, turnPoolEvents };
     }
     for (const side of ["blue", "red"]) {
-      const { plan, rows, round } = plans[side];
+      const { plan, rows, round, turnPoolEvents } = plans[side];
+      if (traceFile !== null) {
+        writeSync(traceFile, JSON.stringify({
+          era, level, seed, side, round,
+          poolSeed: stats[side].poolSeed,
+          turnStart: turnPoolEvents.length ? turnPoolEvents[0].poolBefore : null,
+          turnEnd: turnPoolEvents.length ? turnPoolEvents[turnPoolEvents.length - 1].poolAfter : null,
+          events: turnPoolEvents,
+        }) + "\n");
+      }
       const canonical = JSON.stringify({ era, level, seed, side, round, rows });
       digest.update(canonical);
       digest.update("\n");
@@ -258,6 +293,7 @@ for (const era of ERAS) {
 }
 
 if (rowFile !== null) closeSync(rowFile);
+if (traceFile !== null) closeSync(traceFile);
 
 const totals = {};
 for (const block of blocks) {
@@ -265,7 +301,8 @@ for (const block of blocks) {
   if (!totals[key]) {
     totals[key] = { era: block.era, level: block.level, matches: 0,
       buysPlanned: 0, buysFiled: 0, buyRefuses: 0, armyRepeats: 0, armyRecords: 0,
-      buyPoolSpends: 0, repeatAtDefendedCell: 0, poolStartSum: 0, poolEndSum: 0, blocks: 0 };
+      buyPoolSpends: 0, armyPoolSpends: 0, repeatAtDefendedCell: 0,
+      poolSeedSum: 0, poolStartSum: 0, poolEndSum: 0, blocks: 0 };
   }
   const t = totals[key];
   t.matches += 1;
@@ -278,7 +315,9 @@ for (const block of blocks) {
     t.armyRepeats += s.armyRepeats;
     t.armyRecords += s.armyRecords;
     t.buyPoolSpends += s.buyPoolSpends;
+    t.armyPoolSpends += s.armyPoolSpends;
     t.repeatAtDefendedCell += s.repeatAtDefendedCell;
+    t.poolSeedSum += s.poolSeed === null ? 0 : s.poolSeed;
     t.poolStartSum += s.poolStart === null ? 0 : s.poolStart;
     t.poolEndSum += s.poolEnd === null ? 0 : s.poolEnd;
   }
@@ -290,6 +329,8 @@ const out = {
   tag: TAG,
   engine: { sha: SHA, branch: BRANCH, worktreeDirty: DIRTY, botBlob: BOT_BLOB, configPath: CFG, configActivated: FLAG ? "on" : "off", levelThreshold: LEVEL_THRESHOLD, seatFlags: SEAT_FLAGS, offConfig: OFF_CFG },
   params: { eras: ERAS, levels: LEVELS, seeds: SEEDS, seedBase: SEED_BASE, rounds: ROUNDS },
+  ledger: TRACE_READY ? "call-site" : "delta-residual",
+  trace: TRACE_OUT || null,
   blocks: blocks.map((b) => ({ era: b.era, level: b.level, seed: b.seed, rounds: b.rounds, digest: b.digest, end: b.end, ...b.stats })),
   totals: Object.values(totals).sort((a, b) => (a.era === b.era ? a.level - b.level : a.era < b.era ? -1 : 1)),
 };

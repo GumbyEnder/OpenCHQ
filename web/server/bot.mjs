@@ -213,6 +213,18 @@ export function spendRepeat(state, cell = null) {
   return { repeat: false, cell: key, recorded: Boolean(key) };
 }
 
+// Out-of-band observer for the pool ledger. Every caller that can move 0xe94c reports the value it
+// saw before and after the call, so a leg can witness WHO spent it at the call site instead of
+// inferring it from a before/after delta. Null unless a leg installs a collector; the shipped
+// server never does, and the planner rows are byte-identical whether or not one is installed.
+let poolTrace = null;
+export function setPoolTrace(collector) {
+  poolTrace = typeof collector === "function" ? collector : null;
+}
+export function poolTraceActive() {
+  return poolTrace !== null;
+}
+
 // PORT-ONLY DEVIATION (PB-269 E1 / T-032 Part D, PM 9408 §2 and 9581): the pool 0xe94c is spent by
 // the buy (decompiled.c 1649-1651) and by an army dispatch (3410-3416). E1 stops the buy drawing on
 // it, so the whole pool stays with the army at levels 3-5: the buy still costs one pass action and
@@ -791,7 +803,14 @@ export function ordersFor(match, side) {
     spent += 1;
     // E1: with the pool reserved for the army the buy spends the pass action and nothing else.
     if (!armyPool) {
-      spendRepeat(repeat);
+      const poolBefore = repeat.pool;
+      const step = spendRepeat(repeat);
+      if (poolTrace) {
+        poolTrace({
+          side, level, round: Number(match.round) || 0, spender: "buy", cell: null,
+          poolBefore, poolAfter: repeat.pool, repeat: step.repeat, recorded: step.recorded,
+        });
+      }
       syncRepeatPool();
     }
   }
@@ -846,7 +865,14 @@ export function ordersFor(match, side) {
     if (holdsOwnCapital(match, side, piece, garrisonCells)) continue;
     const destination = marchOne(match, side, piece, focus, events, { skip: repeat.recorded });
     if (!destination) continue;
+    const poolBefore = repeat.pool;
     const step = spendRepeat(repeat, destination);
+    if (poolTrace) {
+      poolTrace({
+        side, level, round: Number(match.round) || 0, spender: "army", cell: step.cell,
+        pieceId: piece.id, poolBefore, poolAfter: repeat.pool, repeat: step.repeat, recorded: step.recorded,
+      });
+    }
     armyBudget -= 1;
     spent += 1;
     syncRepeatPool();
