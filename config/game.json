@@ -438,7 +438,10 @@
       "source": "DISASSEMBLY (T-009) for hulls kind 5-7, still code-only after the T-009b live attempt: 34 per strike, three strikes on a full bar. MANUAL-CONTRADICTED, Manual p.25: kinds 8 and 9 (cruiser, carrier) lose 25 per strike = FOUR strikes, not the page's 'three strikes sink a ship'. FUN_1ac5_0dbe @ 1ac5:0dbe, 8795-8814 picks the constant by kind (34 for kind<8, 25 for 8/9). The code governs the port (room 3544 ruling 1); recorded in measured.combat.airStrike.manualContradiction.",
       "evidenceRef": "docs/re/COMBAT.md s6, s9.3 and s11; air-strike handler 1ac5:0dbe 8795-8814; live attempt docs/re/t009b/air-ship-2026-11-13.txt (no strike landed; see measured.combat.value.airStrike.liveLeg)"
     },
-    "paradropLoss": { "value": 0.25, "source": "Manual p.50 (UNMEASURED in the original)" },
+    "paradropLoss": {
+      "value": 0.25,
+      "source": "STAND-IN citing a rule, UNVERIFIED (PB-296b). Manual printed p.22 and p.25 rule 3: the dropping infantry takes a MINOR loss and the page prints no number. 0.25 is the port's stand-in, not a measurement; it is the lever, not a recovered value."
+    },
     "bombardFloor": {
       "value": 0.2,
       "source": "Manual p.42, UNMEASURED. The original's real shore-fire rule is different and measured: a ship beyond 2 cells caps damage at (target strength - 30), halved when that cap is under 25 (decompiled.c 7082-7093). Recorded in measured.combat.modifiers."

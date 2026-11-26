@@ -162,8 +162,10 @@ export async function run(ctx) {
   {
     const ready = setup();
     const readyLine = airBriefing(ready.match, "blue")[0];
+    // PB-296b adds the paradrop to a ready plane's menu, so the expected list carries it; the arm
+    // still says what it always said - the briefing lists every mode the server accepts.
     const allModes = (readyLine.missions || []).map((mission) => mission.mode).join(",");
-    if (allModes !== "patrol,strike,bomb,transfer") {
+    if (allModes !== "patrol,strike,bomb,drop,transfer") {
       fail("pb293 (e): a READY plane's briefing lists " + JSON.stringify(allModes)
         + ", not every mission the server accepts (producer: web/server/air.mjs airBriefing)");
     }

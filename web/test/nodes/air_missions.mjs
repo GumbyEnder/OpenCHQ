@@ -47,7 +47,9 @@ export async function run() {
     eq("a scramble costs the config's patrol rounds", byMode.patrol, patrolRounds);
     // T-021 adds a transfer: a rebase, not a mission, so it costs no rounds (manual p.22).
     // PB-157 adds a bombing run: the strike's round cost, but a different target rule.
-    eq("the modes are the four the server accepts", briefing.missions.map((miss) => miss.mode), ["patrol", "strike", "bomb", "transfer"]);
+    // PB-296b adds the paradrop: a mission flown by the plane (p.25 rules 1-3), priced like one.
+    eq("the modes are the five the server accepts for a ready, non-carrier plane",
+      briefing.missions.map((miss) => miss.mode), ["patrol", "strike", "bomb", "drop", "transfer"]);
     eq("a bombing run costs the config's strike rounds", byMode.bomb, strikeRounds);
 
     // What the server charges matches what the briefing promised.

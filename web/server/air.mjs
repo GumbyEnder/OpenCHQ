@@ -6,7 +6,7 @@
 // a damage number: a strike either catches cargo (which cannot defend itself) or does nothing
 // that can be measured, and says so.
 
-import { CELL_W } from "./board.mjs";
+import { CELL_W, boardPayload } from "./board.mjs";
 import { layerOf } from "./placement.mjs";
 import { rules, combatRules } from "./rules.mjs";
 import { applyDamage, ensureStrength } from "./combat.mjs";
@@ -76,6 +76,7 @@ export const STRIKE_NOTE = "Air strike.";
 export const BOMB_NOTE = "Bombing run.";
 export const REACH_NOTE = "Reach is limited by the aircraft's range.";
 export const INACTIVE_CAP_NOTE = "Scramble. The aircraft was still away, so this CAP adds its rounds to the time it owes. It is less effective than a fresh one.";
+// Manual printed p.22 and p.25 rule 3 name a minor loss and print no number; config carries it.
 export const PARADROP_NOTE = "Paradrop. The infantry pays its strength cost.";
 
 // The site kinds an air unit may be based at. ONE list, exported, because three rules read the same
@@ -193,6 +194,12 @@ export function airBriefing(match, side) {
         { mode: "strike", label: "Strike", rounds: costs.strike, allowed: left === 0 },
         // A bombing run hits an empty enemy city, base or oil field (PB-157).
         { mode: "bomb", label: "Bomb", rounds: costs.strike, allowed: left === 0 },
+        // PB-296b: the paradrop is a mission too (p.25 rules 1-3), flown by this plane, so it is
+        // priced like one and is absent - not greyed - while the plane is inactive or carrier-based,
+        // the same shape PB-293 ruled for an inactive plane's menu.
+        { mode: "drop", label: "Paradrop", rounds: costs.strike,
+          allowed: left === 0 && !basedOnCarrier(match, side, plane),
+          note: "Pick an infantry to drop, then a land cell that is not an enemy city or unit. The aircraft stays home and goes unready." },
         // A transfer rebases the plane instead of flying a mission (manual p.22: "Air units may
         // only be transferred to cities, bases, and aircraft carriers"). Its round cost comes from
         // config and is UNVERIFIED (air.transferRoundsSource): the manual never prints one.
@@ -361,6 +368,15 @@ export function transferPlane(match, side, pieceId, target) {
 // Send one mission. Returns { ok, piece, events } or { error }.
 export function sendMission(match, side, pieceId, mode, target) {
   if (String(mode) === "transfer") return transferPlane(match, side, pieceId, target);
+  // PB-296b: the drop is a mission - mode "drop" names the aircraft in pieceId and the infantry in
+  // target.load - so the page's one mission door carries it and the lobby needs no second op.
+  if (String(mode) === "drop") {
+    const rider = target && (target.load ?? target.loadId);
+    if (rider === undefined || rider === null || String(rider) === "") {
+      return { error: "A paradrop needs an infantry to drop (target.load)." };
+    }
+    return paradrop(match, side, rider, target, pieceId);
+  }
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to fly in." };
   if (match.over) return { error: "The match is over." };
   const plane = match.pieces.find((piece) => piece && piece.id === String(pieceId));
@@ -581,10 +597,36 @@ export function sendMission(match, side, pieceId, mode, target) {
   return { ok: true, piece: plane, events };
 }
 
-// A paradrop costs the infantry 25% of the strength it had before the drop (Manual p.50). The unit
-// lands on the named cell; nothing else about the order is invented here, so a caller that has no
-// paradrop UI yet can still exercise the rule.
-export function paradrop(match, side, pieceId, cell) {
+// A paradrop costs the infantry 25% of the strength it had before the drop (config combat.paradropLoss,
+// a STAND-IN citing p.22 / p.25 r3; the printed page names no number). PB-296b: the drop is a MISSION
+// - a plane flies it - so the order names the aircraft, and p.25's rules apply to it:
+//   (1) on land, not on an enemy city or an enemy unit;
+//   (2) the plane stays home and goes unready;
+//   (3) the infantry pays the loss.
+// "A carrier-based plane can do neither a loaded transfer nor a paradrop" (the same sentence), and an
+// inactive plane flies CAP alone (p.24, PB-293), so both are refused here.
+let gridCache;
+function gridCells() {
+  if (gridCache !== undefined) return gridCache;
+  try {
+    gridCache = boardPayload().cells || null;
+  } catch {
+    gridCache = null;
+  }
+  return gridCache;
+}
+
+// Sea class, the same ids the walker treats as water (move.mjs WATER_MAX_ID = 2: ocean, docks,
+// shallows). A board that is not mounted answers "not water", so a host with no extract cannot start
+// refusing drops for a reason it cannot see.
+function overWater(x, y) {
+  const grid = gridCells();
+  if (!grid) return false;
+  const id = grid[Number(y) * CELL_W + (((Number(x) % CELL_W) + CELL_W) % CELL_W)];
+  return id !== null && id !== undefined && Number(id) <= 2;
+}
+
+export function paradrop(match, side, pieceId, cell, planeId) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to drop into." };
   if (match.over) return { error: "The match is over." };
   const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
@@ -592,10 +634,31 @@ export function paradrop(match, side, pieceId, cell) {
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (piece.kind !== "infantry") return { error: "Only infantry can drop." };
   if (piece.domain === "sea" || piece.transport === true) return { error: "A transport cannot drop." };
+  // PB-296b: the aircraft that flies the drop. Until this, the order named no plane at all, so no
+  // readiness was ever written and no carrier could be refused.
+  const plane = (match.pieces || []).find((unit) => unit && unit.id === String(planeId));
+  if (!plane) return { error: "A paradrop needs the aircraft that flies it (piece: " + planeId + ")." };
+  if (plane.side !== side) return { error: "That aircraft belongs to " + plane.side + "." };
+  if (!isAircraft(plane)) return { error: "Only an aircraft flies a paradrop." };
+  if (basedOnCarrier(match, side, plane)) {
+    return { error: "A carrier-based aircraft cannot fly a paradrop." };
+  }
+  const remaining = inactiveRounds(plane, match.round);
+  if (remaining > 0) return { error: `That aircraft is inactive for ${remaining} more rounds.` };
+
   const x = Number(cell && cell.x);
   const y = Number(cell && cell.y);
   if (!Number.isInteger(x) || !Number.isInteger(y) || y < 0 || y > 135) return { error: "The drop cell is off the map." };
-  const held = match.pieces.find((unit) => unit !== piece && Number(unit.x) === ((x % CELL_W) + CELL_W) % CELL_W && Number(unit.y) === y);
+  const wx = ((x % CELL_W) + CELL_W) % CELL_W;
+  if (overWater(wx, y)) {
+    return { error: "A paradrop lands on land only; that cell is water." };
+  }
+  const site = (match.sites || []).find((entry) => entry && Number(entry.x) === wx && Number(entry.y) === y);
+  if (site && site.owner && site.owner !== side) {
+    const where = site.name ? String(site.name) : String(site.kind || "that site");
+    return { error: "A paradrop may not land on an enemy city or base (" + where + ")." };
+  }
+  const held = match.pieces.find((unit) => unit !== piece && Number(unit.x) === wx && Number(unit.y) === y);
   if (held) return { error: "Another piece holds that cell (" + held.id + ")." };
 
   const combat = combatRules();
@@ -603,12 +666,20 @@ export function paradrop(match, side, pieceId, cell) {
   const before = ensureStrength(piece, max);
   const loss = Number((before * combat.paradropLoss).toFixed(2));
   piece.strength = Math.max(0, Number((before - loss).toFixed(2)));
-  piece.x = ((x % CELL_W) + CELL_W) % CELL_W;
+  piece.x = wx;
   piece.y = y;
   piece.path = [];
   piece.pace = 1;
   piece.movedRound = Number(match.round) || 0;
   piece.entrenched = false;
+  // Rule 2: the plane stays home and goes unready. The cost is a mission's flight (config
+  // air.strikeRounds): the printed page prices a drop as a mission and prints no separate figure,
+  // so this reads the same lever a mission does instead of inventing a second one.
+  const cost = missionCosts().strike;
+  plane.path = [];
+  plane.pace = 1;
+  plane.readyAnnounced = false;
+  if (cost > 0) plane.inactiveUntil = (Number(match.round) || 0) + cost;
   return {
     ok: true,
     piece,
@@ -616,6 +687,7 @@ export function paradrop(match, side, pieceId, cell) {
       type: "paradrop",
       side,
       pieceId: piece.id,
+      planeId: plane.id,
       x: piece.x,
       y: piece.y,
       loss,

@@ -1255,6 +1255,21 @@ function transferLoaderPick(piece) {
   return true;
 }
 
+// PB-296b: the same one-slot staged door for a PARADROP - "pick the infantry, then the destination"
+// (PM 9855 §4). The printed page adds no range or entrenchment rule to a drop, so this asks only for
+// one of your infantry; the server owns land/enemy-city/enemy-unit, carrier and readiness.
+function dropLoaderPick(piece) {
+  if (!piece || piece.kind !== "infantry" || piece.side !== (room && room.you)) return false;
+  if (String(pendingLoad) === String(piece.id)) {
+    pendingLoad = null;
+    say("Drop cleared: the next click sends an empty paradrop.");
+    return true;
+  }
+  pendingLoad = String(piece.id);
+  say("Dropping " + piece.id + ": now pick a land cell that is not an enemy city or unit.");
+  return true;
+}
+
 function askRoute(cell) {
   if (!selected || !cell) return;
   // A transfer has no rounds to quote, so the hover must not offer a walk's route while the peace
@@ -1346,14 +1361,17 @@ board.addEventListener("click", (event) => {
   // The cell test is the piece's own cell, not the badge box, so a click on a neighbouring cell is
   // still a move order at every zoom (PB-146).
   if (intent && intent.kind === "piece") {
-    // PB-296a: an armed transfer owns this click - the loader first, then the destination (p.25).
-    if (pendingMission === "transfer" && selected && !notAir(selected) &&
+    // PB-296a / PB-296b: an armed transfer or drop owns this click - the loader first, then the
+    // destination (p.25).
+    if ((pendingMission === "transfer" || pendingMission === "drop") && selected && !notAir(selected) &&
       String(intent.piece.id) !== String(selected.id)) {
-      if (transferLoaderPick(intent.piece)) return;
-      const drop = missionMessage(selected, "transfer", { x: intent.piece.x, y: intent.piece.y });
-      if (drop && pendingLoad) drop.to.load = pendingLoad;
+      const armed = pendingMission;
+      const picked = armed === "transfer" ? transferLoaderPick(intent.piece) : dropLoaderPick(intent.piece);
+      if (picked) return;
+      const order = missionMessage(selected, armed, { x: intent.piece.x, y: intent.piece.y });
+      if (order && pendingLoad) order.to.load = pendingLoad;
       pendingLoad = null;
-      if (drop) sendOrder(drop);
+      if (order) sendOrder(order);
       pendingMission = nextDoorMode(pendingMission, "sent");
       return;
     }
@@ -1417,7 +1435,9 @@ board.addEventListener("click", (event) => {
   // plane's own cell stays its base. Without this the only aim the page had was the plane's base
   // cell, where no enemy ever stands (T-003 hand check 4).
   if (selected.kind === "aircraft" || selected.domain === "air") {
-    const mode = pendingMission === "transfer" || pendingMission === "bomb" ? pendingMission : "strike";
+    const mode = pendingMission === "transfer" || pendingMission === "bomb" || pendingMission === "drop"
+      ? pendingMission
+      : "strike";
     // PB-178 + PB-188: a mission's target must lie inside the restricted air radius (manual p.25),
     // and the circle belongs to the air layer, not to the Bomb button: a strike is a mission too.
     // Refused here, with the circle named, so the click never becomes an order at all - the
@@ -1443,7 +1463,7 @@ board.addEventListener("click", (event) => {
     // PB-296a: the loader was picked by its own click (transferLoaderPick); this click is the
     // destination, and it spends the load. A carrier-based plane's refusal comes from the server.
     const mission = missionMessage(selected, mode, cell);
-    if (mission && pendingLoad && mode === "transfer") mission.to.load = pendingLoad;
+    if (mission && pendingLoad && (mode === "transfer" || mode === "drop")) mission.to.load = pendingLoad;
     // The destination click spends the load, whatever the order turns out to be.
     pendingLoad = null;
     if (mission) sendOrder(mission);
@@ -2368,12 +2388,14 @@ function toolRow(room) {
           // A strike hits the cell the player names, not the base the plane sits on. A transfer
           // names the berth the plane moves to. A scramble is a patrol around that base, so its
           // own cell is the right target for it.
-          if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb") {
+          if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb" || mission.mode === "drop") {
             pendingMission = mission.mode;
             pendingLoad = null;
             say(mission.mode === "transfer"
               ? "Transfer: pick an infantry to carry, then a friendly city or base; or click a friendly city, base or carrier cell to fly it empty."
-              : mission.mode === "bomb"
+              : mission.mode === "drop"
+                ? "Paradrop: pick an infantry to drop, then a land cell that is not an enemy city or unit."
+                : mission.mode === "bomb"
                 ? bombArmText(briefing.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("
                   + (briefing.restrictedReach || "?") + " cells).");
@@ -2947,6 +2969,8 @@ const DIALOG_PAINTERS = {
           ? "Away for " + plane.roundsLeft + " more rounds."
           : mission.note
             ? mission.note
+            : mission.mode === "drop"
+            ? "Pick an infantry to drop, then a land cell that is not an enemy city or unit; the aircraft stays home and goes unready for " + mission.rounds + " rounds."
             : mission.mode === "bomb"
             ? "Pick an empty enemy city, base, oil field or capital inside the restricted air radius ("
               + (plane.restrictedReach || "?") + " cells); away for " + mission.rounds + " rounds."
@@ -2964,7 +2988,7 @@ const DIALOG_PAINTERS = {
           // mission at the plane's own cell and the server refused every time ("That site is
           // yours." / "needs an enemy site"). The Kit panel's toolRow already armed it; this is
           // the same three arms, so the two doors give one result.
-          if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb") {
+          if (mission.mode === "strike" || mission.mode === "transfer" || mission.mode === "bomb" || mission.mode === "drop") {
             const planePiece = (room.pieces || []).find((piece) => piece.id === plane.id);
             if (planePiece) {
               selected = planePiece;
@@ -2974,7 +2998,9 @@ const DIALOG_PAINTERS = {
             pendingLoad = null;
             say(mission.mode === "transfer"
               ? "Transfer: pick an infantry to carry, then a friendly city or base; or click a friendly city, base or carrier cell to fly it empty."
-              : mission.mode === "bomb"
+              : mission.mode === "drop"
+                ? "Paradrop: pick an infantry to drop, then a land cell that is not an enemy city or unit."
+                : mission.mode === "bomb"
                 ? bombArmText(plane.restrictedReach)
                 : "Strike: pick the target cell inside the restricted air radius ("
                   + (plane.restrictedReach || "?") + " cells).");

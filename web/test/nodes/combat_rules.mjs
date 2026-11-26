@@ -283,8 +283,12 @@ export async function run(ctx) {
   // --- AC11: paradrop costs a quarter ------------------------------------------------------
   {
     const foot = unit("blue:f", "blue", "infantry", 80, 40);
-    const match = matchOf([foot]);
-    const drop = paradrop(match, "blue", "blue:f", { x: 70, y: 44 });
+    // PB-296b: the drop is a mission, so it names the aircraft that flies it (p.25 rule 2).
+    const plane = unit("blue:p", "blue", "aircraft", 80, 40);
+    plane.domain = "air";
+    plane.inactiveUntil = 0;
+    const match = matchOf([foot, plane]);
+    const drop = paradrop(match, "blue", "blue:f", { x: 70, y: 44 }, "blue:p");
     if (drop.error) fail("the paradrop was refused: " + drop.error);
     if (foot.x !== 70 || foot.y !== 44) fail("the infantry did not land on the drop cell");
     if (!near(foot.strength, cfg.maxStrength * (1 - cfg.paradropLoss))) {
