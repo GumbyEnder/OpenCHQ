@@ -56,7 +56,7 @@ import { openMatch } from "../web/server/match.mjs";
 import { tickMatch } from "../web/server/tick.mjs";
 import { ordersFor } from "../web/server/bot.mjs";
 import { ordersFor as prePortOrdersFor } from "../web/server/bot-c20dba7.mjs";
-import { buy } from "../web/server/economy.mjs";
+import { buy, seedOwners } from "../web/server/economy.mjs";
 import { issueOrder } from "../web/server/move.mjs";
 import { dispatchRepeatLimit, dispatchRepeatPool, handicapDefault, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
 
@@ -236,6 +236,13 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
   const match = openMatch(ERA, sites, options);
   match.seats = { blue: { username: "Bot A", kind: "bot" }, red: { username: "Bot B", kind: "bot" } };
   match.clock = "running";
+  // PB-261b (PM 9468 §3): ownership is seeded BEFORE the opening is measured. `seedOwners` is what
+  // writes the era's opening owners (economy.mjs:141) and, for a rolled era, re-draws the capital set
+  // from the sites a side already owns; the engine seeds it lazily on the first buy. Snapshotting the
+  // start first read 2023 as 0/0 (its owners are rolled, not file data), so every 2023 rung measured
+  // "cities taken" against an empty board. Seeding here is idempotent (WeakSet) and changes no rule:
+  // the first planOrders/buy of round 1 would have made the same call.
+  seedOwners(match);
   const opening = openingCapitals(match);
   const start = { blue: cityCount(match, "blue"), red: cityCount(match, "red") };
   // PB-257(b) caveat, measured not assumed: a raw "pieces alive" count reads the opening when the
