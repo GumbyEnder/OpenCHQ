@@ -1153,8 +1153,13 @@ body.in-match .speedctl { display: flex; }
 .buyrefusals li { margin: 2px 0; }
 /* The air table's fourth column is a row of small buttons, not a number. */
 .airtable .buyrow { grid-template-columns: 1fr 96px 60px 150px; }
-.airmissions { display: flex; gap: 4px; justify-content: flex-end; }
-.airmissions button { font-size: 11px; padding: 1px 7px; border-radius: 6px; }
+/* PB-298: the cluster WRAPS inside its 150 px column instead of overflowing it. With
+   justify-content: flex-end and no wrap, an over-budget row spilled LEFTWARD (measured
+   69.9 px at READY) and painted "Scramble (CAP)" over the AWAY cell, so the readout was
+   covered and a click at its centre landed on a mission. Buttons keep their own text:
+   flex: 0 0 auto forbids the shrink that would have fitted them by clipping the labels. */
+.airmissions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.airmissions button { flex: 0 0 auto; max-width: 100%; font-size: 11px; padding: 1px 7px; border-radius: 6px; }
 
 body.in-match .mapstage {
   flex: 1 1 auto;
