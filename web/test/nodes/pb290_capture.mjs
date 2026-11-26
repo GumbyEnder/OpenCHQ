@@ -182,6 +182,26 @@ export async function run(ctx) {
     match.round = 13;
     const oilEvents = repairStep(match);
     const order = repair(match, "blue", "blue:inf:oil");
+    // The other half of the same clause: world.json's 35 `oilfield`-kind wells are a drawing, and
+    // PB-153 settled that no rule may see them. A unit parked on one must NOT repair, so a future
+    // "fix" that simply adds `oilfield` back to a kind list fails here.
+    const sketch = match.sites.find((site) => site && site.kind === "oilfield" && site.owner === "blue")
+      || match.sites.find((site) => site && site.kind === "oilfield");
+    if (!sketch) fail("pb290 (c): the 1986 board must carry world.json's draw-only `oilfield` wells; none found");
+    {
+      const onSketch = unit("blue:inf:sketch", "blue", "infantry", sketch.x, sketch.y, { strength: 60 });
+      match.pieces = [onSketch];
+      match.round = 14;
+      const sketchEvents = repairStep(match);
+      const sketchOrder = repair(match, onSketch.side, "blue:inf:sketch");
+      if (onSketch.strength !== 60 || sketchEvents.length !== 0) {
+        fail("pb290 (c) l.190: a unit on world.json's draw-only `oilfield` well " + sketch.id
+          + " repaired (strength " + onSketch.strength + ") - PB-153: no rule may see those wells");
+      }
+      if (!sketchOrder.error) fail("pb290 (c) l.190: the repair ORDER accepted a draw-only well " + sketch.id);
+      match.pieces = [onField];
+      console.log("pb290 arm (c): draw-only well " + sketch.id + " does not repair (strength stays 60)");
+    }
     if (onField.strength === 60 || oilEvents.length === 0) {
       fail("pb290 (c) l.190 DEVIATION: a unit on its own oil field " + field.id + " (type 5, kind " + field.kind
         + ") did not regain strength (strength " + onField.strength + " from 60, events "

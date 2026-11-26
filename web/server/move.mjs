@@ -21,6 +21,7 @@ import { applyDamage, damageFor, engageRange2, ensureStrength, kindOf, pairDue, 
 // PB-230: a nuke's wasteland lives on the match, so the plan-time refusal has to ask the match as
 // well as the board grid. Import direction is one-way (nukestrike imports board/rules/blast only).
 import { wastelandAt } from "./nukestrike.mjs";
+import { isOilField } from "./sitetype.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -783,10 +784,7 @@ export function repair(match, side, pieceId) {
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (Array.isArray(piece.path) && piece.path.length > 0) return { error: "That piece is still moving." };
   const site = (match.sites || []).find((entry) => entry && entry.x === piece.x && entry.y === piece.y);
-  const allowed = piece.domain === "sea"
-    ? ["dock", "docks"]
-    : ["city", "capital", "base", "oilfield"];
-  if (!site || !allowed.includes(site.kind)) {
+  if (!repairSite(site, piece)) {
     return { error: "Repair happens at a friendly city or dock (ships only on a dock)." };
   }
   if (site.owner !== side) return { error: `${site.name || "That site"} is not ${side}'s.` };
@@ -797,6 +795,18 @@ export function repair(match, side, pieceId) {
     state: "repairing",
     events: [{ type: "repair", side, pieceId: piece.id, site: site.id, name: site.name, round: Number(match.round) || 0, note: REPAIR_NOTE }],
   };
+}
+
+// PB-290: the sites a piece may repair at, in ONE place. Manual l.190 hands repair to a friendly
+// city, base or OIL FIELD; "oil field" is the type-5 site the board actually serves (kind
+// `facility`, sitetype.mjs:31), not world.json's draw-only `oilfield` sketch, which PB-153 settled
+// as a kind no rule may see (economy.mjs DISPLAY_WELL_KINDS). Before this, both lists below named
+// `oilfield`, so a real field never repaired a unit standing on it.
+const LAND_REPAIR_KINDS = new Set(["city", "capital", "base"]);
+function repairSite(site, piece) {
+  if (!site) return false;
+  if (piece.domain === "sea") return site.kind === "dock" || site.kind === "docks";
+  return LAND_REPAIR_KINDS.has(site.kind) || isOilField(site);
 }
 
 function siteAtPiece(match, piece) {
@@ -859,8 +869,7 @@ export function repairStep(match) {
     const fighting = piece.fighting !== null && piece.fighting !== undefined;
     if (!byCell) byCell = sitesByCell(match);
     const site = siteAtCell(byCell, piece);
-    const kinds = piece.domain === "sea" ? ["dock", "docks"] : ["city", "capital", "base", "oilfield"];
-    const friendly = Boolean(site) && site.owner === piece.side && kinds.includes(site.kind);
+    const friendly = Boolean(site) && site.owner === piece.side && repairSite(site, piece);
     if (!friendly || moving || fighting) {
       if (piece.repairing === true && !friendly) piece.repairing = false;
       continue;
