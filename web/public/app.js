@@ -6,6 +6,7 @@ import {
 import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
 import { THEMES, DEFAULT_THEME, isThemeId, nextThemeId, resolveTheme, themeById } from "./themes.mjs";
 import { createFlashLine } from "./flash.mjs";
+import { MACRO_HELP, MACRO_PRESETS, createMacroBook, macroKeyAction } from "./macros.mjs";
 import { unitLabel } from "./units.mjs";
 import {
   PICK_HINT,
@@ -650,6 +651,86 @@ function syncSatelliteMode() {
   if (!button) return;
   button.setAttribute("aria-pressed", viewMode === "satellites" ? "true" : "false");
   button.classList.toggle("armed", viewMode === "satellites");
+}
+
+// ---- screen macros (PB-274) ---------------------------------------------------------------------
+// Manual printed p.33: "in IBM systems you would press the ALT key plus a number to define the macro.
+// From then on, pressing that number alone would send you to the pre-set window location and size."
+// p.34: "The first four macro IDs are already programmed into the game, but can be overwritten ...
+// They zoom to Europe, the Middle East, Japan, and North America" and "To alter the zoom area of a
+// macro, simply re-define it."
+//
+// The book is the macros.mjs module: it owns the four numbers a macro keeps, the four start-up
+// presets (bounding boxes over the served board's own site table) and Undo Macro's one remembered
+// view. The page owns the keys and the repaint. One browser-wide localStorage key, the THEME_KEY
+// shape: the manual keeps macros "throughout the game, and between games", so they are a client
+// setting, not a seat field.
+let macroBookCache = null;
+let macroBookSites = null;
+function macroBook() {
+  const board = boardPayload && typeof boardPayload === "object" ? boardPayload : {};
+  const sites = Array.isArray(board.sites) ? board.sites : [];
+  // The book is built against the site list it derives the presets from, so the first frame after a
+  // (re)connect — when /api/board has finally arrived — rebuilds it once. Stored slots survive that:
+  // they live in localStorage, not in this object.
+  if (macroBookCache && macroBookSites === sites) return macroBookCache;
+  macroBookSites = sites;
+  macroBookCache = createMacroBook(
+    {
+      get: (key) => localStorage.getItem(key),
+      set: (key, value) => localStorage.setItem(key, value),
+    },
+    { sites, board, presets: MACRO_PRESETS },
+  );
+  return macroBookCache;
+}
+
+function macroName(got, id) {
+  return got && got.source === "preset" ? "Preset " + id + " (" + got.label + ")" : "Macro " + id;
+}
+
+// Alt+N: the view you are on is what the macro keeps — centre, size and view mode.
+function storeMacro(id) {
+  const view = viewForCanvas();
+  const saved = macroBook().store(id, view, viewMode);
+  if (!saved) {
+    say("Macro " + id + " was not stored.");
+    return;
+  }
+  say("Macro " + id + " stored: " + Math.round(saved.w) + " by " + Math.round(saved.h) + " cells at zoom "
+    + saved.scale + (saved.was === "preset" ? ", replacing the start-up preset." : "."));
+}
+
+// N alone: back to that box. The camera is nulled on a seat change (sizeCanvas), so this runs
+// against the viewport the page has NOW and sets userCamera, which is what stops the next resize or
+// seat frame from dropping the recalled view back to the whole-world fit.
+function recallMacro(id) {
+  const book = macroBook();
+  const view = viewForCanvas();
+  const got = book.recall(id, view, { camera, mode: viewMode });
+  if (!got) {
+    say("Macro " + id + " is empty: hold Alt+" + id + " to store the view you are on.");
+    return;
+  }
+  camera = got.camera;
+  userCamera = true;
+  if (got.mode !== viewMode) setViewMode(got.mode);
+  else drawMatch();
+  say(macroName(got, id) + " recalled.");
+}
+
+// Undo Macro: the view held before the last recall — the camera and the view mode with it.
+function undoMacro() {
+  const back = macroBook().undo(viewForCanvas());
+  if (!back) {
+    say("Undo Macro: no macro has been recalled yet.");
+    return;
+  }
+  camera = back.camera;
+  userCamera = true;
+  if (back.mode !== viewMode) setViewMode(back.mode);
+  else drawMatch();
+  say("Undo Macro: back to the view held before the recall.");
 }
 
 // PB-224: a satellite flies ABOVE the board, so the server keeps it in `room.satellites` and it
@@ -1565,6 +1646,16 @@ window.addEventListener("keydown", (event) => {
   if (event.ctrlKey && !event.altKey && !event.metaKey && (event.key === "v" || event.key === "V")) {
     event.preventDefault();
     toggleOilAlternate();
+    return;
+  }
+  // PB-274: Alt+1..9 stores the view under that number, the number alone recalls it (manual p.33).
+  // The classifier claims digits only, so `0` (Fit) and every letter below still fall through to
+  // their own branches — this sits ahead of them because it is the only modifier gesture here.
+  const macroKey = macroKeyAction(event);
+  if (macroKey) {
+    event.preventDefault();
+    if (macroKey.type === "store") storeMacro(macroKey.id);
+    else recallMacro(macroKey.id);
     return;
   }
   const view = viewForCanvas();
@@ -2849,13 +2940,21 @@ const DIALOG_PAINTERS = {
         () => cycleTheme()),
       act(following ? "Stop following" : "Follow piece", "Keep the selected piece centred (F)",
         () => setFollow(!following)),
+      // PB-274: the manual's Undo Macro (p.34). The recall keys have no row of their own — nine
+      // buttons would crowd a strip the 1024 floor already caps — so the panel names the binding and
+      // this row is the way back for a player who recalled onto a box they did not want.
+      act("Undo macro", "Back to the view held before the last macro recall", () => undoMacro()),
     );
     const state = document.createElement("p");
     state.className = "dialogfoot";
     state.textContent = "cell " + Math.max(1, Math.round((camera ? camera.scale : 1) / dpr())) +
       " px · " + (following ? "following" : "free") + " · " + viewMode +
       " · theme " + currentTheme().label;
-    body.append(group, state);
+    const macros = document.createElement("p");
+    macros.className = "dialogfoot";
+    const stored = Object.keys(macroBook().entries()).length;
+    macros.textContent = "Macros: " + MACRO_HELP + " " + stored + " of 9 stored.";
+    body.append(group, state, macros);
   },
 
   war(body) {
@@ -4039,10 +4138,17 @@ window.__chq = {
   // pixels, so a screenshot cannot be read back: this is the same call the frame makes.
   capitalLabels: () => capitalMarkers(boardPayload, room).map((c) => ({ name: c.name, x: c.x, y: c.y, side: c.side, color: c.color })),
   log: () => log.lines.slice(),
+  // PB-274: the macro book's stored slots and whether Undo Macro has something to return to.
+  macros: () => macroBook().entries(),
+  macroHelp: () => MACRO_HELP,
+  macroUndoable: () => macroBook().undoable(),
   state: () => ({
     buying,
     // PB-272: the Show Paths toggle, so a leg reads the page's state rather than a pixel.
     showPaths,
+    // PB-274: the view mode and the current macro state, read rather than inferred from a frame.
+    viewMode,
+    macroUndo: macroBook().undoable(),
     selected: selected ? selected.id : null,
     // PB-245b: the piece whose second select armed a starting destination, so a leg can see the
     // gesture's state instead of inferring it from a missing wire message.
@@ -4051,7 +4157,9 @@ window.__chq = {
     placementSnap: placement ? placement.snap : null,
     placementBox: placement ? placement.box : null,
     following,
-    camera: camera ? { scale: camera.scale, left: camera.left, top: camera.top } : null,
+    // PB-274: viewW/viewH ride along so a leg can turn a camera back into a cell centre without
+    // guessing the canvas width.
+    camera: camera ? { scale: camera.scale, left: camera.left, top: camera.top, viewW: camera.viewW, viewH: camera.viewH } : null,
   }),
   cellToScreen(x, y) {
     const view = viewForCanvas();
