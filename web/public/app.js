@@ -80,6 +80,16 @@ import {
   pendingAfterPaint,
   scrollAfterPaint,
 } from "./logview.mjs";
+// PB-263: the message level (Manual p.32, p.19). The filter is one pure rule shared by this page
+// and the node test; the tags arrive from the server with each line.
+import {
+  DEFAULT_MESSAGE_LEVEL,
+  MESSAGE_LEVEL_MEANING,
+  messageLevelReadout,
+  messageLevelTitle,
+  nextMessageLevel,
+  normalizeMessageLevel,
+} from "./messagelevel.mjs";
 // The buy table's icon is the board's own badge, drawn by the same badgeSvg as the legend, so a
 // player picks a unit by the shape they will see on the map. (T-014 gate, room 4035.)
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
@@ -947,10 +957,70 @@ let log = emptyLog();
 // scrolled up keeps their place and gets a jump affordance instead (PB-135 AC2).
 const logView = { pinned: true, scrollTop: 0, pending: 0 };
 
+// PB-263: the message level (Manual p.32 "Message Level", p.19 "The Message Bar"). It is the SEAT's
+// setting, not the room's: two players in one room can want different thresholds. It is kept in
+// localStorage keyed by the side, so a reload comes back on the level the player left, and a browser
+// that has held both seats keeps one setting per seat.
+const MESSAGE_LEVEL_KEY = "openchq.messageLevel";
+let messageLevel = DEFAULT_MESSAGE_LEVEL;
+let messageLevelSeat = "";
+
+function messageLevelSeatNow() {
+  return String((room && (room.you || (room.seat && room.seat.side))) || "");
+}
+
+function messageLevelStorageKey(side) {
+  return MESSAGE_LEVEL_KEY + (side ? "." + side : "");
+}
+
+function readMessageLevel(side) {
+  try {
+    return normalizeMessageLevel(localStorage.getItem(messageLevelStorageKey(side)));
+  } catch {
+    return DEFAULT_MESSAGE_LEVEL;
+  }
+}
+
+// Painted wherever the strip redraws, so the readout follows a reload and a seat change. The seat is
+// read from the room frame; before a match there is no seat and the stored default is shown.
+function syncMessageLevel() {
+  const side = messageLevelSeatNow();
+  if (side !== messageLevelSeat) {
+    messageLevelSeat = side;
+    messageLevel = readMessageLevel(side);
+  }
+  const button = document.getElementById("msgLevelBtn");
+  const readout = document.getElementById("msgLevelReadout");
+  if (readout) readout.textContent = messageLevelReadout(messageLevel);
+  if (button) {
+    button.title = messageLevelTitle(messageLevel);
+    button.setAttribute("aria-label", messageLevelTitle(messageLevel));
+    button.disabled = !room;
+    button.dataset.level = String(messageLevel);
+  }
+}
+
+function cycleMessageLevel() {
+  messageLevel = nextMessageLevel(messageLevel);
+  try {
+    localStorage.setItem(messageLevelStorageKey(messageLevelSeatNow()), String(messageLevel));
+  } catch {
+    // A private window with no storage still gets the control for this session.
+  }
+  syncMessageLevel();
+  const list = document.getElementById("roundLog");
+  if (list) paintLog(list);
+  say("Message level " + messageLevel + ": " + MESSAGE_LEVEL_MEANING[messageLevel] + ".");
+}
+
 function noteLog(lines) {
+  // PB-263: the jump badge counts lines the CURRENT level shows, not warnings the player has
+  // filtered out - a hidden sighting must not read as "1 new line".
+  const before = paintedLines(log, messageLevel).length;
   const added = appendLog(log, lines);
   if (!added) return;
-  logView.pending = pendingAfterPaint(logView, added);
+  const shown = Math.max(0, paintedLines(log, messageLevel).length - before);
+  logView.pending = pendingAfterPaint(logView, shown);
   const list = document.getElementById("roundLog");
   if (list) paintLog(list);
 }
@@ -1659,6 +1729,7 @@ function syncGameButtons() {
   }
   for (const button of [resignBtn, newBtn, quitBtn]) if (button) button.disabled = !room;
   syncSpeed();
+  syncMessageLevel();
 }
 
 // PB-147: the Buy control carries the match's own state. A finished match has nothing to sell, so the
@@ -2100,11 +2171,14 @@ function syncLogJump(list) {
 // bottom follows the newest line; a reader scrolled up stays put and is told how many lines arrived
 // under a visible jump control (PB-135 AC1, AC2).
 function paintLog(list) {
-  const lines = paintedLines(log);
+  const lines = paintedLines(log, messageLevel);
   list.textContent = "";
   for (const line of lines) {
     const item = document.createElement("li");
     item.textContent = "round " + line.round + " \u2014 " + line.text;
+    // PB-263: the warning tag is on the element, not inferred from the sentence, so a reader (and
+    // the e2e leg) can tell a spotted line from a threat without parsing prose.
+    if (line.tag) item.dataset.tag = line.tag;
     list.append(item);
   }
   list.scrollTop = scrollAfterPaint(logView, { clientHeight: list.clientHeight, scrollHeight: list.scrollHeight });
@@ -3245,6 +3319,22 @@ function buildNav() {
     button.addEventListener("click", () => openDialog(item.id));
     box.append(button);
   }
+  // PB-263: the message level is the one command in the manual's menu bar (p.32) that opens no
+  // dialogue - it cycles a setting - so it is a direct control beside the commands, and its own
+  // readout is the current level.
+  const msg = document.createElement("button");
+  msg.type = "button";
+  msg.id = "msgLevelBtn";
+  msg.className = "navbtn msgbtn";
+  msg.dataset.level = String(messageLevel);
+  const readout = document.createElement("span");
+  readout.id = "msgLevelReadout";
+  readout.setAttribute("aria-live", "polite");
+  readout.textContent = messageLevelReadout(messageLevel);
+  msg.append(readout);
+  msg.addEventListener("click", cycleMessageLevel);
+  box.append(msg);
+  syncMessageLevel();
 }
 
 document.getElementById("dialogClose")?.addEventListener("click", closeDialog);
