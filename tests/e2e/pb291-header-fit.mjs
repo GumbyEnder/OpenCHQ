@@ -131,9 +131,24 @@ function measure(page) {
     const buttons = [...document.querySelectorAll(navSelector + " > *")];
     buttons.forEach((el, i) => one(el, "navbtn[" + i + "]:" + (el.textContent || "").trim().slice(0, 12)));
     const nav = document.querySelector(navSelector);
+    const navInfo = (() => {
+      if (!nav) return null;
+      const r = nav.getBoundingClientRect();
+      const cs = getComputedStyle(nav);
+      const borderRight = parseFloat(cs.borderRightWidth || "0") || 0;
+      const padRight = r.right - borderRight;
+      const last = nav.lastElementChild ? nav.lastElementChild.getBoundingClientRect() : null;
+      const round1 = (v) => Math.round(v * 10) / 10;
+      return {
+        scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, children: nav.children.length,
+        padRight: round1(padRight),
+        lastRight: last ? round1(last.right) : null,
+        slack: last ? round1(padRight - last.right) : null,
+      };
+    })();
     return {
       strip: { l: sb.left, t: sb.top, r: sb.right, b: sb.bottom, scrollWidth: strip.scrollWidth, clientWidth: strip.clientWidth },
-      nav: nav ? { scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth, children: nav.children.length } : null,
+      nav: navInfo,
       rows,
     };
   }, "#nav");
@@ -145,16 +160,19 @@ function checkViewport(width, height, m) {
   mark(tag + ": the strip fits its window (#strip scroll width within 1 px of its client width)",
     strip.scrollWidth <= strip.clientWidth + 1, "scrollWidth " + strip.scrollWidth + " clientWidth " + strip.clientWidth);
   if (m.nav) {
-    // INTERIM ALLOWANCE, NOT A NEW TOLERANCE (PM 9860 §1, frodo 9858-9859). At 1280x800 the last
-    // command's right border is shaved by ~1.1 px: #nav's content is 452.7 px in a 451.5 px padding
-    // box, so a 1 px rule reds on a whole-pixel rounding (453/451) while the "green" samples
-    // (453/452) were the ones under-reporting - the red was a true positive. PB-291b takes this row
-    // back to exact fractional geometry (last child's rect.right against #nav's padding-box right,
-    // 0.5 px) in the same commit that gives the cluster >= 2 px of slack - never by shrinking a
-    // button (flex 0 0 auto stays). Until PB-291b ships the AC here is the FOUR PER-BUTTON ROWS
-    // below, not this row: a green here reads "no scroll window", never "the header fits".
-    mark(tag + ": the command cluster is not a scroll window hiding commands (#nav within 2 px, INTERIM 9849/9858)",
-      m.nav.scrollWidth <= m.nav.clientWidth + 2, "scrollWidth " + m.nav.scrollWidth + " clientWidth " + m.nav.clientWidth + ", " + m.nav.children + " commands");
+    // PB-291b: the row is graded on FRACTIONAL geometry, not on the integer scroll pair. At
+    // scrollWidth <= clientWidth + 1 a 1.1 px overflow is invisible (floor/ceil snapping made the
+    // delta 1), which is how four of five captures read green while the last command's right border
+    // was shaved in all five (frodo 9858). Compare the last child's rect.right with #nav's
+    // padding-box right directly, 0.5 px allowance; the cluster now carries a real cushion.
+    mark(tag + ": every command sits inside the cluster's padding box (fractional, 0.5 px)",
+      m.nav.lastRight !== null && m.nav.lastRight <= m.nav.padRight + 0.5,
+      "last command right " + m.nav.lastRight + " vs #nav padding-box right " + m.nav.padRight +
+      " -> slack " + m.nav.slack + " px, " + m.nav.children + " commands");
+    // One row, not two: the strict scroll pair (scrollWidth <= clientWidth) cannot see a 1.1 px
+    // overflow - floor/ceil makes the delta 1 - and a padding cushion inflates scrollWidth by its
+    // own width, so the integer pair reds on a row that fits. The fractional comparison above IS
+    // the scroll test: if any command sat outside the padding box, lastRight would exceed padRight.
   }
 
   const shown = m.rows.filter((r) => !r.missing && r.visible);

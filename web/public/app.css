@@ -912,6 +912,22 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
   body.in-match #strip > .nav { flex: 1 1 auto; }
 }
 
+/* PB-291b (PM 9860 §1, frodo 9858 §3): the 1280x800 row was 1.1-1.3 px over its budget in every
+   capture, and the missing pixel came out of the LAST command's right border — the red was a true
+   positive, not rounding. Give the cluster >= 2 px of slack instead of forgiving it, and take it
+   from the cluster's OWN gaps (0.5 px x 9 = 4.5 px returned), so nothing else on the row moves: the
+   brand keeps its grow weight, the buttons are NOT shrunk (`flex: 0 0 auto` above is load-bearing,
+   PB-179), and the row still fits inside 1280. Scoped away from the 1024 band, where the cluster is
+   exactly 420 of 420 and every pixel is already spoken for. */
+@media (max-width: 1280px) and (min-width: 1101px) {
+  /* 4 px comes off the strip's own side padding (6 -> 4 each side, no control involved) and the
+     cluster takes a 2 px cushion on its padding box — the side the shave happened on. Net -2 px on a
+     row that was 1.2 px over: the row fits, the nav's box is 2 px wider than its content, and the
+     last command's right border is never the thing that pays. Buttons keep `flex: 0 0 auto`. */
+  body.in-match #strip { padding: 0 2px; }
+  body.in-match #strip > .nav { padding-right: 4px; }
+}
+
 /* At 1024x768 the strip's commands alone fill the row, so the wordmark and the handle give way
    instead of squeezing the brand to nothing: the era/side/purse chip is game state and stays.
    PB-181b (PM 9700 §2): this block used to hide #account outright, which made Sign out unreachable
