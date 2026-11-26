@@ -6,7 +6,9 @@
 // that the bytes do not tell.
 //
 // B1: five opponents in DS:0x4fea order, ANOTHER HUMAN = 0, level 1 labelled "Stands still:
-// practice". B2: level 1 never enters the AI pass, so 50 rounds of orders and buys are empty.
+// practice". PB-264: every level 2-5 label states only what the engine does, and levels 3-4 carry
+// one identical string rather than promising a per-game repeat allowance.
+// B2: level 1 never enters the AI pass, so 50 rounds of orders and buys are empty.
 // B3: e94c = level*2-4 (never set at level 1, so 0/2/4/6 at levels 2-5) is the ARMY pass's repeat
 // counter (ai_turn_process 3410-3416) and the buy spends it (1649-1651); 0bd6 allows THREE
 // successful actions a pass at every level (1126-1268, nine `local_c < 3` reads) plus the combat-4
@@ -125,7 +127,25 @@ export async function run(ctx) {
         say("opponent " + level + " is not " + expected + " in DS:0x4fea order", row);
       }
     }
-    if (rows[1].label !== "Stands still: practice") say("level 1 is not labelled 'Stands still: practice'", rows[1].label);
+    // PB-264: the lobby labels promise only what plays. Level 2's pool is 0 (no destination is
+    // ever re-used); levels 3 and 4 carry one identical string because e94c is a match-long pool
+    // spent one dispatch at a time while 0bd6's three-action pass is rebuilt every turn; level 5's
+    // clause is the PB-262 unready-anchor buy. The retired promise shapes ("spare repeats a game",
+    // "Medium") are tested for, not eyeballed - they told a player to expect a difference the
+    // engine does not deliver.
+    const LABELS = new Map([
+      [1, "Stands still: practice"],
+      [2, "Marches; never repeats a destination"],
+      [3, "Marches; may repeat a destination"],
+      [4, "Marches; may repeat a destination"],
+      [5, "Marches; may buy before a site is ready"],
+    ]);
+    for (const [level, label] of LABELS) {
+      if (rows[level].label !== label) say("level " + level + " is not labelled " + JSON.stringify(label), rows[level].label);
+      if (/spare|repeats a game|medium/i.test(rows[level].label)) {
+        say("level " + level + " still claims a per-game allowance", rows[level].label);
+      }
+    }
     if (defaultOpponentLevel() !== 3) say("the lobby default is not the declared level 3", defaultOpponentLevel());
 
     // The served table is the one the page builds its select from, so it has to carry the same five.
@@ -138,7 +158,10 @@ export async function run(ctx) {
       const row = served[index + 1];
       if (!row || row.level !== level || row.name !== expected) say("/api/setup order drifted at level " + level, row);
     }
-    if (served[1].label !== "Stands still: practice") say("/api/setup lost the level-1 label", served[1]);
+    for (const [level, label] of LABELS) {
+      const row = served[level];
+      if (!row || row.label !== label) say("/api/setup label drifted at level " + level, row);
+    }
     const spare = (setup.bot && setup.bot.spareActions) || {};
     for (const [level, budget] of [[2, 0], [3, 2], [4, 4], [5, 6]]) {
       if (Number(spare[level]) !== budget) say("/api/setup spareActions[" + level + "] is not " + budget, spare);
