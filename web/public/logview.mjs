@@ -1,4 +1,8 @@
-// The Log panel's buffer and its scroll policy (PB-135).
+// The Log panel's buffer and scroll policy (PB-135).
+//
+// PB-263: the message level decides which WARNINGS the panel paints. That rule lives in
+// messagelevel.mjs so the page and the node test read one implementation.
+import { showsLineAt } from "./messagelevel.mjs";
 //
 // The page keeps the lines the server already filtered to this seat, and the panel is a SCROLL
 // container over all of them: the six-round window PB-121 introduced is still what a fresh reader
@@ -28,6 +32,10 @@ function prune(state) {
 // Append server lines to the buffer. A line keyed by the server is deduped on the key; an unkeyed
 // line on round+text. Returns how many lines were actually added, which is what the panel's "new
 // lines" affordance counts.
+//
+// PB-263: a line's `tag` is carried through. The tag is the server's word for a WARNING (threat,
+// serious, spotted); it is what the message level filters on, and it must survive the buffer or a
+// level change could not re-show a line that is still retained.
 export function appendLog(state, lines, keep = LOG_KEEP) {
   let added = 0;
   for (const line of Array.isArray(lines) ? lines : []) {
@@ -42,6 +50,7 @@ export function appendLog(state, lines, keep = LOG_KEEP) {
     }
     const entry = { round: Number(line.round) || 0, text: String(line.text) };
     if (line.key) entry.key = String(line.key);
+    if (line.tag) entry.tag = String(line.tag);
     state.lines.push(entry);
     added += 1;
   }
@@ -59,8 +68,12 @@ export function resetLog(state) {
 }
 
 // What the panel paints: every retained line, oldest first. Not a round window.
-export function paintedLines(state) {
-  return state.lines.slice();
+// PB-263: with a message level in hand, the panel paints only the warnings that level admits and
+// every untagged line. The buffer itself keeps all of them, so raising the level re-shows history.
+export function paintedLines(state, level = null) {
+  const lines = state.lines.slice();
+  if (level === null || level === undefined) return lines;
+  return lines.filter((line) => showsLineAt(level, line.tag));
 }
 
 // ---- scroll policy -------------------------------------------------------------------------
