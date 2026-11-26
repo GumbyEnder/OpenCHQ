@@ -164,7 +164,7 @@ The opponent's spinner writes that slot at 40 per point (`030` → `1200` → `3
   `docs/captures/startmoney-2023-blue-spinner-default.png`.
 - **PB-265 addendum: 1986's `050` is captured as well, not inferred.** `1986 SIDE OPTIONS` →
   BLUE → `BLUE LAYOUTS` (STANDARD highlighted) → one Return → `OPPONENT'S STARTING MONEY`
-  reading digits `0`/`5`/`0`. Capture `evidence/1986_spinner_default_050.png`, md5
+  reading digits `0`/`5`/`0`. Capture `docs/captures/startmoney-1986-blue-spinner-default.png`, md5
   `fb777c52374f474ae27be1c8cd430a60`, read by a 1:1 pixel map and a 5x visual pass; the
   `0x148e = 2000` inference was right, so the number does not move, only its label. Every era
   carries the spinner. Walk note: `t6-spinner.py` classifies the `BLUE LAYOUTS` modal as NO, not
