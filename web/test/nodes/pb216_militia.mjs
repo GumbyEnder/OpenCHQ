@@ -116,16 +116,29 @@ export async function run(ctx) {
       if (shot.attackerKind !== "militia") fail("pb216: the militia's noun is " + shot.attackerKind);
     }
 
-    // The case the card was filed on: a defender holding a footprint cell of its own city still
-    // trades shots AND its city's militia still reaches the attacker (the old hits-loop found the
-    // site from the defender's cell, which was not the anchor).
+    // PB-288 (PM 9779 §4, difference (i)): the militia lands on pieces standing on the site's own
+    // cells and on nothing else. A defender holding a footprint cell still trades shots, but the
+    // city no longer reaches an attacker one cell OUTSIDE the block - the original has no such
+    // branch, and the arm that asserted the reach is now the arm that forbids it. The inside half
+    // is the ruling's positive side: an attacker that steps onto the footprint pays the per-pass
+    // amount.
     const defender = unit("red:infantry:218", "red", "infantry", FOOTPRINT.x, FOOTPRINT.y);
-    const attacker = unit("blue:infantry:218", "blue", "infantry", FOOTPRINT.x - 1, FOOTPRINT.y);
-    const held = matchOf([attacker, defender], { round: 5 });
+    const outsideAttacker = unit("blue:infantry:218", "blue", "infantry", FOOTPRINT.x - 1, FOOTPRINT.y);
+    const held = matchOf([outsideAttacker, defender], { round: 5 });
     const heldEvents = resolve(held) || [];
     const exchange = (Array.isArray(heldEvents) ? heldEvents : []).filter((e) => e.type === "shot" && e.militia !== true);
     if (exchange.length !== 2) fail("pb216: the footprint defender did not exchange: " + JSON.stringify(heldEvents.map((e) => e.type)));
-    if (militiaShots(heldEvents).length !== 1) fail("pb216: a defender on a footprint cell left its city's militia silent");
+    if (militiaShots(heldEvents).length !== 0) {
+      fail("pb216: a city's militia reached an attacker one cell OUTSIDE the block: " + JSON.stringify(militiaShots(heldEvents).map((e) => e.at)));
+    }
+
+    const defenderIn = unit("red:infantry:219", "red", "infantry", FOOTPRINT.x, FOOTPRINT.y);
+    const inside = unit("blue:infantry:219", "blue", "infantry", ANCHOR.x, ANCHOR.y);
+    const engaged = matchOf([inside, defenderIn], { round: 5 });
+    const engagedEvents = resolve(engaged) || [];
+    if (militiaShots(engagedEvents).length !== 1) {
+      fail("pb216: an attacker standing on a footprint cell drew " + militiaShots(engagedEvents).length + " militia events, expected 1");
+    }
   }
 
   // --- 3. one overrun, one event, and each seat reads it in its own voice --------------------

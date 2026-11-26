@@ -620,16 +620,13 @@ export function resolve(match) {
         pay(piece, site);
       }
 
-      // (b) The defence: a piece that traded shots with a defender standing on its own city this
-      // round is attacking that city, and the militia reaches it from one cell out as it always
-      // did. PB-216 makes the site lookup footprint-aware on the DEFENDER's cell too - a defender
-      // bought on a footprint cell (D-026) used to be invisible to its own militia.
-      for (const hit of hits) {
-        const site = siteOfCell(hit.target);
-        if (!site || !MILITIA_SITES.has(String(site.kind))) continue;
-        if (site.owner !== hit.target.side) continue;
-        pay(hit.attacker, site);
-      }
+      // (b) is GONE (PB-288, PM 9779 §4 ruling on difference (i)). That arm paid every attacker
+      // that had traded shots with a defender standing on its own city, wherever the attacker
+      // stood - one cell outside the footprint, or four. The original has no such branch:
+      // FUN_1c0d_00b4 walks the pieces that are ON the site's cells. The militia now lands only on
+      // an enemy piece standing on the site's cells, which is branch (a) above; a shooter outside
+      // the footprint takes nothing back from the city. The per-pass-vs-every-2-rounds pacing
+      // (difference (ii)) is untouched and stays D-017.
     }
 
     events.push(...log);

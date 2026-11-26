@@ -99,10 +99,12 @@ export async function run(ctx) {
   // what make the event readable at all once the attacker it shot has left the board. The line it
   // produces is the city's own defence (manual p.10, p.23) and is NOT sight-gated.
   {
-    const cell = 51;
-    const city = { id: cell, kind: "city", owner: "red", name: "Garrison", x: 61, y: 80 };
-    const attacker = unit("blue:infantry:7", "blue", "infantry", 60, 80);
-    const defender = unit("red:infantry:7", "red", "infantry", 61, 80);
+    // PB-288: the militia only lands on a piece standing on the site's cells now, so this arm
+    // stages the attacker INSIDE a measured footprint (Berlin, web/data/footprints.json id 11,
+    // block 160..162 x 29..31) rather than leaning on the removed one-cell-out defence arm.
+    const city = { id: 11, kind: "city", owner: "red", name: "Garrison", x: 161, y: 30 };
+    const attacker = unit("blue:infantry:7", "blue", "infantry", 160, 30);
+    const defender = unit("red:infantry:7", "red", "infantry", 161, 30);
     const match = matchOf([attacker, defender], { round: 3, sites: [city] });
     const events = resolve(match) || [];
     const militia = shotsOf(events).filter((e) => e.militia === true);
@@ -171,13 +173,14 @@ export async function run(ctx) {
 
     // AC1's last clause - the round the militia's 2 is the KILLING blow. The attacker is left on
     // exactly the militia's damage by the exchange, so the 2 lands as the killing hit and the line
-    // still comes out, naming the target's kind and "0 left".
+    // still comes out, naming the target's kind and "0 left". PB-288: the attacker stands ON the
+    // city's own cells (Berlin footprint), because the militia no longer reaches a shooter outside.
     {
-      const brief = unit("blue:infantry:8", "blue", "infantry", 60, 82);
-      const hold = unit("red:infantry:8", "red", "infantry", 61, 82);
+      const brief = unit("blue:infantry:8", "blue", "infantry", 160, 30);
+      const hold = unit("red:infantry:8", "red", "infantry", 161, 30);
       const bite = Number(damageFor(hold, brief, cfg).amount) || 0;
       brief.strength = bite + Number(cfg.militiaDamage);
-      const city2 = { id: 52, kind: "city", owner: "red", name: "Garrison", x: 61, y: 82 };
+      const city2 = { id: 11, kind: "city", owner: "red", name: "Garrison", x: 161, y: 30 };
       const m2 = matchOf([brief, hold], { round: 5, sites: [city2] });
       const ev2 = resolve(m2) || [];
       const killed = ev2.find((e) => e.type === "destroyed" && e.pieceId === "blue:infantry:8");
