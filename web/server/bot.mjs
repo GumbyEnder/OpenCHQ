@@ -23,6 +23,7 @@ import {
   isRefused,
   opponentLevelOf,
   priceOf,
+  rules,
   spareActionPassCap,
 } from "./rules.mjs";
 import { buy, seedOwners } from "./economy.mjs";
@@ -210,6 +211,22 @@ export function spendRepeat(state, cell = null) {
   }
   if (key) state.recorded.add(key);
   return { repeat: false, cell: key, recorded: Boolean(key) };
+}
+
+// PORT-ONLY DEVIATION (PB-269 E1 / T-032 Part D, PM 9408 §2 and 9581): the pool 0xe94c is spent by
+// the buy (decompiled.c 1649-1651) and by an army dispatch (3410-3416). E1 stops the buy drawing on
+// it, so the whole pool stays with the army at levels 3-5: the buy still costs one pass action and
+// still buys the same unit at the same cell, it just never decrements the counter.
+//
+// The original spends it in both places, so this is a port deviation, not a decoded rule, and it is
+// gated on `bot.portArmyPool`: with the key absent or false the buy draws on the counter exactly as
+// it did before this commit. `{1:false, 2:false, 3:true, 4:true, 5:true}` - level 2's pool is 2 and
+// level 1 never seeds one, so the deviation starts where the original's own number first reaches 2.
+// No combat, economy, fog, price or sight value is read or changed here.
+export function portArmyPoolFor(level) {
+  const spec = rules().bot || {};
+  if (spec.portArmyPool !== true) return false;
+  return Number(level) >= 3;
 }
 
 // Exported so the ring case can be driven directly: the endgame state is hard to reach through
@@ -753,6 +770,8 @@ export function ordersFor(match, side) {
   // 1254 and 1265; the combat tail is gated at 4 (1220, 1224, 1228, 1256, `4 - local_c` at
   // 1257/1262/1264). Nothing in 1126-1268 reads 0xe94c or 0x1a0.
   const budget = spareActionPassCap();
+  // E1: the pool stays with the army; see portArmyPoolFor.
+  const armyPool = portArmyPoolFor(level);
   // 0xe94c for this turn: set only when 1 < 0x1a0 (decompiled.c 13231-13232, 15157-15158), so a
   // level-1 seat never even sets it. It is how many army dispatches may repeat a destination cell
   // before that cell is recorded and struck out of the candidate table (3392-3400, 3410-3412), not
@@ -770,8 +789,11 @@ export function ordersFor(match, side) {
   // repeat where one is left and never refuses on the counter (1649-1651).
   if (spent < budget && botBuy(match, side, events, threatened.length ? threatened[0].site : null, level)) {
     spent += 1;
-    spendRepeat(repeat);
-    syncRepeatPool();
+    // E1: with the pool reserved for the army the buy spends the pass action and nothing else.
+    if (!armyPool) {
+      spendRepeat(repeat);
+      syncRepeatPool();
+    }
   }
   const defence = defendSites(match, side, events, threatened, budget - spent);
   const claimed = defence.claimed;
