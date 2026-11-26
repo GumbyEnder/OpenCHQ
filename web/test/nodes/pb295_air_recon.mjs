@@ -21,12 +21,13 @@
 //   (b) the boundary IS config's sightCells               -> mutated: withinSight widened by one
 //       -> "an enemy 9 cells away was revealed; config's sightCells is 8"
 //
-// Arms (c) and (d) are the two clauses the port does NOT have. They are reported as DEVIATIONS
-// with the producer line, and they are not fixed here (PM 9835/9844: tests first, reds as
-// deviations). At f5a6109 both red.
-//   (c) INACTIVE reveals nothing     -> view.mjs (visibleEnemy, :140-145) has no air-inactivity rule
-//   (d) submarines are never revealed -> view.mjs:142 hides a submarine only while it did not move
-//       and is not fighting, and that predicate is origin-blind, so a moving sub is seen from the air
+// Arms (c) and (d) are the two clauses the port did not have before PB-295. The fix (view.mjs
+// per-witness sight, PM 9864 section 3 / frodo's c40f713 predicate) supplies both, and all four
+// are green on it; they red only under their own mutations (c, d1, d2, and d3c for the control).
+// The pre-fix anchor (a bare `return ownPieces.some(...)`) no longer exists, so the leg that
+// watched it is re-anchored: a2 makes the isAircraft block reveal nothing at all and reds (a)/(b).
+//   (c) INACTIVE reveals nothing     -> view.mjs visibleEnemy isAircraft block: inactiveRounds > 0
+//   (d) submarines are never revealed -> same block: an aircraft never returns a submarine
 import { CELL_W } from "../../server/board.mjs";
 import { warMatch } from "../wartime.mjs";
 import { forSeat } from "../../server/view.mjs";
@@ -93,8 +94,8 @@ export async function run(ctx) {
     match.pieces.push(piece("red:inf:1", "red", "infantry", "land", 80 + radius - 3, 40));
     if (!seen(match, "red:inf:1")) {
       fail("the active plane did not reveal an enemy infantry " + (radius - 3) + " cells away"
-        + " (sight is config's " + radius + "); producer: web/server/view.mjs visibleEnemy:145,"
-        + " ownPieces.some(... withinSight)");
+        + " (sight is config's " + radius + "); producer: web/server/view.mjs visibleEnemy per-witness"
+        + " some(...) -> withinSight, aircraft arm");
     }
   });
 
@@ -137,8 +138,8 @@ export async function run(ctx) {
     if (seen(idle, "red:inf:2")) {
       fail("an INACTIVE aircraft still revealed an enemy infantry 5 cells away; manual l.779 says an"
         + " inactive air unit reveals nothing, so the enemy must drop out of view while it is away."
-        + " Producer: web/server/air.mjs inactiveRounds is never read by web/server/view.mjs"
-        + " visibleEnemy (:114-146) - DEVIATION, not fixed here");
+        + " Producer: web/server/view.mjs visibleEnemy isAircraft block (inactiveRounds > 0 sends"
+        + " the witness away; the read was absent before PB-295)");
     }
   });
 
@@ -150,9 +151,9 @@ export async function run(ctx) {
     moving.pieces.push(piece("red:sub:moved", "red", "submarine", "sea", 85, 40, { movedRound: ROUND }));
     if (seen(moving, "red:sub:moved")) {
       fail("a submarine that moved this round was revealed by an aircraft 5 cells away; manual l.779"
-        + " excepts submarines from air reconnaissance. Producer: web/server/view.mjs:142 hides a"
-        + " sub only while it did NOT move and is not fighting, and the predicate is origin-blind,"
-        + " so air sight receives it - DEVIATION, not fixed here");
+        + " excepts submarines from air reconnaissance. Producer: web/server/view.mjs visibleEnemy"
+        + " isAircraft block (an aircraft never returns a submarine; the old :142 predicate was"
+        + " origin-blind, so air sight received it)");
     }
   });
 
@@ -161,8 +162,8 @@ export async function run(ctx) {
     fighting.pieces.push(piece("red:sub:fight", "red", "submarine", "sea", 85, 40, { fighting: "blue:air:295" }));
     if (seen(fighting, "red:sub:fight")) {
       fail("a submarine in a fight was revealed by an aircraft 5 cells away; manual l.779 excepts"
-        + " submarines from air reconnaissance (producer: web/server/view.mjs:142) - DEVIATION,"
-        + " not fixed here");
+        + " submarines from air reconnaissance (producer: web/server/view.mjs visibleEnemy isAircraft"
+        + " block - an aircraft never returns a submarine)");
     }
   });
 
@@ -191,6 +192,6 @@ export async function run(ctx) {
   }
 
   if (reds.length) {
-    throw new Error(reds.length + " arm(s) red at f5a6109 - " + reds.join(" | "));
+    throw new Error(reds.length + " arm(s) red - " + reds.join(" | "));
   }
 }
