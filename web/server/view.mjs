@@ -18,7 +18,7 @@
 import { CELL_W, SEATS } from "./board.mjs";
 import { combatRules, enemyRouteSteps, payEvery, peaceRules, roundSeconds as roundLength, sightCells } from "./rules.mjs";
 import { metersFor, oilReadout } from "./resources.mjs";
-import { airBriefing, inactiveRounds } from "./air.mjs";
+import { airBriefing, inactiveRounds, isAircraft } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
 import { kitBriefing, ceasefireOf } from "./late.mjs";
 import { peaceActive, peaceOf } from "./peace.mjs";
@@ -140,7 +140,22 @@ function visibleEnemy(unit, ownPieces, match, side, now, hidden) {
   // has been seen from one of this seat's own pieces.
   if (hidden) return false;
   if (unit.kind === "submarine" && !movedThisRound(unit, match) && !unit.fighting) return false;
-  return ownPieces.some((own) => withinSight(own, unit));
+  // PB-295 (PM 9855 section 3; manual printed p.24 and p.18): reconnaissance belongs to the
+  // WITNESS, not the target. An aircraft reveals only while it is ready - "inactive aircraft do not
+  // perform reconnaissance flights" - and it never reveals a submarine, which p.18 keeps "always
+  // hidden from air and satellite scanning". Surface sight keeps the sub rule directly above
+  // unchanged: the exception is the aircraft's, not a blanket one, so a cruiser still sees a
+  // moving submarine (pb295 arm (d3), the control that keeps this from passing by hiding every sub
+  // from everyone). The radius is untouched: air.sightCells stays the one shipped sight radius and
+  // its value is UNVERIFIED (pb295's radius note).
+  return ownPieces.some((own) => {
+    if (!withinSight(own, unit)) return false;
+    if (isAircraft(own)) {
+      if (inactiveRounds(own, match.round) > 0) return false;
+      if (unit.kind === "submarine") return false;
+    }
+    return true;
+  });
 }
 
 function viewPiece(unit, steps, round, side = null) {
