@@ -16,7 +16,7 @@
 // p.31) and a satellite pass still arrive while the capital is unknown (PB-223).
 
 import { CELL_W, SEATS } from "./board.mjs";
-import { combatRules, enemyRouteSteps, payEvery, roundSeconds as roundLength, sightCells } from "./rules.mjs";
+import { combatRules, enemyRouteSteps, payEvery, peaceRules, roundSeconds as roundLength, sightCells } from "./rules.mjs";
 import { metersFor, oilReadout } from "./resources.mjs";
 import { airBriefing, inactiveRounds } from "./air.mjs";
 import { unscreenedTransports } from "./escort.mjs";
@@ -211,6 +211,21 @@ function seatStatus(match, side) {
   const every = Number(payEvery());
   const round = Number(match && match.round) || 0;
   const payIn = Number.isFinite(every) && every > 0 ? every - (round % every) : null;
+  // PB-268: at peace no round advances, so nothing the war payday says about a round is true there —
+  // the cold war pays a flat TICK instead (economy.mjs peacePay). The seat carries the tick's own
+  // numbers from peaceRules(), ONLY while the peace is on: the page prints the rate the server pays,
+  // a retune in config/game.json moves both, and the war payload keeps exactly its old shape.
+  // PB-268: a tick that pays NOTHING is still a peace readout, not a vanished one - a missing field
+  // would make "the peace pays 0" indistinguishable from "the peace is off" (frodo 9569 section 3f).
+  const peaceTick = peaceActive(match) ? peaceRules() : null;
+  const peaceIncome = peaceTick
+    ? {
+      perTick: peaceTick.cashPerTick,
+      ticksPerSecond: peaceTick.ticksPerSecond,
+      perSecond: peaceTick.cashPerTick * peaceTick.ticksPerSecond,
+      cap: peaceTick.cashPerTickCap,
+    }
+    : null;
   return {
     cash: Number.isFinite(cash) ? cash : null,
     fuel: Number.isFinite(fuel) ? fuel : null,
@@ -229,6 +244,8 @@ function seatStatus(match, side) {
     // What the next payday is worth, counted by the economy module's own rule: one per owned city
     // plus one per owned well. The page prints this instead of counting the board itself.
     income: payoutFor(match, side),
+    // PB-268: the flat peacetime tick, or null at war. `perSecond` is what the strip prints.
+    peaceIncome,
     // The aircraft this seat can fly, with each mission's cost in rounds. It rides the seat so the
     // page shows the same choices the server will accept.
     air: airBriefing(match, side),

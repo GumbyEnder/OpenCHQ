@@ -484,6 +484,36 @@ export function oilWarning(oil) {
   return oil && oil.short === true ? OIL_WARNING : "";
 }
 
+// PB-268: the peacetime rate in the page's own money unit (millions). The cold war pays
+// `cashPerTick x ticksPerSecond` a second - the shipped pair reads 500M/s - and a bigger rate reads
+// in billions, the same unit the per-round leg uses ("1.5b"). No number of the rule lives here: the
+// server's `peaceIncome` carries it, so a retune moves the label with the credit. The cashPerTick
+// value itself must not appear in any client module; the node greps for it.
+export function formatRate(millionsPerSecond) {
+  const value = Number(millionsPerSecond);
+  if (!Number.isFinite(value) || value < 0) return "";
+  if (value >= MILLIONS_PER_BILLION) return formatBillions(value) + "b";
+  return (Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "")) + "M";
+}
+
+// The seat's peacetime rate, as the server sent it (view.mjs `seatStatus` -> peaceRules()). Absent at
+// war, which is what makes the war shapes below unreachable while a peace is on.
+export function peaceIncomeOf(seat) {
+  const tick = seat && seat.peaceIncome;
+  if (!tick || typeof tick !== "object") return null;
+  const perSecond = Number(tick.perSecond);
+  // 0 is a RATE, not an absence: a peace that pays nothing says 0M/s rather than falling back to the
+  // war payday (frodo 9569 section 3f: "row disappears" is indistinguishable from "peace is off").
+  if (!Number.isFinite(perSecond) || perSecond < 0) return null;
+  const perTick = Number(tick.perTick);
+  const rate = Number(tick.ticksPerSecond);
+  return {
+    perSecond,
+    perTick: Number.isFinite(perTick) && perTick >= 0 ? perTick : null,
+    ticksPerSecond: Number.isFinite(rate) && rate > 0 ? rate : null,
+  };
+}
+
 // purseText draws the seat's own budget; when the Alternate Function is on, the same chip draws
 // the OPPONENT's numbers instead (Manual p.27), because the original's monitor swaps sides.
 export function purseText(seat, showFoe = false) {
@@ -499,7 +529,17 @@ export function purseText(seat, showFoe = false) {
     if (!meter || meter.kind === "fuel") continue;
     if (Number.isFinite(meter.held)) parts.push(meter.kind + " " + meter.held);
   }
-  if (Number.isFinite(seat.payIn)) {
+  // PB-268: while the peace is on there is no countdown to print — the round is frozen, so
+  // "payment in N rounds" would be a counter that can never move. The rate is the truth there.
+  const peace = peaceIncomeOf(seat);
+  if (peace) {
+    parts.push(
+      "peace income " + formatRate(peace.perSecond) + " a second"
+        + (peace.perTick !== null && peace.ticksPerSecond !== null
+          ? " (" + peace.perTick + "M a tick, " + peace.ticksPerSecond + " ticks a second)"
+          : "")
+    );
+  } else if (Number.isFinite(seat.payIn)) {
     parts.push("payment in " + seat.payIn + (seat.payIn === 1 ? " round" : " rounds"));
   }
   return parts.join(" · ");
@@ -517,6 +557,18 @@ export function purseText(seat, showFoe = false) {
 //     public arithmetic off the board the player can already see; it never swaps the balance.
 export function purseSummaryParts(seat, foeIncome = null) {
   const cash = seat ? Number(seat.cash) : NaN;
+  // PB-268: at peace the income leg is the TICK, not the round payday. The two are different shapes
+  // on purpose - "/rd" would claim a round the cold war never runs - and the rate is the server's
+  // `peaceIncome` (peaceRules()), never a number this module owns. The Alternate Function still
+  // marks whose leg it is; both seats are paid the same flat tick, so the figure is the same one.
+  const peace = peaceIncomeOf(seat);
+  if (peace) {
+    const rate = formatRate(peace.perSecond);
+    return {
+      cash: Number.isFinite(cash) ? formatWholeBillions(cash) + "b" : "",
+      income: rate ? (foeIncome ? " +foe " : " +") + rate + "/s" : "",
+    };
+  }
   const own = seat && seat.income ? Number(seat.income.amount) : NaN;
   const foe = foeIncome ? Number(foeIncome.amount) : NaN;
   const useFoe = Number.isFinite(foe) && foe > 0;

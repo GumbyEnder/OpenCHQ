@@ -9,7 +9,7 @@
 // rule is re-derived - the payday comes from the seat's own `income`, which the server counts with
 // the economy module's rule, and the prices come from the shop row the server priced.
 
-import { formatBillions, formatWholeBillions, shopDisabled, shopLabel } from "./command.mjs";
+import { formatBillions, formatRate, formatWholeBillions, peaceIncomeOf, shopDisabled, shopLabel } from "./command.mjs";
 
 export const NAV = [
   { id: "buy", label: "Buy", title: "Buy units", hint: "What each unit costs, how many you have, and how many you have seen." },
@@ -175,6 +175,13 @@ export function economyModel(room) {
     cash: seat && Number.isFinite(seat.cash) ? Number(seat.cash) : null,
     payIn: seat && Number.isFinite(Number(seat.payIn)) ? Number(seat.payIn) : null,
     payEvery: seat && Number.isFinite(Number(seat.payEvery)) ? Number(seat.payEvery) : null,
+    // PB-268: the dialogue has to know WHICH clock is paying. `active` is the room's peace state and
+    // `income` is the seat's peaceIncome (peaceRules() on the server): at peace no row may claim a
+    // round, and the figure printed is the flat tick the server is actually crediting.
+    peace: {
+      active: Boolean(room && room.peace && room.peace.active === true),
+      income: peaceIncomeOf(seat),
+    },
     income,
     opponent: foe ? { income: foe } : null,
     held,
@@ -182,6 +189,60 @@ export function economyModel(room) {
     reserves,
     units: { own: you ? unitsOf(you) : 0, known: enemy ? unitsOf(enemy) : 0 },
   };
+}
+
+// PB-268: the Economy dialogue's payday rows as one function, so BOTH states are pinned by a node
+// test instead of living only in the page's DOM code. At war: the countdown to the next round's
+// payday, the round length, and what that payday is worth. At peace: NO row claims a round — the
+// only true sentence is the flat tick, at the rate config's `peace` block pays through
+// economy.peacePay() (the shipped pair is 500M/s).
+export function paydayRows(model) {
+  if (!model) return [];
+  const peace = model.peace;
+  if (peace && peace.active === true) {
+    const income = peace.income;
+    if (!income) {
+      return [{
+        label: "Next payday",
+        value: "none — the peace pays no round, and this build carries no tick rate",
+      }];
+    }
+    const detail = income.perTick !== null && income.ticksPerSecond !== null
+      ? " (" + income.perTick + "M a tick, " + income.ticksPerSecond + " a second)"
+      : "";
+    return [{
+      label: "Peace income",
+      value: formatRate(income.perSecond) + " a second" + detail + " · no payday during the peace",
+    }];
+  }
+  return [
+    {
+      label: "Next payday",
+      value: model.payIn === null ? "unknown" : "in " + model.payIn + (model.payIn === 1 ? " round" : " rounds"),
+    },
+    {
+      label: "Payday every",
+      value: model.payEvery === null ? "unknown" : model.payEvery + (model.payEvery === 1 ? " round" : " rounds"),
+    },
+    {
+      label: "Payday worth",
+      value: model.income
+        ? formatBillions(model.income.amount) + "b per round · " + model.income.cities + " cities + " + model.income.cashWells + " paying oil"
+        : "unknown",
+    },
+  ];
+}
+
+// The Alternate Function's income line (Manual p.27: the monitor swaps sides). At peace both seats
+// are paid the same flat tick, so the honest figure is that tick - not the other side's war payday.
+export function foeIncomeValue(model) {
+  const peace = model && model.peace;
+  if (peace && peace.active === true) {
+    if (!peace.income) return "none — the peace pays no round, and this build carries no tick rate";
+    return formatRate(peace.income.perSecond) + " a second (the peace tick, both seats)";
+  }
+  const income = model && model.opponent && model.opponent.income;
+  return income ? formatBillions(income.amount) + "b per round" : "unknown";
 }
 
 // One line per reserve kind, in the player's words. A kind with no recovered yield says so instead of

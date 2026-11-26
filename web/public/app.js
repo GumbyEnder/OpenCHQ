@@ -48,7 +48,7 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfoParts } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
-import { NAV, buyRows, economyModel, navFor, oilLine, reserveLine, untypedCount } from "./dialogs.mjs";
+import { NAV, buyRows, economyModel, foeIncomeValue, navFor, oilLine, paydayRows, reserveLine, untypedCount } from "./dialogs.mjs";
 // T-031 step 3: the War Films replay. The pure view model lives in film.mjs so the node tests and the
 // page toggle the same four shows (Show Red / Blue / Common / Both) with one implementation.
 import {
@@ -2507,7 +2507,9 @@ const DIALOG_PAINTERS = {
     if (economyView === "opponent" && model.opponent) {
       const foe = document.createElement("dl");
       foe.className = "dlgrid";
-      definition(foe, "Opponent income", formatBillions(model.opponent.income.amount) + "b per round");
+      // PB-268: at peace this is the flat tick both seats are paid, not a war payday that no round
+      // will ever deliver. The row's text is decided in dialogs.mjs so a node test pins both states.
+      definition(foe, "Opponent income", foeIncomeValue(model));
       definition(foe, "Opponent cities paid", String(model.opponent.income.cities));
       definition(foe, "Opponent balance", "???");
       body.append(foe);
@@ -2517,11 +2519,10 @@ const DIALOG_PAINTERS = {
     const dl = document.createElement("dl");
     dl.className = "dlgrid";
     definition(dl, "Pool", model.cash === null ? "unknown" : formatWholeBillions(model.cash) + "b");
-    definition(dl, "Next payday", model.payIn === null ? "unknown" : "in " + model.payIn + (model.payIn === 1 ? " round" : " rounds"));
-    definition(dl, "Payday every", model.payEvery === null ? "unknown" : model.payEvery + (model.payEvery === 1 ? " round" : " rounds"));
-    definition(dl, "Payday worth", model.income
-      ? formatBillions(model.income.amount) + "b per round · " + model.income.cities + " cities + " + model.income.cashWells + " paying oil"
-      : "unknown");
+    // PB-268: the payday group is ONE function with two shapes (dialogs.mjs paydayRows). At war it is
+    // the countdown, the round length and what that payday is worth; at peace it is the flat tick and
+    // no row claims a round. Moving it out of this DOM code is what lets a node test pin both.
+    for (const row of paydayRows(model)) definition(dl, row.label, row.value);
     // PB-162: every count below is by the site SUBTYPE, not by the asset list's `kind`. 1986 Blue
     // holds 29 type-4 cities, 3 capitals (one with kind "capital", two drawn as "city"), 6 type-3
     // bases and 11 type-5 oil fields - so "37 cities" was counting bases and capitals as cities
