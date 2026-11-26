@@ -221,6 +221,12 @@
     },
     "spareActionPassCap": 3,
     "spareActionPassCapSource": "DECODED, decompiled.c 1126-1268 (banner 1124, closing brace 1268; 1272 opens FUN_107e_0f58). FUN_107e_0bd6 keeps ONE counter, local_c, initialised at 1142 and incremented at 1188, 1192, 1195, 1199, 1209, 1213, 1218, 1222, 1226, 1244, 1247, 1251 (+3), 1254 and 1265. It is read against 3 at NINE places: 1194, 1197, 1208, 1211, 1217, 1241, 1246, 1249, 1253 (the last is a while). 1200 is `bVar2 = true`, not a read; 1202 is the exit test `(2 < local_c) || (9 < local_8)`, i.e. at most THREE successful actions and ten site visits (local_8, 1203). The combat tail takes the budget to FOUR: 1220, 1224, 1228 and 1256 test `local_c < 4`, and resolve_combat is handed `4 - local_c` (1257, 1262, 1264). The only non-counter gate in the body is era: 1207 `0x19e == 3 || 0x19e == 2` guarding FUN_107e_51b6 (1208) and FUN_107e_5500 (1211); 0x19e is the era index, not a level. The budget is level-independent: no read of 0xe94c or 0x1a0 in 1126-1268.",
+    "portFocusBand": {
+      "3": 1,
+      "4": 2,
+      "5": 3
+    },
+    "portFocusBandSource": "PORT-ONLY DEVIATION (PB-269 E2, PM 9597 §4). focusTarget picks ONE point of the enemy line for the whole army - the enemy with fewest enemy friends beside it, tie-broken by mean distance from the army's centre of mass (behaviour, not a recovered rule). E2 lets each marching piece aim at its own nearest isolated enemy while that point sits within R cells of the army-wide focus, R = 1/2/3 at levels 3/4/5; outside the band the army-wide focus is used unchanged, so divergence is bounded and an out-of-band piece issues exactly the faithful order. Levels 1 and 2 are faithful (no band). Key absent or false is faithful byte for byte. Not an era table: the band enters through the army-wide focus, which is level-blind. No combat, economy, fog, price or sight value is read.",
     "forceAdvantageUnits": 11,
     "forceAdvantageSource": "DECODED (T-032 Part A, docs/re/AI.md section A4): calculate_combat requires a force advantage strictly greater than 11 strength units before a land attack is ordered.",
     "attackRangeCells": 30,
