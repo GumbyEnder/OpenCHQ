@@ -113,9 +113,12 @@ export function cameraForMacro(macro, view) {
   const viewH = Math.max(1, finite(v.viewH, 1));
   const w = Math.max(1, finite(macro.w, 1));
   const h = Math.max(1, finite(macro.h, 1));
-  // +1e-9: a stored 81.6-cell height against a 408 px canvas is 5.0, and binary division can land a
-  // hair under it — floor would then drop a zoom step on a viewport that fits the box exactly.
-  const fits = Math.max(1, Math.floor(Math.min(viewW / w, viewH / h) + 1e-9));
+  // PB-281: the box was stored rounded to 1/1000 cell (captureMacro's round3), so a window that
+  // exactly filled the canvas can divide to 17.9997 - 408 / 22.667 at zoom 18 - and floor to one
+  // zoom step short. Give the fit test a hair under one device pixel of slack: a box that overshoots
+  // the canvas by less than that is the same window, while a box that is genuinely wider still caps.
+  const FIT_SLACK_PX = 0.75;
+  const fits = Math.max(1, Math.floor(Math.min((viewW + FIT_SLACK_PX) / w, (viewH + FIT_SLACK_PX) / h) + 1e-9));
   // A preset carries no zoom of its own: it is a box, so it opens as large as this window can show
   // it. A player's slot keeps the zoom they stored unless the box no longer fits.
   const stored = Number(macro.scale);
