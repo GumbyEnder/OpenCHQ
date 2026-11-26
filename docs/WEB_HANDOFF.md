@@ -122,7 +122,8 @@ checks the 23 Ghidra rename rows against `functions.txt` (`107e:3bd0` = `ai_turn
 - Eras: 1918, 1942, 1986, 2023, concealed `9999`. Rosters are in `config/game.json` (`rosters`)
   and follow Manual p.16; `9999` is labelled UNVERIFIED and uses the 1986 set.
 - Opening pieces except 2023: one land army on the capital and one ship at sea — Blue (0, 15),
-  Red (300, 70). 2023 starts with no pieces and a stand-in pool.
+  Red (300, 70). 2023 starts with no pieces and its captured 600-billion pool (`startPool.2023`,
+  PB-265).
 - Prices are the manual's, in billions: infantry 10, tank 20 (twice infantry), submarine 10,
   cruiser 10, carrier 20, aircraft 20, reconSat 10, killerSat 5, nuke 10, foreignAid 10,
   intelScan 10. The server stores integer millions via `money.perBillion`.
