@@ -42,6 +42,18 @@ function mark(label, ok, detail) {
   console.log((ok ? "PASS " : "FAIL ") + label + " — " + detail);
 }
 
+// PB-254: a wait that runs out is a FAIL row, not a thrown leg. Four press sites below used to throw
+// inside page.evaluate, which killed the run before the summary line - a cut that removes the
+// affordance then produced no counts at all and the arm could not be graded by its own log.
+async function softWait(page, fn, arg, opts) {
+  try {
+    await page.waitForFunction(fn, arg, opts || { timeout: 25000, polling: 100 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function freePort() {
   return new Promise((resolve, reject) => {
     const probe = createNetServer();
@@ -149,16 +161,19 @@ async function main() {
   });
   mark("the cold war offers Begin Hostilities at round 0, the counter elapsed",
     coldPanel.hasBegin && coldPanel.disabled === false, "disabled=" + coldPanel.disabled);
-  await red.evaluate(() => {
+  const coldBegan = await red.evaluate(() => {
     const begin = [...document.querySelectorAll("#dialogBody button")].find((b) => /^Begin Hostilities$/.test(b.textContent.trim()));
-    if (!begin) throw new Error("the cold war has no Begin Hostilities button");
+    if (!begin) return false;
     begin.click();
+    return true;
   });
+  mark("the cold war's Begin Hostilities press lands", coldBegan,
+    coldBegan ? "pressed" : "NO Begin Hostilities button in #dialogBody");
   for (const seat of [blue, red]) {
-    await seat.waitForFunction(() => {
+    await softWait(seat, () => {
       const room = window.__chq.room();
       return Boolean(room && room.peace && room.peace.active === false);
-    }, null, { timeout: 25000, polling: 100 });
+    });
   }
   const coldLeft = await red.evaluate(() => ({
     peace: window.__chq.room().peace,
@@ -187,36 +202,40 @@ async function main() {
   // so open it the way a player does before reading its buttons.
   await blue.click('.navbtn[data-dialog="kit"]');
   await blue.waitForSelector('.shop.tools button', { timeout: 25000 });
-  await blue.evaluate(() => {
-    const button = [...document.querySelectorAll(".shop.tools button")].find((b) => /^Cease-fire$/.test(b.textContent.trim()));
-    if (!button) throw new Error("blue's kit has no Cease-fire button: " + [...document.querySelectorAll(".shop.tools button")].map((b) => b.textContent).join("|"));
+  const kitPressed = await blue.evaluate(() => {
+    const buttons = [...document.querySelectorAll(".shop.tools button")];
+    const button = buttons.find((b) => /^Cease-fire$/.test(b.textContent.trim()));
+    if (!button) return { pressed: false, seen: buttons.map((b) => b.textContent).join("|") };
     button.click();
+    return { pressed: true, seen: buttons.map((b) => b.textContent).join("|") };
   });
+  mark("blue's kit offers Cease-fire and the press lands", kitPressed.pressed,
+    kitPressed.pressed ? "pressed" : "NO Cease-fire button; kit reads " + kitPressed.seen);
   await red.click('.navbtn[data-dialog="kit"]');
-  await red.waitForFunction(() => {
+  await softWait(red, () => {
     const room = window.__chq.room();
     return Boolean(room && room.seat && room.seat.ceasefire && room.seat.ceasefire.canAnswer === true);
-  }, null, { timeout: 25000, polling: 100 });
+  });
   await red.waitForSelector('.shop.tools button', { timeout: 25000 });
-  const acceptTitle = await red.evaluate(() => {
+  const accept = await red.evaluate(() => {
     const button = [...document.querySelectorAll(".shop.tools button")].find((b) => /^Accept cease-fire$/.test(b.textContent.trim()));
-    if (!button) throw new Error("red's kit has no Accept cease-fire button");
+    if (!button) return { pressed: false, title: null };
     const title = button.title;
     button.click();
-    return title;
+    return { pressed: true, title };
   });
+  mark("red's kit offers Accept cease-fire and the press lands", accept.pressed,
+    accept.pressed ? "pressed" : "NO Accept cease-fire button");
   // frodo 9241 §2: the sentence on the button that creates the state must not promise an ending.
   mark("the accept button's title names the peace, not an end to the war",
-    !/war ends/i.test(acceptTitle) && /peace/i.test(acceptTitle), acceptTitle);
+    accept.pressed && !/war ends/i.test(accept.title) && /peace/i.test(accept.title), String(accept.title));
 
-  await blue.waitForFunction(() => {
-    const room = window.__chq.room();
-    return Boolean(room && room.peace && room.peace.active === true);
-  }, null, { timeout: 25000, polling: 100 });
-  await red.waitForFunction(() => {
-    const room = window.__chq.room();
-    return Boolean(room && room.peace && room.peace.active === true);
-  }, null, { timeout: 25000, polling: 100 });
+  for (const seat of [blue, red]) {
+    await softWait(seat, () => {
+      const room = window.__chq.room();
+      return Boolean(room && room.peace && room.peace.active === true);
+    });
+  }
   await sleep(400);
 
   const peaceState = await blue.evaluate(() => {
@@ -269,19 +288,20 @@ async function main() {
   // Press it. The war must come back for BOTH seats without a reload.
   const blueLogMark = await blue.evaluate(() => window.__chq.log().length);
   const redLogMark = await red.evaluate(() => window.__chq.log().length);
-  await blue.evaluate(() => {
+  const warPressed = await blue.evaluate(() => {
     const begin = [...document.querySelectorAll("#dialogBody button")].find((b) => /^Begin Hostilities$/.test(b.textContent.trim()));
-    if (!begin) throw new Error("Begin Hostilities vanished before the press");
+    if (!begin) return false;
     begin.click();
+    return true;
   });
-  await blue.waitForFunction(() => {
-    const room = window.__chq.room();
-    return Boolean(room && room.peace && room.peace.active === false);
-  }, null, { timeout: 25000, polling: 100 });
-  await red.waitForFunction(() => {
-    const room = window.__chq.room();
-    return Boolean(room && room.peace && room.peace.active === false);
-  }, null, { timeout: 25000, polling: 100 });
+  mark("the War panel's Begin Hostilities is there for the press", warPressed,
+    warPressed ? "pressed" : "NO Begin Hostilities button in #dialogBody");
+  for (const seat of [blue, red]) {
+    await softWait(seat, () => {
+      const room = window.__chq.room();
+      return Boolean(room && room.peace && room.peace.active === false);
+    });
+  }
   await sleep(600);
 
   const after = await blue.evaluate(() => ({
