@@ -85,7 +85,8 @@ export async function run(ctx) {
   expect(normalizeMessageLevel("") === 3, "an empty stored level did not fall back to 3");
   expect(normalizeMessageLevel("2") === 2, "a stored level of '2' did not read as 2");
   expect(normalizeMessageLevel(9) === 3, "an out-of-range level did not fall back to 3");
-  expect(messageLevelReadout(2) === "Msg 2", "the readout reads " + messageLevelReadout(2));
+  // PB-263b: the readout is the compact "M2" (PM 9677(a)); the tooltip still carries the full name.
+  expect(messageLevelReadout(2) === "M2", "the readout reads " + messageLevelReadout(2));
 
   // The panel keeps every line and filters only at paint: raising the level re-shows history.
   const buffer = emptyLog();

@@ -1584,9 +1584,89 @@ async function loadBoard() {
   drawMatch();
 }
 
+// PB-263b (PM 9677(b)): inside a match the account cluster is ONE button — the handle, ellipsized,
+// with the whole name in its title — that opens a small menu holding Sign out. Two clicks reach Sign
+// out, out of a menu that cannot be painted under a nav command because it is a popover, not a strip
+// row. Out of a match the cluster stays as it was: handle + Sign out, no menu.
+let accountMenuCloser = null;
+function closeAccountMenu() {
+  if (accountMenuCloser) accountMenuCloser();
+}
+function openAccountMenu(button, menu) {
+  closeAccountMenu();
+  menu.classList.remove("hidden");
+  button.setAttribute("aria-expanded", "true");
+  const onDoc = (event) => {
+    if (menu.contains(event.target) || button.contains(event.target)) return;
+    closeAccountMenu();
+  };
+  const onKey = (event) => {
+    if (event.key === "Escape") {
+      closeAccountMenu();
+      button.focus();
+    }
+  };
+  document.addEventListener("click", onDoc, true);
+  document.addEventListener("keydown", onKey);
+  accountMenuCloser = () => {
+    menu.classList.add("hidden");
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDoc, true);
+    document.removeEventListener("keydown", onKey);
+    accountMenuCloser = null;
+  };
+  const first = menu.querySelector("button");
+  if (first) first.focus();
+}
+
 function renderAccount() {
   account.textContent = "";
+  closeAccountMenu();
   if (!me) return;
+  if (document.body.classList.contains("in-match")) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "accountBtn";
+    button.className = "ghost accountbtn";
+    button.title = me + " — account: Sign out";
+    button.setAttribute("aria-label", me + " — account menu");
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-controls", "accountMenu");
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = me;
+    button.append(who);
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    caret.setAttribute("aria-hidden", "true");
+    caret.textContent = "\u25be";
+    button.append(caret);
+
+    const menu = document.createElement("div");
+    menu.id = "accountMenu";
+    menu.className = "accountmenu hidden";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", "Account");
+    const out = document.createElement("button");
+    out.type = "button";
+    out.id = "signOutBtn";
+    out.className = "ghost";
+    out.setAttribute("role", "menuitem");
+    out.textContent = "Sign out";
+    out.addEventListener("click", () => {
+      closeAccountMenu();
+      signOut();
+    });
+    menu.append(out);
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (menu.classList.contains("hidden")) openAccountMenu(button, menu);
+      else closeAccountMenu();
+    });
+    account.append(button, menu);
+    return;
+  }
   // PB-187b: the handle lives in its own span so the ellipsis can only eat the name. While the
   // name and the Sign out button shared one clipping box, a long handle clipped the button itself.
   const who = document.createElement("span");
@@ -1775,6 +1855,10 @@ function syncShell() {
   const changed = document.body.classList.contains("in-match") !== inMatch;
   if (changed) {
     document.body.classList.toggle("in-match", inMatch);
+    // PB-263b: the account cluster has two shapes — one account button with a Sign out menu inside a
+    // match, the handle + Sign out pair in the lobby — so the frame that enters or leaves a match is
+    // the frame that rebuilds it.
+    renderAccount();
     refit();
   }
   paintStripInfo(room);
@@ -3653,6 +3737,7 @@ async function signOut() {
   users = [];
   pending = [];
   showPlay(false);
+  renderAccount();
   drawMatch();
   say("");
   flashLine.clearResult();

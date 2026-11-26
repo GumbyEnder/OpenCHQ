@@ -122,7 +122,7 @@ async function main() {
     readout: (document.getElementById("msgLevelReadout") || {}).textContent || null,
     title: (document.getElementById("msgLevelBtn") || {}).title || null,
   }));
-  mark("the menu bar carries the Message Level control", control.button === true && control.readout === "Msg 3",
+  mark("the menu bar carries the Message Level control", control.button === true && control.readout === "M3",
     JSON.stringify(control));
   mark("the control's tooltip names the port choice for the default and the port decision for 'serious'",
     /port.s choice/i.test(control.title || "") && /port decision/i.test(control.title || "") && /p\.32/.test(control.title || ""),
@@ -159,7 +159,7 @@ async function main() {
   const spottedLine = at3.find((line) => line.tag === "spotted");
   mark("a server-sent sighting is painted at level 3 and its sentence reads", Boolean(spottedLine) && /\S/.test(spottedLine.text),
     spottedLine ? JSON.stringify(spottedLine.text) : "no spotted line within 60 s at level 3");
-  mark("level 3's readout says Msg 3", (await readout(page)) === "Msg 3", String(await readout(page)));
+  mark("level 3's readout says M3", (await readout(page)) === "M3", String(await readout(page)));
   const newsLine = at3.find((line) => line.tag === null && /^paid /.test(line.text));
   mark("an untagged payday line is in the log at level 3", Boolean(newsLine), newsLine ? newsLine.text : "none");
   await page.screenshot({ path: path.join(OUT, "pb263-level3-1280x800.png") });
@@ -167,7 +167,7 @@ async function main() {
   // ---- 3. the cycle, each level read from the DOM ------------------------------------------------
   await clickLevel(page); // 3 -> 2
   const at2 = await painted(page);
-  mark("the control cycled to Msg 2", (await readout(page)) === "Msg 2", String(await readout(page)));
+  mark("the control cycled to M2", (await readout(page)) === "M2", String(await readout(page)));
   mark("the spotted sentence is NOT painted at level 2",
     Boolean(spottedLine) && !at2.some((line) => line.text === spottedLine.text),
     spottedLine ? "looked for " + JSON.stringify(spottedLine.text) : "no sentence to look for");
@@ -179,7 +179,7 @@ async function main() {
   await clickLevel(page); // 2 -> 1
   const at1 = await painted(page);
   const seriousSeen = at3.filter((line) => line.tag === "serious").length;
-  mark("the control cycled to Msg 1", (await readout(page)) === "Msg 1", String(await readout(page)));
+  mark("the control cycled to M1", (await readout(page)) === "M1", String(await readout(page)));
   mark("level 1 paints only serious warnings and the news",
     at1.every((line) => line.tag === null || line.tag === "serious"),
     "tags at level 1: " + JSON.stringify([...new Set(at1.map((line) => line.tag))]) +
@@ -189,7 +189,7 @@ async function main() {
 
   await clickLevel(page); // 1 -> 0
   const at0 = await painted(page);
-  mark("the control cycled to Msg 0", (await readout(page)) === "Msg 0", String(await readout(page)));
+  mark("the control cycled to M0", (await readout(page)) === "M0", String(await readout(page)));
   mark("level 0 paints no warning at all", !at0.some((line) => line.tag !== null),
     "tagged lines at level 0: " + at0.filter((line) => line.tag !== null).length);
   mark("level 0 still paints the news", !newsLine || at0.some((line) => line.text === newsLine.text),
@@ -203,13 +203,13 @@ async function main() {
   const roundAfterZero = await page.evaluate(() => Number((window.__chq.room() || {}).round) || 0);
   const at0NextRound = await painted(page);
   mark("level 0 survives a round boundary",
-    roundAfterZero > roundAtZero && (await readout(page)) === "Msg 0" && !at0NextRound.some((line) => line.tag !== null),
+    roundAfterZero > roundAtZero && (await readout(page)) === "M0" && !at0NextRound.some((line) => line.tag !== null),
     "round " + roundAtZero + " -> " + roundAfterZero + ", readout " + (await readout(page)) +
       ", tagged painted: " + at0NextRound.filter((line) => line.tag !== null).length);
 
   await clickLevel(page); // 0 -> 3
   const back3 = await painted(page);
-  mark("the cycle returned to Msg 3", (await readout(page)) === "Msg 3", String(await readout(page)));
+  mark("the cycle returned to M3", (await readout(page)) === "M3", String(await readout(page)));
   mark("the SAME spotted sentence is painted again from the retained buffer",
     Boolean(spottedLine) && back3.some((line) => line.text === spottedLine.text),
     spottedLine ? "matched " + JSON.stringify(spottedLine.text) : "no sentence to match");
@@ -225,10 +225,10 @@ async function main() {
   await openLog();
   await page.waitForFunction(() => document.querySelectorAll("#roundLog li").length > 0, null, { timeout: 30000, polling: 200 }).catch(() => {});
   const afterReload = await readout(page);
-  mark("the level survives a reload", beforeReload === "Msg 2" && afterReload === "Msg 2",
+  mark("the level survives a reload", beforeReload === "M2" && afterReload === "M2",
     "before " + beforeReload + " / after " + afterReload);
   const reloaded = await painted(page);
-  mark("after the reload a spotted line is still hidden at Msg 2",
+  mark("after the reload a spotted line is still hidden at M2",
     Boolean(spottedLine) && !reloaded.some((line) => line.text === spottedLine.text),
     "painted " + reloaded.length + " lines after reload");
   const stored = await page.evaluate(() => {
@@ -242,7 +242,7 @@ async function main() {
 
   // ---- 6. one browser, two seats: the key is the SEAT, not the browser -------------------------
   // Same browser = the same localStorage, so this is the arm where a single key would show. Blue is on
-  // Msg 2 (stored above). Take the RED seat of a fresh 1942 room in the same page: the control must
+  // M2 (stored above). Take the RED seat of a fresh 1942 room in the same page: the control must
   // open on msg 3 from red's own (absent) key, not inherit blue's 2. Set red to 1, go back to blue and
   // blue still reads 2 with both keys in storage. Seats are temporal; the keys are what persist.
   const leaveAndLaunch = async (side) => {
@@ -268,7 +268,7 @@ async function main() {
   await leaveAndLaunch("red");
   const redReadout = await readout(page);
   mark("the same browser on the red seat opens on red's own key, not blue's",
-    redReadout === "Msg 3", "red readout " + redReadout + " (blue was Msg 2 in the same storage)");
+    redReadout === "M3", "red readout " + redReadout + " (blue was M2 in the same storage)");
   await clickLevel(page); // red 3 -> 2
   await clickLevel(page); // red 2 -> 1
   const keysBoth = await page.evaluate(() => {
@@ -278,12 +278,12 @@ async function main() {
     } catch { return null; }
   });
   mark("cycling on the red seat leaves the blue key alone",
-    (await readout(page)) === "Msg 1" && Boolean(keysBoth) &&
+    (await readout(page)) === "M1" && Boolean(keysBoth) &&
       keysBoth["openchq.messageLevel.blue"] === "2" && keysBoth["openchq.messageLevel.red"] === "1",
     "readout " + (await readout(page)) + " / " + JSON.stringify(keysBoth));
   await leaveAndLaunch("blue");
   mark("returning to the blue seat restores blue's own level",
-    (await readout(page)) === "Msg 2", "blue readout " + (await readout(page)));
+    (await readout(page)) === "M2", "blue readout " + (await readout(page)));
 
   mark("no page errors", pageErrors.length === 0, pageErrors.slice(0, 3).join(" | "));
   const payload = { base: BASE, viewport: "1280x800", at3, at2, at1, at0, back3, reloaded, evidence, failed };

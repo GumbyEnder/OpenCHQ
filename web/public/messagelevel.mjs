@@ -59,8 +59,12 @@ export function filterLogLines(lines, level) {
   return (Array.isArray(lines) ? lines : []).filter((line) => line && showsLineAt(level, line.tag));
 }
 
+// PB-263b (PM 9677(a)): the strip readout is the compact "M3", not "Msg 3". The command's name and
+// its meaning stay in the aria-label and the title, unchanged; only the 30-odd pixels of visible text
+// go away, because the strip cannot hold them beside the other cold-war commands. The manual's own
+// header for the setting is "Message Level" (p.32); "M" is the abbreviation this port now paints.
 export function messageLevelReadout(level) {
-  return "Msg " + normalizeMessageLevel(level);
+  return "M" + normalizeMessageLevel(level);
 }
 
 export function messageLevelTitle(level) {

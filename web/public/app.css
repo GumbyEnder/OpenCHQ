@@ -834,12 +834,15 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
   body.in-match .nav .navbtn { padding: 2px 7px; }
 }
 
-/* At 1024x768 the strip's commands alone fill the row, so the wordmark and the account line give
-   way instead of squeezing the brand to nothing: the era/side/purse chip is game state and stays.
-   Sign out lives inside #account; Quit (in .gamebtns) still leaves the match. */
+/* At 1024x768 the strip's commands alone fill the row, so the wordmark and the full account line
+   give way instead of squeezing the brand to nothing: the era/side/purse chip is game state and
+   stays. PB-263b: the account line is no longer one handle + one Sign out button. In a match it is
+   ONE account button whose menu holds Sign out, and it keeps a slot at every width — PM 9684 AC3
+   requires Sign out to be reachable in two clicks at 1024 as well. What gives way here is the nav's
+   window (a scroll container since PB-276), never the control. */
 @media (max-width: 1100px) {
   body.in-match .mark { display: none; }
-  body.in-match #account { display: none; }
+  body.in-match .account .accountbtn { max-width: 8ch; }
   /* PB-187: at this width the two readouts must both be whole, so the brand is CONTENT-SIZED
      (`flex: 0 0 auto`) instead of a leftover bucket. As `flex: 1 1 120px` the brand box was ~200 px
      while its contents were ~218 px once the round number reached three digits, so #purseChip was
@@ -904,15 +907,52 @@ body.in-match .speedctl { display: flex; }
   text-align: center;
 }
 
-/* PB-263: the message level sits with the commands. A fixed slot keeps 3 -> 0 from moving the
-   neighbours (the PB-143 lesson), and the level is in the label itself, so the control always says
-   what it is set to. */
+/* PB-263b (PM 9677(a)): the readout is "M3", and the slot is 26 px — the old 56 px control minus 30.
+   A fixed slot still keeps 3 -> 0 from moving its neighbours (PB-143), and the level stays in the
+   label itself, so the control always says what it is set to. */
 .navbtn.msgbtn {
-  min-width: 56px;
-  padding: 2px 7px;
+  min-width: 26px;
+  padding: 2px 4px;
   text-align: center;
 }
 .navbtn.msgbtn[data-level="0"] { color: #8797ab; }
+
+/* PB-263b (PM 9677(b)): the in-match account cluster. One button — the handle, ellipsized, full name
+   in its title — opens a popover holding Sign out. The popover is fixed to the viewport's right edge
+   below the strip, so no part of it participates in the strip row and no nav command can be painted
+   under it. The menu's left edge is what PB-276's geometry arm measures against Quit's right edge. */
+.accountbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 2px 6px;
+}
+body.in-match .account .accountbtn { max-width: 12ch; }
+.accountbtn .who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accountbtn .caret { flex: 0 0 auto; opacity: 0.75; font-size: 10px; }
+.accountmenu {
+  position: fixed;
+  top: calc(var(--strip) - 2px);
+  right: 10px;
+  z-index: 70;
+  min-width: 104px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.accountmenu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
 
 .dialog {
   position: fixed;

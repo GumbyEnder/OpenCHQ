@@ -21,7 +21,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const GIVEN = (process.argv.find((v) => v.startsWith("--url=")) || "").slice(6).replace(/\/+$/, "") ||
   (process.env.E2E_URL || "").replace(/\/+$/, "");
-const WIDTHS = [[1280, 800], [1440, 900]];
+const WIDTHS = [[1280, 800], [1440, 900], [1024, 768]];
 const ERAS = ["1918", "1942", "1986", "2023"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failed = 0;
@@ -69,6 +69,9 @@ async function main() {
     const page = await context.newPage();
     const errs = [];
     page.on("pageerror", (e) => errs.push(String(e).slice(0, 200)));
+    // Quit asks `confirm(...)`; a hand check clicks OK, so the arm does too. Without this Playwright
+    // dismisses the dialog, the quit is never sent, and "the click left the match" would be vacuous.
+    page.on("dialog", (d) => d.accept().catch(() => {}));
     await page.goto(BASE, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => !document.body.classList.contains("booting"), null, { timeout: 30000 });
     if (!(await page.evaluate(() => Boolean(window.__chq && window.__chq.me())))) {
@@ -100,15 +103,41 @@ async function main() {
       return { id, ok: Boolean(top && top.id === id), top: top ? (top.id || top.className || top.tagName) : "none",
         rect: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)] };
     };
-    const ghost = [...strip.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "Sign out");
-    const gr = ghost ? ghost.getBoundingClientRect() : null;
     const q = document.getElementById("quitBtn").getBoundingClientRect();
+    // PB-263b: at rest the strip carries ONE account button and no Sign out row — the control is in
+    // the popover, so it cannot be painted under a nav command at all. That is the shape the card
+    // (PM 9677(b)) asks for; the "Sign out clears Quit" number is measured with the menu open below.
+    // invisible (display:none) does not count as a row in the strip.
+    const atRest = [...strip.querySelectorAll("button")]
+      .filter((b) => (b.textContent || "").trim().toLowerCase() === "sign out" && b.getClientRects().length > 0).length;
+    const accountBtn = document.getElementById("accountBtn");
+    let menu = null;
+    if (accountBtn) {
+      accountBtn.click();
+      const out = document.getElementById("signOutBtn");
+      if (out) {
+        const r = out.getBoundingClientRect();
+        const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+        const top = document.elementsFromPoint(cx, cy)[0];
+        menu = {
+          rect: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
+          inViewport: r.left >= 0 && r.right <= vw,
+          clearsQuitBy: Math.round(r.left - q.right),
+          clickable: Boolean(top && (top === out || out.contains(top))),
+          top: top ? (top.id || top.className || top.tagName) : "none",
+        };
+      }
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      const box = document.getElementById("accountMenu");
+      if (menu) menu.closedByEscape = Boolean(box && box.classList.contains("hidden"));
+    }
     return {
       hits: ["quitBtn", "newBtn", "resignBtn"].map(hit),
       strip: { sw: strip.scrollWidth, cw: strip.clientWidth },
-      ghost: gr ? [Math.round(gr.left), Math.round(gr.right)] : null,
-      ghostInViewport: gr ? gr.left >= 0 && gr.right <= vw : null,
-      ghostClearsQuit: gr ? (gr.left >= q.right || gr.right <= q.left) : null,
+      atRest,
+      accountBtn: Boolean(accountBtn),
+      accountTitle: accountBtn ? accountBtn.title : null,
+      menu,
       viewport: vw,
     };
   });
@@ -123,9 +152,11 @@ async function main() {
         g.hits.map((h) => `${h.id.replace("Btn", "")}->${h.top}${h.ok ? "" : " MISMATCH"}`).join(" "));
       mark(`${W}x${H} ${era}: the strip does not overflow its own width`,
         g.strip.sw <= g.strip.cw, `${g.strip.sw}/${g.strip.cw}`);
-      mark(`${W}x${H} ${era}: Sign out is inside the viewport and clear of Quit`,
-        g.ghostInViewport === true && g.ghostClearsQuit === true,
-        `ghost ${g.ghost ? g.ghost.join("..") : "absent"} viewport=${g.viewport} clearOfQuit=${g.ghostClearsQuit}`);
+      mark(`${W}x${H} ${era}: the account cluster is one button and no Sign out row sits in the strip`,
+        g.accountBtn === true && g.atRest === 0, `accountBtn=${g.accountBtn} signOutRows=${g.atRest} title=${JSON.stringify(g.accountTitle)}`);
+      mark(`${W}x${H} ${era}: Sign out (menu open) is in the viewport, clears Quit by >= 8 px, and is clickable`,
+        Boolean(g.menu && g.menu.inViewport && g.menu.clearsQuitBy >= 8 && g.menu.clickable && g.menu.closedByEscape),
+        g.menu ? `rect ${g.menu.rect.join("..")} clearBy=${g.menu.clearsQuitBy} top=${g.menu.top} esc=${g.menu.closedByEscape}` : "menu absent");
       mark(`${W}x${H} ${era}: no page error while the strip laid out`, errs.length === 0, errs.join(" | ") || "none");
       if (era === "2023") {
         // Playwright's own actionability check: it scrolls into view, waits for the element to be
@@ -135,12 +166,28 @@ async function main() {
         let detail = "clicked with no force:true";
         try {
           await page.click("#quitBtn", { timeout: 15000 });
-          await page.waitForSelector("#play:not(.hidden)", { timeout: 20000 });
+          await page.waitForFunction(() => !document.body.classList.contains("in-match"), null, { timeout: 20000 });
+          await page.waitForSelector("#launch", { state: "visible", timeout: 20000 });
         } catch (err) {
           clicked = false;
           detail = String(err).split("\n")[0].slice(0, 160);
         }
         mark(`${W}x${H} 2023: a real click on Quit leaves the match (actionability, no force)`, clicked, detail);
+        // PM 9684 AC3: Sign out is reachable in TWO clicks at this width, with Playwright's own
+        // actionability on both (no force:true): the account button, then the menu item.
+        let signedOut = true;
+        let signDetail = "2 clicks, no force:true";
+        try {
+          await enter(page, "2023");
+          await page.click("#accountBtn", { timeout: 15000 });
+          await page.click("#signOutBtn", { timeout: 15000 });
+          await page.waitForSelector("#gate:not(.hidden)", { timeout: 20000 });
+        } catch (err) {
+          signedOut = false;
+          signDetail = String(err).split("\n")[0].slice(0, 160);
+        }
+        mark(`${W}x${H} 2023: Sign out is reachable in two real clicks (account button, then menu item)`,
+          signedOut, signDetail);
       }
       await context.close();
     }
