@@ -2,7 +2,11 @@
 //
 //   (a) producing a unit makes the producing city AND some nearby friendly cities unready;
 //   (b) a costlier unit gives a longer unready time than a cheaper one at the same city;
-//   (c) more nearby friendly cities, capitals especially, give a longer time;
+//   (c) one more READY nearby friendly city gives a SHORTER time, and one more owned capital
+//       shorter still. MANUAL p.27's third clause ("proportional to the number of friendly
+//       cities, especially capitals") is contradicted by the running code; the brief says code
+//       what is measured, so this arm pins the archive's direction - the same precedence
+//       docs/re/ECONOMY_RE.md 1.3 set for p.27's ships;
 //   (d) placing in an unready city is refused, with a message that names the round it is ready.
 //
 // Only the SHAPE is pinned - presence and orderings. The exact durations are NOT: the arithmetic
@@ -13,8 +17,8 @@
 // What each arm would read if its producer were removed (the mutant each arm needs):
 //   (a) poolReadiness writes only the build site            -> the neighbour arm reads one site
 //   (b) the price term dropped from the pooled sum          -> tank reads the same as infantry
-//   (c) the pooling divisor (readiness.mjs capitalDivisor / the total/count split) - see the
-//       deviation note below: this arm is RED on this tree and is reported, not fixed
+//   (c) the pooling divisor (readiness.mjs capitalDivisor / the total/count split) -> one pot
+//       divided by more sites, and a smaller pot per capital: both directions stop moving
 //   (d) unreadyRefusal without the round                    -> the refusal stops naming a round
 import { warMatch } from "../wartime.mjs";
 import { matchSites, boardPayload } from "../../server/board.mjs";
@@ -135,9 +139,15 @@ export async function run(ctx) {
     }
     console.log("pb292 arm (d) ok at l.914-917: unready city refused with " + JSON.stringify(refused.error));
   }
-  // ---- (c) l.914-917: more nearby friendly cities, capitals especially, give a LONGER time ----
-  // Both halves are measured before any failure so the row carries both numbers: the manual's
-  // sentence has two clauses and a ruling may split them.
+  // ---- (c) l.914-917 clause three - THE MANUAL IS CONTRADICTED, AND THE ARCHIVE WINS ----------
+  // Manual p.27: "The unready time is proportional to the unit's cost and to the number of
+  // friendly cities (especially capitals) nearby." The running binary does the opposite on the
+  // count: FUN_2dfc_1874 pools ONE pot over the neighbourhood and divides it by the number of
+  // listed sites, and capitalDivisor puts each owned capital in the DIVISOR of the price term.
+  // So a ready neighbour dilutes (more sites, same pot) and a capital shrinks the pot itself.
+  // Precedence is the same one docs/re/ECONOMY_RE.md 1.3 already set for p.27's ships: what the
+  // binary does is what we ship, and the manual's prose loses. frodo 9833 / PM 9835 §2, READING 1.
+  // This arm therefore pins the ARCHIVE's direction, which is what the code implements.
   {
     const one = pool("infantry");
     const more = pool("infantry", (match, city) => {
@@ -148,28 +158,40 @@ export async function run(ctx) {
       const added = addNearby(match, city, "capital");
       if (!added) throw new Error("pb292 (c): no non-blue capital to bring alongside");
     });
-    const cityHolds = more.out.rounds > one.out.rounds;
-    const capHolds = cap.out.rounds > one.out.rounds;
-    console.log("pb292 arm (c) measured: alone " + one.out.rounds + " rounds; +1 city " + more.out.rounds
-      + " (neighbours " + one.neighbours.length + " -> " + more.neighbours.length + ", caps " + one.caps + " -> " + more.caps
-      + "); +1 capital " + cap.out.rounds + " (caps " + one.caps + " -> " + cap.caps + ")");
-    if (!cityHolds || !capHolds) {
-      const parts = [];
-      if (!cityHolds) {
-        parts.push("(cities) one more nearby friendly city made the same purchase " + more.out.rounds
-          + " rounds where the unpadded city read " + one.out.rounds
-          + " (neighbours " + one.neighbours.length + " -> " + more.neighbours.length + ") - the manual says more "
-          + "nearby friendly cities give a LONGER time; web/server/readiness.mjs:139-166 pools a ready neighbour's "
-          + "timer (0) into `total` and 1 into `count`, so the average falls");
-      }
-      if (!capHolds) {
-        parts.push("(capitals) one more friendly capital made it " + cap.out.rounds + " rounds where the unpadded city read "
-          + one.out.rounds + " (caps divisor " + one.caps + " -> " + cap.caps + ") - the manual says capitals ESPECIALLY "
-          + "give a longer time; web/server/readiness.mjs:89-100 capitalDivisor puts each capital in the price term's "
-          + "DIVISOR");
-      }
-      fail("pb292 (c) l.914-917 DEVIATION " + parts.join("; ") + ". Measured, reported, not fixed (PM 9823).");
+    console.log("pb292 arm (c) measured: alone " + one.out.rounds + " rounds (neighbours " + one.neighbours.length
+      + ", caps " + one.caps + "); +1 ready city " + more.out.rounds + " (neighbours " + more.neighbours.length
+      + ", caps " + more.caps + "); +1 capital " + cap.out.rounds + " (neighbours " + cap.neighbours.length
+      + ", caps " + cap.caps + ")");
+
+    // (c1) pooling dilutes: one more READY nearby friendly city gives a strictly SHORTER time. The
+    // mechanism is the count, not the pot: the listed set grows by one and the pot does not move,
+    // so each site's share falls. Assert the direction and the count; the numbers stay in the log.
+    if (!(more.out.rounds < one.out.rounds)) {
+      fail("pb292 (c1) l.914-917: one more ready nearby friendly city did not shorten the time ("
+        + one.out.rounds + " -> " + more.out.rounds + "). web/server/readiness.mjs poolReadiness divides one pot "
+        + "by the number of listed sites, so a ready neighbour must dilute");
     }
-    console.log("pb292 arm (c) ok at l.914-917: +1 city " + one.out.rounds + " -> " + more.out.rounds + ", +1 capital -> " + cap.out.rounds);
+    if (!(more.neighbours.length === one.neighbours.length + 1)) {
+      fail("pb292 (c1): the extra city did not join the pool (neighbours " + one.neighbours.length
+        + " -> " + more.neighbours.length + "); the arm's mechanism is the count, so the count must move by one");
+    }
+    if (!(more.caps === one.caps)) fail("pb292 (c1): bringing a CITY moved the capital divisor " + one.caps + " -> " + more.caps);
+
+    // (c2) capitals shorten harder: a capital is strictly shorter than the unpadded city AND
+    // strictly shorter than the +1-city arm, and the divisor is the reason (caps 4 -> 5).
+    if (!(cap.out.rounds < one.out.rounds)) {
+      fail("pb292 (c2) l.914-917: an extra owned capital did not shorten the time (" + one.out.rounds + " -> " + cap.out.rounds + ")");
+    }
+    if (!(cap.out.rounds < more.out.rounds)) {
+      fail("pb292 (c2) l.914-917: an extra capital (" + cap.out.rounds + ") was not shorter than an extra CITY ("
+        + more.out.rounds + "), so 'capitals especially' is not pinned in the direction the archive implements");
+    }
+    if (!(cap.caps === one.caps + 1)) {
+      fail("pb292 (c2): the extra capital did not reach the divisor (caps " + one.caps + " -> " + cap.caps
+        + "); web/server/readiness.mjs:capitalDivisor is the mechanism this arm pins");
+    }
+    console.log("pb292 arm (c) ok at l.914-917 (archive direction): +1 ready city " + one.out.rounds + " -> "
+      + more.out.rounds + " (count " + one.neighbours.length + " -> " + more.neighbours.length + "), +1 capital -> "
+      + cap.out.rounds + " (caps " + one.caps + " -> " + cap.caps + ")");
   }
 }

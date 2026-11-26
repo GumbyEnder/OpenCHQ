@@ -36,6 +36,24 @@ cell with id 1" and "a friendly dock is the dock next to a friendly site" are pr
 > nearby. Placing in an unready city shows a mode-bar message giving the round it will be ready.
 > Ready and unready cities are highlighted differently.
 
+**The third sentence of that quotation is contradicted by the archive, and the archive wins.**
+Precedence is `ECONOMY_RE.md` 1.3's (p.27's "ships use none" lost the same way). The manual says the
+unready time is proportional to the number of friendly cities nearby, "especially capitals". The
+decoded `FUN_2dfc_1874` pools ONE pot over the neighbourhood and divides it by the number of listed
+sites (the build site counted twice), and `capitalDivisor` puts each owned capital in the DIVISOR of
+the price term. So a ready neighbour dilutes the time and a capital shrinks the pot. Measured on the
+1986 board, blue city 1, one infantry, round 10:
+
+| fixture | rounds | neighbours | caps divisor |
+|---|---|---|---|
+| city alone | 22 | 2 | 4 |
+| + one more ready nearby friendly city | 16 | 3 | 4 |
+| + one more owned capital | 13 | 3 | 5 |
+
+The first sentence of the quotation - the city *and* its neighbours go unready - is right, and is
+pinned by PB-292's arm (a). A DOSBox experiment on the original is owed (build in a lone city versus
+one with a neighbour, compare ready rounds) and is logged as an open RE question; it does not block.
+
 State is `site.readyRound`: the first round a site may produce again. The server refuses a
 purchase on an unready cell with `That city is not ready: it will be ready at round N.` The
 placement mask marks a ready legal cell `1` and an unready legal cell `2`, and the page paints

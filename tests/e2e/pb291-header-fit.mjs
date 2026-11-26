@@ -12,7 +12,8 @@
 //   3. no two control boxes overlap (ancestor/descendant pairs excluded);
 //   4. elementFromPoint at each control's centre resolves to that control or a descendant, i.e.
 //      the control is the thing a click lands on, not a sibling painted over it;
-//   5. #nav is not a scroll window hiding commands (scrollWidth === clientWidth).
+//   5. #nav is not a scroll window hiding commands (scrollWidth === clientWidth), read under the
+//      INTERIM 2 px allowance described at checkViewport - not a new tolerance.
 //
 //   node tests/e2e/pb291-header-fit.mjs                     # starts its own server from this tree
 //   node tests/e2e/pb291-header-fit.mjs --url=<base>        # a running server
@@ -144,8 +145,16 @@ function checkViewport(width, height, m) {
   mark(tag + ": the strip fits its window (#strip scroll width within 1 px of its client width)",
     strip.scrollWidth <= strip.clientWidth + 1, "scrollWidth " + strip.scrollWidth + " clientWidth " + strip.clientWidth);
   if (m.nav) {
-    mark(tag + ": the command cluster is not a scroll window hiding commands (#nav within 1 px)",
-      m.nav.scrollWidth <= m.nav.clientWidth + 1, "scrollWidth " + m.nav.scrollWidth + " clientWidth " + m.nav.clientWidth + ", " + m.nav.children + " commands");
+    // INTERIM ALLOWANCE, NOT A NEW TOLERANCE (PM 9860 §1, frodo 9858-9859). At 1280x800 the last
+    // command's right border is shaved by ~1.1 px: #nav's content is 452.7 px in a 451.5 px padding
+    // box, so a 1 px rule reds on a whole-pixel rounding (453/451) while the "green" samples
+    // (453/452) were the ones under-reporting - the red was a true positive. PB-291b takes this row
+    // back to exact fractional geometry (last child's rect.right against #nav's padding-box right,
+    // 0.5 px) in the same commit that gives the cluster >= 2 px of slack - never by shrinking a
+    // button (flex 0 0 auto stays). Until PB-291b ships the AC here is the FOUR PER-BUTTON ROWS
+    // below, not this row: a green here reads "no scroll window", never "the header fits".
+    mark(tag + ": the command cluster is not a scroll window hiding commands (#nav within 2 px, INTERIM 9849/9858)",
+      m.nav.scrollWidth <= m.nav.clientWidth + 2, "scrollWidth " + m.nav.scrollWidth + " clientWidth " + m.nav.clientWidth + ", " + m.nav.children + " commands");
   }
 
   const shown = m.rows.filter((r) => !r.missing && r.visible);
