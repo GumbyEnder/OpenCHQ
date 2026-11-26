@@ -66,5 +66,7 @@ export function messageLevelReadout(level) {
 export function messageLevelTitle(level) {
   const at = normalizeMessageLevel(level);
   return "Message level " + at + " of 3: " + MESSAGE_LEVEL_MEANING[at] + ". Click to cycle. " +
-    "The manual states no default level: 3 is this port's choice.";
+    "The manual states no default level: 3 is this port's choice. " +
+    "Port decision: what counts as 'serious' is a capital alarm, or an enemy on a friendly city's " +
+    "doorstep (manual p.32, Message Level).";
 }
