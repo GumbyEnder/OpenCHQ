@@ -1137,7 +1137,11 @@ body.in-match .speedctl { display: flex; }
 .buyrefusals li { margin: 2px 0; }
 /* The air table's fourth column is a row of small buttons, not a number. */
 .airtable .buyrow { grid-template-columns: 1fr 96px 60px 150px; }
-.airmissions { display: flex; gap: 4px; justify-content: flex-end; }
+/* PB-293 page leg: four mission buttons do not fit 150 px in one line. Without wrapping, the flex
+   container (justify-content: flex-end) overflowed LEFTWARD and the Scramble button painted over the
+   AWAY cell, so a plane owing "4 rounds" showed a button instead of the number. Wrapping keeps every
+   button inside its own column, which is what makes the readout legible. */
+.airmissions { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; min-width: 0; }
 .airmissions button { font-size: 11px; padding: 1px 7px; border-radius: 6px; }
 
 body.in-match .mapstage {
