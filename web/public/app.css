@@ -728,16 +728,28 @@ body.in-match .roundLog {
   display: none;
 }
 
-body.in-match .nav {
+body.in-match #strip > .nav {
   display: flex;
   align-items: center;
   gap: 4px;
   /* PB-179: the strip is a single row of fixed-height controls, and `flex-shrink: 1` let this
      container shrink UNDER its buttons: the buttons then overflowed their own box and the next
      sibling (.gamebtns) started at the shrunken edge, so New painted on top of Log at 1280x800.
-     The brand is the one item that may give way (it ellipsizes); everything else keeps its width. */
-  flex: 0 0 auto;
+     The brand is the one item that may give way (it ellipsizes); everything else keeps its width.
+     PB-276: the commands are the one cluster with room to give, so this box MAY shrink now — but it
+     is a scroll container, so a shrunken nav scrolls its own commands instead of painting them over
+     .gamebtns and .whoami. The buttons keep their width (`flex: 0 0 auto` below); only the window
+     onto them narrows. */
+  flex: 0 1 auto;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+
+body.in-match #strip > .nav > * {
+  flex: 0 0 auto;
 }
 
 body.in-match #strip > .brand {
@@ -745,8 +757,14 @@ body.in-match #strip > .brand {
      brand's own contents were already using and the brand grew only to the leftover — 5.9 px short
      of `#stripInfo + gap + #purseChip` at 1280x800, which put the chip's right edge under #clockBtn.
      `flex-basis: auto` measures the contents, and `flex-shrink: 0` keeps the readouts whole: the
-     account line is the item that gives way (see .whoami below). */
-  flex: 1 0 auto;
+     account line is the item that gives way (see .whoami below).
+     PB-276: the row is ~160 px over at 1280x800 once the commands are counted, and the account box
+     can no longer be the thing that gives (that is what put the ghost on Quit). The brand's own
+     multi-part readout is the elastic thing now — `#stripInfo` ellipsizes inside it, `#purseChip` is
+     `flex: 0 0 auto` because PB-180 says the cash figure is never clipped. Shrink weight 100 against
+     the nav's 1 means the readout ellipsizes FIRST and the commands only start to scroll once the
+     brand has nothing left to give. */
+  flex: 1 100 auto;
   min-width: 0;
   overflow: hidden;
 }
@@ -763,14 +781,25 @@ body.in-match #strip > .clockbtn {
    clipped the tail of the cash figure and the box laid itself under #clockBtn. The name ellipsizes
    (`text-overflow` on #account) before the purse loses a pixel. */
 body.in-match #strip > .whoami {
-  flex: 0 1 auto;
-  min-width: 0;
+  /* PB-187: the account line is the row's spare tyre, not the purse's — but PB-276 measured what
+     "spare tyre" cost when the tyre is the box that holds a control: `.whoami` at `flex: 0 1 auto`
+     shrank to 92 px at 1440x900 in 2023, #account to 32 px, and because #account is a flex row with
+     `justify-content: flex-end` its contents overflowed to the LEFT — the Sign out ghost painted at
+     1304..1370 while Quit's own box was 1282..1326, so the ghost owned Quit's centre and the 2023
+     click timed out. The thing that gives way is the username (`#account .who` ellipsizes inside
+     `max-width: 22vw`), never the box around the control: `.whoami` is content-sized now. */
+  flex: 0 0 auto;
 }
 
 body.in-match .account {
   max-width: 22vw;
   min-width: 0;
 }
+
+/* PB-276: inside the brand, the readout is the part that gives (it is one ellipsis'd line by
+   design); the purse chip keeps its measured width so the cash figure is never cut (PB-180). */
+body.in-match .brand > .stripinfo { flex: 1 1 auto; min-width: 0; }
+body.in-match .brand > .pursechip { flex: 0 0 auto; }
 
 /* PB-187b: the username is the only thing allowed to ellipsize. #account is a flex row whose
    LAST item is a control, and a single clipping box that held text + button (PB-187's shape) let
@@ -792,6 +821,17 @@ body.in-match .account {
 }
 .account .ghost {
   flex: 0 0 auto;
+}
+
+/* PB-276: below 1500 px the row is over its budget by 30-160 px with the Message Level control in
+   it. The commands compact first — 6 px of padding each is invisible next to losing a button — so
+   the strip's own readout only ellipsizes for what is left over. Measured at 609deeb + this rule:
+   #stripInfo 289/319 at 1440 and 212/319 at 1280, with every command still on screen (nav
+   347/347 at both widths). The head of that line (era, side, round, held/paused) is what survives
+   the ellipsis; the trailing war-state clause repeats the log and the map. */
+@media (max-width: 1500px) {
+  body.in-match .nav { gap: 3px; }
+  body.in-match .nav .navbtn { padding: 2px 7px; }
 }
 
 /* At 1024x768 the strip's commands alone fill the row, so the wordmark and the account line give
