@@ -496,8 +496,13 @@ function sizeCanvas() {
       viewForCanvas();
     } else {
       const fit = fitViewport(board.width, board.height, boardPayload.width || 320, boardPayload.height || 136, 64);
-      const midX = (old.left + old.viewW / 2) / old.scale;
-      const midY = (old.top + old.viewH / 2) / old.scale;
+      // PB-280: the centre cell is the INVERSE of cellToPixel (render.mjs:134), which reads
+      // pixel = left + cell * scale - so the cell under the viewport's centre pixel is
+      // (viewW / 2 - left) / scale. The old form ADDED left, so every canvas-size change that was
+      // not a window resize (a band row arriving, a panel taking height) re-centred a zoomed camera
+      // on a cell that was left/scale cells away from the one the player was looking at.
+      const midX = (old.viewW / 2 - old.left) / old.scale;
+      const midY = (old.viewH / 2 - old.top) / old.scale;
       camera = { ...fit, scale: Math.max(fit.scale, MIN_ZOOM, Math.min(64, old.scale)) };
       camera.minScale = Math.max(MIN_ZOOM, fit.scale);
       camera.left = Math.round(camera.viewW / 2 - midX * camera.scale);
