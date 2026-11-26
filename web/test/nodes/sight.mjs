@@ -154,7 +154,11 @@ export async function run(ctx) {
   // leaks nothing the sites do not already carry. opponent (PB-152) is the other side's payday
   // only - the manual's Alternate Function shows income and prints ??? for the balance - and it
   // carries no purse, so it is public in the same way.
-  expect(fail, topKeys === "alarm,capitalList,capitals,notes,opponent,over,ownership,peace,pieces,result,roundSeconds,routes,satellites,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
+  // chat (PB-273) is the two-human message, passed in by the lobby and carried by the seat branch
+  // only: it is null here because this arm calls forSeat without a room, and the key is present so a
+  // field that stops riding the seat fails this pin rather than silently disappearing. The list stays
+  // exhaustive and sorted so an ACCIDENTAL field is still a red.
+  expect(fail, topKeys === "alarm,capitalList,capitals,chat,notes,opponent,over,ownership,peace,pieces,result,roundSeconds,routes,satellites,seat,sites,unscreened,winner", "the view shape changed: " + topKeys);
   for (const piece of reachView.pieces) {
     for (const key of ["hidden", "visible", "concealed", "seen"]) {
       expect(fail, !(key in piece), "a piece carries a '" + key + "' flag: " + JSON.stringify(piece));

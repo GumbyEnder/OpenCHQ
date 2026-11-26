@@ -172,6 +172,15 @@
   <!-- PB-137: a flash is an acknowledgement and expires on its own timer. A finished match is not:
        the result line sits in its own element, outlives every flash, and is cleared only by leaving
        the match (`say()` cannot reach it). -->
+  <!-- PB-273: the message strip the manual describes (p.32: what you type "will appear on your
+       opponent's message bar"). It is one field and Enter sends; the server carries the sentence and
+       decides whether the room has a chat surface at all (two humans only), so the bar is hidden
+       until a room frame says so. The text lands on the flash line above and in the Log below. -->
+  <form id="chatBar" class="chatbar hidden" autocomplete="off">
+    <label class="visuallyhidden" for="chatInput">Message your opponent</label>
+    <input id="chatInput" name="chat" type="text" maxlength="200" placeholder="Message your opponent — Enter to send">
+    <button type="submit" id="chatSend">Send</button>
+  </form>
   <p id="flash" class="flash" role="status"></p>
   <p id="result" class="result" role="status"></p>
   <footer id="buildFooter" class="buildfooter">

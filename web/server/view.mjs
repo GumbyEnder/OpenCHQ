@@ -258,7 +258,11 @@ function seatStatus(match, side) {
   };
 }
 
-export function forSeat(match, side, now = Date.now()) {
+// PB-273: `chat` is the last message between the two humans, passed in by the lobby (it lives on the
+// room, not on the match) and carried by the SEAT branch only. The non-seat branch below builds its
+// own object and never reads the argument, so a spectator or the harness cannot receive a word of it
+// — the filter is the branch, not a caller's care.
+export function forSeat(match, side, now = Date.now(), chat = null) {
   if (!match || !Array.isArray(match.pieces)) {
     return { pieces: [], routes: {}, sites: [], capitals: {}, notes: [] };
   }
@@ -368,6 +372,8 @@ export function forSeat(match, side, now = Date.now()) {
   // keeps its own copy of the round length is a second source of truth for a tunable.
   return {
     pieces, routes, sites, capitals, capitalList, seat, opponent, notes, alarm, over, winner, result, unscreened,
+    // PB-273: the two-human chat line, seat branch only (see the signature note above).
+    chat: chat || null,
     // PB-245: the peace state, identical for both seats - `over` and `winner` above are untouched
     // by an accepted cease fire, which is what makes peace a state rather than an ending.
     peace: peaceOf(match),

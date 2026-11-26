@@ -92,6 +92,28 @@ function openFilm(room) {
   }
 }
 
+// PB-273: chat is a message between the two humans, not part of the match. The cap and the escaping
+// live here, on the server, beside the other limits: a client that never loads cannot inject past
+// them. The same sentence is put on the wire in two forms — `text` for the page's textContent sinks
+// and for the Log, `html` for any sink that parses markup — so neither half can be skipped by a
+// client, and neither form is produced in the page.
+export const CHAT_CAP = 200;
+export function cleanChat(raw) {
+  return String(raw === undefined || raw === null ? "" : raw)
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, CHAT_CAP);
+}
+export function escapeChat(text) {
+  return String(text === undefined || text === null ? "" : text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function seatUsername(room, username) {
   if (!room || !room.seats) return null;
   for (const side of ["blue", "red"]) {
@@ -155,8 +177,12 @@ export function deltaBetween(last, view) {
       sites.push({ id: site.id, owner: site.owner ?? null, name: site.name, kind: site.kind });
     }
   }
+  // PB-273: chat is state a delta can carry, but only when it changed — a message that already rode
+  // one frame must not be re-sent on every round.
+  const chatChanged = last.chat !== signature(view.chat || null);
   const delta = {
     round: view.round,
+    ...(chatChanged && view.chat ? { chat: view.chat } : {}),
     // The alarm rides the delta too. It only ever appeared in a whole frame, and a whole frame
     // may be twenty-five rounds away — long enough for the capital to fall first.
     alarm: view.alarm || null,
@@ -297,7 +323,10 @@ export function createLobby() {
 
   function roomView(room, username) {
     const you = room.seats.blue.username === username ? "blue" : "red";
-    const seen = room.match ? forSeat(room.match, you) : null;
+    // PB-273: the chat entry rides the SEAT frame. It is passed into forSeat rather than stored on
+    // the match, so the non-seat (spectator/harness) branch — which builds its own object and never
+    // reads it — cannot carry a word of it.
+    const seen = room.match ? forSeat(room.match, you, Date.now(), room.chat || null) : null;
     return {
       id: room.id,
       mode: room.mode,
@@ -307,6 +336,11 @@ export function createLobby() {
       blue: { username: room.seats.blue.kind === "bot" ? "Bot" : nameOf(room.seats.blue.username), kind: room.seats.blue.kind },
       red: { username: room.seats.red.kind === "bot" ? "Bot" : nameOf(room.seats.red.username), kind: room.seats.red.kind },
       round: room.match ? room.match.round : 0,
+      // PB-273: the last message between the two humans, and whether this room has a chat surface at
+      // all. Both are the server's answer: the page does not decide from a seat name it guessed.
+      chat: seen ? (seen.chat || null) : null,
+      chatOpen: Boolean(room.seats.blue && room.seats.red
+        && room.seats.blue.kind === "human" && room.seats.red.kind === "human"),
       // T-032 B1: which of the five opponents this bot room seated, so the page and a hand-check
       // read the same name the server acts on.
       bot: room.match && Number.isInteger(room.match.opponentLevel)
@@ -425,6 +459,7 @@ export function createLobby() {
       note: view.note,
       seat: signature(view.seat),
       capitals: signature(view.capitals),
+      chat: signature(view.chat || null),
       capitalList: signature(view.capitalList || null),
       ownership: signature(view.ownership || null),
       pieces,
@@ -1056,6 +1091,49 @@ export function createLobby() {
     return { ok: true, events: result.events || [] };
   }
 
+  // PB-273: one message, both surfaces. The live half is the message strip at the bottom of each
+  // screen; the durable half is one line in each seat's Log, pushed through the same `log` frame the
+  // round events use so a reload replays it from the room rather than from the page.
+  //
+  // Two-human rooms only: the bot has no chat surface (the manual's sentence is about an opponent
+  // who replies, p.32), so a bot room refuses here rather than opening a bar nobody answers.
+  function chatOp(username, message) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    const otherSide = mine === "blue" ? "red" : "blue";
+    const other = room.seats[otherSide];
+    if (!other || other.kind !== "human") {
+      return { error: "Chat is for two-player games: a bot does not answer messages." };
+    }
+    const text = cleanChat(message.text !== undefined ? message.text : message.message);
+    if (!text) return { error: "An empty message is not sent." };
+    const entry = {
+      side: mine,
+      from: nameOf(username),
+      round: Number(room.match.round) || 0,
+      text,
+      html: escapeChat(text),
+    };
+    const sideWord = mine === "blue" ? "Blue" : "Red";
+    const line = { round: entry.round, text: sideWord + " (" + entry.from + "): " + text };
+    room.chat = entry;
+    if (!room.log) room.log = { blue: [], red: [] };
+    for (const side of ["blue", "red"]) {
+      const seat = room.seats[side];
+      if (!seat || seat.kind !== "human") continue;
+      if (!Array.isArray(room.log[side])) room.log[side] = [];
+      room.log[side].push(line);
+      const peer = sockets.get(seat.username);
+      if (!peer) continue;
+      peer.send({ op: "chat", roomId: room.id, round: entry.round, chat: entry });
+      peer.send({ op: "log", roomId: room.id, round: entry.round, lines: [line] });
+    }
+    saveRoom(room);
+    return { ok: true, chat: entry };
+  }
+
   function roomFor(username) {
     const roomId = seatOf.get(username);
     return roomId ? rooms.get(roomId) : null;
@@ -1656,6 +1734,7 @@ export function createLobby() {
       else verbose.add(username);
       return { ok: true, on: verbose.has(username) };
     }
+    if (op === "chat") return chatOp(username, message);
     if (op === "leave") return leave(username);
     if (op === "quit") return leave(username);
     if (op === "resign") return resignOp(username);

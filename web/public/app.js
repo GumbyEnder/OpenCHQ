@@ -391,6 +391,37 @@ function send(message) {
   say("Connecting to the lobby - your request is queued and will be sent as soon as it answers.");
 }
 
+// PB-273: chat is one field, Enter sends, and the sentence is the server's to carry. `room.chatOpen`
+// is the server's answer to "is this a two-human room", so the bar is shown on a frame, never on a
+// guess about the seat name.
+const chatBar = document.getElementById("chatBar");
+const chatInput = document.getElementById("chatInput");
+function syncChatBar() {
+  if (!chatBar) return;
+  const open = Boolean(room && room.chatOpen);
+  chatBar.classList.toggle("hidden", !open);
+  if (chatInput) {
+    chatInput.disabled = !open;
+    if (open) chatInput.setAttribute("maxlength", "200");
+  }
+}
+// One sentence, one surface for the live half: the flash line the manual calls the message bar. The
+// durable half is the server's own log line, which arrives as an ordinary `log` frame.
+function sayChat(entry) {
+  if (!entry || !entry.text) return;
+  const side = entry.side === "blue" ? "Blue" : entry.side === "red" ? "Red" : "Chat";
+  say(side + ": " + entry.text);
+}
+if (chatBar && chatInput) {
+  chatBar.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = chatInput.value || "";
+    if (!text.trim()) return;
+    send({ op: "chat", text });
+    chatInput.value = "";
+  });
+}
+
 function flushOutbox() {
   if (!outbox.length || !socket || socket.readyState !== WebSocket.OPEN) return;
   const queued = outbox;
@@ -3545,6 +3576,7 @@ function connect() {
         economyView = "own";
       }
       room = message.room;
+      syncChatBar();
       // A new round normally drops the previous scan -- the server's reveal is a per-round mark.
       // But the original is continuous real time: a pass that has STARTED must finish even if a
       // remake round ticks under it, so only a finished pass is cleared here (T-022, room 7630).
@@ -3598,6 +3630,7 @@ function connect() {
       if (preview) dropHover();
     } else if (message.op === "delta") {
       applyDelta(message.delta);
+      if (message.delta && message.delta.chat) sayChat(message.delta.chat);
     } else if (message.op === "placement") {
       if (!buying || String(message.kind) !== String(buying)) return;
       if (message.error || !message.mask) {
@@ -3624,6 +3657,12 @@ function connect() {
         error: message.error || "",
       };
       drawMatch();
+    } else if (message.op === "chat") {
+      // The frame is the room's own state as well as the live line: a later sync or delta compares
+      // against it, and the debug surface a hand-check reads should not say "no message" after one.
+      if (room) room.chat = message.chat;
+      sayChat(message.chat);
+      syncChatBar();
     } else if (message.op === "log") {
       noteLog(message.lines);
     } else if (message.op === "bought") {
