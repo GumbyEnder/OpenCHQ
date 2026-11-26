@@ -10,11 +10,11 @@
 //   cited, and config carries it (combat.paradropLoss 0.25, source "Manual p.50 (UNMEASURED)").
 //
 // Producers under test, both in web/server/air.mjs:
-//   transferPlane (:220-283) via sendMission(..., "transfer", target)
-//   paradrop      (:509-549)
+//   transferPlane (:220-281) via sendMission(..., "transfer", target)
+//   paradrop      (:509-550)
 //
 // THE PORT HAS NO LOADED-TRANSFER AND NO PLANE-DRIVEN PARADROP. `transferPlane` reads only x/y off
-// the target (:226-228) and rebases one aircraft; `paradrop` takes an infantry id and a cell and
+// the target (:230-231) and rebases one aircraft; `paradrop` takes an infantry id and a cell and
 // never names an aircraft. So most arms below are DEVIATIONS, reported with the producer line and
 // not fixed here (PM 9844: tests first, reds as deviations). The two GREEN arms carry mutants.
 //
@@ -103,7 +103,7 @@ export async function run(ctx) {
     if (plane.x !== 83 || plane.y !== 43) fail("the plane did not rebase (at " + plane.x + "," + plane.y + ")");
     if (rider.x !== 83 || rider.y !== 43) {
       fail("the infantry stayed at " + rider.x + "," + rider.y + " while its plane rebased to 83,43;"
-        + " a loaded transfer carries it (producer: web/server/air.mjs transferPlane :220-283 reads"
+        + " a loaded transfer carries it (producer: web/server/air.mjs transferPlane :220-281 reads"
         + " only x/y off the target and never moves a second piece) - DEVIATION, not fixed here");
     }
     if (plane.loaded) fail("the plane still reads loaded after the transfer landed");
@@ -130,7 +130,7 @@ export async function run(ctx) {
     const order = sendMission(match, "blue", "blue:air:296", "transfer", { x: 83, y: 43, load: rider.id });
     if (!order.error) {
       fail("a loaded transfer loaded an infantry that was NOT entrenched; the manual requires an"
-        + " entrenched loader (producer: web/server/air.mjs transferPlane :220-283 never reads"
+        + " entrenched loader (producer: web/server/air.mjs transferPlane :220-281 never reads"
         + " entrenched) - DEVIATION, not fixed here");
     }
   });
@@ -154,7 +154,7 @@ export async function run(ctx) {
       fail("a LOADED transfer to a base " + away + " cells away was ACCEPTED; a loaded transfer's"
         + " destination must lie inside the restricted air radius (" + restricted + "), and only an"
         + " unloaded transfer may use the maximum (" + reach + ") - producer: web/server/air.mjs"
-        + " transferPlane :262 gates on airReach for every transfer, loaded or not. DEVIATION,"
+        + " transferPlane :252 gates on airReach for every transfer, loaded or not. DEVIATION,"
         + " not fixed here");
     }
   });
@@ -168,7 +168,7 @@ export async function run(ctx) {
     if (!order.error) {
       fail("a CARRIER-BASED aircraft made a loaded transfer to New York's base and it was ACCEPTED;"
         + " the manual says a carrier-based plane can do neither a loaded transfer nor a paradrop"
-        + " (producer: web/server/air.mjs transferPlane :220-283 never asks where the plane is"
+        + " (producer: web/server/air.mjs transferPlane :220-281 never asks where the plane is"
         + " based) - DEVIATION, not fixed here");
     }
   });
@@ -197,7 +197,7 @@ export async function run(ctx) {
     if (!order.error) {
       fail("a paradrop onto OCEAN at " + cell.x + "," + cell.y + " was ACCEPTED (the infantry landed"
         + " on " + rider.x + "," + rider.y + "); rule 1 is land only. Producer: web/server/air.mjs"
-        + " paradrop :509-549 reads no terrain - DEVIATION, not fixed here");
+        + " paradrop :509-550 reads no terrain - DEVIATION, not fixed here");
     }
   });
 
@@ -210,7 +210,7 @@ export async function run(ctx) {
     const order = paradrop(match, "blue", rider.id, { x: city.x, y: city.y });
     if (!order.error) {
       fail("a paradrop onto the empty ENEMY CITY " + city.name + " was ACCEPTED; rule 1 is \"not on"
-        + " an enemy city\" (producer: web/server/air.mjs paradrop :509-549 reads no site table)"
+        + " an enemy city\" (producer: web/server/air.mjs paradrop :509-550 reads no site table)"
         + " - DEVIATION, not fixed here");
     }
   });

@@ -93,7 +93,7 @@ export async function run(ctx) {
     match.pieces.push(piece("red:inf:1", "red", "infantry", "land", 80 + radius - 3, 40));
     if (!seen(match, "red:inf:1")) {
       fail("the active plane did not reveal an enemy infantry " + (radius - 3) + " cells away"
-        + " (sight is config's " + radius + "); producer: web/server/view.mjs visibleEnemy:145,"
+        + " (sight is config's " + radius + "); producer: web/server/view.mjs visibleEnemy:143,"
         + " ownPieces.some(... withinSight)");
     }
   });
@@ -138,7 +138,7 @@ export async function run(ctx) {
       fail("an INACTIVE aircraft still revealed an enemy infantry 5 cells away; manual l.779 says an"
         + " inactive air unit reveals nothing, so the enemy must drop out of view while it is away."
         + " Producer: web/server/air.mjs inactiveRounds is never read by web/server/view.mjs"
-        + " visibleEnemy (:114-146) - DEVIATION, not fixed here");
+        + " visibleEnemy (:114-143) - DEVIATION, not fixed here");
     }
   });
 

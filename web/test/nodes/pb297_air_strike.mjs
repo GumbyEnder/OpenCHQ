@@ -11,7 +11,7 @@
 // The constant is cited to config, whose source line records the disassembly
 // (FUN_1ac5_0dbe 1ac5:0dbe, 8795-8814: 34 for kinds 5-7, 25 for kinds 8/9).
 //
-// Producer: web/server/air.mjs sendMission's `mission.type === "strike"` block (:465-505).
+// Producer: web/server/air.mjs sendMission's `mission.type === "strike"` block (:468-503).
 //
 // Arms (a), (b), (c) and (d) are GREEN and each carries a mutant (ticket card). The note at the end
 // records the manual's own "six strikes" count against the halving the port implements: halving
@@ -102,7 +102,7 @@ export async function run(ctx) {
     const afterOne = inf.strength;
     if (Number(afterOne.toFixed(2)) !== Number((max * landFactor).toFixed(2))) {
       fail("a full land target read " + afterOne + " after one strike, not max x config airStrikeLandFactor = "
-        + Number((max * landFactor).toFixed(2)) + " (producer: web/server/air.mjs:482)");
+        + Number((max * landFactor).toFixed(2)) + " (producer: web/server/air.mjs:488)");
     }
     // Second strike: half of what is LEFT, not half of the bar again.
     ready(first);
@@ -110,7 +110,7 @@ export async function run(ctx) {
     const afterTwo = inf.strength;
     if (Number(afterTwo.toFixed(2)) !== Number((afterOne * landFactor).toFixed(2))) {
       fail("the second strike left " + afterTwo + ", not half of the remaining " + afterOne + " = "
-        + Number((afterOne * landFactor).toFixed(2)) + " (producer: web/server/air.mjs:482)");
+        + Number((afterOne * landFactor).toFixed(2)) + " (producer: web/server/air.mjs:488)");
     }
     // A damaged target proves it is the REMAINING bar: 40 -> 20, not 40 - 50.
     const hurt = board();
@@ -120,7 +120,7 @@ export async function run(ctx) {
     if (Number(weak.strength.toFixed(2)) !== Number((40 * landFactor).toFixed(2))) {
       fail("a land target at 40 read " + weak.strength + " after a strike, not 40 x " + landFactor
         + " = " + Number((40 * landFactor).toFixed(2)) + " - the strike is not reading the remaining bar"
-        + " (producer: web/server/air.mjs:482)");
+        + " (producer: web/server/air.mjs:488)");
     }
   });
 
@@ -139,7 +139,7 @@ export async function run(ctx) {
     if (dealt[0] !== seaAmount || dealt[1] !== seaAmount) {
       fail("two strikes on a hull dealt " + JSON.stringify(dealt) + "; the manual's sea target takes a"
         + " constant, config airStrikeSeaAmount x maxStrength = " + seaAmount + " each"
-        + " (producer: web/server/air.mjs:474)");
+        + " (producer: web/server/air.mjs:483)");
     }
     if (hull.strength !== 0 && Number(hull.strength.toFixed(2)) !== Number((max - 2 * seaAmount).toFixed(2))) {
       fail("after two constant strikes the hull reads " + hull.strength + ", not " + (max - 2 * seaAmount));
@@ -157,7 +157,7 @@ export async function run(ctx) {
     const aliveEarly = match.pieces.some((piece) => piece.id === "red:cruiser:1");
     if (!aliveEarly) {
       fail("a full cruiser died on the SECOND strike; the manual's count is three"
-        + " (constant = " + seaAmount + ", bar = " + max + ") - producer: web/server/air.mjs:474");
+        + " (constant = " + seaAmount + ", bar = " + max + ") - producer: web/server/air.mjs:483");
     }
     ready(match);
     strike(match, { x: 84, y: 44 });
@@ -165,7 +165,7 @@ export async function run(ctx) {
     if (still) {
       fail("three strikes from a full bar left the cruiser on the board at strength "
         + (match.pieces.find((piece) => piece.id === "red:cruiser:1") || {}).strength
-        + "; the manual's ship dies on the third (producer: web/server/air.mjs:477-495)");
+        + "; the manual's ship dies on the third (producer: web/server/air.mjs:482-492)");
     }
   });
 
@@ -179,7 +179,7 @@ export async function run(ctx) {
     if (!hit) fail("the strike emitted no strike_hit event for the hull");
     if (Number(hit.amount) !== seaAmount) {
       fail("the strike event carries amount " + hit.amount + ", not config's airStrikeSeaAmount x maxStrength = "
-        + seaAmount + " (producer: web/server/air.mjs:474)");
+        + seaAmount + " (producer: web/server/air.mjs:483)");
     }
     if (hit.domain !== "sea") fail("the hull's strike_hit event reads domain " + JSON.stringify(hit.domain) + ", not \"sea\"");
   });
