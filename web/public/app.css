@@ -896,8 +896,20 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
    347/347 at both widths). The head of that line (era, side, round, held/paused) is what survives
    the ellipsis; the trailing war-state clause repeats the log and the map. */
 @media (max-width: 1500px) {
-  body.in-match .nav { gap: 3px; }
-  body.in-match .nav .navbtn { padding: 2px 7px; }
+  /* PB-291: gap 3 measured 2 px over its window at 1280x800 (#nav 480 in a 478 box), so the last
+     command's tail sat inside the scroll window there too. gap 2 buys 9 px and the row fits at
+     both widths this leg measures. */
+  body.in-match #strip > .nav { gap: 1px; }
+  body.in-match #strip > .nav .navbtn { padding: 2px 7px; }
+  /* The 2 px the nav was still short at 1280x800 came from the strip's own gaps, not its buttons:
+     12 px between six items. 10 px returns 10 and the nav's window matches its content. */
+  body.in-match #strip { gap: 8px; padding: 0 6px; }
+  /* PB-291: the brand carried `flex-grow: 1`, so every pixel the row freed went INTO the readout and
+     the command cluster never grew past the width the shrink pass had left it. Measured at
+     1280x800 with the strip gap at 8: nav 462 px of content in a 460 px box, brand 6 px wider than
+     it needs. The commands now take the free space; the brand is content-sized and still shrinks
+     (it is the readout that gives, PB-276). */
+  body.in-match #strip > .nav { flex: 1 1 auto; }
 }
 
 /* At 1024x768 the strip's commands alone fill the row, so the wordmark and the handle give way
@@ -917,7 +929,7 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
      #clockBtn by 12.5 px (PM 8353 on live 25ba20d). The 8 px gaps and 6 px padding below buy the
      18 px the content-sized brand needs; the row still ends inside the window at 1024x768. */
   body.in-match #strip { padding: 0 6px; gap: 8px; }
-  body.in-match .nav { gap: 2px; }
+  body.in-match #strip > .nav { gap: 1px; }
   /* The purse keeps a legible floor; the round/clock readout keeps its own width (PB-173). 30 px is
      the widest floor that does not push the chip past the row at 1024x768; with the brand
      content-sized the chip's own box is what holds "999b" (26.7 px) whole. */
@@ -925,9 +937,31 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
   /* PB-180 (a): at 1024 the row has no pixel for the income leg. It moves into the chip's title —
      the cash figure, which the original shows on the main display, is never clipped. */
   body.in-match .pursechip .inc { display: none; }
+  /* PB-291: the two rules above take the readout whole and hand the deficit to the nav's scroll
+     window, and the scroll window is a clip: at 1024x768 #nav read 480 px of commands in a 283 px
+     window, so Air sat hidden inside the cluster and the AC ("every header control fully visible and
+     clickable") was not met. The row is 1024 px wide and the fixed items (clock 43, speed 151,
+     resubmits 157, whoami 126) plus the purse floor (38) leave 495 for brand + nav. The commands
+     cost 480 at 7 px of padding and 420 at 4, so the padding goes to 4 and the brand becomes the
+     item that gives: `flex: 0 1 auto` with the 38 px purse floor, the round/clock readout
+     ellipsizing inside it (one line by design, PB-276). Measured at 1024x768: brand 75, nav 420
+     of 420, no scroll window, every control on the row. */
+  body.in-match #strip > .nav { gap: 1px; }
+  body.in-match #strip > .nav .navbtn { padding: 2px 4px; }
+  /* The remaining ~35 px the commands are short come from the other fixed items' padding, not from
+     any readout: three game buttons and two speed buttons at 4 px instead of 7. Every label still
+     prints whole; nothing is hidden. */
+  body.in-match .gamebtns .navbtn { padding: 2px 4px; }
+  body.in-match .speedctl .speedbtn { padding: 2px 4px; }
+  body.in-match .account .ghost { padding: 2px 5px; }
   body.in-match #strip > .brand {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 38px;
+  }
+  body.in-match .brand > .stripinfo {
+    flex: 0 1 auto;
     min-width: 0;
+    max-width: 64px;
   }
 }
 
