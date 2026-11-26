@@ -11,7 +11,7 @@
 //   7069  else if ((attacker facing ^ 1) != defender facing) -> += local_8/2 (flank, x1.5)
 //   7071  otherwise (the two face each other)          -> no bonus           (front, x1)
 //
-// Facing is a two-bit compass byte: FUN_194c_15c6 (decompiled.c 7988-8019) stamps 2/3 for
+// Facing is a two-bit compass byte: FUN_194c_15c6 (decompiled.c 7982-8019) stamps 2/3 for
 // north/south and 4/5 for east/west, so XOR 1 is the opposite side (N<->S, E<->W). Nothing in
 // the bonus reads distance, adjacency or a cell offset: what makes a rear is the attacker
 // carrying the defender's facing; what makes a flank is any facing that is neither the
