@@ -22,10 +22,10 @@ const START_MONEY_DOC = path.join(root, "docs", "re", "START_MONEY.md");
 
 // docs/re/START_MONEY.md, table "Era (Blue, SGT. STAN STIL)". In billions.
 const PLAYER_POOL = { 1918: 10, 1942: 50, 1986: 50, 2023: 600, 9999: 50 };
-// The OPPONENT'S starting-money spinner defaults. 1918 010, 1942 030 and 2023 600 are captured
-// (PB-265: docs/captures/startmoney-2023-blue-spinner-default.png reads 6/0/0); 1986 050 is
-// inferred from DS:0x148e = 2000 on both sides (no dialog capture); ???? showed 150 on the dialog
-// and is UNVERIFIED (never reached the war room).
+// The OPPONENT'S starting-money spinner defaults. 1918 010, 1942 030, 1986 050 and 2023 600 are
+// captured (PB-265: docs/captures/startmoney-2023-blue-spinner-default.png reads 6/0/0;
+// /mnt/nas/host-ops/openchq/pb265-2023-setup/evidence/1986_spinner_default_050.png reads 0/5/0,
+// md5 fb777c52); ???? showed 150 on the dialog and is UNVERIFIED (never reached the war room).
 const SPINNER = { 1918: 10, 1942: 30, 1986: 50, 2023: 600, 9999: 150 };
 
 function decodeCell(message, occupied) {

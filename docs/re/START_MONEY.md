@@ -18,7 +18,7 @@ in the lobby with the per-era default; `web/test/nodes/start_money.mjs` pins all
 |---|---|---|---|---|
 | 1918 | 10b | `startmoney-1918-blue-monitor4-own.png`, `DS:0x148e = 400` | 010 | `startmoney-1918-blue-sgtstan-default.png` |
 | 1942 | 50b | `startmoney-1942-blue-monitor4-own.png`, `DS:0x148e = 2000` | 030 | `startmoney-1942-blue-sgtstan-spinner.png` |
-| 1986 | 50b | `startmoney-1986-blue-monitor4-own.png`, `0x148e = 2000` both sides | 050 | **UNVERIFIED stand-in**: inferred from `0x148e = 2000`; no dialog capture |
+| 1986 | 50b | `startmoney-1986-blue-monitor4-own.png`, `0x148e = 2000` both sides | 050 | captured default (DOSBox, pb265-2023-setup): `1986_spinner_default_050.png` reads 0/5/0; the `0x148e = 2000` inference was right |
 | 2023 | 600b | `startmoney-2023-blue-monitor4-own.png`, `BALANCE: 600` | 600 | `startmoney-2023-blue-spinner-default.png` (OPPONENT'S STARTING MONEY, digits 6/0/0) |
 | `????` | 50b | **UNVERIFIED**: `0x148e = 2000` from memory only; the war room was never reached | 150 | **UNVERIFIED stand-in**: the dialog showed `150` (`0_spinner_9999blue.png`) |
 
@@ -142,7 +142,7 @@ The opponent's spinner writes that slot at 40 per point (`030` → `1200` → `3
 |---|---|---|---|---|---|
 | 1918 | `010` (REA capture) | **10** | 10 | **.650** | `startmoney-1918-blue-sgtstan-default.png`, `...-monitor4-own.png` |
 | 1942 | **`030`** (new capture) | **50** | **30** | **1.550** | `startmoney-1942-blue-sgtstan-spinner.png`, `...-monitor4-own.png` |
-| 1986 | not photographed; `0x148e = 2000` on both sides ⇒ `050` | **50** | 50 | **1.550** | `startmoney-1986-blue-monitor4-own.png` |
+| 1986 | **`050`** (PB-265 capture) | **50** | 50 | **1.550** | `startmoney-1986-blue-monitor4-own.png` |
 | 2023 | **`600`** (PB-265 capture; two runs byte-identical) | **600** | 600 | **-250** | `startmoney-2023-blue-spinner-default.png`, `...-monitor4-own.png` |
 | `????` | `150` seen on the dialog | 50 in memory, **war room not reached** | — | — | `0_spinner_9999blue.png` (not copied) |
 
@@ -162,7 +162,16 @@ The opponent's spinner writes that slot at 40 per point (`030` → `1200` → `3
   `/mnt/nas/host-ops/openchq/pb265-2023-setup/` (RECEIPT.md, evidence/, and the three
   re-runnable scripts); the dialog PNG is committed as
   `docs/captures/startmoney-2023-blue-spinner-default.png`.
-- The spinner default is **not the same across eras** (010 / 030), and the player's cash is
+- **PB-265 addendum: 1986's `050` is captured as well, not inferred.** `1986 SIDE OPTIONS` →
+  BLUE → `BLUE LAYOUTS` (STANDARD highlighted) → one Return → `OPPONENT'S STARTING MONEY`
+  reading digits `0`/`5`/`0`. Capture `evidence/1986_spinner_default_050.png`, md5
+  `fb777c52374f474ae27be1c8cd430a60`, read by a 1:1 pixel map and a 5x visual pass; the
+  `0x148e = 2000` inference was right, so the number does not move, only its label. Every era
+  carries the spinner. Walk note: `t6-spinner.py` classifies the `BLUE LAYOUTS` modal as NO, not
+  OTHER, so a loop waiting for OTHER never presses Return and parks on the layouts screen —
+  `run1986b-spinner.sh` presses Return once after a fixed 4 s wait. Receipt:
+  `/mnt/nas/host-ops/openchq/pb265-2023-setup/RECEIPT.md` (addendum section).
+- The spinner default is **not the same across eras** (010 / 030 / 050 / 600), and the player's cash is
   **not the spinner value** (1942: spinner 030, player 50). So the spinner is the opponent's
   handicap, as p.17 says, and the player's opening cash is a per-era constant.
 - **Negative income is real and unexplained.** 2023 prints `-250`, and the 1942 opponent
@@ -175,7 +184,7 @@ The opponent's spinner writes that slot at 40 per point (`030` → `1200` → `3
 - `????` (era 5): the run reached the money dialog but not the war room, so its cash and
   income are **UNVERIFIED**. Its spinner showed `150`.
 - Red side, and every opponent other than SGT. STAN STIL.
-- 1986's spinner digits were not photographed; `050` is inferred from `0x148e = 2000`.
+- 1986 and 2023 spinner digits are now captured (PB-265); no era's default is inferred any more.
 - Whether the spinner can go to 000 / 999, its step, and whether it wraps.
 - What `DS:0x1446 = 3000` is.
 - What `DS:0x148c` is.
