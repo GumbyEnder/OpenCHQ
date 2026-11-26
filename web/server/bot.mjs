@@ -23,6 +23,7 @@ import {
   isRefused,
   opponentLevelOf,
   priceOf,
+  rules,
   spareActionPassCap,
 } from "./rules.mjs";
 import { buy, seedOwners } from "./economy.mjs";
@@ -170,7 +171,7 @@ function dataRootFor(match) {
 // So the bot picks ONE point of the enemy line - the enemy piece with the fewest enemy friends
 // beside it - and the whole army converges there. That is behaviour, not a rule, so it costs
 // no fidelity: the same pieces, the same orders, aimed better.
-export function focusTarget(match, side, foe, capital) {
+export function focusTarget(match, side, foe, capital, origin = null) {
   const enemies = (match.pieces || []).filter((unit) => unit && unit.side === foe);
   if (enemies.length === 0) return capital;
   const mine = (match.pieces || []).filter((unit) => unit && unit.side === side);
@@ -178,17 +179,33 @@ export function focusTarget(match, side, foe, capital) {
 
   let best = null;
   let bestCost = Infinity;
+  // `origin` (rung (c)) measures the distance from ONE piece instead of the army's centre of mass,
+  // so each piece picks the isolated enemy IT can reach soonest. With origin null the army-wide
+  // centre-of-mass choice runs unchanged.
+  const from = origin && Number.isInteger(Number(origin.x)) && Number.isInteger(Number(origin.y))
+    ? [origin] : mine;
   for (const enemy of enemies) {
     // Distance from the army's centre of mass, so the choice is one the army can reach.
     let sum = 0;
-    for (const piece of mine) sum += Math.max(Math.abs(wrapDelta(piece.x, enemy.x)), Math.abs(Number(piece.y) - Number(enemy.y)));
-    const cost = friends(enemy) * 1000 + (mine.length ? sum / mine.length : 0);
+    for (const piece of from) sum += Math.max(Math.abs(wrapDelta(piece.x, enemy.x)), Math.abs(Number(piece.y) - Number(enemy.y)));
+    const cost = friends(enemy) * 1000 + (from.length ? sum / from.length : 0);
     if (cost < bestCost) {
       bestCost = cost;
       best = enemy;
     }
   }
   return best ? { x: best.x, y: best.y } : capital;
+}
+
+// PORT-ONLY DEVIATION (PB-258 rung (c) / T-032 Part D, PM 9408 §2 and 9428 §3): at levels 4-5 each
+// marching piece aims at its OWN nearest isolated enemy instead of the one point chosen for the
+// whole army. focusTarget already costs an enemy by (friends x 1000 + distance), so per piece the
+// only change is the distance term's origin. `bot.portFocusPerPiece` false (or absent) keeps the
+// army-wide choice exactly. Behaviour only: no combat, economy, fog, price or sight value is read.
+export function portFocusPerPiece(level) {
+  const spec = rules().bot || {};
+  if (spec.portFocusPerPiece !== true) return false;
+  return Number(level) >= 4;
 }
 
 function cellKey(cell) {
@@ -753,6 +770,7 @@ export function ordersFor(match, side) {
   // 1254 and 1265; the combat tail is gated at 4 (1220, 1224, 1228, 1256, `4 - local_c` at
   // 1257/1262/1264). Nothing in 1126-1268 reads 0xe94c or 0x1a0.
   const budget = spareActionPassCap();
+  const focusPerPiece = portFocusPerPiece(level);
   // 0xe94c for this turn: set only when 1 < 0x1a0 (decompiled.c 13231-13232, 15157-15158), so a
   // level-1 seat never even sets it. It is how many army dispatches may repeat a destination cell
   // before that cell is recorded and struck out of the candidate table (3392-3400, 3410-3412), not
@@ -822,7 +840,8 @@ export function ordersFor(match, side) {
     }
     // The capital's own dug-in garrison holds its cell; see holdsOwnCapital.
     if (holdsOwnCapital(match, side, piece, garrisonCells)) continue;
-    const destination = marchOne(match, side, piece, focus, events, { skip: repeat.recorded });
+    const pieceFocus = focusPerPiece ? focusTarget(match, side, foe, capital, piece) : focus;
+    const destination = marchOne(match, side, piece, pieceFocus, events, { skip: repeat.recorded });
     if (!destination) continue;
     const step = spendRepeat(repeat, destination);
     armyBudget -= 1;
