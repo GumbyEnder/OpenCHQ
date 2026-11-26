@@ -6,9 +6,10 @@
 // damage applied 9083-9107):
 //
 //   9042  FUN_188b_00a4(piece x, piece y) reads the terrain under the piece.
+//   9043  uVar3 = *(byte *)0xc478 is the SITE at that cell; 0xff means no site.
 //   9054  bVar1 = piece kind (byte[piece+0x906] & 0xf).
 //   9055  local_4 = byte[terrain + 0x1996] (terrain attrition byte).
-//   9056  uVar3 = *(byte *)0xc478 is the SITE at that cell; 0xff means no site.
+//   9056  if uVar3 == 0xff there is no site and the damage block below is skipped.
 //   9058  if the site carries an owner (byte[site+0x1102] & 0xc0):
 //   9060    if the piece's owner bits differ from the site's and the piece is land (kind < 7):
 //   9061      local_4 = 0x82 - bit 0x80 means "militia", low five bits = 2 damage;
