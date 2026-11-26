@@ -575,7 +575,9 @@ export function hasFreeUnitSlot(match) {
 // readiness elsewhere - the readiness timer the port already models, not a latch on a piece. So
 // there is no gate here and none in config; the only difficulty lever left is 0xe94c.
 
-function botBuy(match, side, events, urgentSite = null, level = null) {
+// Exported for the node arms only (PB-262): the level wiring lives here, and before this the only
+// instrument that read it was the census. `ordersFor` still calls it; nothing else should.
+export function botBuy(match, side, events, urgentSite = null, level = null) {
   const seat = match.sides && match.sides[side];
   if (!seat) return false;
   const price = priceOf("infantry");
