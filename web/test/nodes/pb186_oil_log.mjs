@@ -44,7 +44,11 @@ export async function run() {
   // arm start with the field already blue and produce no event at all.
   const fieldOf = () => ({ id: 72, name: "site_72", x: 189, y: 48, kind: "facility", type: 5, owner: "red", country_id: 37 });
   const field = fieldOf();
-  const city = { id: 66, name: "Jerusalem", x: 191, y: 48, kind: "city", type: 4, owner: "blue", country_id: 37 };
+  // N1 (PM 9723 §1): the landmark is a REAL row, not an invented one. Baku is the baked board's
+  // Russian well (id "russia_baku", x 192, y 52, kind "oilfield", era_min 1918), and it is the
+  // nearest usable name to site 72 at 1986 - the same row the live arm resolved ("took the oil
+  // field 4 cells north-west of Baku", frodo 9724 on ee3b72a).
+  const city = { id: "russia_baku", name: "Baku", x: 192, y: 52, kind: "oilfield", region: "Azerbaijan" };
   // A second placeholder row next to the field. It must not become the landmark: the fix would
   // otherwise move the id from the capture line into "1 cell east of site_64".
   const neighbour = { id: 64, name: "site_64", x: 188, y: 48, kind: "facility", type: 5, owner: "blue", country_id: 37 };
@@ -62,7 +66,7 @@ export async function run() {
   must(/oil field/.test(took), "the line must say oil field: " + took);
   must(!/site_/.test(took), "the line must not carry the extract's row id: " + took);
   must(!/facility/.test(took), "the line must not read as a bare facility: " + took);
-  must(took === "took the oil field 2 cells west of Jerusalem",
+  must(took === "took the oil field 4 cells north-west of Baku",
     "the line must name the field and the nearest city: " + took);
 
   const theirs = linesOf(match, "red", events);
@@ -91,6 +95,6 @@ export async function run() {
   const far = { id: 70, name: "site_70", x: 200, y: 60, kind: "facility", type: 5, owner: "red", country_id: 37 };
   const sightMatch = board([city, far], []);
   const place = placeOf(sightMatch, { x: 199, y: 60 }, "blue");
-  must(place === "12 cells south-east of Jerusalem", "the place must resolve to the named city: " + place);
+  must(place === "8 cells south-east of Baku", "the place must resolve to the named row: " + place);
   must(!/site_/.test(String(place)), "the place must not name a row id: " + place);
 }
