@@ -1,11 +1,10 @@
 // T-032 Part C / PB-258: the pair summary must not print a rate the pairing cannot measure.
 // Owner: game.
 //
-// What breaks if this file is removed: a same-LEVEL pairing (e.g. 3v3) goes back to printing
-// "20 / 20 for L3 (100%), 20 losses" - aWins and bWins count the same rows, because winnerLevel
-// names a level and both seats are that level. A reader takes that line as a seat result. The
-// harness must print unmeasurable instead, and the report's verdictRule must name the rung-4 rule
-// it actually runs (pieces LOST), or the JSON goes on describing the b56b812 rule.
+// PB-258: `20 / 20 for L3 (100%), 20 losses` is not a rate when both seats are the same level:
+// winnerLevel names a level, and both aWins and bWins count the same rows. The harness must print
+// unmeasurable instead, and the report's verdictRule must name the rung-4 rule it actually runs
+// (PB-270: units LOST, not net alive), or the JSON goes on describing the retired rule.
 //
 // Two spawns would be slow; one run carries both shapes: 3v3 (both seats level 3, unmeasurable)
 // and 3v2 (different levels, measurable). 6 matches at 8 rounds is enough for a decided row at the
@@ -42,8 +41,8 @@ export async function run(ctx) {
     if (/for L3/.test(sameLine)) fail("same-level pair still names a winning level: " + sameLine);
 
     const report = JSON.parse(readFileSync(out, "utf8"));
-    if (!/FEWER PIECES LOST/.test(report.verdictRule)) {
-      fail("report verdictRule does not state rung 4 as pieces lost: " + report.verdictRule);
+    if (!/FEWER UNITS LOST/.test(report.verdictRule)) {
+      fail("report verdictRule does not state rung 4 as units lost: " + report.verdictRule);
     }
     if (/more live pieces/.test(report.verdictRule)) {
       fail("report verdictRule still states the pieces-alive rung: " + report.verdictRule);
@@ -70,14 +69,15 @@ export async function run(ctx) {
 
     for (const pair of report.pairs) {
       for (const row of pair.rows) {
-        if (row.piecesLostComparable === false) {
-          if (row.piecesLost !== null) fail("row " + row.match + " has no opening pieces but carries piecesLost");
-          continue;
-        }
+        if ("piecesLost" in row) fail("row " + row.match + " still carries the retired piecesLost column");
+        if (!row.units) fail("row " + row.match + " carries no unit ledger");
+        if (row.units.identityFailures.length) fail("row " + row.match + " unit ledger identity failed");
         for (const side of ["blue", "red"]) {
-          const lost = row.aliveStart[side] - row.alive[side];
-          if (row.piecesLost[side] !== lost) {
-            fail("row " + row.match + " piecesLost." + side + " " + row.piecesLost[side] + " != aliveStart-alive " + lost);
+          if (!(row.unitsLost[side] >= 0)) fail("row " + row.match + " unitsLost." + side + " is negative");
+          const expected = row.units.start[side] + row.units.built[side] + row.units.capturedIn[side]
+            - row.units.lost[side] - row.units.capturedOut[side];
+          if (expected !== row.units.end[side]) {
+            fail("row " + row.match + " " + side + " ledger " + expected + " != end " + row.units.end[side]);
           }
         }
       }

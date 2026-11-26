@@ -14,9 +14,13 @@
 // the 1942 blue opening 78 sites to 48 and decided ten C3 rows without a shot fired; it is gone.
 //   1. a capital-set win, if the match produced one;
 //   2. else CITIES TAKEN (end minus opening) at the round limit;
-//   3. else FEWER CAPITALS LOST; 4. else FEWER PIECES LOST (aliveStart - aliveEnd); 5. else a draw.
+//   3. else FEWER CAPITALS LOST; 4. else FEWER UNITS LOST (destroyed, not net alive); 5. else a draw.
 // PB-258 (PM 9414 §2): rung 4 counts pieces LOST, not pieces alive. Raw alive is a total, and the
 // 1942 opening is 29/31, so "more alive" decided matches on the opening the same way total sites did.
+// PB-270 (D3, card PB-270; room 9607 §2): `aliveStart - aliveEnd` is NET, so it is negative wherever
+// a side produces and rung 4 was awarding production. Rung 4 now reads units LOST only, from the
+// ledger in tools/lib/pb270-units.mjs (start + built + capturedIn - lost - capturedOut === end on
+// every row). `unitsBuilt` rides beside it; nothing prints a negative "losses" figure.
 // PB-258 (PM 9423 §2): a pairing whose two seats are the SAME level prints unmeasurable. winnerLevel
 // names a level, so with 3v3 both aWins and bWins count the same rows and the line is not a rate;
 // the report keeps a per-seat split and the distinct-outcome count instead.
@@ -41,12 +45,19 @@
 //   node tools/t032-bot-vs-bot.mjs [--era 1918|1942|1986|2023] [--seeds mirror|distinct] [--rounds 50]
 //                                 [--matches 20] [--out <path>] [--pairs 3:2,4:3,5:4]
 //                                 [--c3] [--seed-base 1942] [--handicap-grid]
+//                                 [--handicap-steps -0.3,...,0.3] [--handicap-billions N]
+//                                 [--seed-axis]
 //
 // PB-260: `--handicap-grid` turns the opponent's starting-money spinner (Manual p.17) into a board
 // sweep. For every seed it plays 7 steps (-30,-20,-10,0,+10,+20,+30 percent of the era's
 // handicapDefault) and seat-pairs every step: A as blue once and A as red once, with the handicap
 // on the B level's side in both. In this mode `--matches` counts SEEDS, not matches: rows per block =
 // seeds x 7 steps x 2 seats. The grid is a harness flag only; no engine, config or bot RNG changes.
+// PB-270(c): `--handicap-steps` and `--handicap-billions` widen that sweep, so a control can put a
+// large cash handicap on one seat and show whether the grid can resolve ANY strength axis at an era.
+// PB-270(a): `--seed-axis` plays the first pair at step 0, one seat, across `--matches` seeds and
+// prints how many DISTINCT row objects those seeds produced (seed and match index excluded). It is
+// the measurement behind "the engine carries no RNG": 1 means the seed is provenance, not sampling.
 
 import { execSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -59,6 +70,7 @@ import { ordersFor as prePortOrdersFor } from "../web/server/bot-c20dba7.mjs";
 import { buy, seedOwners } from "../web/server/economy.mjs";
 import { issueOrder } from "../web/server/move.mjs";
 import { dispatchRepeatLimit, dispatchRepeatPool, handicapDefault, spareActionBudget, spareActionPassCap } from "../web/server/rules.mjs";
+import { distinctCount, resolveVerdict, rowFingerprint, unitLedger } from "./lib/pb270-units.mjs";
 
 const CITY_KINDS = new Set(["city", "capital"]);
 
@@ -88,8 +100,22 @@ const RUN_C3 = process.argv.includes("--c3");
 // PB-260: symmetric handicap grid. `null` means the flag is off and the harness behaves exactly as
 // before (one board per seed, both seats). With the flag on, every seed is played at each step.
 const HANDICAP_GRID = process.argv.includes("--handicap-grid");
-const HANDICAP_STEPS = HANDICAP_GRID ? [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3] : [0];
-const HANDICAP_DEFAULT = HANDICAP_GRID ? handicapDefault(ERA) : null;
+// PB-270(c): the sweep is data, so a control can put a large cash handicap on one seat. The default
+// stays the PB-260 seven steps; `--handicap-steps` names any list (fractions of the era default) and
+// `--handicap-billions` overrides the default itself (the spinner value, in billions).
+const HANDICAP_STEP_LIST = String(arg("handicap-steps", "-0.3,-0.2,-0.1,0,0.1,0.2,0.3"))
+  .split(",").map((value) => Number(value)).filter((value) => Number.isFinite(value));
+const HANDICAP_STEPS = HANDICAP_GRID ? HANDICAP_STEP_LIST : [0];
+const HANDICAP_BILLIONS_ARG = arg("handicap-billions", null);
+const HANDICAP_DEFAULT = HANDICAP_GRID
+  ? (HANDICAP_BILLIONS_ARG === null ? handicapDefault(ERA) : Number(HANDICAP_BILLIONS_ARG))
+  : null;
+const SEED_AXIS = process.argv.includes("--seed-axis");
+// PB-270(c): roster control. `--roster-drop N` removes N starting land units from the B level's
+// seat before the opening snapshot, i.e. it hands the OTHER seat a known strength edge. It is a
+// harness fixture only (the engine never sees a roster lever): the point is to show whether the
+// grid can register ANY stronger side at an era whose cash sweep resolves nothing.
+const ROSTER_DROP = Math.max(0, Number(arg("roster-drop", 0)) || 0);
 if (HANDICAP_GRID && (HANDICAP_DEFAULT === null || !Number.isFinite(HANDICAP_DEFAULT))) {
   throw new Error("--handicap-grid: era " + ERA + " has no handicapDefault");
 }
@@ -164,7 +190,7 @@ function planOrders(match, side, level) {
 // Replay one seat's planned rows onto the live match. Buys go back through economy.buy with the cell
 // the plan chose; orders and defends through move.issueOrder. A refusal is recorded, not swallowed:
 // a plan that cannot be filed is a measurement, not a silent zero.
-function fileOrders(match, plan, filed) {
+function fileOrders(match, plan, filed, builtIds) {
   const side = plan.side;
   const remap = new Map();
   for (const row of plan.rows) {
@@ -191,6 +217,9 @@ function fileOrders(match, plan, filed) {
       }
       if (result && result.ok) {
         remap.set(row.pieceId, result.piece.id);
+        // PB-270 D3: a successful buy is a UNIT BUILT. The id goes into the ledger so rung 4 can
+        // read losses without treating production as attrition.
+        if (builtIds && builtIds[side]) builtIds[side].add(String(result.piece.id));
         filed.buy += 1;
       } else {
         filed.refused.push({ type: row.type, pieceId: row.pieceId, error: (result && result.error) || "refused" });
@@ -257,6 +286,19 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
   // "cities taken" against an empty board. Seeding here is idempotent (WeakSet) and changes no rule:
   // the first planOrders/buy of round 1 would have made the same call.
   seedOwners(match);
+  // PB-270(c): the roster control drops starting units from the handicap seat BEFORE the opening is
+  // measured, so the ledger's `start` is the handicapped opening, not the unmodified board.
+  let roster = null;
+  if (ROSTER_DROP > 0) {
+    const side = String(levels.blue) === String(handicapLevel) ? "blue" : "red";
+    const candidates = match.pieces
+      .filter((piece) => piece && piece.side === side && piece.domain === "land" && Number(piece.strength) > 0)
+      .sort((x, y) => (String(x.id) < String(y.id) ? -1 : 1));
+    const dropped = candidates.slice(-ROSTER_DROP).map((piece) => String(piece.id));
+    const drop = new Set(dropped);
+    match.pieces = match.pieces.filter((piece) => !drop.has(String(piece.id)));
+    roster = { side, requested: ROSTER_DROP, dropped: dropped.length, ids: dropped };
+  }
   const opening = openingCapitals(match);
   const start = { blue: cityCount(match, "blue"), red: cityCount(match, "red") };
   // PB-257(b) caveat, measured not assumed: a raw "pieces alive" count reads the opening when the
@@ -267,11 +309,12 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
     red: row.pieces.filter((piece) => piece.side === "red" && Number(piece.strength) > 0).length,
   });
   const aliveStart = aliveOf(match);
-  // PB-258 (PM 9423 §2, second half): 2023 opens with NO pieces (match.mjs: "2023 starts empty on
-  // purpose"), so aliveStart - alive there is -(what each side built), not pieces lost. Rung 4 may
-  // only run when the opening had pieces to lose; otherwise the row says the rung is unmeasurable and
-  // the verdict falls through to a draw rather than letting production volume pick a winner.
-  const piecesLostComparable = aliveStart.blue + aliveStart.red > 0;
+  // PB-270 D3: the opening snapshot the ledger needs is the ID set, not just the count. A unit that
+  // is dead at the end is LOST; a unit this side bought is BUILT. Nothing here is a net.
+  const startSides = new Map(match.pieces
+    .filter((piece) => piece && Number(piece.strength) > 0)
+    .map((piece) => [String(piece.id), piece.side]));
+  const builtIds = { blue: new Set(), red: new Set() };
   const events = {
     blue: { buy: 0, order: 0, defend: 0, repeat: 0 },
     red: { buy: 0, order: 0, defend: 0, repeat: 0 },
@@ -292,7 +335,7 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
         if (event.type === "bot_defend") events[side].defend += 1;
         if (event.repeat === true) events[side].repeat += 1;
       }
-      const filed = fileOrders(match, plan, { buy: 0, order: 0, defend: 0, refused: [] });
+      const filed = fileOrders(match, plan, { buy: 0, order: 0, defend: 0, refused: [] }, builtIds);
       filedCounts[side].buy += filed.buy;
       filedCounts[side].order += filed.order;
       filedCounts[side].defend += filed.defend;
@@ -311,39 +354,21 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
     red: match.pieces.filter((piece) => piece.side === "red" && Number(piece.strength) > 0).length,
   };
   const aliveTaken = { blue: alive.blue - aliveStart.blue, red: alive.red - aliveStart.red };
-  // PB-258 rung 4: pieces LOST (aliveStart - aliveEnd), fewer wins. aliveTaken stays as the signed
-  // delta the D4 grader sums; piecesLost is the same quantity negated, printed so the rung is auditable.
-  const piecesLost = piecesLostComparable
-    ? { blue: aliveStart.blue - alive.blue, red: aliveStart.red - alive.red }
-    : null;
+  // PB-270 D3: units LOST vs units BUILT, from the ledger. `unitsLost` is what rung 4 reads;
+  // `unitsBuilt` is printed beside it so a reader can see that production is not attrition.
+  // `aliveTaken` stays as the signed delta the D4 grader sums; it is named a delta, not a loss.
+  const units = unitLedger({ startSides, builtIds, pieces: match.pieces });
+  const unitsLost = units.lost;
   // Side-neutral: what each seat TOOK, not what it inherited. The 1942 blue opening holds 40 city
   // sites against red's 23, so "cities held" would hand blue every match before a shot is fired.
   const taken = { blue: citiesEnd.blue - start.blue, red: citiesEnd.red - start.red };
-  const lostFewer = (a, b) => (a === b ? null : a < b ? "blue" : "red");
-  let verdict;
-  let verdictRung;
-  if (match.over && (match.winner === "blue" || match.winner === "red")) {
-    verdict = match.winner;
-    verdictRung = "capital-set win";
-  } else if (taken.blue !== taken.red) {
-    verdict = taken.blue > taken.red ? "blue" : "red";
-    verdictRung = "cities taken";
-  } else {
-    const fewer = lostFewer(capitalsLost.blue, capitalsLost.red);
-    if (fewer) {
-      verdict = fewer;
-      verdictRung = "capitals lost";
-    } else if (piecesLost && piecesLost.blue !== piecesLost.red) {
-      verdict = piecesLost.blue < piecesLost.red ? "blue" : "red";
-      verdictRung = "pieces lost";
-    } else if (!piecesLost) {
-      verdict = "draw";
-      verdictRung = "draw (rung 4 unmeasurable: this era opens with no pieces)";
-    } else {
-      verdict = "draw";
-      verdictRung = "draw";
-    }
-  }
+  const { verdict, rung: verdictRung } = resolveVerdict({
+    over: Boolean(match.over && (match.winner === "blue" || match.winner === "red")),
+    winner: match.winner,
+    citiesTaken: taken,
+    capitalsLost,
+    unitsLost,
+  });
   return {
     match: index,
     seed,
@@ -361,8 +386,9 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
     aliveStart,
     alive,
     aliveTaken,
-    piecesLost,
-    piecesLostComparable,
+    units,
+    unitsLost,
+    unitsBuilt: units.built,
     verdictRung,
     filing,
     filed: filedCounts,
@@ -375,6 +401,7 @@ function playMatch({ seed, index, levels, handicapLevel, handicapStep }) {
       ? { step: handicapStep, side: handicapSide, billions: handicapBillions,
           cash: match.sides[handicapSide] ? match.sides[handicapSide].cash : null }
       : null,
+    roster,
   };
 }
 
@@ -437,12 +464,11 @@ function runPair(a, b, matches) {
     blue: rows.filter((row) => row.verdict === "blue").length,
     red: rows.filter((row) => row.verdict === "red").length,
   };
-  // distinctOutcomes fingerprints every column the verdict reads, rung and pieces lost included, so
-  // "2 distinct outcome(s)" is a claim about verdicts rather than about city counts alone.
-  const distinct = new Set(rows.map((row) => [row.levels.blue, row.levels.red, row.verdict, row.verdictRung,
-    row.citiesTaken.blue, row.citiesTaken.red, row.capitalsLost.blue, row.capitalsLost.red,
-    row.piecesLost ? row.piecesLost.blue + "/" + row.piecesLost.red : "uncomparable",
-    row.handicap ? row.handicap.step : "off"].join("|")));
+  // distinctOutcomes fingerprints every column the verdict reads, rung and unit ledger included, so
+  // "2 distinct outcome(s)" is a claim about verdicts rather than about city counts alone. Seed and
+  // match index are excluded (PB-270 D2): a fingerprint carrying the seed would manufacture a
+  // difference for every seed and re-hide the inert axis.
+  const distinct = new Set(rows.map(rowFingerprint));
   return {
     pair: String(a) + "v" + String(b),
     matches: rows.length,
@@ -486,7 +512,7 @@ const report = {
   handicapGrid: HANDICAP_GRID
     ? { steps: HANDICAP_STEPS, eraDefaultBillions: HANDICAP_DEFAULT, appliedTo: "the B level's seat" }
     : null,
-  verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else FEWER PIECES LOST (aliveStart - aliveEnd), else draw; no raw total (sites, cities held, pieces alive) is ever read",
+  verdictRule: "capital-set win, else cities TAKEN by the round limit (side-neutral), else fewer capital losses, else FEWER UNITS LOST (destroyed or zero-strength units; built units are not losses), else draw; no raw total (sites, cities held, pieces alive) is ever read",
   planning: "both seats call ordersFor on their own clone of the same pre-round snapshot, then both order sets are filed into the live match in fileOrder",
   fileOrder: FILE_ORDER,
   levers: {
@@ -498,6 +524,7 @@ const report = {
   },
   pairs: [],
   c3: null,
+  seedAxis: null,
 };
 
 for (const [a, b] of PAIRS) {
@@ -515,6 +542,43 @@ for (const [a, b] of PAIRS) {
         pair.distinctSeeds + " seed(s), " + pair.distinctOutcomes + " distinct outcome(s); row identity only"
   );
 }
+
+if (SEED_AXIS) {
+  // PB-270(a): does the seed change the play? One arm, one step, one seat, `--matches` seeds. The
+  // fingerprint excludes seed and match index, so this counts BOARD/PLAY bodies, not labels.
+  const [a, b] = PAIRS[0];
+  const rows = [];
+  for (let index = 0; index < MATCHES; index++) {
+    const seed = SEED_BASE + index;
+    const row = playMatch({
+      seed, index: index + 1, levels: { blue: a, red: b },
+      handicapLevel: null, handicapStep: HANDICAP_GRID ? 0 : undefined,
+    });
+    rows.push(row);
+  }
+  const distinct = distinctCount(rows);
+  report.seedAxis = {
+    era: ERA,
+    pair: String(a) + "v" + String(b),
+    seat: "A as blue",
+    step: HANDICAP_GRID ? 0 : "off",
+    seeds: rows.map((row) => row.seed),
+    seedCount: rows.length,
+    distinctRows: distinct,
+    nEffPerStepSeat: distinct,
+    rows,
+  };
+  console.log("seed axis (" + ERA + ", " + a + "v" + b + ", A=blue): " + rows.length + " seed(s), " +
+    distinct + " distinct row object(s) -> n_eff " + distinct + " per step and seat");
+}
+
+const allRows = report.pairs.flatMap((pair) => pair.rows);
+const ledgerFailures = [];
+for (const row of allRows) {
+  for (const failure of row.units.identityFailures) ledgerFailures.push({ match: row.match, ...failure });
+}
+report.unitLedger = { rows: allRows.length, identityFailures: ledgerFailures };
+console.log("unit ledger: " + allRows.length + " row(s), " + ledgerFailures.length + " identity failure(s)");
 
 if (RUN_C3) {
   // Pre-port bot vs level 3, over the SAME seed plan as the pairs (PM 9420 §3: "same seeds for every
