@@ -19,6 +19,9 @@
 // piece (the refusal did not lose its subject), the name is the kind-based label PB-299 prints, and
 // the sentence contains NO wire key - not "blue:tank:2", not the bare "blue:sea" of a scenario's
 // opening unit, and not any other "side:" prefix.
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { openMatch } from "../../server/match.mjs";
 import { matchSites } from "../../server/board.mjs";
 import { atWar } from "../wartime.mjs";
@@ -203,5 +206,40 @@ export async function run() {
     war.pieces.push(plane, rider);
     named("sendMission missing plane", sendMission(war, "blue", "blue:aircraft:96", "strike", null).error, "Aircraft 96", "sendMission missing plane");
     named("paradrop missing plane", paradrop(war, "blue", rider.id, { x: 1, y: 1 }, "blue:aircraft:95").error, "Aircraft 95", "paradrop missing plane");
+  }
+
+  // ---- 8: the class, not just the fifteen instances ---------------------------------------
+  // The card asks for a grep arm so a SIXTEENTH site cannot appear silently. This reads the server
+  // sources and fails on the shapes that put a piece id into a sentence: `${piece}.id` concatenated
+  // into an error, and the "No such piece/aircraft: <id>" echo. A comment line is skipped - the
+  // test file at web/test/nodes/pb131 quotes the old sentence on purpose.
+  {
+    const serverDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "server");
+    // A defect only counts where a PLAYER reads the line: a refusal is what the page prints, i.e. an
+    // `error:` / `error(` value, a thrown message, or a `note:` / `message:` / `say(` sentence.
+    // Diagnostics are out of scope: history.mjs `console.warn`s and the bot's lobby log lines
+    // template a room id on purpose, and a guard that reds on them grades the logging, not the
+    // refusals. That was the over-broad first cut (16th-site grep flagged five console lines).
+    const playerFacing = (code) => !/console\./.test(code) &&
+      /(?:error\s*:|error\s*\(|throw\s+new|\bsay\s*\(|\bnote\s*:|\bmessage\s*:)/.test(code);
+    const banned = [
+      { what: "a piece id concatenated into a message", re: /\+\s*(?:holder|held|piece|plane|unit|defender|rider)\.id\s*\+/, playerOnly: false },
+      { what: "an id echoed after \"No such piece/aircraft:\"", re: /"No such (?:piece|aircraft):\s*"\s*\+/, playerOnly: false },
+      { what: "a wire id templated into a message", re: /\$\{[a-zA-Z]*\.id\}/, playerOnly: true },
+    ];
+    const files = readdirSync(serverDir).filter((file) => file.endsWith(".mjs"));
+    const hits = [];
+    for (const file of files) {
+      const lines = readFileSync(path.join(serverDir, file), "utf8").split("\n");
+      lines.forEach((line, index) => {
+        const code = line.replace(/\/\/.*$/, "");
+        for (const rule of banned) {
+          if (rule.playerOnly && !playerFacing(code)) continue;
+          if (rule.re.test(code)) hits.push(file + ":" + (index + 1) + " " + rule.what + " — " + line.trim());
+        }
+      });
+    }
+    eq(hits, [], "no server module interpolates a raw piece id into a message: " + hits.join(" | "));
+    if (files.length <= 20) fail("the grep arm read only " + files.length + " server modules; it is not looking at the tree");
   }
 }
