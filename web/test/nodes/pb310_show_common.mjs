@@ -251,4 +251,40 @@ export async function run(ctx) {
     const room = stored ? JSON.parse(stored.state) : null;
     ok(room && !JSON.stringify(room).includes("showCommon"), "the toggle was written onto the stored room");
   }
+
+  // ---- 7. PB-313 rider 6(iii): the two refusals showCommonOp already has ------------------------
+  // Section 6 above is the CONTROL: the same op on a RUNNING war answers {ok:true, on:true}, so the
+  // refusals below are the conditions and not a dead op. A layout is a sandbox with no war in it, so
+  // the manual's mode has nothing to show and the op must refuse with its own sentence - and must not
+  // leave a showCommon field on the stored room.
+  //
+  // The finished-war refusal is NOT arm-able from the public surface: nothing outside the tick sets
+  // `room.match.over` (lobby.mjs:689 on a capital capture, late.mjs:635 on nuclear winter), so an arm
+  // would have to play a war to its end. Recorded as a named gap in the card, not papered over with a
+  // green assertion that never reaches the branch.
+  if (ctx && typeof ctx.register === "function") {
+    const sandbox = await ctx.register("pb310_layout");
+    const box = ctx.socket(sandbox.token);
+    await box.wait((m) => m.op === "welcome", "the welcome");
+    const from = box.box.length;
+    box.send({ op: "layout", era: "1986", side: "blue" });
+    const laid = await box.wait((m) => m.op === "room" && m.room && m.room.mode === "layout",
+      "the layout room", from, 30000);
+    ok(laid.room.id, "the layout room has no id");
+
+    const from2 = box.box.length;
+    box.send({ op: "show_common" });
+    const refused = await box.wait((m) => m.op === "show_common" || m.op === "error",
+      "the layout refusal", from2, 20000);
+    ok(refused.op === "error", "a layout ACCEPTED show_common: " + JSON.stringify(refused).slice(0, 300));
+    ok(/layout/i.test(String(refused.error || "")),
+      "the layout refusal is not the layout sentence: " + JSON.stringify(refused).slice(0, 300));
+
+    const storedLayout = ctx.sqlite().prepare("SELECT state FROM rooms WHERE id = ?").get(String(laid.room.id));
+    const layoutRoom = storedLayout ? JSON.parse(storedLayout.state) : null;
+    ok(layoutRoom, "the layout room was not stored");
+    ok(!JSON.stringify(layoutRoom).includes("showCommon"),
+      "a refused show_common was written onto the layout room");
+    box.close();
+  }
 }

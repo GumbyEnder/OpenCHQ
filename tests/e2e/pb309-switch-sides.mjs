@@ -90,6 +90,23 @@ function mark(step, ok, detail = "") {
   return Boolean(ok);
 }
 
+// PB-313: a press may only follow a control that was SEEN. A bare page.click on a tree without the
+// control burns Playwright's 30 s action timeout and THROWS, which used to skip the evidence file and
+// the verdict line entirely — a pre-fix run then reads as a broken leg, not a clean red. Both helpers
+// below are deadline-bounded and cannot throw: the result is always a value the leg can mark.
+const SWITCH_DEADLINE_MS = 5000;
+async function switchControl(page) {
+  return page
+    .waitForSelector("#switchSidesBtn", { state: "visible", timeout: SWITCH_DEADLINE_MS })
+    .catch(() => null);
+}
+async function pressSwitch(page) {
+  return page
+    .click("#switchSidesBtn", { timeout: SWITCH_DEADLINE_MS })
+    .then(() => true)
+    .catch(() => false);
+}
+
 const dataDir = mkdtempSync(path.join(tmpdir(), "openchq-pb309-e2e-"));
 let server = null;
 let browser = null;
@@ -104,6 +121,7 @@ async function signIn(page, name, password) {
   await page.waitForSelector("#play:not(.hidden)", { timeout: 30000 });
 }
 
+let crash = null;
 try {
   if (!BASE) {
     const port = await freePort();
@@ -170,49 +188,70 @@ try {
       buttons.includes("Switch Sides"), buttons.join(" | "));
     mark(tag + ": the film bar's four views are not what this control is",
       !buttons.some((b) => /^Show (Red|Blue|Common|Both)$/.test(b)), buttons.join(" | "));
+    const controlSeen = await switchControl(page);
+    mark(tag + ": the control is on the panel before any press (" + SWITCH_DEADLINE_MS
+      + " ms guarded probe, cannot throw)", Boolean(controlSeen), buttons.join(" | "));
     await shot("01-war-panel-solo");
 
-    // ---- 2. the press moves the seat ---------------------------------------------------------
-    await page.click("#switchSidesBtn");
-    const flippedRoom = await waitRoom((r) => r.you === "red" && r.blue && r.blue.kind === "bot");
-    mark(tag + ": the page's room frame says the player now holds the red side", Boolean(flippedRoom),
-      flippedRoom ? JSON.stringify({ you: flippedRoom.you, blue: flippedRoom.blue, red: flippedRoom.red }) : "no flip");
-    const flippedToast = await waitToast(/now the red side/i);
-    mark(tag + ": the player reads the server's own sentence", Boolean(flippedToast), String(flippedToast));
-    mark(tag + ": the sentence carries no raw piece id", !/(blue|red):[a-z]+:/.test(String(flippedToast || "")), String(flippedToast));
-    mark(tag + ": the computer holds the side just left",
-      Boolean(flippedRoom) && flippedRoom.blue.kind === "bot" && flippedRoom.red.kind === "human",
-      flippedRoom ? JSON.stringify({ blue: flippedRoom.blue, red: flippedRoom.red }) : "no flip");
-    // The panel is repainted on the room frame; close and reopen so the read is of a fresh paint.
-    await closeWar();
-    await openWar();
-    const rows = await texts("#dialogBody dl dt, #dialogBody dl dd, #dialogBody p");
-    const panelText = rows.join(" | ");
-    mark(tag + ": the reopened War panel names the new side",
-      /You/.test(panelText) && /\bred\b/.test(panelText) && /now the red side/i.test(panelText),
-      panelText.slice(0, 300));
-    await shot("02-war-panel-flipped");
-    await closeWar();
+    // PB-313: on a build without the control, every fact that depends on the press is RED BY NAME and
+    // the panel's own button labels are the reason. A missing affordance is an assertion, not a throw.
+    const absent = "control absent — War panel buttons: " + (buttons.join(" | ") || "(none)");
+    const pressed = Boolean(controlSeen) && await pressSwitch(page);
 
-    // ---- 3. an order on the new side lands ---------------------------------------------------
-    const fresh = await room();
-    const mine = (fresh.pieces || []).filter((p) => p.side === fresh.you && p.domain !== "sat"
-      && p.kind !== "aircraft" && p.domain !== "air" && p.domain !== "sea");
-    let orderLine = null;
-    for (const piece of mine.slice(0, 8)) {
-      for (const [dx, dy] of DIRS) {
-        const point = await page.evaluate(([x, y]) => window.__chq.cellToScreen(x, y), [piece.x, piece.y]);
-        await page.mouse.click(point.x, point.y);
-        await sleep(200);
-        const to = await page.evaluate(([x, y]) => window.__chq.cellToScreen(x, y), [piece.x + dx, piece.y + dy]);
-        await page.mouse.click(to.x, to.y);
-        const line = await waitToast(/Order sent|refused|not yours|cannot|no route|nowhere/i, 4000);
-        if (line && /Order sent/.test(line)) { orderLine = line; break; }
+    if (pressed) {
+      // ---- 2. the press moves the seat -------------------------------------------------------
+      const flippedRoom = await waitRoom((r) => r.you === "red" && r.blue && r.blue.kind === "bot");
+      mark(tag + ": the page's room frame says the player now holds the red side", Boolean(flippedRoom),
+        flippedRoom ? JSON.stringify({ you: flippedRoom.you, blue: flippedRoom.blue, red: flippedRoom.red }) : "no flip");
+      const flippedToast = await waitToast(/now the red side/i);
+      mark(tag + ": the player reads the server's own sentence", Boolean(flippedToast), String(flippedToast));
+      mark(tag + ": the sentence carries no raw piece id", Boolean(flippedToast)
+        && !/(blue|red):[a-z]+:/.test(String(flippedToast || "")), String(flippedToast));
+      mark(tag + ": the computer holds the side just left",
+        Boolean(flippedRoom) && flippedRoom.blue.kind === "bot" && flippedRoom.red.kind === "human",
+        flippedRoom ? JSON.stringify({ blue: flippedRoom.blue, red: flippedRoom.red }) : "no flip");
+      // The panel is repainted on the room frame; close and reopen so the read is of a fresh paint.
+      await closeWar();
+      await openWar();
+      const rows = await texts("#dialogBody dl dt, #dialogBody dl dd, #dialogBody p");
+      const panelText = rows.join(" | ");
+      mark(tag + ": the reopened War panel names the new side",
+        /You/.test(panelText) && /\bred\b/.test(panelText) && /now the red side/i.test(panelText),
+        panelText.slice(0, 300));
+      await shot("02-war-panel-flipped");
+      await closeWar();
+
+      // ---- 3. an order on the new side lands -------------------------------------------------
+      const fresh = await room();
+      const mine = (fresh.pieces || []).filter((p) => p.side === fresh.you && p.domain !== "sat"
+        && p.kind !== "aircraft" && p.domain !== "air" && p.domain !== "sea");
+      let orderLine = null;
+      for (const piece of mine.slice(0, 8)) {
+        for (const [dx, dy] of DIRS) {
+          const point = await page.evaluate(([x, y]) => window.__chq.cellToScreen(x, y), [piece.x, piece.y]);
+          await page.mouse.click(point.x, point.y);
+          await sleep(200);
+          const to = await page.evaluate(([x, y]) => window.__chq.cellToScreen(x, y), [piece.x + dx, piece.y + dy]);
+          await page.mouse.click(to.x, to.y);
+          const line = await waitToast(/Order sent|refused|not yours|cannot|no route|nowhere/i, 4000);
+          if (line && /Order sent/.test(line)) { orderLine = line; break; }
+        }
+        if (orderLine) break;
       }
-      if (orderLine) break;
+      mark(tag + ": a unit of the new side takes an order", Boolean(orderLine), String(orderLine));
+      await shot("03-order-on-new-side");
+    } else {
+      for (const step of [
+        "the page's room frame says the player now holds the red side",
+        "the player reads the server's own sentence",
+        "the sentence carries no raw piece id",
+        "the computer holds the side just left",
+        "the reopened War panel names the new side",
+        "a unit of the new side takes an order",
+      ]) mark(tag + ": " + step, false, absent);
+      await shot("02-switch-not-attempted");
+      await closeWar().catch(() => {});
     }
-    mark(tag + ": a unit of the new side takes an order", Boolean(orderLine), String(orderLine));
-    await shot("03-order-on-new-side");
 
     // A two-human war is a different room: out of the solo one first.
     await page.click("#quitBtn").catch(() => {});
@@ -242,12 +281,15 @@ try {
     await openWar();
     const twoButtons = await texts("#dialogBody button");
     mark(tag + ": the 2P War panel still offers the control", twoButtons.includes("Switch Sides"), twoButtons.join(" | "));
-    await page.click("#switchSidesBtn");
-    const refuseLine = await waitToast(/only works in a solo game/i);
-    mark(tag + ": a two-human war refuses Switch Sides with a sentence", Boolean(refuseLine), String(refuseLine));
+    const twoSeen = await switchControl(page);
+    const twoPressed = Boolean(twoSeen) && await pressSwitch(page);
+    const twoAbsent = "control absent — 2P War panel buttons: " + (twoButtons.join(" | ") || "(none)");
+    const refuseLine = twoPressed ? await waitToast(/only works in a solo game/i) : null;
+    mark(tag + ": a two-human war refuses Switch Sides with a sentence", Boolean(refuseLine),
+      twoPressed ? String(refuseLine) : twoAbsent);
     const afterTwo = await room();
     mark(tag + ": the refused press moved no seat",
-      JSON.stringify({ you: afterTwo.you, blue: afterTwo.blue, red: afterTwo.red }) === beforeTwo,
+      twoPressed && JSON.stringify({ you: afterTwo.you, blue: afterTwo.blue, red: afterTwo.red }) === beforeTwo,
       beforeTwo + " -> " + JSON.stringify({ you: afterTwo.you, blue: afterTwo.blue, red: afterTwo.red }));
     await shot("04-two-human-refusal");
     await ctxB.close();
@@ -256,13 +298,27 @@ try {
     await context.close();
   }
 
-  const file = path.join(OUT, "pb309-switch-sides.json");
-  writeFileSync(file, JSON.stringify({ base: BASE, viewports: VIEWPORTS, evidence }, null, 2) + "\n");
-  console.log("EVIDENCE " + file);
+} catch (err) {
+  // PB-313: an unexpected throw is an assertion too — recorded by name, and the artifact still lands.
+  crash = err;
+  mark("the leg reached its summary (unexpected throw)", false,
+    String((err && err.stack) || err).slice(0, 900));
 } finally {
+  try {
+    const file = path.join(OUT, "pb309-switch-sides.json");
+    writeFileSync(file, JSON.stringify({
+      base: BASE,
+      viewports: VIEWPORTS,
+      evidence,
+      crash: crash ? String((crash && crash.stack) || crash) : null,
+    }, null, 2) + "\n");
+    console.log("EVIDENCE " + file);
+  } catch (writeErr) {
+    console.log("EVIDENCE WRITE FAILED " + String((writeErr && writeErr.message) || writeErr));
+  }
   if (browser) await browser.close().catch(() => {});
   if (server) server.kill("SIGTERM");
 }
 
-console.log("PB309_E2E " + (failed === 0 ? "OK" : "FAILED " + failed));
-if (failed !== 0) process.exitCode = 1;
+console.log("PB309_E2E " + (failed === 0 && !crash ? "OK" : "FAILED " + failed));
+if (failed !== 0 || crash) process.exitCode = 1;
