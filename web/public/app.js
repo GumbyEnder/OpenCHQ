@@ -2030,7 +2030,10 @@ function roomHeld() {
 
 function syncSpeed() {
   const speed = roomSpeed();
-  const held = roomHeld();
+  // PB-304: a layout sandbox is not a held war, so the header must not read "· held" there
+  // (frodo 10033, pm 10035). The suffix slot is unchanged in a match, which is what the
+  // strip's fixed height depends on.
+  const held = roomHeld() && !inLayout();
   if (speedReadout) {
     const suffix = speed === 0 ? " \u00b7 paused" : held ? " \u00b7 held" : "";
     speedReadout.textContent = "Speed " + speed + suffix;
@@ -2625,14 +2628,23 @@ function bootDone() {
 // A match whose clock is not running is paused, and a reloaded page must say so rather than look
 // frozen (T-007 AC11). The banner follows every room frame: Play hides it, Pause brings it back.
 //
+// PB-304: a layout room is a PREGAME SANDBOX, not a paused war - Play is not even on the strip, so
+// "press Play to resume" is an instruction to a button that does not exist. The banner is gated on
+// the mode as well as the clock (frodo 10033, pm 10035).
+//
 // PB-136: "hides it" is visibility in a match, not display. The banner is a flex item in .match, so
 // taking its row out of the flow when the clock starts shrank the stage by its height and pulled the
 // map up under a resting pointer. The sentence stays in the element (same font, same padding) and the
 // stylesheet hides the ink, so the row's height is identical before and after Play.
+function inLayout() {
+  return Boolean(room) && String(room.mode || "") === "layout";
+}
+
 function syncPauseBanner(room) {
   const banner = document.getElementById("pauseBanner");
   if (!banner) return;
-  const paused = Boolean(room) && !room.over && String(room.clock || "") !== "running";
+  const layoutMode = Boolean(room) && String(room.mode || "") === "layout";
+  const paused = Boolean(room) && !room.over && !layoutMode && String(room.clock || "") !== "running";
   banner.textContent = "Paused - press Play to resume";
   banner.classList.toggle("paused", paused);
   banner.classList.toggle("hidden", !room);

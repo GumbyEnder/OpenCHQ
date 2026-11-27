@@ -118,8 +118,15 @@ export async function run(ctx) {
       fail("pb304 (d): the clock ran in layout mode: " + JSON.stringify(ran).slice(0, 300));
     }
     const cashBefore = Number(lastRoom(sock).seat && lastRoom(sock).seat.cash);
+    const peaceBefore = JSON.stringify((lastRoom(sock) || {}).peace ?? null);
     await sleep(1600);
     room = lastRoom(sock);
+    // pm 10035 item 6: the 1986 cold-war counter must not advance while the sandbox is open. The
+    // counter is round-based (peace.remaining = untilRound - round), so with the round pinned at 0
+    // and the tick skipping a layout room it cannot move; this line records the two reads rather
+    // than asserting a sixth arm.
+    console.log("pb304 peace counter in layout mode: " + peaceBefore + " -> "
+      + JSON.stringify(room.peace ?? null) + " (round " + room.round + ")");
     const cashAfter = Number(room.seat && room.seat.cash);
     if (cashAfter !== cashBefore) {
       fail("pb304 (d): the sandbox purse moved from " + cashBefore + " to " + cashAfter + " while held");

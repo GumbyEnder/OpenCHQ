@@ -197,6 +197,27 @@ try {
     mark(tag + ": the war controls are hidden in layout mode",
       !(await visible("#clockBtn")) && !(await visible("#saveBtn")) && !(await visible("#resignBtn")) && !(await visible("#newBtn")),
       JSON.stringify({ clock: await visible("#clockBtn"), save: await visible("#saveBtn"), resign: await visible("#resignBtn"), next: await visible("#newBtn") }));
+    // The banner and the speed suffix are war furniture. A pregame sandbox has no war to pause and no
+    // clock to hold, so neither may be painted here - asserted, not screenshotted, so it survives a
+    // re-cut (frodo 10033 / pm 10035 item 3).
+    const furniture = await page.evaluate(() => {
+      const banner = document.getElementById("pauseBanner");
+      const readout = document.getElementById("speedReadout");
+      const ink = banner ? getComputedStyle(banner).visibility : null;
+      return {
+        paused: banner ? banner.classList.contains("paused") : null,
+        ink,
+        bannerHidden: banner ? banner.classList.contains("hidden") : null,
+        readout: readout ? readout.textContent : null,
+        mode: document.body.classList.contains("in-match") ? "in-match" : "lobby",
+      };
+    });
+    mark(tag + ": the pause banner is not painted in layout mode",
+      furniture.paused === false && furniture.ink === "hidden",
+      JSON.stringify(furniture));
+    mark(tag + ": the speed strip carries no held suffix in layout mode",
+      !/\u00b7\s*held/.test(String(furniture.readout || "")),
+      String(furniture.readout));
     await shot("02-sandbox");
 
     // ---- 3. a real board move, and the hostile refusal --------------------------------------
