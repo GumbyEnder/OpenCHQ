@@ -37,16 +37,27 @@
 // --mutant=raw-id serves a COPY of the tree whose labels module hands back the raw id again (the
 // defect restored). The five label assertions are expected to go red; if they stay green the mutant
 // survived and the leg exits 1.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
+
+// The base of the tree this leg graded: GATE_SHA when the caller exported one, else this worktree's
+// HEAD. Never empty - `"sha": ""` cannot be re-read as a measurement of anything (the PB-300 ship
+// record carried exactly that gap on this writer), and a leg that cannot name its base must not
+// leave a green file behind.
+function headSha() {
+  const out = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+  return out.status === 0 ? String(out.stdout || "").trim() : "";
+}
+const SHA = String(process.env.GATE_SHA || "").trim() || headSha();
 
 function argOf(name, fallback = "") {
   const hit = process.argv.find((value) => value.startsWith("--" + name + "="));
@@ -56,7 +67,7 @@ function argOf(name, fallback = "") {
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const MUTANT = argOf("mutant", "");
 const ERA = "1986";
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb300-page")));
+const OUT = evidenceDir("pb300-page", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 
 const RAW_ID = /[a-z]+:[a-z]+:\d+/i;
@@ -373,8 +384,11 @@ try {
     await context.close();
   }
 
-  writeFileSync(path.join(OUT, MUTANT ? "pb300-page-mutant-" + MUTANT + ".json" : "pb300-page.json"), JSON.stringify({
-    base: BASE, tree: serverTree, mutant: MUTANT || null, toasts: all, steps: evidence,
+  const named = mark("the evidence names the tree it graded", Boolean(SHA),
+    SHA ? SHA + (String(process.env.GATE_SHA || "").trim() ? " (GATE_SHA)" : " (git rev-parse HEAD of " + root + ")")
+      : "no GATE_SHA, and git rev-parse HEAD in " + root + " returned nothing");
+  if (named) writeFileSync(path.join(OUT, MUTANT ? "pb300-page-mutant-" + MUTANT + ".json" : "pb300-page.json"), JSON.stringify({
+    sha: SHA, base: BASE, tree: serverTree, mutant: MUTANT || null, toasts: all, steps: evidence,
     passed: evidence.filter((e) => e.ok).length, failed,
   }, null, 2));
 } catch (err) {

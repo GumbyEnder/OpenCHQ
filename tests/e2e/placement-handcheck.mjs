@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -37,7 +38,7 @@ if (!BASE) {
   console.error("usage: node tests/e2e/placement-handcheck.mjs --url=<base url> [--out=<dir>]");
   process.exit(2);
 }
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "t011", "handcheck-live")));
+const OUT = evidenceDir("t011-handcheck-live", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 const ERA = argOf("era", "1942");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

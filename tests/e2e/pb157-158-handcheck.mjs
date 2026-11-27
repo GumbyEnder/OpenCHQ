@@ -34,6 +34,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,7 +51,7 @@ if (!BASE) {
   process.exit(2);
 }
 const ERA = argOf("era", "1986");
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb157")));
+const OUT = evidenceDir("pb157", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

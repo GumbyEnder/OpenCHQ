@@ -22,7 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASE = process.env.CHQ_BASE || "https://openchq-web-production.up.railway.app";
-const CAPS = "/mnt/nas/projects/OpenCHQ/docs/captures";
+const CAPS = evidenceDir("live-soak-ui", process.env.CAPTURES_OUT || "");
 const OUT = "/tmp/chq";
 const SOAK_S = Number(process.argv[2] || process.env.SOAK_S || 900);
 fs.mkdirSync(OUT, { recursive: true });
@@ -36,6 +36,7 @@ fs.mkdirSync(work, { recursive: true });
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+import { evidenceDir } from "../tests/e2e/evidence.mjs";
 
 // In-page recorders, installed before the app runs: every socket close code and every toast.
 await context.addInitScript(() => {

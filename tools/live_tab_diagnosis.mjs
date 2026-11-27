@@ -29,7 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASE = process.env.CHQ_BASE || "https://openchq-web-production.up.railway.app";
-const CAPS = "/mnt/nas/projects/OpenCHQ/docs/captures";
+const CAPS = evidenceDir("live-tab-diagnosis", process.env.CAPTURES_OUT || "");
 const OUT = "/tmp/chq";
 fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -40,6 +40,7 @@ const report = { runId, when: new Date().toISOString(), base: BASE, steps: {} };
 
 // Record every socket close code and every toast, before the app runs.
 const recorder = async (context) => context.addInitScript(() => {
+import { evidenceDir } from "../tests/e2e/evidence.mjs";
   window.__toasts = [];
   window.__ws = [];
   const Native = window.WebSocket;

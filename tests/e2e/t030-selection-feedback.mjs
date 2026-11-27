@@ -16,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { badgePx } from "../../web/public/badges.mjs";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 function argOf(name, fallback = "") {
@@ -27,7 +28,7 @@ if (!BASE) {
   console.error("usage: node tests/e2e/t030-selection-feedback.mjs --url=<base url> [--out=<dir>]");
   process.exit(2);
 }
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "worktrees", "t030", "local", "t030-shots")));
+const OUT = evidenceDir("t030-shots", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 const ERA = argOf("era", "1942");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

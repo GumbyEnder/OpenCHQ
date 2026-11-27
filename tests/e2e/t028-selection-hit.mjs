@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,7 +28,7 @@ if (!BASE) {
   console.error("usage: node tests/e2e/t028-selection-hit.mjs --url=<base url> --label=before|after [--out=<dir>]");
   process.exit(2);
 }
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "worktrees", "t028", "local", "t028-shots")));
+const OUT = evidenceDir("t028-shots", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 const ERA = argOf("era", "1942");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

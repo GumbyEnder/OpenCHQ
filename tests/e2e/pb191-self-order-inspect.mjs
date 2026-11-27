@@ -45,6 +45,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -67,7 +68,7 @@ const W = Number(argOf("w", "1280"));
 const H = Number(argOf("h", "800"));
 const DPR = Number(argOf("dpr", "1"));
 const EXPECT = argOf("expect", HEAD_SHA ? HEAD_SHA.slice(0, 7) : "");
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb191")));
+const OUT = evidenceDir("pb191", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

@@ -27,6 +27,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -75,7 +76,7 @@ function servedMatches(version) {
   if (want.length > short.length) return want.startsWith(short);
   return want.length >= PREFIX_MIN && short.startsWith(want);
 }
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb175")));
+const OUT = evidenceDir("pb175", argOf("out"));
 console.log("out dir: " + OUT + " (pass --out=<dir> or --out <dir> to move it)");
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

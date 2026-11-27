@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -30,7 +31,7 @@ if (!BASE) {
   console.error("usage: node tests/e2e/combat-handcheck.mjs --url=<base url> [--out=<dir>]");
   process.exit(2);
 }
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "t009", "handcheck-live")));
+const OUT = evidenceDir("t009-handcheck-live", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 const ERA = argOf("era", "1942");
 const WAIT_MS = Number(argOf("wait", "600000")) || 600000;

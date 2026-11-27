@@ -31,12 +31,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const arg = (name) => (process.argv.find((v) => v.startsWith("--" + name + "=")) || "").slice(name.length + 3);
 const GIVEN = (arg("url") || process.env.E2E_URL || "").replace(/\/+$/, "");
-const OUT = path.resolve(arg("out") || path.join(process.env.HOME || ".", "agents", "game", "notes", "pb275-capital-alarm"));
+const OUT = evidenceDir("pb275-capital-alarm", arg("out"));
 mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

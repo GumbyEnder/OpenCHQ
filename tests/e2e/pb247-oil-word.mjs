@@ -22,13 +22,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const GIVEN = (process.argv.find((v) => v.startsWith("--url=")) || "").slice(6).replace(/\/+$/, "") ||
   (process.env.E2E_URL || "").replace(/\/+$/, "");
-const OUT = path.resolve((process.argv.find((v) => v.startsWith("--out=")) || "").slice(6) ||
-  path.join(process.env.HOME || ".", "agents", "game", "notes", "pb247"));
+const OUT = evidenceDir("pb247", (process.argv.find((v) => v.startsWith("--out=")) || "").slice(6));
 mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

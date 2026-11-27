@@ -22,6 +22,7 @@ import { loadPlaywright } from "./playwright.mjs";
 // with — not a regex over a substring, so "the ledger is one hover away" is measured against the
 // seat the server actually sent (frodo 8327 §6).
 import { purseText } from "../../web/public/command.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -35,7 +36,7 @@ const argOf = (name, fallback = "") => {
   return fallback;
 };
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb173")));
+const OUT = evidenceDir("pb173", argOf("out"));
 console.log("out dir: " + OUT + " (pass --out=<dir> or --out <dir> to move it)");
 const WIDTHS = (argOf("widths", "1440x900,1280x800,1024x768")).split(",").map((s) => {
   const [w, h] = s.split("x").map(Number);

@@ -34,6 +34,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -46,7 +47,7 @@ function argOf(name, fallback = "") {
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const MUTANT = argOf("mutant", "");
 const ERA = "1986";
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb192-page")));
+const OUT = evidenceDir("pb192-page", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 
 const SEP = " \u00b7 ";

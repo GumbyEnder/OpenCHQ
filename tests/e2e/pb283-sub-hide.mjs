@@ -26,11 +26,11 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
-const OUT = path.resolve((process.argv.find((v) => v.startsWith("--out=")) || "").slice(6) ||
-  path.join(process.env.HOME || ".", "agents", "game", "notes", "pb283-sub-hide"));
+const OUT = evidenceDir("pb283-sub-hide", (process.argv.find((v) => v.startsWith("--out=")) || "").slice(6));
 mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -29,6 +29,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -40,7 +41,7 @@ function argOf(name, fallback = "") {
 
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const ERA = "1986";
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb298-page")));
+const OUT = evidenceDir("pb298-page", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 
 // The two viewports the AC names. The 150 px column is fixed, so both must hold.

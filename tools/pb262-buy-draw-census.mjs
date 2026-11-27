@@ -58,7 +58,11 @@ const LEVELS = String(arg("levels", "4,5")).split(",").map(Number);
 const MATCHES = Math.max(1, Number(arg("matches", 4)));
 const ROUNDS = Math.max(1, Number(arg("rounds", 50)));
 const SEED_BASE = Number(arg("seed-base", 1942));
-const OUT = String(arg("out", "/mnt/nas/host-ops/openchq/pb262/buy-draw-census.json"));
+import { evidenceDir } from "../tests/e2e/evidence.mjs";
+const OUT = String(arg("out", path.join(
+  evidenceDir("pb262-buy-draw-census", process.env.CENSUS_OUT || ""),
+  "buy-draw-census.json"
+)));
 const SHA = git("rev-parse HEAD");
 // `dirty` must be readable by a grader: `true` / `false` / the string `"unknown"`. The old
 // `DIRTY || null` collapsed "clean" and "git status failed" into one token and wrote `null`, which

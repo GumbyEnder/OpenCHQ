@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -30,7 +31,7 @@ const argOf = (name, fallback = "") => {
   return fallback;
 };
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb179")));
+const OUT = evidenceDir("pb179", argOf("out"));
 console.log("out dir: " + OUT + " (pass --out=<dir> or --out <dir> to move it)");
 const WIDTHS = (argOf("widths", "1280x800,1440x900,1024x768")).split(",").map((s) => {
   const [w, h] = s.split("x").map(Number);

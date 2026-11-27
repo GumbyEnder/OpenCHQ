@@ -26,7 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASE = process.env.CHQ_BASE || "https://openchq-web-production.up.railway.app";
-const CAPS = "/mnt/nas/projects/OpenCHQ/docs/captures";
+const CAPS = evidenceDir("live-ship-capture", process.env.CAPTURES_OUT || "");
 const OUT = "/tmp/chq";
 fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,6 +44,7 @@ const page = await context.newPage();
 // --- the server's own view of the room -------------------------------------------------------
 const state = { round: null, clock: null, you: null, pieces: new Map() };
 const frames = [];
+import { evidenceDir } from "../tests/e2e/evidence.mjs";
 page.on("websocket", (ws) => {
   ws.on("framereceived", (f) => {
     try {

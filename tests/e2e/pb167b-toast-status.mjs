@@ -43,6 +43,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
@@ -65,7 +66,7 @@ function argOf(name, fallback = "") {
 const GIVEN = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 const MUTANT = argOf("mutant", "");
 const ERA = "1986";
-const OUT = path.resolve(argOf("out", path.join(process.env.HOME || ".", "agents", "game", "notes", "pb167b")));
+const OUT = evidenceDir("pb167b", argOf("out"));
 mkdirSync(OUT, { recursive: true });
 
 // The longest refusal the economy slice emits, read from the page's own source: if the sentence is
