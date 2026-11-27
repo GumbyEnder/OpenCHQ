@@ -7,9 +7,11 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadPlaywright } from "../tests/e2e/playwright.mjs";
 
-const PLAYWRIGHT = "/home/gumbyender/agents/agent-relay-beezilla/node_modules/playwright/index.mjs";
-const { chromium } = await import(pathToFileURL(PLAYWRIGHT).href);
+// PB-189: the resolver, not a host path (PLAYWRIGHT_MODULE -> tests/e2e/node_modules -> repo
+// node_modules -> bare import). A missing module says PLAYWRIGHT_MISSING; it does not stack-trace.
+const { chromium } = await loadPlaywright();
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = path.join(root, "local", "t022-shots", "pb160");

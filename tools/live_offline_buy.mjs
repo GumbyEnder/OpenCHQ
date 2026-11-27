@@ -13,7 +13,12 @@
 //
 // Writes /tmp/chq/t000-live.json and appends to /tmp/chq/t000-live.log.
 
-import { chromium } from "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs";
+import { loadPlaywright } from "../tests/e2e/playwright.mjs";
+
+// PB-189: one resolver, not a host path. PLAYWRIGHT_MODULE, tests/e2e/node_modules, the repo
+// node_modules, then the bare package - the server-side tool and the page legs search the same
+// order, and a missing module exits PLAYWRIGHT_MISSING instead of a dead absolute import.
+const { chromium } = await loadPlaywright();
 import { execFileSync } from "node:child_process";
 import dns from "node:dns/promises";
 import fs from "node:fs";

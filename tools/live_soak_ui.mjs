@@ -11,7 +11,12 @@
 //
 // Writes docs/captures/t000-soak-15-{start,mark,end}.png and docs/captures/t000-soak-15min.json.
 
-import { chromium } from "/home/gumbyender/agents/agent-relay/node_modules/playwright/index.mjs";
+import { loadPlaywright } from "../tests/e2e/playwright.mjs";
+
+// PB-189: one resolver, not a host path. PLAYWRIGHT_MODULE, tests/e2e/node_modules, the repo
+// node_modules, then the bare package - the server-side tool and the page legs search the same
+// order, and a missing module exits PLAYWRIGHT_MISSING instead of a dead absolute import.
+const { chromium } = await loadPlaywright();
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
