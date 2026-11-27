@@ -1631,6 +1631,24 @@ export function createLobby() {
     }
     touch(room);
     tellRoom(room);
+    // PB-324: the seat hears its own mission back, through the same reply every other order already
+    // gets (`order` below, `transferPlane` above). Before this the op returned only events, so the
+    // page never learned the mission had landed: the aircraft stayed selected and the hint under the
+    // map went on saying "hover a destination to see the route" for a mission already flown. The
+    // frame is seat-scoped and deduped like its siblings, so a reconnect that replays the queue
+    // settles the same order instead of clearing a selection twice.
+    const peer = sockets.get(username);
+    if (peer) {
+      const reply = {
+        op: "missioned",
+        id: message.id ?? null,
+        piece: plane,
+        mode: String(message.mode ?? ""),
+        to: message.to || null,
+      };
+      peer.send(reply);
+      rememberReply(username, message.id, reply);
+    }
     return { ok: true, events: missionEvents };
   }
 

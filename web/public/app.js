@@ -176,6 +176,11 @@ function sendOrder(payload) {
   orderWatch.watch(message);
   return message;
 }
+// PB-324: the ids of missions this seat's own `missioned` frame has already answered. A mission's
+// `ack` carries the round's Log line as an event note ("Air strike."), and flashing it AFTER the
+// missioned frame would replace "Selection cleared." on the hint under the map. The note still
+// reaches the Log through PB-316's at-the-order delivery, so suppressing the flash loses no audit.
+const missionSettled = new Set();
 function settleOrder(id) {
   if (id === undefined || id === null) return;
   orderWatch.settle(id);
@@ -1245,6 +1250,15 @@ function clearCommand() {
   // PB-296a: a picked loader is part of the armed door, so it is disarmed with it.
   pendingLoad = null;
   drawMatch();
+}
+
+// PB-324: the sentence an accepted order appends when it consumed a selection, and the clearing
+// itself. One producer, so a new ack type cannot print the words and forget the act — the mission
+// ack had neither, and the aircraft stayed selected with the hint still asking for a destination.
+function clearSelectionSuffix() {
+  const hadSelection = Boolean(selected);
+  clearCommand();
+  return hadSelection ? " Selection cleared." : "";
 }
 
 // PB-245 AC5: the page's half of the peacetime transfer. The server's room frame carries the state
@@ -4526,9 +4540,17 @@ function connect() {
       sayTruceAnswer(previousRoom, room);
     } else if (message.op === "ack") {
       settleOrder(message.id);
+      // PB-324: a mission's own ack carries the round's Log line as an event note ("Air strike."),
+      // and the seat has already been told what happened by its `missioned` frame. Flashing the note
+      // here would overwrite that sentence - the hint under the map would read "Air strike." instead
+      // of "Selection cleared.", which is the state the ticket is about, just in different words.
+      // The event still lands in the Log through the noteLog call below (PB-316 delivers it at the
+      // order), so nothing is lost: the acknowledgement names the selection, the Log keeps the audit.
+      const ownMission = message.id !== undefined && message.id !== null &&
+        missionSettled.has(String(message.id));
       // What a command actually did, in the server's own words.
       for (const event of message.events || []) {
-        if (event.note) say(String(event.note));
+        if (event.note && !ownMission) say(String(event.note));
         if (event.type && event.reveals !== undefined) noteLog([{ round: event.round, text: String(event.note || event.type) }]);
         // My own intel scan: run the measured sweep (Q51). The satellite pass keeps the quiet,
         // instant reveal it already had -- the original's satellite did not shade the map.
@@ -4586,14 +4608,27 @@ function connect() {
       placement = null;
       drawMatch();
       renderRoom();
+    } else if (message.op === "missioned") {
+      // PB-324: a mission is an order too. The aircraft is away and the player's next click is a map
+      // click again, so the selection goes and the hint under the map stops asking for a destination
+      // the mission already had. The round's own log line is the audit (PB-316 delivers it at the
+      // order); this ack carries no second copy of it.
+      settleOrder(message.id);
+      // PB-324: record the mission BEFORE its own `ack` can flash the round's Log note over this
+      // sentence (the wire sends `missioned`, then the op's `ack`). Bounded like the order queue.
+      if (message.id !== undefined && message.id !== null) {
+        missionSettled.add(String(message.id));
+        while (missionSettled.size > 40) missionSettled.delete(missionSettled.values().next().value);
+      }
+      const cleared = clearSelectionSuffix();
+      if (cleared.trim()) say(cleared.trim());
     } else if (message.op === "transferred") {
       // PB-245 AC5: a transfer lands in the same round, so there is no round sentence to print and
-      // no path to keep drawn. Selection clears exactly as it does after an order.
+      // no path to keep drawn. Selection clears exactly as it does after an order (PB-324: one
+      // producer for both the sentence and the clearing).
       settleOrder(message.id);
-      const hadSelection = Boolean(selected);
-      say(transferText() + (hadSelection ? " Selection cleared." : ""));
+      say(transferText() + clearSelectionSuffix());
       noteLog([{ round: room && room.round ? room.round : 0, text: transferText().replace(/\.$/, "") }]);
-      clearCommand();
     } else if (message.op === "destination") {
       // PB-245b: the destination is stored, not walked. The ack's `rounds` is the walk's preview,
       // which is what the player is promised; nothing has been spent and no path is drawn.
@@ -4606,11 +4641,11 @@ function connect() {
       // An accepted order clears the selection (the PM's ruling, 2026-11-15) - and it says so, so a
       // player who thought they were selecting a piece is not left clicking at nothing with the
       // generic hint (T-030 AC8 items 2 and 5). The path that just went on the wire stays drawn.
-      const hadSelection = Boolean(selected);
-      say(ackText(message) + (hadSelection ? " Selection cleared." : ""));
+      // PB-324: the sentence and the clearing come from one producer, shared with the mission and
+      // transfer acks.
+      say(ackText(message) + clearSelectionSuffix());
       // An order is the player's own act, so it belongs in the log beside what the round did.
       noteLog([{ round: room && room.round ? room.round : 0, text: ackText(message).replace(/\.$/, "") }]);
-      clearCommand();
     } else if (message.op === "switched") {
       // PB-309: the flip is the server's. The page takes the sentence the server wrote and drops
       // anything that belonged to the side just left - a selection of a unit the player no longer
