@@ -40,7 +40,10 @@
     </div>
     <div class="whoami">
       <p id="account" class="account"></p>
-      <details id="passwordBox" class="passwordBox">
+      <!-- PB-314: ships hidden. The disclosure is a session control, and the gate's first paint has no
+           session, so the markup must not arm it before app.js can answer. renderAccount() owns the
+           toggle from the same `me` the account line uses. -->
+      <details id="passwordBox" class="passwordBox hidden">
         <summary>Change password</summary>
         <form id="password">
           <label>Current <input name="current" type="password" autocomplete="current-password" required></label>
