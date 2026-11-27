@@ -1889,6 +1889,19 @@ function paintStripInfo(room) {
   });
 }
 
+// PB-317 (manual p.35 l.1119-1120, l.1133-1135): Show Common is a view of the war that hides most of
+// the enemy AND most of your own army, and its toggle lives inside the War dialogue. A player who
+// closes that panel had nothing on screen saying why the map was thin. The mode gets a readout of
+// its own in the footer's fixed slot: the word when the mode is on, nothing when it is off. The
+// slot's box comes from the stylesheet, so this function only ever writes text - it cannot move it.
+// The server is the authority (`room.showCommon.on`, absent in Normal); the page never infers it.
+function paintModeFlag(room) {
+  const slot = document.getElementById("modeFlag");
+  if (!slot) return;
+  const on = Boolean(room && room.showCommon && room.showCommon.on);
+  slot.textContent = on ? "Show Common" : "";
+}
+
 document.getElementById("camIn")?.addEventListener("click", () => zoomStep(1));
 document.getElementById("camOut")?.addEventListener("click", () => zoomStep(-1));
 document.getElementById("camFit")?.addEventListener("click", () => refit());
@@ -2124,6 +2137,7 @@ function syncShell() {
     seatFootLines();
   }
   paintStripInfo(room);
+  paintModeFlag(room);
   // The purse at a glance: the economy dialogue explains it, this is the number a player wants to
   // see without opening anything.
   const purse = document.getElementById("purseChip");

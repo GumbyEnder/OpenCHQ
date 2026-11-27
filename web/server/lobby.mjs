@@ -597,6 +597,10 @@ export function createLobby() {
   function endRoom(room, reason) {
     room.note = reason;
     shadows.delete(room.id);
+    // PB-317 (AC e): Show Common is view state for a seat in ONE room, so it dies with the room.
+    // Leaving it on the lobby's map meant a room recreated under the same id would hand a fresh game
+    // the previous game's mode - the mode would look like a setting.
+    commonSeats.delete(room.id);
     rooms.delete(room.id);
     deleteRoom(room.id);
     for (const seat of [room.seats.blue, room.seats.red]) {
@@ -1515,6 +1519,14 @@ export function createLobby() {
     const humanHeld = holds[mine] === true;
     holds[mine] = false;
     holds[other] = humanHeld;
+    // PB-317 (manual p.35 l.1133-1135): step 4 sets Show Common, THEN presses Switch Sides, and
+    // step 5 has the next player toggling Show-Who to his own side - so the mode is the PLAYER's and
+    // it survives the swap. The map is keyed by SIDE, so without this move the seat would arrive on
+    // the other side in Normal while its own button still read Common. A hold follows the seat for
+    // the same reason, one block up.
+    const wasCommon = commonFor(room, mine);
+    setCommon(room, other, wasCommon);
+    setCommon(room, mine, false);
     room.note = emptySeat
       ? "You are now the " + other + " side. No opponent plays " + mine + "."
       : "You are now the " + other + " side. The computer plays " + mine + ".";

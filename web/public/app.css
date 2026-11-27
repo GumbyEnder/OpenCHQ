@@ -333,6 +333,27 @@ button.ghost {
   min-width: 0;
 }
 
+/* PB-317 (manual p.35 l.1133-1135): the Show Common readout. Width AND height are set by this rule,
+   not by the word inside the slot, so ON and OFF are the same box in the same place and the footer
+   row does not reflow when the mode flips. 14ch, not 13: `ch` is the font's `0` advance, and the
+   word's glyph run is wider than thirteen of them at 12 px bold (measured 89.97 px of text against
+   86.76 px of box), so 13ch cut the last glyph at both widths. 14ch keeps the run inside the box and
+   scales with the font when it changes; the empty state keeps the rectangle because the box never
+   depends on its text. */
+.modeflag {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 14ch;
+  height: 16px;
+  line-height: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 .chatbar input {
   width: min(46ch, 58vw);
   padding: 5px 8px;

@@ -270,6 +270,10 @@
         <!-- PB-279: the caption and the chat field share one footer row instead of sitting on top of
              each other. The bar keeps its bottom-left place; the caption starts after it. -->
         <div class="mapfoot">
+          <!-- PB-317 (manual p.35 l.1119-1120, l.1133-1135): a fixed slot for the Show Common mode.
+               Its box is sized by the stylesheet, not by the word inside it, so the two states put
+               the same rectangle in the same place and nothing on the row moves. -->
+          <span id="modeFlag" class="modeflag" aria-live="polite"></span>
           <form id="chatBar" class="chatbar hidden" autocomplete="off">
             <label class="visuallyhidden" for="chatInput">Message your opponent</label>
             <input id="chatInput" name="chat" type="text" maxlength="200" placeholder="Message your opponent — Enter to send">
