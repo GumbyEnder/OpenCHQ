@@ -1,4 +1,4 @@
-// PB-323 page leg: the strip's round readout is visible at every width.
+// PB-323 page leg: the strip's round readout is visible at every width, in every era it can print.
 //
 //   node tests/e2e/pb323-round-readout.mjs                 # starts its own server
 //   node tests/e2e/pb323-round-readout.mjs --url=<base>    # a running server
@@ -11,20 +11,31 @@
 // shape (substring presence in priority order, never textContent equality) and adds the fractional
 // arm because clientWidth rounds while scrollWidth ceils.
 //
-// Arms, per viewport (1440x900, 1280x800, 1024x768), in each clock state (held, running):
-//   (a)  the readout's text contains "round <n>" and the clock word, and its box does not clip:
-//        scrollWidth <= clientWidth + 1;
+// PB-323b (frodo 10324 §1): this leg used to launch era "1942" only at every viewport, so no 3-wide
+// era line was ever sampled by the width arms, and its one "widest era line" arm previewed the 9999
+// "Concealed" string instead. The 1986 cold-war line is the widest the strip actually prints
+// ("1986 · blue · round 0 · held · cold war, war may resume", 318.88 px) and it clipped at 1280 and
+// 1024 on live 30a4275. So EVERY width arm now LAUNCHES 1986 in a real game, and 1942 rides beside
+// it as the narrow control. The 9999 preview arm is deleted: a preview of a string the page cannot
+// be in is not coverage. The full sentence stays in the element's title on every tier, and arm (f)
+// grades that, so a line that shortens to fit is distinguishable from one that lost information.
+//
+// Arms, per era (1986, 1942) and per viewport (1440x900, 1280x800, 1024x768), in each clock state
+// (held, running):
+//   (a)  the readout's text contains "round <n>" and the clock word, names the era first and the
+//        side second, and its box does not clip: scrollWidth <= clientWidth + 1;
 //   (a') the Range arm: the text's own right edge <= the element's right edge + 0.5, and the
-//        fractional text width <= the box's content width + 0.5. The detail prints range.right,
-//        el.right, delta, scrollWidth, clientWidth and the text, so a red names the arm that fired;
+//        fractional text width <= the box's content width + 0.5;
 //   (b)  a pairwise rect matrix over every control in the strip row: no overlap, >= 1 px apart,
-//        with Clock x purseChip named explicitly at 1280 (0.72 px there before the fix);
+//        with Clock x purseChip named explicitly at 1280;
 //   (d)  Paths and Satellites are reachable in one click at every width, and toggle back;
-//   (e)  a clock-word change moves no control (x/y within 1 px), and the strip stays one row.
+//   (e)  a clock-word change moves no control (x/y within 1 px), and the strip stays one row;
+//   (f)  the full sentence is in the title (title covers text; 1986's title keeps "war may resume"
+//        at every width, and the painted line still names "cold war" there).
 //
 // What breaks if this is removed: at 1024x768 the player is shown the era and the side of a war whose
 // round number and clock state are off the edge of the row - the two facts the original puts on its
-// monitor line.
+// monitor line - and a 1986 player in the cold war loses the clause that tells them the war can start.
 
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -50,6 +61,14 @@ const VIEWPORTS = [
   { width: 1280, height: 800 },
   { width: 1024, height: 768 },
 ];
+// PM 10334 §4: Concealed is LAUNCHED for real at 1280 and 1024 (an era-9999 room carries no peace
+// block, so it cannot print a cold-war suffix; the old preview arm graded a string the page could
+// not be in). 1440 is covered by 1986 and 1942 - Concealed is not graded there.
+const ERAS = [
+  ["1986", VIEWPORTS],
+  ["1942", VIEWPORTS],
+  ["9999", VIEWPORTS.filter((v) => v.width !== 1440)],
+];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const evidence = [];
@@ -74,8 +93,8 @@ function freePort() {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-// One snapshot: the readout's text and both fit measures, plus every control's rect in the strip.
-// Read in ONE evaluate so the numbers describe a single frame.
+// One snapshot: the readout's text, its title, both fit measures, plus every control's rect in the
+// strip. Read in ONE evaluate so the numbers describe a single frame.
 const snapshot = (page) => page.evaluate(() => {
   const round2 = (n) => Math.round(n * 100) / 100;
   const strip = document.getElementById("strip");
@@ -102,6 +121,7 @@ const snapshot = (page) => page.evaluate(() => {
   const nr = nav ? nav.getBoundingClientRect() : null;
   return {
     text: (info.textContent || "").trim(),
+    title: info.getAttribute("title") || "",
     box: { x: round2(ir.x), y: round2(ir.y), right: round2(ir.right), bottom: round2(ir.bottom), w: round2(ir.width), h: round2(ir.height) },
     range: { left: round2(rr.left), right: round2(rr.right), width: round2(rr.width) },
     scrollWidth: info.scrollWidth,
@@ -211,138 +231,133 @@ async function main() {
 
   const browser = await chromium.launch({ args: ["--no-sandbox"] });
 
-  for (const viewport of VIEWPORTS) {
-    const tag = Date.now().toString(36).slice(-5) + viewport.width;
-    const context = await browser.newContext({ viewport });
-    const page = await context.newPage();
-    const errors = [];
-    page.on("pageerror", (err) => errors.push(String(err)));
-    const at = " @" + viewport.width + "x" + viewport.height;
+  for (const [era, viewports] of ERAS) {
+    for (const viewport of viewports) {
+      const tag = Date.now().toString(36).slice(-5) + era + viewport.width;
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (err) => errors.push(String(err)));
+      const at = " @era" + era + " " + viewport.width + "x" + viewport.height;
+      const warEra = era === "9999" ? "Concealed" : era;
 
-    await signIn(page, "P323" + tag, "pw-323-" + tag);
-    await page.selectOption('#launch select[name="era"]', "1942");
-    await page.selectOption('#launch select[name="side"]', "blue");
-    await page.click("#launch button[type=submit]");
-    await page.waitForFunction(() => window.__chq.room() && window.__chq.room().mode === "bot",
-      null, { timeout: 30000, polling: 100 });
-    await sleep(400);
-    mark("a solo 1942 war is open" + at, true, await page.evaluate(() => "room " + window.__chq.room().id));
+      await signIn(page, "P323" + tag, "pw-323-" + tag);
+      await page.selectOption('#launch select[name="era"]', era);
+      await page.selectOption('#launch select[name="side"]', "blue");
+      await page.click("#launch button[type=submit]");
+      await page.waitForFunction(() => window.__chq.room() && window.__chq.room().mode === "bot",
+        null, { timeout: 30000, polling: 100 });
+      await sleep(400);
+      mark("a solo " + era + " war is open" + at, true, await page.evaluate(() => "room " + window.__chq.room().id));
 
-    // ---- held state ---------------------------------------------------------------------------
-    const held = await snapshot(page);
-    const heldFit = readoutFit(held);
-    mark("(a) held: the readout names the round" + at, /round\s+\d+/.test(held.text), JSON.stringify(held.text));
-    mark("(a) held: the readout names the clock word" + at, /\b(held|running|paused)\b/.test(held.text), JSON.stringify(held.text));
-    mark("(a) held: no clip (scrollWidth <= clientWidth + 1)" + at, heldFit.integerOk,
-      JSON.stringify({ scrollWidth: held.scrollWidth, clientWidth: held.clientWidth, text: held.text }));
-    mark("(a') held: the text ends inside the box (fractional arm)" + at, heldFit.rangeOk,
-      JSON.stringify({ rangeRight: held.range.right, elRight: held.box.right, delta: round2(held.range.right - held.box.right), rangeWidth: held.range.width, contentWidth: held.contentWidth, scrollWidth: held.scrollWidth, clientWidth: held.clientWidth, text: held.text }));
-    const heldBad = rectMatrix(held.controls);
-    mark("(b) held: every control in the row is >= 1 px clear of every other" + at, heldBad.length === 0,
-      JSON.stringify({ controls: held.controls.length, collisions: heldBad.slice(0, 6) }));
-    if (viewport.width === 1280) {
-      const gap = pairGap(held.controls, "clockBtn", "purseChip");
-      mark("(b) Clock x purseChip at 1280" + at, Boolean(gap) && gap.clear, JSON.stringify(gap));
+      // ---- held state ---------------------------------------------------------------------------
+      const held = await snapshot(page);
+      const heldFit = readoutFit(held);
+      const heldParts = held.text.split(" · ");
+      mark("(a) held: the readout names the round" + at, /round\s+\d+/.test(held.text), JSON.stringify(held.text));
+      mark("(a) held: the readout names the clock word" + at, /\b(held|running|paused)\b/.test(held.text), JSON.stringify(held.text));
+      mark("(a) held: the era is the first part" + at, heldParts[0] === warEra, JSON.stringify(heldParts));
+      mark("(a) held: the side is the second part (full or initial)" + at,
+        heldParts[1] === "blue" || heldParts[1] === "B", JSON.stringify(heldParts));
+      mark("(a) held: the round precedes the clock word" + at,
+        heldParts.findIndex((p) => /^round\s+\d+$/.test(p)) < heldParts.findIndex((p) => /^(held|running|paused)$/.test(p)),
+        JSON.stringify(heldParts));
+      mark("(a) held: no clip (scrollWidth <= clientWidth + 1)" + at, heldFit.integerOk,
+        JSON.stringify({ scrollWidth: held.scrollWidth, clientWidth: held.clientWidth, text: held.text }));
+      mark("(a') held: the text ends inside the box (fractional arm)" + at, heldFit.rangeOk,
+        JSON.stringify({ rangeRight: held.range.right, elRight: held.box.right, delta: round2(held.range.right - held.box.right), rangeWidth: held.range.width, contentWidth: held.contentWidth, scrollWidth: held.scrollWidth, clientWidth: held.clientWidth, text: held.text }));
+      const heldBad = rectMatrix(held.controls);
+      mark("(b) held: every control in the row is >= 1 px clear of every other" + at, heldBad.length === 0,
+        JSON.stringify({ controls: held.controls.length, collisions: heldBad.slice(0, 6) }));
+      if (viewport.width === 1280) {
+        const gap = pairGap(held.controls, "clockBtn", "purseChip");
+        mark("(b) Clock x purseChip at 1280" + at, Boolean(gap) && gap.clear, JSON.stringify(gap));
+      }
+      mark("(a) held: the command cluster is not a scroll window" + at,
+        Boolean(held.nav) && held.nav.scrollWidth <= held.nav.clientWidth + 1,
+        JSON.stringify(held.nav));
+      // (f) the full sentence is never lost - only its painted copy may shorten to fit.
+      mark("(f) held: the title carries the full sentence" + at,
+        held.title.length >= held.text.length && (era !== "1986" || held.title.includes("war may resume")),
+        JSON.stringify({ title: held.title, text: held.text }));
+      if (era === "1986") {
+        // The cold war is the state this war is in; the row must still say so after any compaction.
+        mark("(f) held: the painted line still names the cold war" + at, held.text.includes("cold war"),
+          JSON.stringify(held.text));
+      }
+      if (era === "1942") {
+        // The narrow control: a line that fits must not be compacted by the ladder.
+        mark("(f) held: a line that fits is painted whole" + at,
+          held.text === "1942 · blue · round 0 · held" && held.title === held.text,
+          JSON.stringify({ text: held.text, title: held.title }));
+      }
+
+      // ---- (d) Paths and Satellites, one click each ---------------------------------------------
+      for (const label of ["Paths", "Satellites"]) {
+        const found = await page.evaluate((want) => {
+          const button = Array.from(document.querySelectorAll("#nav button"))
+            .find((el) => (el.textContent || "").trim().startsWith(want));
+          if (!button) return null;
+          const r = button.getBoundingClientRect();
+          return { text: (button.textContent || "").trim(), x: Math.round(r.x), w: Math.round(r.width), pressed: button.getAttribute("aria-pressed") };
+        }, label);
+        mark("(d) the " + label + " control is on screen" + at, Boolean(found) && found.w > 8, JSON.stringify(found));
+        const toggled = await page.evaluate((want) => {
+          const button = Array.from(document.querySelectorAll("#nav button"))
+            .find((el) => (el.textContent || "").trim().startsWith(want));
+          if (!button) return null;
+          button.click();
+          return button.getAttribute("aria-pressed");
+        }, label);
+        await sleep(260);
+        const after = await page.evaluate((want) => {
+          const button = Array.from(document.querySelectorAll("#nav button"))
+            .find((el) => (el.textContent || "").trim().startsWith(want));
+          return button ? button.getAttribute("aria-pressed") : null;
+        }, label);
+        mark("(d) one click toggles " + label + " on" + at, toggled === "true" && after === "true",
+          JSON.stringify({ clicked: toggled, settled: after }));
+        await page.evaluate((want) => {
+          const button = Array.from(document.querySelectorAll("#nav button"))
+            .find((el) => (el.textContent || "").trim().startsWith(want));
+          if (button) button.click();
+        }, label);
+        await sleep(200);
+        const back = await page.evaluate((want) => {
+          const button = Array.from(document.querySelectorAll("#nav button"))
+            .find((el) => (el.textContent || "").trim().startsWith(want));
+          return button ? button.getAttribute("aria-pressed") : null;
+        }, label);
+        mark("(d) one more click toggles " + label + " off" + at, back === "false", JSON.stringify(back));
+      }
+
+      // ---- running state: (a), (a'), (e) --------------------------------------------------------
+      const beforePlay = await snapshot(page);
+      await pressClock(page, "running");
+      const running = await snapshot(page);
+      const runFit = readoutFit(running);
+      mark("(a) running: the readout names the round" + at, /round\s+\d+/.test(running.text), JSON.stringify(running.text));
+      mark("(a) running: the clock word is \"running\"" + at, /\brunning\b/.test(running.text), JSON.stringify(running.text));
+      mark("(a) running: no clip (scrollWidth <= clientWidth + 1)" + at, runFit.integerOk,
+        JSON.stringify({ scrollWidth: running.scrollWidth, clientWidth: running.clientWidth, text: running.text }));
+      mark("(a') running: the text ends inside the box (fractional arm)" + at, runFit.rangeOk,
+        JSON.stringify({ rangeRight: running.range.right, elRight: running.box.right, delta: round2(running.range.right - running.box.right), rangeWidth: running.range.width, contentWidth: running.contentWidth, scrollWidth: running.scrollWidth, clientWidth: running.clientWidth, text: running.text }));
+      const runBad = rectMatrix(running.controls);
+      mark("(b) running: every control in the row is >= 1 px clear of every other" + at, runBad.length === 0,
+        JSON.stringify({ controls: running.controls.length, collisions: runBad.slice(0, 6) }));
+      const moved = movedControls(beforePlay.controls, running.controls);
+      mark("(e) the clock-word change moved no control (x/y within 1 px)" + at, moved.length === 0,
+        JSON.stringify({ moved }));
+      mark("(e) the strip stayed one row of the same height" + at,
+        Math.abs(running.strip.h - beforePlay.strip.h) <= 1 && Math.abs(running.box.y - beforePlay.box.y) <= 1,
+        JSON.stringify({ held: { h: beforePlay.strip.h, y: beforePlay.box.y }, running: { h: running.strip.h, y: running.box.y } }));
+
+      // ---- paused state (speed 0 with the clock running prints "paused") -----------------------
+      mark("(a) the clock read back as running" + at, running.clock === "running", JSON.stringify(running.clock));
+
+      mark("no page error was raised" + at, errors.length === 0, JSON.stringify(errors.slice(0, 4)));
+      await context.close();
     }
-    mark("(a) held: the command cluster is not a scroll window" + at,
-      Boolean(held.nav) && held.nav.scrollWidth <= held.nav.clientWidth + 1,
-      JSON.stringify(held.nav));
-
-    // ---- (d) Paths and Satellites, one click each ---------------------------------------------
-    for (const label of ["Paths", "Satellites"]) {
-      const found = await page.evaluate((want) => {
-        const button = Array.from(document.querySelectorAll("#nav button"))
-          .find((el) => (el.textContent || "").trim().startsWith(want));
-        if (!button) return null;
-        const r = button.getBoundingClientRect();
-        return { text: (button.textContent || "").trim(), x: Math.round(r.x), w: Math.round(r.width), pressed: button.getAttribute("aria-pressed") };
-      }, label);
-      mark("(d) the " + label + " control is on screen" + at, Boolean(found) && found.w > 8, JSON.stringify(found));
-      const toggled = await page.evaluate((want) => {
-        const button = Array.from(document.querySelectorAll("#nav button"))
-          .find((el) => (el.textContent || "").trim().startsWith(want));
-        if (!button) return null;
-        button.click();
-        return button.getAttribute("aria-pressed");
-      }, label);
-      await sleep(260);
-      const after = await page.evaluate((want) => {
-        const button = Array.from(document.querySelectorAll("#nav button"))
-          .find((el) => (el.textContent || "").trim().startsWith(want));
-        return button ? button.getAttribute("aria-pressed") : null;
-      }, label);
-      mark("(d) one click toggles " + label + " on" + at, toggled === "true" && after === "true",
-        JSON.stringify({ clicked: toggled, settled: after }));
-      await page.evaluate((want) => {
-        const button = Array.from(document.querySelectorAll("#nav button"))
-          .find((el) => (el.textContent || "").trim().startsWith(want));
-        if (button) button.click();
-      }, label);
-      await sleep(200);
-      const back = await page.evaluate((want) => {
-        const button = Array.from(document.querySelectorAll("#nav button"))
-          .find((el) => (el.textContent || "").trim().startsWith(want));
-        return button ? button.getAttribute("aria-pressed") : null;
-      }, label);
-      mark("(d) one more click toggles " + label + " off" + at, back === "false", JSON.stringify(back));
-    }
-
-    // ---- running state: (a), (a'), (e) --------------------------------------------------------
-    const beforePlay = await snapshot(page);
-    await pressClock(page, "running");
-    const running = await snapshot(page);
-    const runFit = readoutFit(running);
-    mark("(a) running: the readout names the round" + at, /round\s+\d+/.test(running.text), JSON.stringify(running.text));
-    mark("(a) running: the clock word is \"running\"" + at, /\brunning\b/.test(running.text), JSON.stringify(running.text));
-    mark("(a) running: no clip (scrollWidth <= clientWidth + 1)" + at, runFit.integerOk,
-      JSON.stringify({ scrollWidth: running.scrollWidth, clientWidth: running.clientWidth, text: running.text }));
-    mark("(a') running: the text ends inside the box (fractional arm)" + at, runFit.rangeOk,
-      JSON.stringify({ rangeRight: running.range.right, elRight: running.box.right, delta: round2(running.range.right - running.box.right), rangeWidth: running.range.width, contentWidth: running.contentWidth, scrollWidth: running.scrollWidth, clientWidth: running.clientWidth, text: running.text }));
-    const runBad = rectMatrix(running.controls);
-    mark("(b) running: every control in the row is >= 1 px clear of every other" + at, runBad.length === 0,
-      JSON.stringify({ controls: running.controls.length, collisions: runBad.slice(0, 6) }));
-    const moved = movedControls(beforePlay.controls, running.controls);
-    mark("(e) the clock-word change moved no control (x/y within 1 px)" + at, moved.length === 0,
-      JSON.stringify({ moved }));
-    mark("(e) the strip stayed one row of the same height" + at,
-      Math.abs(running.strip.h - beforePlay.strip.h) <= 1 && Math.abs(running.box.y - beforePlay.box.y) <= 1,
-      JSON.stringify({ held: { h: beforePlay.strip.h, y: beforePlay.box.y }, running: { h: running.strip.h, y: running.box.y } }));
-
-    // ---- paused state (speed 0 with the clock running prints "paused") -----------------------
-    mark("(a) the clock read read back as running" + at, running.clock === "running", JSON.stringify(running.clock));
-
-    // ---- (a) also the longest era the strip can print ---------------------------------------
-    // A Concealed-year war is the widest line the strip ever shows ("Concealed" is 9 characters
-    // where "1942" is 4). It is not a graded state on its own; it is the margin check that the fix
-    // is a row budget and not a 1942-sized slot.
-    const concealed = await page.evaluate(() => {
-      const info = document.getElementById("stripInfo");
-      if (!info) return null;
-      const room = window.__chq.room();
-      if (typeof window.__chq.stripPreview !== "function") return { skipped: true };
-      // The page's own producer with a Concealed room: the same parts, the same DOM shape, the same
-      // slot. The restore call is the frame's own path, not a string kept from before.
-      window.__chq.stripPreview({ ...room, era: "9999", round: 12 });
-      const now = document.getElementById("stripInfo");
-      const range = document.createRange();
-      range.selectNodeContents(now);
-      const rr = range.getBoundingClientRect();
-      const ir = now.getBoundingClientRect();
-      const out = { text: (now.textContent || "").trim(), rangeWidth: Math.round(rr.width * 100) / 100, right: Math.round(rr.right * 100) / 100, boxRight: Math.round(ir.right * 100) / 100, scrollWidth: now.scrollWidth, clientWidth: now.clientWidth };
-      window.__chq.stripPreview(room);
-      return out;
-    });
-    if (concealed && !concealed.skipped) {
-      mark("(a) the widest era line also fits (Concealed, running)" + at,
-        concealed.scrollWidth <= concealed.clientWidth + 1 && concealed.right <= concealed.boxRight + 0.5,
-        JSON.stringify(concealed));
-    } else {
-      mark("(a) the widest era line was sampled through the page's own producer" + at, false,
-        "the page exposes no stripPreview hook; the leg refuses to grade a string it composed itself");
-    }
-
-    mark("no page error was raised" + at, errors.length === 0, JSON.stringify(errors.slice(0, 4)));
-    await context.close();
   }
 
   await browser.close();

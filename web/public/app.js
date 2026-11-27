@@ -50,7 +50,7 @@ import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { scanAddPieces, scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
-import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfoParts } from "./shell.mjs";
+import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfo, stripInfoParts, STRIP_TIER_MAX } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
 import { NAV, buyRows, economyModel, foeIncomeValue, navFor, navHint, oilLine, paydayRows, reserveLine, untypedCount, warControls } from "./dialogs.mjs";
 // T-031 step 3: the War Films replay. The pure view model lives in film.mjs so the node tests and the
@@ -1880,15 +1880,15 @@ function resizeViewport() {
 window.addEventListener("resize", () => {
   resizeViewport();
   seatFootLines();
+  // PB-323b: the readout's tier is chosen against the row's own budget, so a window that narrows
+  // below the painted line steps it down without waiting for the next room frame.
+  if (room) paintStripInfo(room);
 });
 
 // PB-173: the strip's clock word goes in a slot of its own (see .stripinfo .phase in app.css), so
 // the painter builds the line out of nodes instead of assigning one string. textContent throughout —
 // these are room fields, and a name is not markup.
-function paintStripInfo(room) {
-  const info = document.getElementById("stripInfo");
-  if (!info) return;
-  const pieces = stripInfoParts(room);
+function paintStripPieces(info, pieces) {
   info.textContent = "";
   pieces.forEach((piece, i) => {
     if (i) info.appendChild(document.createTextNode(" \u00b7 "));
@@ -1901,6 +1901,40 @@ function paintStripInfo(room) {
       info.appendChild(document.createTextNode(piece.text));
     }
   });
+}
+
+// PB-323b: both fit arms in one place, because the integer one alone can pass a 1.2 px overflow
+// (clientWidth rounds while the Range ceils — measured on the Concealed line at 1024).
+function stripFits(info) {
+  if (!info || info.scrollWidth > info.clientWidth + 1) return false;
+  const range = document.createRange();
+  range.selectNodeContents(info);
+  const text = range.getBoundingClientRect();
+  const box = info.getBoundingClientRect();
+  const cs = getComputedStyle(info);
+  const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  return text.right <= box.right + 0.5 && text.width <= box.width - pad + 0.5;
+}
+
+// PB-323b: the row's budget is smaller than the widest sentence the strip can print — the 1986
+// cold-war line is 319 px of text in a 269 px box at 1024x768. So paint the ruled form, and while the
+// box still clips (both arms), step down shell.mjs' suffix-only ladder. The round number, era, side
+// and clock word are on every tier; what gives way is the peace copy or the winner's capital detail.
+// The full sentence stays in the title so nothing is lost to the reader. One read per paint in the
+// common case (no overflow).
+function paintStripInfo(room) {
+  const info = document.getElementById("stripInfo");
+  if (!info) return;
+  if (!room) {
+    info.textContent = "";
+    info.removeAttribute("title");
+    return;
+  }
+  for (let tier = 0; tier <= STRIP_TIER_MAX; tier += 1) {
+    paintStripPieces(info, stripInfoParts(room, { width: window.innerWidth, tier }));
+    if (stripFits(info)) break;
+  }
+  info.title = stripInfo(room);
 }
 
 // PB-317 (manual p.35 l.1119-1120, l.1133-1135): Show Common is a view of the war that hides most of
@@ -2150,12 +2184,13 @@ function syncShell() {
     // PB-167b: entering or leaving a match changes the footer's row; clear or re-anchor the toast.
     seatFootLines();
   }
-  paintStripInfo(room);
-  paintModeFlag(room);
-  // The purse at a glance: the economy dialogue explains it, this is the number a player wants to
-  // see without opening anything.
+  // PB-323b: the purse is painted BEFORE the readout, because the purse is the row's other elastic
+  // box: painting it afterwards can widen it by a digit and squeeze the readout the tier ladder just
+  // measured as fitting. The readout's tier is only honest against the row it lands in.
   const purse = document.getElementById("purseChip");
   if (purse) paintPurse(purse, room && room.seat ? room.seat : null, "strip");
+  paintStripInfo(room);
+  paintModeFlag(room);
   syncGameButtons();
   renderDebug();
   paintDialog();
@@ -5012,8 +5047,9 @@ window.__chq = {
   users: () => users.slice(),
   room: () => room,
   // PB-323: paint the strip's line for a room object the leg supplies, through the same producer the
-  // frame uses. A leg measuring the widest era line ("Concealed") would otherwise have to open that
-  // war; composing the string in the leg would grade the leg's own copy, not the page's.
+  // frame uses (PB-323b: including the width rule and the fit ladder, so a leg grades what the page
+  // would actually paint). A cease-fire needs a negotiated peace a gate run cannot reach; this is
+  // how frodo's gate grades that producer state without composing the string in the leg.
   stripPreview: (preview) => paintStripInfo(preview),
   // PB-305: the film the bar is showing (null when none), so a leg reads the round it stepped to
   // instead of parsing the label.

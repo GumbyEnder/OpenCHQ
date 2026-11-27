@@ -38,8 +38,11 @@ const VIEWPORTS = [
   { width: 1024, height: 768 },
 ];
 
-// The pre-fix line, measured by the PM on live 50758d6 and reproduced from the shipped module.
-const WAR_ROUND0 = "1986 · blue · round 0 · held · cold war, war may resume";
+// The painted line at 1280 and 1024 after PB-323b (PM 10334 §2): the head is full and the cold war
+// suffix is painted short; the full "cold war, war may resume" lives in the readout's title. This
+// used to pin the pre-fix sentence, and a short form correctly redressed that arm - so it is amended
+// in the same commit as the strip change, never loosened.
+const WAR_ROUND0 = "1986 · blue · round 0 · held · cold war";
 const FORBIDDEN = /cold war|cease-fire|war may resume|rounds? left/i;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -122,6 +125,7 @@ try {
     page.on("dialog", (dialog) => { dialog.accept().catch(() => {}); });
     const shot = (name) => page.screenshot({ path: path.join(OUT, name + "-" + tag + ".png") });
     const strip = () => page.evaluate(() => String(document.getElementById("stripInfo")?.textContent || "").trim());
+    const stripTitle = () => page.evaluate(() => String(document.getElementById("stripInfo")?.getAttribute("title") || ""));
 
     async function waitMode(mode, deadline = 25000) {
       const start = Date.now();
@@ -181,8 +185,10 @@ try {
     }
     await sleep(400);
     const warLine = await strip();
-    mark(tag + ": the control war keeps the pre-fix line byte for byte", warLine === WAR_ROUND0, warLine);
+    mark(tag + ": the control war paints the ruled short form byte for byte", warLine === WAR_ROUND0, warLine);
     mark(tag + ": the control war still carries the peace copy", FORBIDDEN.test(warLine), warLine);
+    const warTitle = await stripTitle();
+    mark(tag + ": the full cold-war suffix is in the readout's title", /cold war,\s*war may resume/i.test(warTitle), warTitle);
     await shot("02-war-strip");
 
     mark(tag + ": no page error", pageErrors.length === 0, JSON.stringify(pageErrors));

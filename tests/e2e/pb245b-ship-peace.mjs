@@ -244,9 +244,11 @@ async function main() {
 
   const peaceState = await blue.evaluate(() => {
     const room = window.__chq.room();
+    const info = document.getElementById("stripInfo");
     return {
       peace: room.peace,
-      strip: (document.getElementById("stripInfo").textContent || "").trim(),
+      strip: (info.textContent || "").trim(),
+      title: info.getAttribute("title") || "",
       note: window.__chq.note(),
     };
   });
@@ -259,8 +261,12 @@ async function main() {
     JSON.stringify(peaceState.peace));
   mark("the match is not over and no winner is named",
     await blue.evaluate(() => !window.__chq.room().over && !window.__chq.room().winner), "over/winner are clear");
-  mark("the strip prints the counter", /cease-fire/i.test(peaceState.strip) && /war may resume/i.test(peaceState.strip),
-    peaceState.strip);
+  // PB-323b (PM 10334 §2/§3): the painted readout goes short at this width ("cease-fire"), and the
+  // counter - PB-245's "war may resume" - is carried by the readout's title. Grade both, on one line:
+  // the paint loses the suffix to the row budget, never to a dropped counter.
+  mark("the strip prints the counter (painted condition, full suffix in the title)",
+    /cease-fire/i.test(peaceState.strip) && /cease-fire/i.test(peaceState.title) && /war may resume/i.test(peaceState.title),
+    JSON.stringify({ strip: peaceState.strip, title: peaceState.title }));
 
   // The War panel: the counter, the peacetime footing, and Begin Hostilities.
   await blue.click('.navbtn[data-dialog="war"]');

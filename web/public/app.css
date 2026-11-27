@@ -628,7 +628,10 @@ body.in-match .stripinfo {
   color: #9fb0c6;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* PB-323b (PM 10334 §5, frodo 10331 §7a): no text-overflow ellipsis on the readout. `overflow:
+     hidden` stays as a safety net, but the ellipsis is gone: a clipped readout must be a RED on the
+     fit arms, not a quiet three-dot that looks intentional. */
+  text-overflow: clip;
   /* PB-173: the phase word ("running" / "held" / "paused") is the only part of this string that
      changes on a clock toggle, and it was worth -10.65 px of the row's -11.18 px. So the word gets a
      slot of its own (below) and the box measures the same in every clock state. Careful: a slot for
@@ -641,10 +644,16 @@ body.in-match .stripinfo {
 }
 
 /* PB-173: one width for the clock word, whatever the word is. 7ch is "running", the longest of
-   running / held / paused, in this font. */
+   running / held / paused, in this font.
+   PB-323b (PM 10334 §1, door (i)): the slot stays at 7ch and the word is RIGHT-aligned in it, so
+   the 24 px "held" leaves inside its own slot sits BEFORE the word and the separator that follows
+   the word is flush with it. The slot width is what keeps a clock toggle from walking the row
+   (PB-173(e)); right alignment is what removes the visible gap after the word without giving that
+   property back. */
 body.in-match .stripinfo .phase {
   display: inline-block;
   width: 7ch;
+  text-align: right;
 }
 
 /* T-033: the red OIL warning. The chip turns red only when the server's own `short` flag says
@@ -947,6 +956,12 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
      last command's right border is never the thing that pays. Buttons keep `flex: 0 0 auto`. */
   body.in-match #strip { padding: 0 2px; }
   body.in-match #strip > .nav { padding-right: 4px; }
+  /* PB-323b: the cease-fire counter at 1280 (PM 10334 §2 keeps the count on the strip over 1100)
+     measured 311.56 px against a 297.13 px box — 14.44 px short. Taken from the same lever class the
+     PM named for 1100 and below: the row's own gaps and the command labels' side padding (2 px is
+     already the 1024 value, so every label still prints whole). No control is hidden or shrunk. */
+  body.in-match #strip { gap: 2px; }
+  body.in-match #strip > .nav .navbtn { padding: 2px 2px; }
 }
 
 /* At 1024x768 the strip's commands alone fill the row, so the wordmark and the handle give way
@@ -1396,12 +1411,18 @@ body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: non
    speed readout's slot, which is sized for "Speed 0 · paused" and no longer needs 96 px at 11 px
    type. Nothing here is a control: no button moves, shrinks below its own label, or hides. */
 @media (max-width: 1100px) {
-  body.in-match #strip { gap: 2px; padding: 0; }
+  /* PB-323b: the cold-war short form measured 1.7 px over at 1024 and the cease-fire condition 8.31,
+     so the row's own gaps and the purse floor give 10 px: 2 more inside the brand, 2 inside the
+     account box, 2 inside the speed cluster, 4 from the two account buttons' side padding, and the
+     purse floor 30 -> 28 (its content is 26.7 px and A8 grades that it does not clip). The PM's order
+     is gaps/padding first, the purse floor second; nothing here moves, hides or shrinks a control. */
+  body.in-match #strip { gap: 1px; padding: 0; }
   /* Three more gaps, none of them inside a label: the brand's own gap (which only separates the
      readout from the purse), the account box's (name/Sign out/Debug), and the speed cluster's. */
-  body.in-match #strip > .brand { gap: 8px; }
-  body.in-match #strip > .whoami { gap: 6px; }
-  body.in-match .speedctl { gap: 2px; }
+  body.in-match #strip > .brand { gap: 4px; }
+  body.in-match #strip > .whoami { gap: 2px; }
+  body.in-match .speedctl { gap: 1px; }
+  body.in-match .pursechip { min-width: 28px; }
   /* "Speed 0 · paused" measures 86.9 px at 11 px type; 90 keeps the slot fixed (PB-143: a
      content-sized readout moved the + button 20.75 px sideways) and returns 2 px to the row. */
   body.in-match .speedreadout { width: 90px; }
@@ -1415,5 +1436,24 @@ body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: non
      scrollWidth against its clientWidth rather than eyeballing a screenshot. */
   body.in-match #strip > .nav .navbtn { padding: 2px 2px; }
   body.in-match .account .ghost,
-  body.in-match .debugtoggle { padding: 2px 3px; }
+  body.in-match .debugtoggle { padding: 2px 2px; }
+}
+
+/* PB-323b: the band ABOVE 1100 keeps the cease-fire count on the strip (PM 10334 §2), and at 1280 it
+   measured 311.56 px against a 297.47 px box - 14.09 px short. Taken from the same lever class the PM
+   named for 1100 and below: the row's own gaps and the command labels' side padding (2 px is already
+   the 1024 value, so every label still prints whole). Placed after the <=1500 block so source order
+   lets it win; no control is hidden, moved out of reach, or shrunk below its label. */
+@media (max-width: 1280px) and (min-width: 1101px) {
+  body.in-match #strip { gap: 2px; padding: 0 2px; }
+  body.in-match #strip > .nav .navbtn { padding: 2px 2px; }
+  /* The 14.09 px above is the deficit at ONE purse string. A digital purse or a longer handle can
+     take a few more, and this arm sits at zero slack otherwise, so the same class of lever gives a
+     real cushion: brand/account gaps and the two account buttons' side padding. No control moves out
+     of reach; labels keep their 2 px side padding (the 1024 value). */
+  body.in-match #strip > .brand { gap: 8px; }
+  body.in-match #strip > .whoami { gap: 2px; }
+  body.in-match .speedctl { gap: 1px; }
+  body.in-match .account .ghost,
+  body.in-match .debugtoggle { padding: 2px 2px; }
 }
