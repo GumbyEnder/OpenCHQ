@@ -56,7 +56,7 @@ function ceaseFire(extra = {}) {
   return war1986({ round: 12, clock: "running", peace: { active: true, remaining: 3, coldWar: false }, ...extra });
 }
 
-function over1986() {
+function over1986(extra = {}) {
   return {
     mode: "bot",
     era: "1986",
@@ -67,6 +67,7 @@ function over1986() {
     over: true,
     winner: "blue",
     result: { lastCapital: { name: "Moscow", round: 12 } },
+    ...extra,
   };
 }
 
@@ -129,13 +130,34 @@ export async function run() {
     eq(texts(war1986(), { width: 1280, tier: 4 }).at(-1), "held", "tier 4 drops a cold-war copy");
     eq(texts(over1986(), { width: 1280, tier: 2 }).at(-1), "blue won (Moscow, round 12)", "tier 2 keeps the win detail");
     eq(texts(over1986(), { width: 1280, tier: 3 }).at(-1), "blue won", "tier 3 drops the win detail");
-    eq(texts(over1986(), { width: 1024, tier: 4 }).at(-1), "won", "tier 4 keeps \"won\"; the head carries the side");
+    eq(texts(over1986(), { width: 1024, tier: 4 }).at(-1), "won", "tier 4 paints the result from the viewer's side: this seat won");
     let previous = Infinity;
     for (const tier of TIERS) {
       const current = painted(ceaseFire(), 1280, tier).length;
       ok(current <= previous, "tier " + tier + " grew the line: " + previous + " -> " + current);
       previous = current;
     }
+  }
+
+  // ---- 5b. the floor tier paints the result from the VIEWER's side (PM 10348) --------------
+  // The head's side is the viewer's seat, not the winner's, so a bare "won" would read as the wrong
+  // sentence when the other side won: "1986 · blue · round 12 · running · lost". A viewer with no
+  // seat has no side to read the result from, so that case names the winner and claims no floor.
+  {
+    eq(texts(over1986({ winner: "blue" }), { width: 1024, tier: 4 }).at(-1), "won", "a blue seat that won reads \"won\"");
+    eq(texts(over1986({ winner: "red" }), { width: 1024, tier: 4 }).at(-1), "lost", "a blue seat that lost reads \"lost\"");
+    eq(texts(over1986({ you: "red", winner: "red" }), { width: 1024, tier: 4 }).at(-1), "won", "a red seat that won reads \"won\"");
+    eq(texts(over1986({ you: "red", winner: "blue" }), { width: 1024, tier: 4 }).at(-1), "lost", "a red seat that lost reads \"lost\"");
+    // room.seat.side is the head's second source for the seat; the floor reads it the same way.
+    eq(texts(over1986({ you: "", seat: { side: "blue" }, winner: "red" }), { width: 1024, tier: 4 }).at(-1), "lost",
+      "the seat block alone is enough to read the result from");
+    // Spectator: no seat -> the winner is named and no floor is claimed (PM 10348).
+    eq(texts(over1986({ you: "", winner: "red" }), { width: 1440, tier: 4 }).at(-1), "red won", "a spectator reads the winner's name (red)");
+    eq(texts(over1986({ you: "", winner: "blue" }), { width: 1280, tier: 4 }).at(-1), "blue won", "a spectator reads the winner's name (blue)");
+    // The title is untouched by the floor: it carries the winner, the capital and the round.
+    ok(stripInfo(over1986({ winner: "red" })).includes("red won (Moscow, round 12)"),
+      "the title keeps the full sentence when the viewer's seat lost");
+    eq(texts(over1986({ winner: "red" }), { width: 1024, tier: 3 }).at(-1), "red won", "tier 3 still names the winner");
   }
 
   // ---- 6. a layout never prints war copy, at any width or tier ---------------------------

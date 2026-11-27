@@ -60,8 +60,10 @@ export function fitCells(availW, availH, opts = {}) {
 //   2  cease-fire over 1100: the count goes ("3" -> condition only)
 //   3  over: the winner's capital detail goes
 //   4  the peace copy goes entirely, and on an over room the winner's NAME goes ("blue won" ->
-//      "won"; the head already paints the side). Both are emergency exits: the leg reds if a
-//      ruled state ever needs one.
+//      "won"). The head paints the VIEWER's seat, not the winner's, so the floor names the result
+//      from the viewer's side: "won" when that seat won, "lost" when it did not (PM 10348). A
+//      viewer with no seat has no side to read the result from, so that case keeps "<winner> won"
+//      and claims no floor. Both are emergency exits: the leg reds if a ruled state ever needs one.
 export const STRIP_CEASEFIRE_WIDTH = 1100;
 export const STRIP_TIER_MAX = 4;
 
@@ -128,7 +130,15 @@ export function stripInfoParts(room, opts = {}) {
     // win alike, and "blue won" alone is the same sentence for both.
     const last = room.result && room.result.lastCapital;
     const detail = last && last.name && tier < 3 ? " (" + last.name + ", round " + last.round + ")" : "";
-    parts.push({ text: room.winner ? (tier >= 4 ? "won" : room.winner + " won") + detail : "over" });
+    // PM 10348: the floor tier paints the result from the VIEWER's side. `side` above is the seat
+    // this frame was built for, so "won"/"lost" agree with the head two parts to the left; a bare
+    // "won" under a "blue" head would say the opposite when red wins. No seat means no viewer's
+    // side to read it from, so the winner is named and no floor is claimed there.
+    let result = "over";
+    if (room.winner) {
+      result = tier >= 4 ? (side ? (String(room.winner) === String(side) ? "won" : "lost") : room.winner + " won") : room.winner + " won";
+    }
+    parts.push({ text: result + detail });
   }
   return parts;
 }

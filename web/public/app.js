@@ -5051,6 +5051,9 @@ window.__chq = {
   // would actually paint). A cease-fire needs a negotiated peace a gate run cannot reach; this is
   // how frodo's gate grades that producer state without composing the string in the leg.
   stripPreview: (preview) => paintStripInfo(preview),
+  // PB-323b (PM 10348): the producer's own parts for a room, so a leg can grade a tier the page may
+  // never need to paint (the floor's "won"/"lost") without composing the string in the leg.
+  stripParts: (preview, opts) => stripInfoParts(preview, opts),
   // PB-305: the film the bar is showing (null when none), so a leg reads the round it stepped to
   // instead of parsing the label.
   film: () => film,
