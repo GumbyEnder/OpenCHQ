@@ -142,13 +142,37 @@ function baseFor(match, side, from) {
   const reach = airReach();
   if (reach <= 0) return null;
   const candidate = (cell) => cell && chebyshev(from, cell) <= reach;
-  const home = (match.sites || []).find(
-    (site) => site && site.owner === side && isAirStrip(site.kind) && candidate(site),
-  );
+  // PB-325: the berth is a RULE, not the first site the array happens to list. An aircraft's base
+  // is the strip it is standing on; failing that, the nearest friendly strip that can hold it, with
+  // ties going to the lower site id (manual p.24-25: the unit "remains at its original base"). The
+  // array-order `find` this replaces picked whichever site the match happened to store first, so a
+  // plane bought at London could be briefed from Paris and the Air dialog named the wrong strip.
+  const strips = (match.sites || []).filter((site) => site && site.owner === side && isAirStrip(site.kind));
+  const own = strips.find((site) => Number(site.x) === Number(from.x) && Number(site.y) === Number(from.y));
+  if (own) return own;
+  let home = null;
+  let best = Infinity;
+  for (const site of strips) {
+    const d = chebyshev(from, site);
+    if (d > reach) continue;
+    if (d < best || (d === best && home && lowerSiteId(site, home))) {
+      home = site;
+      best = d;
+    }
+  }
   if (home) return home;
   return (match.pieces || []).find(
     (unit) => unit && unit.side === side && unit.kind === "carrier" && candidate(unit),
   ) || null;
+}
+
+// "Ties to the lower site id": numerically when both ids are numbers, as strings otherwise, so a
+// match that names its sites "b7"/"b12" is still ordered by its own ids rather than by insertion.
+function lowerSiteId(a, b) {
+  const na = Number(a.id);
+  const nb = Number(b.id);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na < nb;
+  return String(a.id) < String(b.id);
 }
 
 // What this seat's aircraft can do right now, as choices rather than as prose: each plane, the
