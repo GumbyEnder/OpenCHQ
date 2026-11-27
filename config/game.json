@@ -440,7 +440,7 @@
     },
     "paradropLoss": {
       "value": 0.25,
-      "source": "STAND-IN citing a rule, UNVERIFIED (PB-296b). Manual printed p.22 and p.25 rule 3: the dropping infantry takes a MINOR loss and the page prints no number. 0.25 is the port's stand-in, not a measurement; it is the lever, not a recovered value."
+      "source": "Manual p.50 l.1453 prints the figure: \"when an airdrop is made in WWII or later scenarios, the infantry loses 25% of its strength.\" p.22 l.686 and p.25 rule 3 l.794 carry the rule itself (\"minor combat loss\" / \"lose strength\") and print no number, so both are cited and only p.50 owns the 25%. 0.25 is the lever, not a per-era recovered value: p.50 scopes it to WWII or later, so 1918 is UNVERIFIED here and no separate 1918 figure is invented. Second witness, in-repo and readable at this sha: docs/REA_PASS.md:116, \"a paradrop costs the infantry 25 per cent of its strength\", under \"The manual, read while the game was up, prints these and they are therefore sources rather than stand-ins.\" (PB-296b's source line moved off p.50; PM 9924 s3 restored it; the REA_PASS citation is frodo 9929 s3b.)"
     },
     "bombardFloor": {
       "value": 0.2,

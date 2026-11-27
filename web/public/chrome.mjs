@@ -40,9 +40,18 @@ export function roundFraction(roundSeconds, elapsedMs) {
 
 // What the box says besides the bar. The countdown comes from the seat's own view (`seat.payIn`),
 // so the page never computes a payday the server did not.
+//
+// PB-192: the box's own label (`#timeLabel`, or its canvas twin `#timeLabelArt`) is the single
+// writer of TIME_LEFT, so this text never repeats it — the label used to be in both places and the
+// box read "TIME LEFT / TIME LEFT". The figures are joined by a visible separator because HTML
+// collapses a run of spaces: the old join ran "PAY IN 1" and "12S ROUND" together as "1 2S".
+export const TIME_LEFT_SEPARATOR = " \u00b7 ";
 export function timeLeftText(seat, roundSeconds) {
-  const parts = [TIME_LEFT];
-  const payIn = Number(seat && seat.payIn);
+  const parts = [];
+  // A seat that reports no payday says nothing about one: Number(null) is 0, which used to read as
+  // "PAY NOW" on a box the server had told nothing.
+  const rawPay = seat ? seat.payIn : null;
+  const payIn = rawPay === null || rawPay === undefined || rawPay === "" ? NaN : Number(rawPay);
   if (Number.isFinite(payIn) && payIn >= 0) {
     parts.push(payIn === 0 ? "PAY NOW" : "PAY IN " + payIn);
   }
@@ -50,5 +59,5 @@ export function timeLeftText(seat, roundSeconds) {
   if (Number.isFinite(length) && length > 0) {
     parts.push(Math.round(length) + "S ROUND");
   }
-  return parts.join("  ");
+  return parts.join(TIME_LEFT_SEPARATOR);
 }

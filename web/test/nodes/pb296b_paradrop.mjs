@@ -230,15 +230,26 @@ export async function run(ctx) {
     }
   });
 
-  // ---- the manual's loss provenance is the page's, not p.50 -------------------------------------
-  arm("(o) loss-source p.22/p.25 r3", () => {
+  // ---- the loss provenance names the page that prints the number ------------------------------
+  // PM 9924 §3 supersedes 9860 §4: p.50 l.1453 prints the 25%, while p.22 l.686 and p.25 rule 3
+  // carry the rule and print no figure. Both are cited, only p.50 owns the number, and the era gap
+  // (p.50 says "WWII or later") stays UNVERIFIED rather than being filled with an invented 1918 value.
+  arm("(o) loss-source p.50 for the number, p.22/p.25 r3 for the rule", () => {
     const entry = (ctx.config && ctx.config.combat && ctx.config.combat.paradropLoss) || {};
     const source = String(entry.source || "");
     if (!/UNMEASURED|UNVERIFIED/.test(source)) {
       fail("combat.paradropLossSource does not carry its UNVERIFIED/UNMEASURED tag: " + JSON.stringify(source));
     }
-    if (/p\.50|page 50/.test(source)) {
-      fail("combat.paradropLossSource still cites p.50; PM 9860 §4 moves it to p.22 / p.25 r3: "
+    if (!/p\.50/.test(source)) {
+      fail("combat.paradropLossSource does not cite p.50, the page that prints the 25%: "
+        + JSON.stringify(source));
+    }
+    if (!/p\.22/.test(source) || !/p\.25/.test(source)) {
+      fail("combat.paradropLossSource does not keep p.22 / p.25 for the qualitative rule: "
+        + JSON.stringify(source));
+    }
+    if (!/WWII|1918/.test(source)) {
+      fail("combat.paradropLossSource does not name the era gap p.50 leaves open: "
         + JSON.stringify(source));
     }
   });

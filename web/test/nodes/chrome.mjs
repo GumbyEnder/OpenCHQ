@@ -7,6 +7,7 @@ import {
   CHROME_BOX,
   SCREEN,
   TIME_LEFT,
+  TIME_LEFT_SEPARATOR,
   chromeGeometry,
   roundFraction,
   timeLeftText,
@@ -66,4 +67,25 @@ export async function run() {
   if (!/5S ROUND/.test(timeLeftText({ payIn: 6 }, 5))) fail("the box does not name the round length");
   eq("no seat, no invented countdown", /PAY IN/.test(timeLeftText(null, 5)), false);
   eq("no round length, no invented number", /ROUND/.test(timeLeftText({ payIn: 3 }, null)), false);
+
+  // --- PB-192: the label appears once, the figures read as separate words -----
+  // The box's label is #timeLabel / #timeLabelArt; timeLeftText must not write a second one, or the
+  // box reads "TIME LEFT / TIME LEFT" (PM 8789's read of the rendered text).
+  const withPay = timeLeftText({ payIn: 1 }, 12);
+  eq("the text carries no label of its own (PB-192)", /TIME LEFT/.test(withPay), false);
+  if (!/PAY IN 1/.test(withPay)) fail("the payday is missing from " + JSON.stringify(withPay));
+  if (!/12S ROUND/.test(withPay)) fail("the round length is missing from " + JSON.stringify(withPay));
+  if (withPay.indexOf(TIME_LEFT_SEPARATOR) < 0) {
+    fail("the figures are not separated by a visible glyph: " + JSON.stringify(withPay));
+  }
+  if (/\s\s/.test(withPay)) fail("the figures are joined by whitespace alone: " + JSON.stringify(withPay));
+  eq("the pay figure appears once", withPay.split("PAY IN 1").length - 1, 1);
+  eq("the round figure appears once", withPay.split("12S ROUND").length - 1, 1);
+  const composed = TIME_LEFT + " / " + withPay;
+  eq("the composed box says its label once (PB-192)", composed.match(/TIME LEFT/g).length, 1);
+  const payNow = timeLeftText({ payIn: 0 }, 12);
+  eq("PAY NOW appears once", payNow.split("PAY NOW").length - 1, 1);
+  eq("a seat that reports nothing is not a seat paying now", timeLeftText({ payIn: null }, 12), "12S ROUND");
+  eq("the text alone is not the whole box", composed === withPay, false);
+  eq("nothing to say is said as nothing", timeLeftText(null, null), "");
 }

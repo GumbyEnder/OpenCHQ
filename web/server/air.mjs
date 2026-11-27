@@ -597,8 +597,10 @@ export function sendMission(match, side, pieceId, mode, target) {
   return { ok: true, piece: plane, events };
 }
 
-// A paradrop costs the infantry 25% of the strength it had before the drop (config combat.paradropLoss,
-// a STAND-IN citing p.22 / p.25 r3; the printed page names no number). PB-296b: the drop is a MISSION
+// A paradrop costs the infantry 25% of the strength it had before the drop (config combat.paradropLoss:
+// Manual p.50 l.1453 prints the 25%; p.22 l.686 and p.25 rule 3 carry the rule and print no number;
+// docs/REA_PASS.md:116 in this repo carries the figure as a manual-sourced number, not a stand-in).
+// PB-296b: the drop is a MISSION
 // - a plane flies it - so the order names the aircraft, and p.25's rules apply to it:
 //   (1) on land, not on an enemy city or an enemy unit;
 //   (2) the plane stays home and goes unready;
