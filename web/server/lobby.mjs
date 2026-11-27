@@ -26,6 +26,17 @@ import { displayNames, localName } from "./names.mjs";
 // PB-205: named save slots. The store and the resume room live in slots.mjs; the lobby owns the
 // live room, the seats and the sockets, so the two ops that touch them live here.
 import { humanSeatsOf, listSlots, roomFromSlot, saveSlot, slotFor, warOf } from "./slots.mjs";
+// PB-304: Layout Armies and Saved Layouts (manual p.16 l.417, p.37 l.1151-1164). A layout is a
+// pregame setup, not a war body: the store keeps the side's pieces and purse, and the lobby owns
+// the sandbox room.
+import { applyLayout, layoutFor, listLayouts, saveLayout } from "./layouts.mjs";
+
+// PB-304 (d): a layout room is a setup, not a match. Nothing ticks it, no clock op starts it, and
+// therefore neither producer of money (the round income and the cold-war peace tick) can pay it.
+// One predicate for both gates, so the rule cannot drift between them.
+function isLayoutRoom(room) {
+  return Boolean(room && room.mode === "layout");
+}
 
 // A player action during a running clock marks the room dirty instead of committing it: the tick
 // writes dirty rooms within FLUSH_SECONDS anyway, and a commit per order is what turned a 0.12 s
@@ -382,8 +393,10 @@ export function createLobby() {
           : "",
       }),
       // The late kit this era offers, and whether a nuke is even possible. A tool a player
-      // cannot see is a rule they cannot use, which is why this rides with the room.
-      tools: toolsForEra(room.era).map((tool) => ({
+      // cannot see is a rule they cannot use, which is why this rides with the room. PB-304: the
+      // layout sandbox has no tools at all (manual p.37 l.1158), so the list is empty there and the
+      // server refuses a forged op as well.
+      tools: isLayoutRoom(room) ? [] : toolsForEra(room.era).map((tool) => ({
         name: tool,
         ...(tool === "nuke" ? nukeStatus(room.match, you) : {}),
       })),
@@ -649,6 +662,7 @@ export function createLobby() {
     if (!room || !room.match) return { error: "You are not in a match." };
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
+    if (isLayoutRoom(room)) return { error: "This is a layout, not a war. Save the setup or leave it." };
     if (room.match.over) return { error: "The match is already over." };
     const other = mine === "blue" ? "red" : "blue";
     room.match.over = true;
@@ -674,6 +688,7 @@ export function createLobby() {
     if (!room || !room.match) return { error: "You are not in a match." };
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
+    if (isLayoutRoom(room)) return { error: "This is a layout, not a war. Save the setup or leave it." };
     const era = room.era;
     // A new game keeps the handicap the player chose, unless the era has no spinner.
     const spinner = room.match && room.match.handicap ? room.match.handicap.billions : undefined;
@@ -683,11 +698,24 @@ export function createLobby() {
     return startBot(username, era, mine, spinner, level);
   }
 
-  function startBot(username, era, side, handicap, level) {
+  function startBot(username, era, side, handicap, level, layoutId) {
     if (seatOf.has(username)) return { error: "Leave the current match first." };
     const mine = sideOf(side);
     const other = mine === "blue" ? "red" : "blue";
     const year = eraOf(era);
+    // PB-304 (f): a 1986 war may open with a saved layout instead of the standard setup. The layout
+    // is the account's own and was drawn for one side; a layout drawn for red cannot open a blue
+    // war, because the pieces would be on the wrong half of the board.
+    let layout = null;
+    if (layoutId !== undefined && layoutId !== null && String(layoutId) !== "") {
+      if (year !== "1986") return { error: "Saved layouts are for 1986 wars only." };
+      const found = layoutFor(username, layoutId);
+      if (found.error) return found;
+      if (found.side !== mine) {
+        return { error: "That layout was drawn for the " + found.side + " side. Pick " + found.side + " or draw a new layout." };
+      }
+      layout = found;
+    }
     // T-032 B1: the original's setup lists five computer opponents (DS:0x4fea order). A request
     // naming none gets the lobby default; a request naming something that is not one of the five
     // is refused rather than coerced, because "level 9" silently becoming level 3 is a different
@@ -738,6 +766,12 @@ export function createLobby() {
     };
     room.seats[mine] = { username, kind: "human" };
     room.seats[other] = { username: "Bot", kind: "bot" };
+    if (layout) {
+      const applied = applyLayout(room.match, mine, layout);
+      if (applied.error) return applied;
+      room.note = "Saved layout \"" + layout.row.name + "\" opened " + mine + " with " +
+        applied.count + " units. The clock is held.";
+    }
     stampSeats(room);
     openFilm(room);
     rooms.set(room.id, room);
@@ -746,6 +780,71 @@ export function createLobby() {
     tellRoom(room);
     sendPresence();
     return { ok: true };
+  }
+
+  // PB-304 (a)(b): Lay Out Armies (manual p.16 l.417, p.37). A special pregame setup for 1986 only:
+  // one human seat, no opponent, a held clock and no film. It reuses the match board, so a unit
+  // moved inside friendly territory, a destination and a purchase are the ordinary ops; the mode
+  // is what makes the clock, the tools and Save Setup answer differently.
+  function startLayout(username, era, side) {
+    if (seatOf.has(username)) return { error: "Leave the current match first." };
+    const year = eraOf(era);
+    if (year !== "1986") {
+      return { error: "Lay Out Armies is for 1986 wars only. The other eras open on the standard setup." };
+    }
+    const mine = sideOf(side);
+    const other = mine === "blue" ? "red" : "blue";
+    const room = {
+      id: randomBytes(8).toString("hex"),
+      mode: "layout",
+      era: "1986",
+      clock: "held",
+      holds: { blue: false, red: false },
+      holdRoom: true,
+      speed: 1,
+      note: "Layout mode. Move units inside your own ground, give destinations, and buy with your opening funds. No round runs.",
+      seats: {
+        blue: { username: "Layout", kind: "none" },
+        red: { username: "Layout", kind: "none" },
+      },
+      match: opened("1986", sitesForMatch("1986"), {}),
+    };
+    room.seats[mine] = { username, kind: "human" };
+    room.seats[other] = { username: "Layout", kind: "none" };
+    stampSeats(room);
+    rooms.set(room.id, room);
+    saveRoom(room);
+    seatOf.set(username, room.id);
+    tellRoom(room);
+    sendPresence();
+    return { ok: true };
+  }
+
+  // Save Setup (manual p.37 l.1160-1161): the named layout rules are Saved Games' own - cleaned,
+  // case-folded, explicit overwrite - and the body is the sandbox's pieces plus the side's purse.
+  function saveLayoutOp(username, message) {
+    const room = roomFor(username);
+    if (!room) return { error: "Lay out armies first." };
+    if (!isLayoutRoom(room)) return { error: "Save Setup is only for a layout you are drawing." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this layout." };
+    const asked = message && message.overwrite;
+    const result = saveLayout({
+      username,
+      name: message && message.name,
+      room,
+      side: mine,
+      overwrite: asked === true || asked === "true" || asked === 1,
+    });
+    if (result && result.ok && result.layout) {
+      result.note = (result.overwritten ? "Overwrote saved layout \"" : "Saved layout \"")
+        + result.layout.name + "\" with " + result.layout.pieces + " units.";
+    }
+    return result;
+  }
+
+  function listLayoutOp(username) {
+    return { ok: true, layouts: listLayouts(username) };
   }
 
   // PB-205: Save Game (manual p.16 l.416). The body is saveRoom's own state - packMatch plus the
@@ -757,6 +856,9 @@ export function createLobby() {
     if (!room || !room.match) return { error: "Start a match first." };
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
+    // PB-304: a layout is a setup, not a war. Save Game would file it among resumable wars, so the
+    // two doors are kept apart and Save Setup is the layout's own.
+    if (isLayoutRoom(room)) return { error: "This is a layout, not a war. Use Save Setup." };
     // A finished war is War Films' record, not a save: resuming it would show an end screen with a
     // fresh film header and nothing to play.
     if (room.match.over) return { error: "That war is over. War Films keeps its record." };
@@ -1032,6 +1134,17 @@ export function createLobby() {
     if (!room || !room.match) return { error: "You are not in a match." };
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
+    // PB-304 (c) (manual p.37 l.1158): the layout sandbox has no intel and no foreign aid. Each
+    // tool gets its own sentence, because the generic clock line below ("Start the clock first.")
+    // would be true and useless in a mode where the clock never starts.
+    if (isLayoutRoom(room)) {
+      if (String(message.tool ?? "") === "scan") {
+        return { error: "Intel scans are unavailable while you lay out armies." };
+      }
+      if (String(message.tool ?? "") === "aid") {
+        return { error: "Foreign aid is unavailable while you lay out armies." };
+      }
+    }
     if (room.clock !== "running" && !toolOpensWhileHeld(room.match, String(message.tool ?? ""))) {
       // A held clock is not a reason to lose a satellite pass, and PB-235 lets aid into the pre-game
       // (round 0, the clock not yet started; manual p.14). Every other tool stays refused while the
@@ -1460,6 +1573,11 @@ export function createLobby() {
     // The same seat test every other seat-scoped op uses: the side is never read from the message.
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
+    // PB-304 (d): a layout is a pregame setup. The clock never runs in it, so no round - and no
+    // income, round or peace tick - can pass while a player is drawing.
+    if (isLayoutRoom(room)) {
+      return { error: "Layout mode is a pregame setup. The clock does not run and money does not accrue." };
+    }
     const holds = holdsOf(room);
     if (!running) {
       // A hold is never refused, and both seats see it on the next frame.
@@ -1556,7 +1674,7 @@ export function createLobby() {
     const stamp = now === undefined || now === null ? null : Number(now);
     const events = [];
     for (const room of rooms.values()) {
-      if (!room.match || room.match.over || room.clock !== "running") continue;
+      if (!room.match || room.match.over || room.clock !== "running" || isLayoutRoom(room)) continue;
       // PB-158: a running intel pass is sampled faster than the round clock (250 ms), because
       // the bar crosses the board in 15.85 s while a round at the shipped speed is 5 s. Only a
       // room with an armed pass pays this cost, and the span sent is still the bar's own.
@@ -1843,7 +1961,9 @@ export function createLobby() {
     // lose a purchase when the roster split hulls into cruiser and carrier. The alias lives in
     // migrate.mjs, next to the save migration that does the same rename.
     if (message) message.kind = compatUnitKind(message.kind);
-    if (op === "bot") return startBot(username, message.era, message.side, message.handicap, message.level);
+    if (op === "bot") return startBot(username, message.era, message.side, message.handicap, message.level, message.layout);
+    // PB-304: the 1986-only pregame sandbox (manual p.16 l.417, p.37).
+    if (op === "layout") return startLayout(username, message.era, message.side);
     if (op === "invite") return invite(username, String(message.user ?? ""), message.era, message.side);
     if (op === "answer") return answer(username, message.id, Boolean(message.accept));
     if (op === "order") return order(username, message);
@@ -1953,7 +2073,7 @@ export function createLobby() {
     };
   }
 
-  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp };
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp, saveLayoutOp, listLayoutOp };
 }
 
 // What an era sells lives in shop.mjs; it is pure so the roster test can read it without a

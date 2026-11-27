@@ -313,6 +313,31 @@ const server = createServer(async (req, res) => {
       return;
     }
   }
+  // PB-304: saved layouts (manual p.37 l.1160-1161). Listed per account; the body is the layout
+  // store's own piece set plus the purse, never a match serialization - a setup is not a war.
+  if (url.pathname === "/api/layouts") {
+    const user = userForToken(tokenFrom(req));
+    if (!user) {
+      send(res, 401, { error: "Sign in to see your saved layouts." });
+      return;
+    }
+    if (req.method === "GET") {
+      send(res, 200, lobby.listLayoutOp(user.username));
+      return;
+    }
+    if (req.method === "POST") {
+      let body;
+      try {
+        body = await readBody(req);
+      } catch {
+        send(res, 400, { error: "Send a JSON body." });
+        return;
+      }
+      const result = lobby.saveLayoutOp(user.username, body);
+      send(res, result && result.error ? 400 : 200, result);
+      return;
+    }
+  }
   if (req.method === "GET" && url.pathname === "/api/board") {
     try {
       const payload = boardPayload();

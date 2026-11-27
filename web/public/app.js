@@ -3990,15 +3990,233 @@ saveForm?.addEventListener("submit", (event) => {
   saveNow(name, false);
 });
 
+// ---- PB-304: Layout Armies and Saved Layouts ------------------------------------------------
+// Manual p.16 l.417 and p.37 l.1151-1164. The page never packs a layout: the server stores the
+// side's pieces and purse, and the panels below only read /api/layouts and send the ordinary ops
+// (layout, transfer, destination, buy) into the sandbox room.
+let savedLayouts = [];
+let pendingLaunch = null;
+const layoutBtn = document.getElementById("layoutBtn");
+const layoutSaveBtn = document.getElementById("layoutSaveBtn");
+const setupPanel = document.getElementById("setupPanel");
+const setupList = document.getElementById("setupList");
+const setupStatus = document.getElementById("setupStatus");
+const layoutSavePanel = document.getElementById("layoutSavePanel");
+const layoutSaveForm = document.getElementById("layoutSaveForm");
+const layoutName = document.getElementById("layoutName");
+const layoutStatus = document.getElementById("layoutStatus");
+const layoutConfirm = document.getElementById("layoutConfirm");
+const layoutConfirmText = document.getElementById("layoutConfirmText");
+const layoutExisting = document.getElementById("layoutExisting");
+
+async function readLayouts() {
+  const res = await fetch("/api/layouts", { credentials: "same-origin", cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Could not read your saved layouts.");
+  return Array.isArray(data.layouts) ? data.layouts : [];
+}
+
+// A layout reads as a name, the year and side, how many units and the funds left. Never a piece id
+// (PB-205 AC6's bar, applied here).
+function layoutMeta(layout) {
+  const cash = layout.cash === null || layout.cash === undefined ? "" : " \u00b7 " + formatBillions(layout.cash) + "b left";
+  const units = Number(layout.pieces) === 1 ? "1 unit" : Number(layout.pieces) + " units";
+  return eraName(layout.era) + " \u00b7 " + String(layout.side || "") + " \u00b7 " + units + cash;
+}
+
+function paintSetupList(layouts) {
+  setupList.textContent = "";
+  if (!layouts.length) {
+    const none = document.createElement("li");
+    none.className = "slotmeta";
+    none.textContent = "No saved layouts on this account.";
+    setupList.append(none);
+    return;
+  }
+  for (const layout of layouts) {
+    const item = document.createElement("li");
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "slotrow";
+    row.dataset.layout = layout.id;
+    const title = document.createElement("span");
+    title.className = "slottitle";
+    title.textContent = layout.name;
+    const meta = document.createElement("span");
+    meta.className = "slotmeta";
+    meta.textContent = layoutMeta(layout);
+    row.append(title, meta);
+    row.addEventListener("click", () => {
+      if (!pendingLaunch) return;
+      const message = { ...pendingLaunch, layout: layout.id };
+      pendingLaunch = null;
+      setupPanel.classList.add("hidden");
+      send(message);
+    });
+    item.append(row);
+    setupList.append(item);
+  }
+}
+
+function openSetupPanel(layouts, message) {
+  pendingLaunch = message;
+  setupStatus.textContent = "";
+  paintSetupList(layouts);
+  setupPanel.classList.remove("hidden");
+}
+
+function closeSetupPanel() {
+  pendingLaunch = null;
+  setupPanel.classList.add("hidden");
+}
+
+function paintLayoutExisting() {
+  layoutExisting.textContent = "";
+  if (!savedLayouts.length) {
+    const none = document.createElement("li");
+    none.className = "slotmeta";
+    none.textContent = "No saved layouts yet.";
+    layoutExisting.append(none);
+    return;
+  }
+  for (const layout of savedLayouts) {
+    const item = document.createElement("li");
+    const row = document.createElement("div");
+    row.className = "slotrow static";
+    const title = document.createElement("span");
+    title.className = "slottitle";
+    title.textContent = layout.name;
+    const meta = document.createElement("span");
+    meta.className = "slotmeta";
+    meta.textContent = layoutMeta(layout);
+    row.append(title, meta);
+    item.append(row);
+    layoutExisting.append(item);
+  }
+}
+
+function closeLayoutSavePanel() {
+  layoutSavePanel.classList.add("hidden");
+  layoutConfirm.classList.add("hidden");
+  layoutSaveForm.classList.remove("hidden");
+}
+
+function openLayoutSavePanel() {
+  if (!room || room.mode !== "layout") {
+    say("Lay out armies first.");
+    return;
+  }
+  layoutStatus.textContent = "";
+  layoutConfirm.classList.add("hidden");
+  layoutSaveForm.classList.remove("hidden");
+  layoutName.value = "";
+  layoutSavePanel.classList.remove("hidden");
+  layoutName.focus();
+  readLayouts()
+    .then((list) => {
+      savedLayouts = list;
+      paintLayoutExisting();
+    })
+    .catch((err) => {
+      layoutStatus.textContent = err.message;
+    });
+}
+
+async function saveSetupNow(name, overwrite) {
+  layoutStatus.textContent = "Saving\u2026";
+  const { ok, data } = await slotPost("/api/layouts", { name, overwrite: Boolean(overwrite) });
+  if (!ok) {
+    if (data.exists) {
+      layoutConfirmText.textContent = "A saved layout named \"" + name + "\" already exists. Overwrite it with this setup?";
+      layoutConfirm.classList.remove("hidden");
+      layoutStatus.textContent = "";
+      return;
+    }
+    layoutStatus.textContent = data.error || "The setup was not saved.";
+    return;
+  }
+  closeLayoutSavePanel();
+  const note = data.note || "Saved layout \"" + name + "\".";
+  say(note);
+  readLayouts()
+    .then((list) => {
+      savedLayouts = list;
+      paintLayoutExisting();
+    })
+    .catch(() => {});
+}
+
+// The strip's war controls have nothing to do in a sandbox: no clock to run, no war to resign from,
+// and Save Setup is the only save. Quit stays, because leaving discards an unsaved layout.
+function syncLayoutUi() {
+  const inLayout = Boolean(room && room.mode === "layout");
+  document.body.classList.toggle("layout-mode", inLayout);
+  if (layoutSaveBtn) layoutSaveBtn.classList.toggle("hidden", !inLayout);
+  for (const button of [clockBtn, speedDown, speedUp, saveBtn, resignBtn, newBtn]) {
+    if (button) button.classList.toggle("hidden", inLayout);
+  }
+}
+
+layoutBtn?.addEventListener("click", () => {
+  const era = eraSelect ? String(eraSelect.value || "") : "1986";
+  const sideSelect = launchForm ? launchForm.querySelector('select[name="side"]') : null;
+  const side = sideSelect ? String(sideSelect.value || "blue") : "blue";
+  send({ op: "layout", era, side });
+});
+layoutSaveBtn?.addEventListener("click", openLayoutSavePanel);
+document.getElementById("setupStandard")?.addEventListener("click", () => {
+  if (!pendingLaunch) {
+    closeSetupPanel();
+    return;
+  }
+  const message = pendingLaunch;
+  pendingLaunch = null;
+  setupPanel.classList.add("hidden");
+  send(message);
+});
+document.getElementById("setupClose")?.addEventListener("click", closeSetupPanel);
+document.getElementById("layoutSaveClose")?.addEventListener("click", closeLayoutSavePanel);
+document.getElementById("layoutCancel")?.addEventListener("click", closeLayoutSavePanel);
+document.getElementById("layoutBack")?.addEventListener("click", () => {
+  layoutConfirm.classList.add("hidden");
+  layoutStatus.textContent = "The saved layout was not changed.";
+});
+document.getElementById("layoutOverwrite")?.addEventListener("click", () => {
+  layoutConfirm.classList.add("hidden");
+  saveSetupNow(layoutName.value.trim(), true);
+});
+layoutSaveForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = layoutName.value.trim();
+  if (!name) {
+    layoutStatus.textContent = "A saved layout needs a name.";
+    return;
+  }
+  const hit = savedLayouts.find((layout) => String(layout.name).toLowerCase() === name.toLowerCase());
+  if (hit) {
+    layoutConfirmText.textContent = "A saved layout named \"" + hit.name + "\" already exists ("
+      + layoutMeta(hit) + "). Overwrite it with this setup?";
+    layoutConfirm.classList.remove("hidden");
+    layoutStatus.textContent = "";
+    return;
+  }
+  saveSetupNow(name, false);
+});
+
 // A panel that belongs to one room closes when the page enters or leaves a match - not on every
 // round, which is why the comparison is on the room id and not on the frame.
 let panelRoomId = "";
 function syncSlotPanels() {
   const id = room && room.id ? String(room.id) : "";
-  if (id === panelRoomId) return;
+  if (id === panelRoomId) {
+    syncLayoutUi();
+    return;
+  }
   panelRoomId = id;
   closeSavePanel();
   closeSlotsPanel();
+  closeLayoutSavePanel();
+  syncLayoutUi();
 }
 
 // One reconnect policy for both ways a socket can fail: it closed, or it never opened. Kept in one
@@ -4451,6 +4669,20 @@ document.querySelector("#launch").addEventListener("submit", (event) => {
   // number the field would have carried.
   if (handicapInput && !handicapInput.disabled && String(handicapInput.value).trim() !== "") {
     message.handicap = Number(handicapInput.value);
+  }
+  // PB-304 (f): a 1986 war asks standard vs saved layout (manual p.37). With no saved layout the
+  // standard opening opens as it always did, so a player who never drew one sees no question.
+  if (String(message.era) === "1986") {
+    readLayouts()
+      .then((layouts) => {
+        if (!layouts.length) {
+          send(message);
+          return;
+        }
+        openSetupPanel(layouts, message);
+      })
+      .catch(() => send(message));
+    return;
   }
   send(message);
 });

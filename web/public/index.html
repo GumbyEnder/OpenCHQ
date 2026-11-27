@@ -33,6 +33,7 @@
       <!-- PB-205: Save Game (manual p.16 l.416). A named slot of the war on screen; the overwrite
            decision is made in the panel itself, never silently. -->
       <button type="button" id="saveBtn" class="navbtn" title="Save this war under a name (manual p.16)">Save</button>
+      <button type="button" id="layoutSaveBtn" class="navbtn hidden" title="Save this army layout under a name (manual p.37)">Save Setup</button>
       <button type="button" id="resignBtn" class="navbtn danger" title="Concede: the other side wins">Resign</button>
       <button type="button" id="newBtn" class="navbtn" title="Abandon this game and start a new one, same era and side">New</button>
       <button type="button" id="quitBtn" class="navbtn" title="Leave this game and return to the lobby">Quit</button>
@@ -121,6 +122,54 @@
     </div>
   </div>
 
+  <!-- PB-304: Land a 1986 war on the standard opening or on a layout saved with Lay Out Armies
+       (manual p.37: "the game will ask you if you want to use the standard setup, or one of your
+       own"). The question is drawn by the page from the account's own layout list. -->
+  <div id="setupPanel" class="dialog slotpanel hidden" role="dialog" aria-modal="false" aria-labelledby="setupTitle">
+    <div class="dialoghead">
+      <h2 id="setupTitle" class="dialogtitle">1986 Setup</h2>
+      <button type="button" id="setupClose" class="dialogclose" title="Close (Esc)">&times;</button>
+    </div>
+    <p class="dialoghint">Use the standard opening layout, or one of your saved layouts. A saved layout opens the war with those units, their destinations and the funds you left.</p>
+    <div class="dialogbody">
+      <button type="button" id="setupStandard" class="slotrow">Standard setup</button>
+      <p class="dialogfoot">Saved layouts</p>
+      <p id="setupStatus" class="dialogfoot" role="status"></p>
+      <ul id="setupList" class="slotlist"></ul>
+    </div>
+  </div>
+
+  <!-- PB-304: Save Setup. Naming, uniqueness and the overwrite confirmation are the Saved Games
+       rules (manual p.37 l.1160-1161 "as in 'Saved Games' above"). -->
+  <div id="layoutSavePanel" class="dialog slotpanel hidden" role="dialog" aria-modal="false" aria-labelledby="layoutSaveTitle">
+    <div class="dialoghead">
+      <h2 id="layoutSaveTitle" class="dialogtitle">Save Setup</h2>
+      <button type="button" id="layoutSaveClose" class="dialogclose" title="Close (Esc)">&times;</button>
+    </div>
+    <form id="layoutSaveForm" class="dialogbody" autocomplete="off">
+      <label>Layout name
+        <input id="layoutName" name="name" type="text" maxlength="40" required autocomplete="off">
+      </label>
+      <div class="dialogactions">
+        <button type="submit" id="layoutGo">Save Setup</button>
+        <button type="button" id="layoutCancel" class="ghost">Cancel</button>
+      </div>
+      <p id="layoutStatus" class="dialogfoot" role="status"></p>
+    </form>
+    <div id="layoutConfirm" class="dialogbody hidden">
+      <p id="layoutConfirmText" class="dialogfoot"></p>
+      <div class="dialogactions">
+        <button type="button" id="layoutOverwrite">Overwrite</button>
+        <button type="button" id="layoutBack" class="ghost">Keep the name</button>
+      </div>
+    </div>
+    <div class="dialogbody">
+      <p class="dialogfoot">Saved layouts on this account</p>
+      <ul id="layoutExisting" class="slotlist"></ul>
+    </div>
+  </div>
+
+
   <main>
     <section id="gate" class="panel">
       <div>
@@ -181,6 +230,9 @@
         <!-- PB-205: Resume Saved War (manual p.36-37). Lists the named slots this account held a
              seat in; picking one restores that round, those pieces and that purse, held. -->
         <button type="button" id="resumeWarBtn" class="ghost" title="Resume a war you saved under a name (manual p.37)">Resume Saved War</button>
+        <!-- PB-304: Lay Out Armies (manual p.16 l.417, p.37). 1986 only; the server refuses the
+             other eras with a sentence, so the door is present and the refusal is read. -->
+        <button type="button" id="layoutBtn" class="ghost" title="Lay out your own armies for a 1986 war (manual p.16, p.37)">Lay Out Armies</button>
       </section>
 
       <section class="panel match" id="matchPanel">
