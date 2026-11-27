@@ -258,6 +258,18 @@ export function createLobby() {
     if (on) perRoom[side] = true;
     else delete perRoom[side];
   }
+  // PB-319: a read-only census of the per-room Show Common map. PB-317's `commonSeats.delete` in
+  // endRoom is the ONLY thing that keeps this map bounded, and the leak it prevents is memory-only
+  // - no frame, no wire, and no cross-room read (a stale key is reachable only through a room id
+  // that is gone), so no behaviour leg can see it: pb317_show_common_persist stays green with the
+  // prune removed, because a new war is a new room id. This is the honest read the card asks for:
+  // no mutator, no seat mode, just how many room keys and side keys are retained.
+  function debugCommonCensus() {
+    let seats = 0;
+    for (const perRoom of commonSeats.values()) seats += Object.keys(perRoom).length;
+    return { rooms: commonSeats.size, seats };
+  }
+
   const invites = new Map();
   const rooms = new Map();
   const seatOf = new Map();
@@ -2395,7 +2407,9 @@ export function createLobby() {
     return debugRoom(id);
   }
 
-  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, debugSeatLog, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp, saveLayoutOp, listLayoutOp, forkFilmOp };
+  // PB-319: `debugCommonCensus` is read-only and answers nothing about a seat's mode - it is the
+  // count the retention arm reads, not a route to the map itself.
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, debugSeatLog, debugCommonCensus, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp, saveLayoutOp, listLayoutOp, forkFilmOp };
 }
 
 // What an era sells lives in shop.mjs; it is pure so the roster test can read it without a
