@@ -274,6 +274,28 @@ const server = createServer(async (req, res) => {
     send(res, 200, { id, rounds: film.rounds, finalDigest: film.final_digest, frames });
     return;
   }
+  // PB-305: Film to Game (manual p.38 l.1170). The frame on screen becomes a solo game against the
+  // computer. The body names the round the page is showing; the server reads the film per account,
+  // forks the room and seats the caller, and the page asks for its own frame with `sync`.
+  const forkFilmMatch = url.pathname.match(/^\/api\/matches\/([A-Za-z0-9_-]{1,64})\/to-game$/);
+  if (req.method === "POST" && forkFilmMatch) {
+    const user = userForToken(tokenFrom(req));
+    if (!user) {
+      send(res, 401, { error: "Sign in to play a film." });
+      return;
+    }
+    let body;
+    try {
+      body = await readBody(req);
+    } catch {
+      send(res, 400, { error: "Send a JSON body." });
+      return;
+    }
+    const result = lobby.forkFilmOp(user.username, forkFilmMatch[1], body && (body.round ?? body.at));
+    const status = result && result.notFound ? 404 : result && result.error ? 400 : 200;
+    send(res, status, result);
+    return;
+  }
   // PB-205: named Save Game slots and Resume Saved War (manual p.16 l.416, p.36-37 l.1142-1150).
   // Listed per account; only an account that held a seat in the saved war is listed one or may
   // resume it (a slot belongs to seats, not to a room id). The slot body is the room store's own

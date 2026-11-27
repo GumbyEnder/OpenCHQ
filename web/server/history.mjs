@@ -100,7 +100,56 @@ export function packMatch(match) {
     over: match.over === true,
     winner: match.winner ?? null,
     winReason: match.winReason ?? null,
+    // PB-305: a 1986/2023 film opens in the cold war (p.31), and the film's round-0 paint has to say
+    // so or Film to Game at round 0 would start a war the film had not begun. A fork past round 0
+    // clears it (history.forkPackedMatch): a round ran, so the peace was already over.
+    peace: match.peace ?? null,
   };
+}
+
+// PB-305: Film to Game (manual p.38 l.1170). The original let the player press Film to Game at any
+// point in a replay and start a SOLO game from the setup on screen. A film records the start state
+// plus, per round, strengths and ownership - it does NOT record unit positions per round (see the
+// header: a replay shows the war's ground and its strength, not a second, invented march). So the
+// state a frame SHOWS is exactly what this returns: the recorded units on their recorded cells, the
+// frame's strengths, the frame's owners, and the frame's round. A fork is that state, never a
+// re-simulation - the remake keeps no order log, and inventing a march would be a different war.
+//
+// A unit the frame records at strength 0 was destroyed in the film; it is not carried into the game
+// as a zero-strength ghost. The closing frame (the one carrying `state.over`) is refused by the
+// caller: there is no war left to play from the last round.
+export function forkPackedMatch(start, frame) {
+  if (!start || typeof start !== "object" || !frame || typeof frame !== "object") return null;
+  const packed = JSON.parse(JSON.stringify(start));
+  const strengths = frame.strengths && typeof frame.strengths === "object" ? frame.strengths : {};
+  packed.pieces = (Array.isArray(packed.pieces) ? packed.pieces : [])
+    .map((piece) => {
+      if (!piece || piece.id === undefined) return piece;
+      const raw = strengths[String(piece.id)];
+      return raw === undefined || raw === null ? piece : { ...piece, strength: raw };
+    })
+    .filter((piece) => !(piece && Number.isFinite(Number(piece.strength)) && Number(piece.strength) <= 0));
+  const owners = new Map();
+  for (const row of Array.isArray(frame.owners) ? frame.owners : []) {
+    if (Array.isArray(row) && row.length >= 2) owners.set(String(row[0]), row[1] ?? null);
+  }
+  packed.sites = (Array.isArray(packed.sites) ? packed.sites : []).map((site) => {
+    if (!site || site.id === undefined || !owners.has(String(site.id))) return site;
+    return { ...site, owner: owners.get(String(site.id)) };
+  });
+  packed.round = Number(frame.round) || 0;
+  // A 1986/2023 war opens in the cold war (manual p.31) and NO round runs until hostilities are
+  // declared (T-035). So a frame past round 0 is proof the peace was already over; carrying round
+  // 0's `peace.active` into it would fork a game that can never tick - the clock would run and the
+  // round would stay put. Round 0 itself keeps whatever the opening state says.
+  if (packed.round > 0 && packed.peace && packed.peace.active === true) packed.peace = null;
+  // The cutover is a new game, not a continued replay: the clock is held (the same sentence every
+  // room opens with), and the film's result does not travel into it.
+  packed.clock = "held";
+  packed.over = false;
+  packed.winner = null;
+  packed.winReason = null;
+  return packed;
 }
 
 function gz(value) {

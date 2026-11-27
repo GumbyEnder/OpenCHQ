@@ -66,6 +66,7 @@ import {
   filmEventRows,
   filmFileName,
   filmFromEnvelope,
+  filmFrame,
   filmRoomAt,
   frameCount,
   frameDelayMs,
@@ -3464,6 +3465,42 @@ function exitFilm() {
   drawMatch();
 }
 
+// PB-305: Film to Game (manual p.38 l.1170). The round on screen is the setup the solo game starts
+// from; the server reads the film from its own store, seats this account on the side it played, and
+// hands the computer the other side. The page then asks for its own frame (`sync`) - the same path
+// Resume Saved War takes, so a reconnect cannot lose the room.
+async function filmToGame() {
+  if (!film || !film.meta) return;
+  const frame = filmFrame(film, film.at);
+  if (!frame) { say("That film has no round to play."); return; }
+  if (frame.state && frame.state.over) {
+    say("That is the war's last round; there is nothing left to play.");
+    return;
+  }
+  film.playing = false;
+  clearTimeout(filmTimer);
+  filmTimer = null;
+  try {
+    const response = await fetch("/api/matches/" + encodeURIComponent(film.meta.id) + "/to-game", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ round: frame.round }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401) { say("Sign in to play a film."); return; }
+    if (!response.ok || !body || !body.ok) {
+      say((body && body.error) || "That round could not be played.");
+      return;
+    }
+    exitFilm();
+    send({ op: "sync" });
+    say("Film to Game: " + String(body.era) + " from round " + String(body.round) +
+      ". You play " + String(body.side) + ". The clock is held.");
+  } catch (err) {
+    say("That round could not be played: " + (err && err.message ? err.message : String(err)));
+  }
+}
+
 function filmButton(label, title, run, id) {
   const button = document.createElement("button");
   button.type = "button";
@@ -3505,6 +3542,10 @@ function buildFilmBar() {
     row.append(button);
   }
   row.append(filmButton("Close film", "Leave the film and go back to the lobby", exitFilm, "filmExit"));
+  // PB-305: Film to Game (manual p.38 l.1170). The original offered it during the replay, at any
+  // point; the round on screen is the setup the game starts from. Added before Save/Load so the
+  // player's own copy of the film is not mistaken for the only thing the bar can do.
+  row.append(filmButton("Film to Game", "Start a solo game from the round on screen (manual p.38)", filmToGame, "filmToGame"));
   // §4 (ii): a film leaves the browser as a .film file and comes back through the file picker. Both
   // are the player's own act on a finished war; neither touches the live room.
   row.append(
@@ -4800,6 +4841,9 @@ window.__chq = {
   me: () => me,
   users: () => users.slice(),
   room: () => room,
+  // PB-305: the film the bar is showing (null when none), so a leg reads the round it stepped to
+  // instead of parsing the label.
+  film: () => film,
   socketState: () => socketState,
   toast: () => flash.textContent || "",
   // PB-137: the match-over line, which is not a flash and must outlive the flash timer.

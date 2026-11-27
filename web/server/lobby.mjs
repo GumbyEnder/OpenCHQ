@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { deleteRoom, flushRooms, flushWindow, loadRooms, pruneRooms, saveRoom } from "./rooms.mjs";
+import { deleteRoom, flushRooms, flushWindow, loadRooms, pruneRooms, saveRoom, unpackMatch } from "./rooms.mjs";
 import { tickMatch } from "./tick.mjs";
 import { forSeat, resultNote, resultOf, capitalListOf } from "./view.mjs";
 import { botCeasefireAnswer, citiesHeld, ordersFor as botOrders } from "./bot.mjs";
@@ -15,9 +15,9 @@ import { friendlySites, maskBase64, placementMask } from "./placement.mjs";
 import { logLines } from "./log.mjs";
 // T-031 step 1: the War Films recorder. A film is a recording of a finished match; nothing here is
 // read by a live page, and every call is wrapped so a storage fault can never stop a match.
-import { appendFrame, armRestoredFilm, closeFilm, startFilm } from "./history.mjs";
+import { appendFrame, armRestoredFilm, closeFilm, filmFor, forkPackedMatch, framesOf, startFilm } from "./history.mjs";
 import { scanActiveFor, scanAnyActive } from "./scan.mjs";
-import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX, defaultOpponentLevel, opponentLevelOf, opponentName } from "./rules.mjs";
+import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX, defaultOpponentLevel, opponentLevelOf, opponentName, startPool } from "./rules.mjs";
 import { isSatelliteKind, shopFor } from "./shop.mjs";
 import { buySatellite, orderSatellite, planSatellite, satelliteById } from "./satellite.mjs";
 import { compatUnitKind } from "./migrate.mjs";
@@ -845,6 +845,93 @@ export function createLobby() {
 
   function listLayoutOp(username) {
     return { ok: true, layouts: listLayouts(username) };
+  }
+
+  // PB-305: Film to Game (manual p.38 l.1170). During a replay the player may press Film to Game at
+  // any point and the film becomes a SOLO game from the setup on screen. The film is read per
+  // account (filmFor), the frame is the round the page is showing, and the state is the fork the
+  // film was painting: recorded units and cells, the frame's strengths and owners, its round. The
+  // human takes the side they were playing at that machine; the other side is the computer.
+  //
+  // The closing frame is refused: the frame that carries `state.over` is the film's end screen, and
+  // a game forked from a decided board would either end on its first tick or ignore the result.
+  // Every other frame in the replay is fair game, including round 0.
+  //
+  // Getting the room back to the page is a `sync`, exactly like Resume Saved War - this op only
+  // creates the room and seats the caller (resumeSlotOp's shape), so a socket that missed the
+  // frame can ask again without forking twice.
+  function forkFilmOp(username, id, atRound) {
+    if (seatOf.has(username)) return { error: "Leave the current match first." };
+    const film = filmFor(username, String(id || ""));
+    if (!film) return { error: "No such film.", notFound: true };
+    const frames = framesOf(film.id, undefined, 0, Number.MAX_SAFE_INTEGER);
+    if (!frames.length) return { error: "That film has no rounds to play." };
+    const wanted = Number(atRound);
+    const hasWanted = Number.isFinite(wanted);
+    let picked = hasWanted ? frames.find((row) => Number(row.round) === Math.trunc(wanted)) || null : null;
+    if (!picked && hasWanted) {
+      for (const row of frames) if (Number(row.round) <= Math.trunc(wanted)) picked = row;
+    }
+    if (!picked) picked = frames[0];
+    const frame = picked.frame || {};
+    if (frame.state && frame.state.over) return { error: "That is the war's last round; there is nothing left to play." };
+    const mine = String(film.blue_user || "") === String(username) ? "blue"
+      : String(film.red_user || "") === String(username) ? "red"
+        : null;
+    if (!mine) return { error: "You did not hold a side in that war." };
+    const packed = forkPackedMatch(film.start, frame);
+    const match = packed ? unpackMatch(packed) : null;
+    if (!match) return { error: "That film's round cannot be played." };
+    // The film's start state keeps each seat's PURSE and nothing else about the seat (history's
+    // packMatch reduces `sides` to cash). Rebuild the rest to the shape a fresh match opens with,
+    // so the economy and the view read a whole seat instead of `undefined`; a film that recorded no
+    // purse opens on the era's pool, which is what a fresh match does.
+    for (const side of ["blue", "red"]) {
+      const seat = (match.sides && match.sides[side]) || {};
+      match.sides = match.sides || {};
+      match.sides[side] = {
+        cash: Number.isFinite(Number(seat.cash)) ? Number(seat.cash) : startPool(match.era),
+        fuel: null,
+        dry: false,
+        cities: [],
+        wells: [],
+        bought: 0,
+      };
+    }
+    match.clock = "held";
+    match.foughtRound = -1;
+    if (!Number.isFinite(Number(match.roundSeconds)) || Number(match.roundSeconds) <= 0) {
+      match.roundSeconds = roundSeconds();
+    }
+    const other = mine === "blue" ? "red" : "blue";
+    const room = {
+      id: randomBytes(8).toString("hex"),
+      mode: "bot",
+      era: String(match.era),
+      clock: "held",
+      holds: { blue: false, red: false },
+      holdRoom: false,
+      speed: 1,
+      note: "Film to Game: " + String(match.era) + " from round " + (Number(match.round) || 0) +
+        ". The clock is held.",
+      seats: {
+        blue: { username: "Bot", kind: "bot" },
+        red: { username: "Bot", kind: "bot" },
+      },
+      match,
+      forkedFrom: String(film.id),
+      forkedRound: Number(match.round) || 0,
+    };
+    room.seats[mine] = { username, kind: "human" };
+    room.seats[other] = { username: "Bot", kind: "bot" };
+    stampSeats(room);
+    openFilm(room);
+    rooms.set(room.id, room);
+    saveRoom(room);
+    seatOf.set(username, room.id);
+    tellRoom(room);
+    sendPresence();
+    return { ok: true, id: room.id, round: Number(match.round) || 0, era: match.era, side: mine };
   }
 
   // PB-205: Save Game (manual p.16 l.416). The body is saveRoom's own state - packMatch plus the
@@ -2073,7 +2160,7 @@ export function createLobby() {
     };
   }
 
-  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp, saveLayoutOp, listLayoutOp };
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp, saveLayoutOp, listLayoutOp, forkFilmOp };
 }
 
 // What an era sells lives in shop.mjs; it is pure so the roster test can read it without a

@@ -40,3 +40,5 @@ tests/e2e/node_modules
 tests/e2e/package-lock.json
 # PB-205 save/resume page-leg runs: screenshots + verdict.json per run, same rule as the rest.
 tests/e2e/pb205-save-resume-*/
+# PB-305 Film to Game page-leg runs: screenshots + verdicts.json per width, same rule.
+tests/e2e/pb305-film-to-game-*/
