@@ -274,6 +274,35 @@ const server = createServer(async (req, res) => {
     send(res, 200, { id, rounds: film.rounds, finalDigest: film.final_digest, frames });
     return;
   }
+  // PB-205: named Save Game slots and Resume Saved War (manual p.16 l.416, p.36-37 l.1142-1150).
+  // Listed per account; only an account that held a seat in the saved war is listed one or may
+  // resume it (a slot belongs to seats, not to a room id). The slot body is the room store's own
+  // packMatch output - /api/slots never serializes a match a second way.
+  if (url.pathname === "/api/slots" || url.pathname === "/api/slots/resume") {
+    const user = userForToken(tokenFrom(req));
+    if (!user) {
+      send(res, 401, { error: "Sign in to see your saved wars." });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/slots") {
+      send(res, 200, lobby.listSlotOp(user.username));
+      return;
+    }
+    if (req.method === "POST") {
+      let body;
+      try {
+        body = await readBody(req);
+      } catch {
+        send(res, 400, { error: "Send a JSON body." });
+        return;
+      }
+      const result = url.pathname === "/api/slots/resume"
+        ? lobby.resumeSlotOp(user.username, body && (body.id ?? body.slot))
+        : lobby.saveSlotOp(user.username, body);
+      send(res, result && result.error ? 400 : 200, result);
+      return;
+    }
+  }
   if (req.method === "GET" && url.pathname === "/api/board") {
     try {
       const payload = boardPayload();

@@ -105,7 +105,10 @@ function siteStatics(era) {
 // The match with the site table replaced by ownership lists. Everything the match mutates
 // (round, clock, pieces, sides, capitals, winner) stays as it is, including routes: a row
 // is the paused game, and a route step is not something to drop for a smaller file.
-function packMatch(match) {
+//
+// PB-205 exports it: a named save slot's body IS this function's output, so the slot store and the
+// room store cannot drift into two serializations.
+export function packMatch(match) {
   if (!match || typeof match !== "object") return null;
   const { sites, ...rest } = match;
   const siteOwners = { blue: [], red: [] };

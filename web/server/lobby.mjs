@@ -23,6 +23,9 @@ import { buySatellite, orderSatellite, planSatellite, satelliteById } from "./sa
 import { compatUnitKind } from "./migrate.mjs";
 import { TAKEOVER_CLOSE_CODE as TAKEOVER_CODE } from "./ws.mjs";
 import { displayNames, localName } from "./names.mjs";
+// PB-205: named save slots. The store and the resume room live in slots.mjs; the lobby owns the
+// live room, the seats and the sockets, so the two ops that touch them live here.
+import { listSlots, roomFromSlot, saveSlot, slotFor } from "./slots.mjs";
 
 // A player action during a running clock marks the room dirty instead of committing it: the tick
 // writes dirty rooms within FLUSH_SECONDS anyway, and a commit per order is what turned a 0.12 s
@@ -740,6 +743,69 @@ export function createLobby() {
     tellRoom(room);
     sendPresence();
     return { ok: true };
+  }
+
+  // PB-205: Save Game (manual p.16 l.416). The body is saveRoom's own state - packMatch plus the
+  // seat table, holds and speed - under a name the player typed. The name is per account and
+  // case-folded; an existing name is only replaced when the caller asked for the overwrite, so the
+  // page's confirmation dialog is the decision and the store can never grow a silent twin.
+  function saveSlotOp(username, message) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "Start a match first." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    // A finished war is War Films' record, not a save: resuming it would show an end screen with a
+    // fresh film header and nothing to play.
+    if (room.match.over) return { error: "That war is over. War Films keeps its record." };
+    const asked = message && message.overwrite;
+    const result = saveSlot({
+      username,
+      name: message && message.name,
+      room,
+      side: mine,
+      overwrite: asked === true || asked === "true" || asked === 1,
+    });
+    if (result && result.ok && result.slot) {
+      result.note = (result.overwritten ? "Overwrote saved war \"" : "Saved war \"")
+        + result.slot.name + "\" at round " + result.slot.round + ".";
+    }
+    return result;
+  }
+
+  function listSlotOp(username) {
+    return { ok: true, slots: listSlots(username) };
+  }
+
+  // Resume Saved War (manual p.36-37). The slot's own seats come back: a bot side stays a bot, a
+  // two-human war comes back with both accounts bound, and only an account that held one of those
+  // seats can resume it at all (AC3). The room comes back held and keeps the holds it recorded -
+  // a resume is not a play command (PB-134).
+  function resumeSlotOp(username, id) {
+    if (seatOf.has(username)) return { error: "Leave the current match first." };
+    const found = slotFor(username, id);
+    if (found.error) return found;
+    const { row, state } = found;
+    const seats = state.seats && typeof state.seats === "object" ? state.seats : {};
+    for (const side of ["blue", "red"]) {
+      const seat = seats[side];
+      if (!seat || seat.kind === "bot") continue;
+      const other = String(seat.username || "");
+      if (other && other !== username && seatOf.has(other)) {
+        return { error: localName(other) + " is in another match. Resume this war once that match is left." };
+      }
+    }
+    const room = roomFromSlot(row, state);
+    stampSeats(room);
+    if (!room.match.over) openFilm(room);
+    rooms.set(room.id, room);
+    saveRoom(room);
+    for (const side of ["blue", "red"]) {
+      const seat = room.seats[side];
+      if (seat && seat.kind === "human" && seat.username) seatOf.set(seat.username, room.id);
+    }
+    tellRoom(room);
+    sendPresence();
+    return { ok: true, id: room.id, round: room.match ? room.match.round : 0, name: row.name };
   }
 
   // An invite names a display name; the server resolves it back to the one account, so the real
@@ -1814,7 +1880,7 @@ export function createLobby() {
     };
   }
 
-  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom };
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp };
 }
 
 // What an era sells lives in shop.mjs; it is pure so the roster test can read it without a

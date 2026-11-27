@@ -1059,6 +1059,43 @@ body.in-match .speedctl { display: flex; }
   border-bottom: 1px solid var(--line);
 }
 
+/* PB-205: Save Game / Resume Saved War. Same frame as a dialogue; a separate panel because a
+   dialogue is repainted every room frame and would drop a half-typed war name. */
+.slotpanel { width: min(520px, calc(100vw - 24px)); }
+.slotname { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.slotname input {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: #0b1420;
+  color: #dbe6f3;
+}
+.slotactions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.slotactions button { font-size: 12px; padding: 4px 10px; }
+.slotlist { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.slotlist li { margin: 0; }
+.slotrow {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0d1826;
+  color: #cfdcec;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.slotrow.static { cursor: default; }
+.slotrow:hover { background: #14243a; }
+.slotrow .slottitle { font-size: 13px; color: #d9fbf7; }
+.slotrow .slotmeta { color: var(--muted); }
+
 .dialogtitle {
   margin: 0;
   font-size: 15px;

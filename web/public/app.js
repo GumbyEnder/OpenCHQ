@@ -1774,6 +1774,17 @@ window.addEventListener("keydown", (event) => {
   const step = 8 * view.scale;
   const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
   // Escape is the way out of a dialogue, which is what the original's Buy Units menu did too.
+  // PB-205: the Save and Resume panels are their own overlays, so they are asked first.
+  if (event.key === "Escape") {
+    if (savePanel && !savePanel.classList.contains("hidden")) {
+      closeSavePanel();
+      return;
+    }
+    if (slotsPanel && !slotsPanel.classList.contains("hidden")) {
+      closeSlotsPanel();
+      return;
+    }
+  }
   if (event.key === "Escape" && openDialogId) {
     closeDialog();
     return;
@@ -2049,7 +2060,7 @@ function syncGameButtons() {
     clockBtn.setAttribute("aria-pressed", running ? "true" : "false");
     clockBtn.title = running ? "Pause the clock" : "Play the clock";
   }
-  for (const button of [resignBtn, newBtn, quitBtn]) if (button) button.disabled = !room;
+  for (const button of [document.getElementById("saveBtn"), resignBtn, newBtn, quitBtn]) if (button) button.disabled = !room;
   syncSpeed();
   syncMessageLevel();
 }
@@ -2196,6 +2207,7 @@ function renderRoom() {
   // or leaves a match: a purchase changes the purse, and a run/hold changes the button.
   syncShell();
   syncGameButtons();
+  syncSlotPanels();
   syncBuyNav();
   if (document.body.classList.contains("in-match") !== Boolean(room)) syncShell();
   else {
@@ -3743,6 +3755,234 @@ function buildNav() {
 
 document.getElementById("dialogClose")?.addEventListener("click", closeDialog);
 buildNav();
+
+// ---- PB-205: Save Game and Resume Saved War ------------------------------------------------
+//
+// A named slot is the room store's own body under a name (server/slots.mjs); the page never packs a
+// match. The two panels below are NOT part of the dialogue machinery on purpose: an open dialogue is
+// repainted on every room frame, and a repaint would replace a half-typed war name. This form keeps
+// its own input node; only the slot lists inside it are redrawn.
+let saveSlots = [];
+const savePanel = document.getElementById("savePanel");
+const saveForm = document.getElementById("saveForm");
+const saveName = document.getElementById("saveName");
+const saveStatus = document.getElementById("saveStatus");
+const saveConfirm = document.getElementById("saveConfirm");
+const saveConfirmText = document.getElementById("saveConfirmText");
+const saveExisting = document.getElementById("saveExisting");
+const saveBtn = document.getElementById("saveBtn");
+const slotsPanel = document.getElementById("slotsPanel");
+const slotsStatus = document.getElementById("slotsStatus");
+const slotList = document.getElementById("slotList");
+const resumeWarBtn = document.getElementById("resumeWarBtn");
+
+// One POST that keeps the server's fields on a refusal. `post()` throws the message alone, and the
+// save panel needs the `exists` flag to turn a refused duplicate into its own confirmation step.
+async function slotPost(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function readSlots() {
+  const res = await fetch("/api/slots", { credentials: "same-origin", cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Could not read your saved wars.");
+  return Array.isArray(data.slots) ? data.slots : [];
+}
+
+// How a slot reads to a player: a name, the year and round, who sat where, and the purse the
+// viewer held. No piece ids, no side:kind keys (PB-300's rule, applied here from the start).
+function slotMeta(slot) {
+  const players = (slot.players || [])
+    .map((seat) => (seat.kind === "bot" ? "Computer" : String(seat.name || "Player")))
+    .join(" vs ");
+  const cash = slot.cash === null || slot.cash === undefined ? "" : " \u00b7 " + formatBillions(slot.cash) + "b";
+  return eraName(slot.era) + " \u00b7 round " + slot.round + (players ? " \u00b7 " + players : "") + cash;
+}
+
+function paintSaveExisting() {
+  saveExisting.textContent = "";
+  if (!saveSlots.length) {
+    const none = document.createElement("li");
+    none.className = "slotmeta";
+    none.textContent = "No saved wars yet.";
+    saveExisting.append(none);
+    return;
+  }
+  for (const slot of saveSlots) {
+    const row = document.createElement("li");
+    row.className = "slotrow static";
+    const title = document.createElement("span");
+    title.className = "slottitle";
+    title.textContent = slot.name;
+    const meta = document.createElement("span");
+    meta.className = "slotmeta";
+    meta.textContent = slotMeta(slot);
+    row.append(title, meta);
+    saveExisting.append(row);
+  }
+}
+
+function paintSlotList(list) {
+  slotList.textContent = "";
+  if (!list.length) {
+    slotsStatus.textContent = "No saved wars yet. Save one from a match with the Save button.";
+    return;
+  }
+  slotsStatus.textContent = "";
+  for (const slot of list) {
+    const item = document.createElement("li");
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "slotrow";
+    row.dataset.slot = slot.id;
+    row.dataset.name = slot.name;
+    const title = document.createElement("span");
+    title.className = "slottitle";
+    title.textContent = slot.name;
+    const meta = document.createElement("span");
+    meta.className = "slotmeta";
+    meta.textContent = slotMeta(slot);
+    row.append(title, meta);
+    row.addEventListener("click", () => resumeSlot(slot));
+    item.append(row);
+    slotList.append(item);
+  }
+}
+
+function closeSavePanel() {
+  savePanel?.classList.add("hidden");
+  saveConfirm?.classList.add("hidden");
+  saveForm?.classList.remove("hidden");
+}
+
+function closeSlotsPanel() {
+  slotsPanel?.classList.add("hidden");
+}
+
+function openSavePanel() {
+  if (!room) {
+    say("Start a match first.");
+    return;
+  }
+  if (room.over) {
+    say("That war is over. War Films keeps its record.");
+    return;
+  }
+  closeSlotsPanel();
+  saveStatus.textContent = "";
+  saveConfirm.classList.add("hidden");
+  saveForm.classList.remove("hidden");
+  saveName.value = "";
+  savePanel.classList.remove("hidden");
+  saveName.focus();
+  readSlots()
+    .then((list) => {
+      saveSlots = list;
+      paintSaveExisting();
+    })
+    .catch((err) => {
+      saveStatus.textContent = err.message;
+    });
+}
+
+async function openSlotsPanel() {
+  closeSavePanel();
+  slotsStatus.textContent = "Reading your saved wars\u2026";
+  slotList.textContent = "";
+  slotsPanel.classList.remove("hidden");
+  try {
+    paintSlotList(await readSlots());
+  } catch (err) {
+    slotsStatus.textContent = err.message;
+  }
+}
+
+async function saveNow(name, overwrite) {
+  saveStatus.textContent = "Saving\u2026";
+  const { ok, data } = await slotPost("/api/slots", { name, overwrite: Boolean(overwrite) });
+  if (!ok) {
+    if (data.exists) {
+      // The server's own name rule folded this into a slot the list had not shown (whitespace or
+      // case): ask here, with the slot the server named, rather than making the player guess.
+      saveConfirmText.textContent = "A saved war named \"" + name + "\" already exists. Overwrite it with this round?";
+      saveConfirm.classList.remove("hidden");
+      saveStatus.textContent = "";
+      return;
+    }
+    saveStatus.textContent = data.error || "The war was not saved.";
+    return;
+  }
+  closeSavePanel();
+  const note = data.note || "Saved war \"" + name + "\".";
+  say(note);
+  noteLog([{ round: room && room.round ? room.round : 0, text: note.replace(/\.$/, "") }]);
+  readSlots()
+    .then((list) => {
+      saveSlots = list;
+      paintSaveExisting();
+    })
+    .catch(() => {});
+}
+
+async function resumeSlot(slot) {
+  slotsStatus.textContent = "Resuming \u2026";
+  const { ok, data } = await slotPost("/api/slots/resume", { id: slot.id });
+  if (!ok) {
+    slotsStatus.textContent = data.error || "That war could not be resumed.";
+    return;
+  }
+  closeSlotsPanel();
+  say("Saved war \"" + (data.name || slot.name) + "\" resumed at round " + data.round + ". The clock is held.");
+}
+
+saveBtn?.addEventListener("click", openSavePanel);
+resumeWarBtn?.addEventListener("click", openSlotsPanel);
+document.getElementById("saveClose")?.addEventListener("click", closeSavePanel);
+document.getElementById("saveCancel")?.addEventListener("click", closeSavePanel);
+document.getElementById("slotsClose")?.addEventListener("click", closeSlotsPanel);
+document.getElementById("saveBack")?.addEventListener("click", () => {
+  saveConfirm.classList.add("hidden");
+  saveStatus.textContent = "The saved war was not changed.";
+});
+document.getElementById("saveOverwrite")?.addEventListener("click", () => {
+  saveConfirm.classList.add("hidden");
+  saveNow(saveName.value.trim(), true);
+});
+saveForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = saveName.value.trim();
+  if (!name) {
+    saveStatus.textContent = "A saved war needs a name.";
+    return;
+  }
+  const hit = saveSlots.find((slot) => String(slot.name).toLowerCase() === name.toLowerCase());
+  if (hit) {
+    saveConfirmText.textContent = "A saved war named \"" + hit.name + "\" already exists ("
+      + slotMeta(hit) + "). Overwrite it with this round?";
+    saveConfirm.classList.remove("hidden");
+    saveStatus.textContent = "";
+    return;
+  }
+  saveNow(name, false);
+});
+
+// A panel that belongs to one room closes when the page enters or leaves a match - not on every
+// round, which is why the comparison is on the room id and not on the frame.
+let panelRoomId = "";
+function syncSlotPanels() {
+  const id = room && room.id ? String(room.id) : "";
+  if (id === panelRoomId) return;
+  panelRoomId = id;
+  closeSavePanel();
+  closeSlotsPanel();
+}
 
 // One reconnect policy for both ways a socket can fail: it closed, or it never opened. Kept in one
 // function because the second way used to be invisible — see the connect watchdog in connect().

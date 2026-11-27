@@ -30,6 +30,9 @@
     </div>
     <nav id="nav" class="nav" aria-label="Match commands"></nav>
     <div class="gamebtns">
+      <!-- PB-205: Save Game (manual p.16 l.416). A named slot of the war on screen; the overwrite
+           decision is made in the panel itself, never silently. -->
+      <button type="button" id="saveBtn" class="navbtn" title="Save this war under a name (manual p.16)">Save</button>
       <button type="button" id="resignBtn" class="navbtn danger" title="Concede: the other side wins">Resign</button>
       <button type="button" id="newBtn" class="navbtn" title="Abandon this game and start a new one, same era and side">New</button>
       <button type="button" id="quitBtn" class="navbtn" title="Leave this game and return to the lobby">Quit</button>
@@ -70,6 +73,52 @@
     </div>
     <p id="dialogHint" class="dialoghint"></p>
     <div id="dialogBody" class="dialogbody"></div>
+  </div>
+
+  <!-- PB-205: Save Game. A dedicated panel rather than the dialogue machinery, because a room frame
+       repaints every open dialogue once a round and would eat a half-typed name; this form keeps its
+       own input node. Overwriting an existing name is a second, explicit step inside this panel. -->
+  <div id="savePanel" class="dialog slotpanel hidden" role="dialog" aria-modal="false" aria-labelledby="saveTitle">
+    <div class="dialoghead">
+      <h2 id="saveTitle" class="dialogtitle">Save Game</h2>
+      <button type="button" id="saveClose" class="dialogclose" title="Close (Esc)">&times;</button>
+    </div>
+    <p class="dialoghint">Name this war, then Save. A name already in use is replaced only after you confirm it.</p>
+    <form id="saveForm" class="dialogbody" autocomplete="off">
+      <label class="slotname">War name
+        <input id="saveName" name="name" type="text" maxlength="40" required autocomplete="off">
+      </label>
+      <div class="slotactions">
+        <button type="submit" id="saveGo">Save</button>
+        <button type="button" id="saveCancel" class="ghost">Cancel</button>
+      </div>
+      <p id="saveStatus" class="dialogfoot" role="status"></p>
+    </form>
+    <div id="saveConfirm" class="dialogbody hidden">
+      <p id="saveConfirmText" class="dialogfoot"></p>
+      <div class="slotactions">
+        <button type="button" id="saveOverwrite">Overwrite</button>
+        <button type="button" id="saveBack" class="ghost">Keep the name</button>
+      </div>
+    </div>
+    <div class="dialogbody">
+      <p class="dialogfoot">Saved wars on this account</p>
+      <ul id="saveExisting" class="slotlist"></ul>
+    </div>
+  </div>
+
+  <!-- PB-205: Resume Saved War. The list is the server's; a slot this account did not hold a seat
+       in is not in it, and the server refuses it even if the id is typed. -->
+  <div id="slotsPanel" class="dialog slotpanel hidden" role="dialog" aria-modal="false" aria-labelledby="slotsTitle">
+    <div class="dialoghead">
+      <h2 id="slotsTitle" class="dialogtitle">Resume Saved War</h2>
+      <button type="button" id="slotsClose" class="dialogclose" title="Close (Esc)">&times;</button>
+    </div>
+    <p class="dialoghint">Pick a war to restore: its round, its pieces and its purse all come back, with the clock held.</p>
+    <div class="dialogbody">
+      <p id="slotsStatus" class="dialogfoot" role="status"></p>
+      <ul id="slotList" class="slotlist"></ul>
+    </div>
   </div>
 
   <main>
@@ -129,6 +178,9 @@
         <!-- T-031 step 3: the original's War Films (manual p.35, p.38). A finished war is watched
              round by round with the four view toggles; a live match has no film. -->
         <button type="button" id="filmsBtn" class="ghost" title="Watch a finished war, round by round (the original's War Films)">War films</button>
+        <!-- PB-205: Resume Saved War (manual p.36-37). Lists the named slots this account held a
+             seat in; picking one restores that round, those pieces and that purse, held. -->
+        <button type="button" id="resumeWarBtn" class="ghost" title="Resume a war you saved under a name (manual p.37)">Resume Saved War</button>
       </section>
 
       <section class="panel match" id="matchPanel">

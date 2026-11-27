@@ -38,3 +38,5 @@ tests/e2e/node_modules/
 # ...and the same path when it is a symlink to a shared install (a trailing slash does not match).
 tests/e2e/node_modules
 tests/e2e/package-lock.json
+# PB-205 save/resume page-leg runs: screenshots + verdict.json per run, same rule as the rest.
+tests/e2e/pb205-save-resume-*/
