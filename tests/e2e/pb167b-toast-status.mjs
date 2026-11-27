@@ -27,7 +27,16 @@
 // --mutant=floor re-anchors the toast to the viewport floor (`bottom: 10px`, the pre-fix shape) in a
 // copy of the tree. Both viewports must then go red; if they stay green the leg cannot see the
 // defect and exits 1.
-import { spawn } from "node:child_process";
+//
+// --mutant=result-seat makes the toast ignore the finished-match line (`#result`): it still clears
+// the status line, but it sits ON the result sentence. Only arm 3 can see that, so the mutant is the
+// proof that arm 3 is an assertion and not a comment.
+//
+// The evidence file names the tree it graded: `sha` is GATE_SHA when the caller exported it, and
+// otherwise `git rev-parse HEAD` of the worktree this leg ran in. If neither yields a sha the leg
+// does not write an evidence file at all - a leg that cannot name its base must not leave a green
+// file behind - and it exits non-zero.
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -37,6 +46,16 @@ import { loadPlaywright } from "./playwright.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
+
+// The base of the tree this leg graded. GATE_SHA when the caller exported one (a detached gate
+// worktree can be a different commit than HEAD resolves to, so the caller wins); otherwise the
+// worktree's own HEAD. Never empty: an evidence file with `"sha": ""` cannot be re-read as a
+// measurement of anything, which is the residue PB-184/189 are the sibling of.
+function headSha() {
+  const out = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+  return out.status === 0 ? String(out.stdout || "").trim() : "";
+}
+const SHA = String(process.env.GATE_SHA || "").trim() || headSha();
 
 function argOf(name, fallback = "") {
   const hit = process.argv.find((value) => value.startsWith("--" + name + "="));
@@ -53,6 +72,10 @@ mkdirSync(OUT, { recursive: true });
 // ever reworded, this leg reads the new one instead of grading a fossil.
 const APP_SOURCE = readFileSync(path.join(root, "web", "public", "app.js"), "utf8");
 const LONG_REFUSAL = (APP_SOURCE.match(/say\("(A carrier-based aircraft[^"]+)"/) || [])[1] || "";
+// The finished-match sentence, in the longest shape the page can emit (a winner, the cause, and the
+// server's capital list). Injected, not played out: the arm grades the footer's geometry, and a real
+// match end would need a finished game to reach the same box.
+const RESULT_TEXT = "You win: Berlin fell at round 14. Capitals: Berlin blue, Paris red, Moscow neutral, London blue.";
 const VIEWPORTS = [[1280, 800], [1024, 768]];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -105,6 +128,13 @@ function mutantTree(kind) {
     after = before.replace(
       "  flash.style.bottom = inMatch ? flashBottom + \"px\" : \"\";\n",
       "  flash.style.bottom = inMatch ? \"10px\" : \"\"; // mutant: the pre-fix floor anchor\n",
+    );
+  } else if (kind === "result-seat") {
+    // Keep the toast off the status line but let it land on the finished-match row: the shape the fix
+    // rejects (the toast stacks above `#result`, it does not sit on it).
+    after = before.replace(
+      "      flashBottom = Math.max(footBottom, Math.round(innerHeight - resultTop + FOOT_GAP));\n",
+      "      flashBottom = footBottom; // mutant: the toast ignores the finished-match row\n",
     );
   } else {
     throw new Error("unknown mutant: " + kind);
@@ -253,14 +283,43 @@ try {
     await page.screenshot({ path: shot2 });
     console.log("shot: " + shot2);
 
-    // The finished-match line shares the same column: it must clear the note too, or a toast
-    // pushed above the result would simply trade one cover for another.
-    await page.evaluate(() => { document.getElementById("flash").textContent = ""; });
+    // Arm 3: a finished match is on screen. `#result` keeps a row of its own in the same footer
+    // column, so the fix seats the toast ABOVE that row rather than trading one cover for another.
+    // The match here is still in play, so `sayResult()` returns early and the injected sentence
+    // survives the redraw - nothing on the page writes `#result` unless `room.over` is true.
+    await page.evaluate((text) => {
+      document.getElementById("result").textContent = text;
+      window.dispatchEvent(new Event("resize"));
+    }, RESULT_TEXT);
+    await sleep(500);
+    seen = await rects();
+    console.log(at + " result: flash " + fmt(seen.flash) + " result " + fmt(seen.result) + " note " + fmt(seen.note));
+    mark(at + ": the finished-match line is on screen", seen.result.visible, JSON.stringify(seen.result.text.slice(0, 40)));
+    cmp = compare(seen.result, seen.note);
+    mark(at + ": the finished-match line does not cover the status line", !cmp.intersects,
+      "overlap " + cmp.overlapX.toFixed(2) + "x" + cmp.overlapY.toFixed(2) + " px, clearance " +
+      "y " + cmp.gapY.toFixed(2) + " px");
+    cmp = compare(seen.flash, seen.result);
+    mark(at + ": the toast stacks above the finished-match line, it does not sit on it", !cmp.intersects,
+      "overlap " + cmp.overlapX.toFixed(2) + "x" + cmp.overlapY.toFixed(2) + " px, clearance " +
+      "x " + cmp.gapX.toFixed(2) + " / y " + cmp.gapY.toFixed(2) + " px");
+
+    // Clear both rows so the next viewport starts from the same state this one did.
+    await page.evaluate(() => {
+      document.getElementById("flash").textContent = "";
+      document.getElementById("result").textContent = "";
+      window.dispatchEvent(new Event("resize"));
+    });
+    await sleep(200);
   }
 
   mark("no page errors", pageErrors.length === 0, pageErrors.join(" | "));
-  writeFileSync(path.join(OUT, "pb167b-evidence.json"),
-    JSON.stringify({ sha: process.env.GATE_SHA || "", base: BASE, mutant: MUTANT, longRefusal: LONG_REFUSAL, evidence }, null, 2));
+  // Fail closed: a leg that cannot name its base leaves no evidence file behind, and the run is RED.
+  const named = mark("the evidence names the tree it graded", Boolean(SHA),
+    SHA ? SHA + (String(process.env.GATE_SHA || "").trim() ? " (GATE_SHA)" : " (git rev-parse HEAD of " + root + ")")
+      : "no GATE_SHA, and git rev-parse HEAD in " + root + " returned nothing");
+  if (named) writeFileSync(path.join(OUT, "pb167b-evidence.json"),
+    JSON.stringify({ sha: SHA, base: BASE, mutant: MUTANT, longRefusal: LONG_REFUSAL, evidence }, null, 2));
 } catch (err) {
   mark("the leg ran to the end", false, err && err.message ? err.message : String(err));
 } finally {
