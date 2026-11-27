@@ -352,6 +352,66 @@ async function main() {
         Math.abs(running.strip.h - beforePlay.strip.h) <= 1 && Math.abs(running.box.y - beforePlay.box.y) <= 1,
         JSON.stringify({ held: { h: beforePlay.strip.h, y: beforePlay.box.y }, running: { h: running.strip.h, y: running.box.y } }));
 
+      // ---- (g) the win line: producer arm -------------------------------------------------------
+      // PM 10342 §2(c): the head plus "won" is painted whole, the capital detail is what the ladder
+      // may drop, and the full sentence stays in the title. The state is handed to the page's own
+      // paintStripInfo through the preview hook, so the tier ladder and the real row box at THIS
+      // viewport are what get graded - not a composed string. Labelled a producer arm because a
+      // capital win needs twelve rounds and cannot be reached inside a gate run.
+      const winRoom = { era: era, you: "blue", round: 12, clock: "running", speed: 1,
+        over: true, winner: "blue", result: { lastCapital: { name: "Moscow", round: 12 } } };
+      const winSnap = await page.evaluate((room) => {
+        const r2 = (n) => Math.round(n * 100) / 100;
+        window.__chq.stripPreview(room);
+        const strip = document.getElementById("strip");
+        const info = document.getElementById("stripInfo");
+        const box = info.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(info);
+        const rr = range.getBoundingClientRect();
+        const cs = getComputedStyle(info);
+        const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+        const controls = [];
+        for (const el of strip.querySelectorAll("button, #stripInfo, #purseChip, #speedReadout")) {
+          const r = el.getBoundingClientRect();
+          if (!(r.width > 0 && r.height > 0)) continue;
+          controls.push({ key: el.id || el.dataset.dialog || (el.textContent || "").trim().slice(0, 14),
+            x: r2(r.x), y: r2(r.y), right: r2(r.right), bottom: r2(r.bottom),
+            w: r2(r.width), h: r2(r.height), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth });
+        }
+        const nav = document.getElementById("nav");
+        const out = { text: (info.textContent || "").trim(), title: info.getAttribute("title") || "",
+          scrollWidth: info.scrollWidth, clientWidth: info.clientWidth,
+          rangeRight: r2(rr.right), boxRight: r2(box.right),
+          rangeWidth: r2(rr.width), contentWidth: r2(box.width - pad), controls,
+          nav: nav ? { scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth } : null };
+        const real = window.__chq.room();
+        if (real) window.__chq.stripPreview(real);
+        return out;
+      }, winRoom);
+      const winFit = {
+        integerOk: winSnap.scrollWidth <= winSnap.clientWidth + 1,
+        rangeOk: winSnap.rangeRight <= winSnap.boxRight + 0.5 && winSnap.rangeWidth <= winSnap.contentWidth + 0.5,
+      };
+      const winParts = winSnap.text.split(" · ");
+      const winFull = warEra + " · blue · round 12 · running · blue won (Moscow, round 12)";
+      mark("(g) win: the head is painted whole, era first" + at, winParts[0] === warEra, JSON.stringify(winParts));
+      mark("(g) win: round 12 and the clock word are painted" + at,
+        winSnap.text.includes("round 12") && winSnap.text.includes("running"), JSON.stringify(winSnap.text));
+      mark("(g) win: the winning side plus \"won\" is painted (or \"won\" alone once the head names the side)" + at,
+        /^(blue won|won)( \(.*\))?$/.test(winParts[winParts.length - 1] || ""), JSON.stringify(winSnap.text));
+      mark("(g) win: no clip (scrollWidth <= clientWidth + 1)" + at, winFit.integerOk,
+        JSON.stringify({ scrollWidth: winSnap.scrollWidth, clientWidth: winSnap.clientWidth, text: winSnap.text }));
+      mark("(g) win: the text ends inside the box (fractional arm)" + at, winFit.rangeOk,
+        JSON.stringify({ rangeRight: winSnap.rangeRight, boxRight: winSnap.boxRight, delta: round2(winSnap.rangeRight - winSnap.boxRight), rangeWidth: winSnap.rangeWidth, contentWidth: winSnap.contentWidth }));
+      mark("(g) win: the title carries the full sentence" + at, winSnap.title === winFull,
+        JSON.stringify({ title: winSnap.title, want: winFull }));
+      const winBad = rectMatrix(winSnap.controls);
+      mark("(g) win: every control in the row is >= 1 px clear of every other" + at, winBad.length === 0,
+        JSON.stringify({ controls: winSnap.controls.length, collisions: winBad.slice(0, 6) }));
+      mark("(g) win: the command cluster is not a scroll window" + at,
+        Boolean(winSnap.nav) && winSnap.nav.scrollWidth <= winSnap.nav.clientWidth + 1, JSON.stringify(winSnap.nav));
+
       // ---- paused state (speed 0 with the clock running prints "paused") -----------------------
       mark("(a) the clock read back as running" + at, running.clock === "running", JSON.stringify(running.clock));
 

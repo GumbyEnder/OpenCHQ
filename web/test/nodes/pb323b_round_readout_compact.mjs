@@ -129,6 +129,7 @@ export async function run() {
     eq(texts(war1986(), { width: 1280, tier: 4 }).at(-1), "held", "tier 4 drops a cold-war copy");
     eq(texts(over1986(), { width: 1280, tier: 2 }).at(-1), "blue won (Moscow, round 12)", "tier 2 keeps the win detail");
     eq(texts(over1986(), { width: 1280, tier: 3 }).at(-1), "blue won", "tier 3 drops the win detail");
+    eq(texts(over1986(), { width: 1024, tier: 4 }).at(-1), "won", "tier 4 keeps \"won\"; the head carries the side");
     let previous = Infinity;
     for (const tier of TIERS) {
       const current = painted(ceaseFire(), 1280, tier).length;

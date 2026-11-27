@@ -1419,10 +1419,10 @@ body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: non
   body.in-match #strip { gap: 1px; padding: 0; }
   /* Three more gaps, none of them inside a label: the brand's own gap (which only separates the
      readout from the purse), the account box's (name/Sign out/Debug), and the speed cluster's. */
-  body.in-match #strip > .brand { gap: 4px; }
-  body.in-match #strip > .whoami { gap: 2px; }
+  body.in-match #strip > .brand { gap: 2px; }
+  body.in-match #strip > .whoami { gap: 1px; }
   body.in-match .speedctl { gap: 1px; }
-  body.in-match .pursechip { min-width: 28px; }
+  body.in-match .pursechip { min-width: 27px; }
   /* "Speed 0 · paused" measures 86.9 px at 11 px type; 90 keeps the slot fixed (PB-143: a
      content-sized readout moved the + button 20.75 px sideways) and returns 2 px to the row. */
   body.in-match .speedreadout { width: 90px; }
@@ -1434,9 +1434,11 @@ body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: non
   /* 8 px more, from side padding on the ten command labels: at 11 px type the last glyph of "Buy",
      "Air", "Kit", "Map", "War" and "Log" still prints whole, and the leg grades every button's
      scrollWidth against its clientWidth rather than eyeballing a screenshot. */
-  body.in-match #strip > .nav .navbtn { padding: 2px 2px; }
+  body.in-match #strip > .nav .navbtn { padding: 2px 1px; }
+  /* PB-323b: the Concealed win line is the widest terminal state the row can print; 1 px of side
+     padding on the two account buttons is invisible next to the label and buys 4 px for the readout. */
   body.in-match .account .ghost,
-  body.in-match .debugtoggle { padding: 2px 2px; }
+  body.in-match .debugtoggle { padding: 2px 1px; }
 }
 
 /* PB-323b: the band ABOVE 1100 keeps the cease-fire count on the strip (PM 10334 §2), and at 1280 it

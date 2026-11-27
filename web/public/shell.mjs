@@ -59,7 +59,9 @@ export function fitCells(availW, availH, opts = {}) {
 //   1  cease-fire over 1100: the count's unit goes ("3 rounds left" -> "3")
 //   2  cease-fire over 1100: the count goes ("3" -> condition only)
 //   3  over: the winner's capital detail goes
-//   4  the peace copy goes entirely (emergency; the leg reds if a ruled state ever needs it)
+//   4  the peace copy goes entirely, and on an over room the winner's NAME goes ("blue won" ->
+//      "won"; the head already paints the side). Both are emergency exits: the leg reds if a
+//      ruled state ever needs one.
 export const STRIP_CEASEFIRE_WIDTH = 1100;
 export const STRIP_TIER_MAX = 4;
 
@@ -126,7 +128,7 @@ export function stripInfoParts(room, opts = {}) {
     // win alike, and "blue won" alone is the same sentence for both.
     const last = room.result && room.result.lastCapital;
     const detail = last && last.name && tier < 3 ? " (" + last.name + ", round " + last.round + ")" : "";
-    parts.push({ text: room.winner ? room.winner + " won" + detail : "over" });
+    parts.push({ text: room.winner ? (tier >= 4 ? "won" : room.winner + " won") + detail : "over" });
   }
   return parts;
 }
