@@ -8,6 +8,8 @@
 //   - intel or foreign aid answers inside the sandbox                    -> p.37 l.1158 forbids both;
 //   - the sandbox pays income (a round ticks, or the cold-war peace tick runs) -> "you do not accrue
 //     money" (p.37 l.1158);
+//   - resume_war is a door out of the sandbox and breaks the 1986 cold war there (PB-307) -> a
+//     layout has no agreement to leave;
 //   - Save Setup is a silent second row for one name                     -> two setups in one name;
 //   - a 1986 war cannot be opened on a saved layout, or loses the stored positions, destinations or
 //     remaining funds                                                      -> p.37 "The game will open
@@ -116,6 +118,18 @@ export async function run(ctx) {
       (m) => m.op === "error" || (m.op === "room" && m.room), "the run refusal");
     if (ran.op !== "error" || !/pregame setup/.test(String(ran.error || ""))) {
       fail("pb304 (d): the clock ran in layout mode: " + JSON.stringify(ran).slice(0, 300));
+    }
+    // PB-307: resume_war is not a door out of a layout either - a sandbox has no agreement to leave.
+    // Before the guard the press broke the 1986 cold war on a room that has no war yet.
+    const peaceAtRest = JSON.stringify(lastRoom(sock).peace ?? null);
+    const resumedInLayout = await sendWait(sock, { op: "resume_war" },
+      (m) => m.op === "error" || (m.op === "room" && m.room), "the layout resume refusal");
+    if (resumedInLayout.op !== "error" || !/This is a layout, not a war/.test(String(resumedInLayout.error || ""))) {
+      fail("pb304 (d): resume_war was not refused in layout mode: " + JSON.stringify(resumedInLayout).slice(0, 300));
+    }
+    if (JSON.stringify(lastRoom(sock).peace ?? null) !== peaceAtRest) {
+      fail("pb304 (d): resume_war rewrote the peace state inside a layout: " + peaceAtRest
+        + " -> " + JSON.stringify(lastRoom(sock).peace ?? null));
     }
     const cashBefore = Number(lastRoom(sock).seat && lastRoom(sock).seat.cash);
     const peaceBefore = JSON.stringify((lastRoom(sock) || {}).peace ?? null);

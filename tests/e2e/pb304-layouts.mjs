@@ -121,6 +121,19 @@ try {
     const toast = () => page.evaluate(() => document.querySelector("#flash")?.textContent || "");
     const note = () => page.evaluate(() => window.__chq.note());
     const texts = (selector) => page.evaluate((sel) => [...document.querySelectorAll(sel)].map((el) => String(el.textContent || "").trim()), selector);
+    // PB-307 rider: the saved-layout list is painted on the room frame that follows the save, so one
+    // read taken with the toast can catch the previous paint (live: "[]" at both widths, 53/2). Poll
+    // the rows for up to `deadline` ms, then let the assert below judge what is actually on screen.
+    const waitTexts = async (selector, deadline = 2000) => {
+      const start = Date.now();
+      let seen = [];
+      while (Date.now() - start < deadline) {
+        seen = await texts(selector);
+        if (seen.length) return seen;
+        await sleep(50);
+      }
+      return seen;
+    };
     const visible = (selector) => page.evaluate((sel) => {
       const el = document.querySelector(sel);
       if (!el) return false;
@@ -271,11 +284,13 @@ try {
     const savedLine = await waitToast(/Saved layout "Page Line" with \d+ units?/);
     mark(tag + ": Save Setup writes a named layout", Boolean(savedLine), String(savedLine));
     const unitsSaved = Number((String(savedLine).match(/with (\d+) units?/) || [])[1] || 0);
-    const savedTitles = await texts("#layoutExisting .slottitle");
+    const savedTitles = await waitTexts("#layoutExisting .slottitle");
     const savedMeta = await texts("#layoutExisting .slotmeta");
     mark(tag + ": the layout is listed on the account", savedTitles.includes("Page Line"), JSON.stringify(savedTitles));
-    mark(tag + ": no layout line carries a raw piece id", !savedTitles.concat(savedMeta).some((line) => /(blue|red):[a-z]/.test(line)),
-      JSON.stringify(savedMeta));
+    // pm 10066 item 1: the poll must precede BOTH assertions. An empty list makes the id check
+    // vacuously green, so it requires the rows to be there before it can witness anything.
+    mark(tag + ": no layout line carries a raw piece id", savedTitles.length > 0 && !savedTitles.concat(savedMeta).some((line) => /(blue|red):[a-z]/.test(line)),
+      JSON.stringify({ titles: savedTitles, meta: savedMeta }));
     await shot("04-layout-saved");
 
     // The overwrite confirmation (the panel closed on the successful save).

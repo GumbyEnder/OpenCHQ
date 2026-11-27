@@ -1358,6 +1358,10 @@ export function createLobby() {
   function resumeWarOp(username) {
     const room = roomFor(username);
     if (!room || !room.match) return { error: "You are not in a match." };
+    // PB-307 (frodo 10049 item 3 / 10057 item 6): a layout is a pregame sandbox, so there is no
+    // agreement to leave. Without this line the press broke the 1986 cold war on a room that has no
+    // war yet: peace went {active:true} -> {active:false, brokenBy:"blue"} while the round stayed 0.
+    if (isLayoutRoom(room)) return { error: "This is a layout, not a war. Save the setup or leave it." };
     const mine = seatUsername(room, username);
     if (!mine) return { error: "You do not hold a seat in this match." };
     const result = resumeWar(room.match, mine, room.match.round);
