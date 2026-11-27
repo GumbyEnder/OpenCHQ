@@ -3250,6 +3250,21 @@ const DIALOG_PAINTERS = {
     leave.className = "ghost";
     leave.textContent = "Leave the match";
     leave.addEventListener("click", () => send({ op: "leave" }));
+    // PB-309 (manual p.35 l.1126-1127): "you can actually switch sides during a game. To do this,
+    // press Switch Sides. This only works in a solo game or a game against 'no opponent.'" The door
+    // is on the live war's own panel - a film's four views are not this control. It is offered in a
+    // two-player war too and the SERVER answers with the manual's limit, because a disabled button
+    // says nothing and a hidden one teaches a rule nobody reads.
+    if (controls.sides) {
+      const swap = document.createElement("button");
+      swap.type = "button";
+      swap.id = "switchSidesBtn";
+      swap.className = "ghost";
+      swap.textContent = "Switch Sides";
+      swap.title = "Play the other side. The computer takes the side you leave (manual p.35).";
+      swap.addEventListener("click", () => send({ op: "switch_sides" }));
+      group.append(swap);
+    }
     group.append(leave);
     body.append(group);
     if (room.note) body.append(note(room.note));
@@ -4528,6 +4543,12 @@ function connect() {
       // An order is the player's own act, so it belongs in the log beside what the round did.
       noteLog([{ round: room && room.round ? room.round : 0, text: ackText(message).replace(/\.$/, "") }]);
       clearCommand();
+    } else if (message.op === "switched") {
+      // PB-309: the flip is the server's. The page takes the sentence the server wrote and drops
+      // anything that belonged to the side just left - a selection of a unit the player no longer
+      // commands would arm an order the server has to refuse.
+      clearCommand();
+      say(message.text || ("You are now the " + message.side + " side."));
     } else if (message.op === "speed") {
       // The server's own speed frame is the authority for the readout and both guards. Before this
       // the header moved only because a room frame happened to follow, and a step the server treated

@@ -42,3 +42,5 @@ tests/e2e/package-lock.json
 tests/e2e/pb205-save-resume-*/
 # PB-305 Film to Game page-leg runs: screenshots + verdicts.json per width, same rule.
 tests/e2e/pb305-film-to-game-*/
+# PB-309 Switch Sides page-leg runs: screenshots + verdicts.json per width, same rule.
+tests/e2e/pb309-switch-sides-*/

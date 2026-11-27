@@ -1397,6 +1397,57 @@ export function createLobby() {
     return { ok: true, peace: peaceOf(room.match), events: result.events };
   }
 
+  // PB-309 (manual p.35 l.1126-1127): "you can actually switch sides during a game. To do this,
+  // press Switch Sides. This only works in a solo game or a game against 'no opponent.'"
+  //
+  // The remake has the solo half of that only, so this does the solo half: the human's seat and the
+  // computer's seat trade places, on the room and on the match's own seat table. bot.mjs reads that
+  // table every beat (`seatKind`), so the computer plays the side just left without a second mover
+  // and the human's orders are authorised on the side they now hold (`seatUsername`). Nothing is
+  // moved between the sides: the purses, the pieces and every path in flight belong to the MATCH, so
+  // a player who switches takes the other side's purse and units as they stand.
+  //
+  // What the ORIGINAL did with cash, fog, intel and orders already in flight across a switch is
+  // UNVERIFIED. This comment claims only what this build does; the ticket records the measurements.
+  function switchSidesOp(username) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const mine = seatUsername(room, username);
+    if (!mine) return { error: "You do not hold a seat in this match." };
+    if (isLayoutRoom(room)) return { error: "This is a layout, not a war. Save the setup or leave it." };
+    if (room.match.over) return { error: "The war is over. There is no side left to switch." };
+    const other = mine === "blue" ? "red" : "blue";
+    const theirs = room.seats[other];
+    // (b): a two-human war keeps its sides - the manual's own limit ("only ... a solo game"). The
+    // refusal is a sentence on the wire, never a silent no-op.
+    if (!theirs || theirs.kind !== "bot") {
+      return {
+        error: "Switch Sides only works in a solo game against the computer. In a two-player game each player keeps the side they started with (manual p.35).",
+      };
+    }
+    room.seats[mine] = { username: "Bot", kind: "bot" };
+    room.seats[other] = { username, kind: "human" };
+    stampSeats(room);
+    // A seat's shadow is a picture of the side it held. After the swap both shadows describe the
+    // OTHER side's fog, so a delta against them would carry the wrong side's pieces and hide the
+    // new side's: drop both, and the next frame is a whole room for each seat.
+    forgetSeat(room, "blue");
+    forgetSeat(room, "red");
+    // A hold belongs to the SEAT, not the side; the human's hold follows them across, and the
+    // computer never holds. Without this the human's next "Run the clock" would be refused by a
+    // hold the computer had inherited.
+    const holds = holdsOf(room);
+    const humanHeld = holds[mine] === true;
+    holds[mine] = false;
+    holds[other] = humanHeld;
+    room.note = "You are now the " + other + " side. The computer plays " + mine + ".";
+    saveRoom(room);
+    tellRoom(room);
+    const peer = sockets.get(username);
+    if (peer) peer.send({ op: "switched", side: other, left: mine, text: room.note });
+    return { ok: true, side: other, left: mine };
+  }
+
   function missionOp(username, message) {
     const room = roomFor(username);
     if (!room || !room.match) return { error: "You are not in a match." };
@@ -2071,6 +2122,8 @@ export function createLobby() {
     // PB-245: Begin Hostilities/Cease Fire (manual p.32 War Status) - the other way into the state,
     // legal only once the mandatory peace has elapsed.
     if (op === "resume_war") return resumeWarOp(username, message);
+    // PB-309 (manual p.35 l.1126-1127): the solo game's Switch Sides.
+    if (op === "switch_sides") return switchSidesOp(username);
     if (op === "mission") return missionOp(username, message);
     if (op === "entrench") return pieceOp(username, message, "entrench");
     if (op === "repair") return pieceOp(username, message, "repair");

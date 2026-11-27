@@ -37,6 +37,10 @@ export function warControls(room, layoutMode) {
     clock: !inLayout,
     peace: peaceActive,
     begin: peaceActive,
+    // PB-309 (manual p.35 l.1126-1127): Switch Sides is offered in a live war - a solo game, where
+    // the server honours it, and a two-human one, where the server answers with the manual's own
+    // limit and the player must be able to read it. Never in a layout, and never over a finished war.
+    sides: !inLayout && !(room && room.over),
   };
 }
 
