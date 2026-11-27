@@ -13,6 +13,8 @@ import { applyDamage, ensureStrength } from "./combat.mjs";
 import { readyRoundOf } from "./readiness.mjs";
 import { queueOilLoss } from "./resources.mjs";
 import { resourceSpec, spendOil, oilUsesReserve } from "./resources.mjs";
+// PB-300: the refusals below name a piece the way a player reads it ("Tank 2"), never by its wire key.
+import { pieceEcho, pieceRef } from "./labels.mjs";
 
 // The mission costs in rounds. They are tunables, so they live in config/game.json's air block and
 // nowhere else: this module used to keep its own copy (8 and 4), which is a second source of truth
@@ -254,7 +256,7 @@ export function transferPlane(match, side, pieceId, target) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to rebase in." };
   if (match.over) return { error: "The match is over." };
   const plane = match.pieces.find((piece) => piece && piece.id === String(pieceId));
-  if (!plane) return { error: "No such aircraft: " + pieceId + "." };
+  if (!plane) return { error: "No such aircraft" + pieceEcho(pieceId) + "." };
   if (plane.side !== side) return { error: "That aircraft belongs to " + plane.side + "." };
   if (!isAircraft(plane)) return { error: "Only an aircraft is transferred." };
   const remaining = inactiveRounds(plane, match.round);
@@ -380,7 +382,7 @@ export function sendMission(match, side, pieceId, mode, target) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to fly in." };
   if (match.over) return { error: "The match is over." };
   const plane = match.pieces.find((piece) => piece && piece.id === String(pieceId));
-  if (!plane) return { error: "No such aircraft: " + pieceId + "." };
+  if (!plane) return { error: "No such aircraft" + pieceEcho(pieceId) + "." };
   if (plane.side !== side) return { error: "That aircraft belongs to " + plane.side + "." };
   if (!isAircraft(plane)) return { error: "Only an aircraft flies a mission." };
 
@@ -432,7 +434,7 @@ export function sendMission(match, side, pieceId, mode, target) {
     );
     if (defender) {
       const where = site.name ? String(site.name) : "That site";
-      return { error: where + " is defended (" + String(defender.id) + "); a bombing run needs an empty target." };
+      return { error: where + " is defended (" + pieceRef(defender) + "); a bombing run needs an empty target." };
     }
     bombTarget = site;
   }
@@ -632,14 +634,14 @@ export function paradrop(match, side, pieceId, cell, planeId) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match to drop into." };
   if (match.over) return { error: "The match is over." };
   const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
-  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (!piece) return { error: "No such piece" + pieceEcho(pieceId) + "." };
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (piece.kind !== "infantry") return { error: "Only infantry can drop." };
   if (piece.domain === "sea" || piece.transport === true) return { error: "A transport cannot drop." };
   // PB-296b: the aircraft that flies the drop. Until this, the order named no plane at all, so no
   // readiness was ever written and no carrier could be refused.
   const plane = (match.pieces || []).find((unit) => unit && unit.id === String(planeId));
-  if (!plane) return { error: "A paradrop needs the aircraft that flies it (piece: " + planeId + ")." };
+  if (!plane) return { error: "A paradrop needs the aircraft that flies it" + pieceEcho(planeId) + "." };
   if (plane.side !== side) return { error: "That aircraft belongs to " + plane.side + "." };
   if (!isAircraft(plane)) return { error: "Only an aircraft flies a paradrop." };
   if (basedOnCarrier(match, side, plane)) {
@@ -661,7 +663,7 @@ export function paradrop(match, side, pieceId, cell, planeId) {
     return { error: "A paradrop may not land on an enemy city or base (" + where + ")." };
   }
   const held = match.pieces.find((unit) => unit !== piece && Number(unit.x) === wx && Number(unit.y) === y);
-  if (held) return { error: "Another piece holds that cell (" + held.id + ")." };
+  if (held) return { error: "Another piece holds that cell (" + pieceRef(held) + ")." };
 
   const combat = combatRules();
   const max = combat.maxStrength;

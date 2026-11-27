@@ -22,6 +22,8 @@ import { applyDamage, damageFor, engageRange2, ensureStrength, kindOf, pairDue, 
 // well as the board grid. Import direction is one-way (nukestrike imports board/rules/blast only).
 import { wastelandAt } from "./nukestrike.mjs";
 import { isOilField } from "./sitetype.mjs";
+// PB-300: a refusal names the piece the way a player reads it ("Tank 2"), never by its wire key.
+import { pieceEcho, pieceRef } from "./labels.mjs";
 
 // Cell ids for the board, or null when the extract is missing. Cached because boardPayload
 // builds them once per process.
@@ -374,7 +376,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
   if (!match || !Array.isArray(match.pieces)) return { error: "No match is running." };
   if (match.over) return { error: "This match is over." };
   const piece = match.pieces.find((unit) => unit.id === pieceId);
-  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (!piece) return { error: "No such piece" + pieceEcho(pieceId) + "." };
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (isAircraft(piece)) {
     const remaining = inactiveRounds(piece, match.round);
@@ -407,7 +409,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
     // ship standing on a capital cell used to count as holding it.
     if (!isWater(x, y)) return { error: "A ship cannot end on land." };
     const holder = pieceAt(match, x, y, piece.id);
-    if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
+    if (holder) return { error: "Another piece holds that cell (" + pieceRef(holder) + ")." };
 
     // A short hop is the straight water line, exactly as a land order's sea leg treats one
     // (seaLeg's SHORT_HOP_CELLS above): stepping a few cells offshore is not a voyage, and the
@@ -471,7 +473,7 @@ export function planOrder(match, side, pieceId, toX, toY) {
   // re-plans through planOrder on a retry.
   const holder = pieceAt(match, x, y, piece.id);
   const attacking = Boolean(holder) && holder.side !== side;
-  if (holder && !attacking) return { error: "Another piece holds that cell (" + holder.id + ")." };
+  if (holder && !attacking) return { error: "Another piece holds that cell (" + pieceRef(holder) + ")." };
 
   // A land order is a straight line (Manual p.21; RULES.md section 2). Where that line crosses
   // water, the walk becomes a crossing: land leg, sea leg on the lanes, land leg.
@@ -536,7 +538,7 @@ export function transferPiece(match, side, pieceId, toX, toY) {
   if (match.over) return { error: "This match is over." };
   if (!peaceActive(match)) return { error: TRANSFER_AT_WAR };
   const piece = match.pieces.find((unit) => unit && unit.id === pieceId);
-  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (!piece) return { error: "No such piece" + pieceEcho(pieceId) + "." };
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
 
   const x = Number(toX);
@@ -567,14 +569,14 @@ export function transferPiece(match, side, pieceId, toX, toY) {
   } else if (piece.domain === "sea") {
     if (!isWater(wx, y)) return { error: "A ship cannot transfer onto land." };
     const holder = pieceAt(match, wx, y, piece.id);
-    if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
+    if (holder) return { error: "Another piece holds that cell (" + pieceRef(holder) + ")." };
   } else {
     if (!isFriendly(match, side, wx, y)) return { error: TRANSFER_NEUTRAL };
     if (isWater(wx, y)) return { error: "A land unit cannot transfer into the water." };
     if (isRefused(terrainAt(wx, y) ?? -1)) return { error: "Wasteland is refused." };
     if (wastelandAt(match, wx, y)) return { error: "Wasteland is refused." };
     const holder = pieceAt(match, wx, y, piece.id);
-    if (holder) return { error: "Another piece holds that cell (" + holder.id + ")." };
+    if (holder) return { error: "Another piece holds that cell (" + pieceRef(holder) + ")." };
   }
 
   const from = { x: Number(piece.x), y: Number(piece.y) };
@@ -652,7 +654,7 @@ export function setStartingDestination(match, side, pieceId, toX, toY) {
   if (match.over) return { error: "This match is over." };
   if (!peaceActive(match)) return { error: DESTINATION_AT_WAR };
   const piece = match.pieces.find((unit) => unit && unit.id === pieceId);
-  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (!piece) return { error: "No such piece" + pieceEcho(pieceId) + "." };
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (isAircraft(piece)) return { error: DESTINATION_AIR };
   const x = Number(toX);
@@ -751,7 +753,7 @@ export function entrench(match, side, pieceId) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match." };
   if (match.over) return { error: "The match is over." };
   const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
-  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (!piece) return { error: "No such piece" + pieceEcho(pieceId) + "." };
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (piece.kind !== "infantry") return { error: "Only infantry can entrench." };
   if (piece.transport === true) return { error: "A transport cannot dig in." };
@@ -780,7 +782,7 @@ export function entrench(match, side, pieceId) {
 export function repair(match, side, pieceId) {
   if (!match || !Array.isArray(match.pieces)) return { error: "There is no match." };
   const piece = match.pieces.find((unit) => unit && unit.id === String(pieceId));
-  if (!piece) return { error: "No such piece: " + pieceId + "." };
+  if (!piece) return { error: "No such piece" + pieceEcho(pieceId) + "." };
   if (piece.side !== side) return { error: "That piece belongs to " + piece.side + "." };
   if (Array.isArray(piece.path) && piece.path.length > 0) return { error: "That piece is still moving." };
   const site = (match.sites || []).find((entry) => entry && entry.x === piece.x && entry.y === piece.y);
