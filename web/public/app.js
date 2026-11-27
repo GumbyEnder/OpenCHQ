@@ -2577,6 +2577,9 @@ function applyDelta(delta) {
     ...room,
     round: next,
     clock: delta.clock,
+    // PB-315: whose hold stands, per seat. Rides every delta, so the sentence changes on the press
+    // that caused it instead of on the next whole frame.
+    hold: delta.hold === undefined ? room.hold : delta.hold,
     note: delta.note,
     pieces: [...byId.values()],
     routes,
@@ -2665,7 +2668,22 @@ function syncPauseBanner(room) {
   if (!banner) return;
   const layoutMode = Boolean(room) && String(room.mode || "") === "layout";
   const paused = Boolean(room) && !room.over && !layoutMode && String(room.clock || "") !== "running";
+  // PB-315 (manual p.34): "In a two-player game, only one player need press Pause ... Both players
+  // must 'unpause' in order for the game to begin again." A held clock in a two-human war therefore
+  // has a per-seat sentence, and the server sends the two hold facts (PB-134 holds the clock per
+  // seat, so one seat's Play does not lift the other's Pause). "Opponent Waiting" is the opponent
+  // ready and this seat not; "Waiting for Opponent" is this seat ready and the opponent not. Both
+  // holds standing, or neither, is the plain paused sentence - nobody is waiting on anybody.
+  //
+  // PB-136 still governs the shape: a sentence is written unconditionally, and the two handshake
+  // sentences override it. Nothing here ever leaves the element empty, so the row's box is the same
+  // before and after Play (the stylesheet hides the ink, not the box).
+  const twoHuman = Boolean(room) && room.blue && room.red
+    && room.blue.kind === "human" && room.red.kind === "human";
+  const hold = twoHuman && room && room.hold ? room.hold : null;
   banner.textContent = "Paused - press Play to resume";
+  if (hold && hold.you === true && hold.other !== true) banner.textContent = "Opponent Waiting";
+  else if (hold && hold.other === true && hold.you !== true) banner.textContent = "Waiting for Opponent";
   banner.classList.toggle("paused", paused);
   banner.classList.toggle("hidden", !room);
 }

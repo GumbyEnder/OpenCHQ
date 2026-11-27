@@ -209,6 +209,9 @@ export function deltaBetween(last, view) {
     // and then syncs would otherwise hold a result from the round before.
     result: view.result || null,
     clock: view.clock,
+    // PB-315: a hold is a per-seat fact, and a delta is a frame: the other seat's press must not
+    // wait for the next whole frame to change the sender's sentence.
+    hold: view.hold || null,
     note: view.note,
     pieces,
     gone,
@@ -351,6 +354,15 @@ export function createLobby() {
 
   function roomView(room, username) {
     const you = room.seats.blue.username === username ? "blue" : "red";
+    // PB-315 (manual p.34): the clock is held PER SEAT (PB-134), so a paused two-human war has a
+    // per-seat answer that only the server can give. Both facts ride the frame, never the sentence -
+    // the page words it. A viewer who holds no seat gets no hold block at all, so a spectator cannot
+    // read a hold that is not theirs.
+    const mine = seatUsername(room, username);
+    const holds = holdsOf(room);
+    const hold = mine
+      ? { you: holds[mine] === true, other: holds[mine === "blue" ? "red" : "blue"] === true }
+      : null;
     // PB-273: the chat entry rides the SEAT frame. It is passed into forSeat rather than stored on
     // the match, so the non-seat (spectator/harness) branch — which builds its own object and never
     // reads it — cannot carry a word of it.
@@ -360,6 +372,9 @@ export function createLobby() {
       mode: room.mode,
       era: room.era,
       clock: room.clock,
+      // PB-315: whose hold is standing, as this seat sees it. Rides every frame and every delta
+      // because the other seat's press is the only thing that changes the sentence.
+      ...(hold ? { hold } : {}),
       you,
       blue: { username: room.seats.blue.kind === "bot" ? "Bot" : nameOf(room.seats.blue.username), kind: room.seats.blue.kind },
       red: { username: room.seats.red.kind === "bot" ? "Bot" : nameOf(room.seats.red.username), kind: room.seats.red.kind },
@@ -1828,8 +1843,11 @@ export function createLobby() {
     if (room.holdRoom === true) room.holdRoom = false;
     const other = mine === "blue" ? "red" : "blue";
     if (holds[other] === true) {
-      // The sender's own hold is now cleared; the other seat's is not theirs to clear.
+      // The sender's own hold is now cleared; the other seat's is not theirs to clear. Both seats'
+      // sentences change on this press (PB-315: the sender has now "unpaused" and is waiting; the
+      // holder is now the only one holding), so the frame goes out before the refusal is returned.
       saveRoom(room);
+      tellRoom(room);
       const seat = nameOf(room.seats[other] && room.seats[other].username);
       return { error: SEAT_HOLD_REFUSAL(seat) };
     }
