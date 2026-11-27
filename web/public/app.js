@@ -3763,6 +3763,9 @@ buildNav();
 // repainted on every room frame, and a repaint would replace a half-typed war name. This form keeps
 // its own input node; only the slot lists inside it are redrawn.
 let saveSlots = [];
+// The two-player resume this page staked and is waiting on: the room appears when the other seat
+// selects the same war (manual p.37 l.1146-1150), and closing the panel abandons the claim.
+let pendingResume = null;
 const savePanel = document.getElementById("savePanel");
 const saveForm = document.getElementById("saveForm");
 const saveName = document.getElementById("saveName");
@@ -3863,6 +3866,11 @@ function closeSavePanel() {
 }
 
 function closeSlotsPanel() {
+  if (pendingResume) {
+    // Abandon the claim: a selection nobody completes must not pair a room later.
+    pendingResume = null;
+    fetch("/api/slots/pending", { method: "DELETE", credentials: "same-origin", cache: "no-store" }).catch(() => {});
+  }
   slotsPanel?.classList.add("hidden");
 }
 
@@ -3938,6 +3946,15 @@ async function resumeSlot(slot) {
     slotsStatus.textContent = data.error || "That war could not be resumed.";
     return;
   }
+  if (data.waiting) {
+    // Both seats must select the war before it restarts; this page's claim is staked and the room
+    // arrives on the socket once the other player picks theirs.
+    pendingResume = data.war || slot.id;
+    slotsStatus.textContent = "Waiting for " + (data.waitingOn || []).join(" and ") +
+      " to select the same war. The room opens when both players have chosen it.";
+    return;
+  }
+  pendingResume = null;
   closeSlotsPanel();
   say("Saved war \"" + (data.name || slot.name) + "\" resumed at round " + data.round + ". The clock is held.");
 }
@@ -4100,6 +4117,13 @@ function connect() {
         economyView = "own";
       }
       room = message.room;
+      if (pendingResume && room) {
+        // The other seat selected the same war: the room is open and this page already sits in its
+        // seat, so the waiting panel has nothing left to wait for.
+        pendingResume = null;
+        closeSlotsPanel();
+        say("Both players chose the war. It resumed at round " + room.round + ". The clock is held.");
+      }
       syncChatBar();
       // A new round normally drops the previous scan -- the server's reveal is a per-round mark.
       // But the original is continuous real time: a pass that has STARTED must finish even if a

@@ -25,7 +25,7 @@ import { TAKEOVER_CLOSE_CODE as TAKEOVER_CODE } from "./ws.mjs";
 import { displayNames, localName } from "./names.mjs";
 // PB-205: named save slots. The store and the resume room live in slots.mjs; the lobby owns the
 // live room, the seats and the sockets, so the two ops that touch them live here.
-import { listSlots, roomFromSlot, saveSlot, slotFor } from "./slots.mjs";
+import { humanSeatsOf, listSlots, roomFromSlot, saveSlot, slotFor, warOf } from "./slots.mjs";
 
 // A player action during a running clock marks the room dirty instead of committing it: the tick
 // writes dirty rooms within FLUSH_SECONDS anyway, and a commit per order is what turned a 0.12 s
@@ -600,6 +600,9 @@ export function createLobby() {
     peer.onclose = () => {
       if (sockets.get(username) !== peer) return;
       sockets.delete(username);
+      // A claim to resume staked from a page that is now gone is not a selection: dropping it keeps
+      // a disconnecting seat from pairing a room it never reached.
+      dropPending(username);
       const roomId = seatOf.get(username);
       if (roomId && rooms.has(roomId)) {
         const room = rooms.get(roomId);
@@ -776,24 +779,34 @@ export function createLobby() {
     return { ok: true, slots: listSlots(username) };
   }
 
-  // Resume Saved War (manual p.36-37). The slot's own seats come back: a bot side stays a bot, a
-  // two-human war comes back with both accounts bound, and only an account that held one of those
-  // seats can resume it at all (AC3). The room comes back held and keeps the holds it recorded -
-  // a resume is not a play command (PB-134).
-  function resumeSlotOp(username, id) {
-    if (seatOf.has(username)) return { error: "Leave the current match first." };
-    const found = slotFor(username, id);
-    if (found.error) return found;
-    const { row, state } = found;
-    const seats = state.seats && typeof state.seats === "object" ? state.seats : {};
-    for (const side of ["blue", "red"]) {
-      const seat = seats[side];
-      if (!seat || seat.kind === "bot") continue;
-      const other = String(seat.username || "");
-      if (other && other !== username && seatOf.has(other)) {
-        return { error: localName(other) + " is in another match. Resume this war once that match is left." };
-      }
+  // Resume Saved War (manual p.36-37). A slot's own seats come back: a bot side stays a bot, and a
+  // two-human war comes back with both accounts bound (AC3). The room comes back held and keeps the
+  // holds it recorded - a resume is not a play command (PB-134).
+  //
+  // A two-seat war is not started by the first player to click it. The manual saves it as one war
+  // both seats must save (p.36 l.1145) and restarts it only when both have selected it (p.37
+  // l.1146-1150), so a two-human resume stakes a claim and answers `waiting`; the room is created
+  // by the second seat's claim, and a claim that is never answered creates nothing. A bot war is a
+  // one-account save and resumes at once.
+  const pendingResume = new Map(); // war id -> Map(username -> { slotId, at, name, waitingOn })
+  const PENDING_MINUTES = 10;
+
+  function prunePending() {
+    const cutoff = Date.now() - PENDING_MINUTES * 60 * 1000;
+    for (const [war, picks] of pendingResume) {
+      for (const [user, pick] of picks) if (pick.at < cutoff) picks.delete(user);
+      if (!picks.size) pendingResume.delete(war);
     }
+  }
+
+  function dropPending(username) {
+    for (const [war, picks] of pendingResume) {
+      picks.delete(String(username));
+      if (!picks.size) pendingResume.delete(war);
+    }
+  }
+
+  function openSlotRoom(row, state) {
     const room = roomFromSlot(row, state);
     stampSeats(room);
     if (!room.match.over) openFilm(room);
@@ -806,6 +819,66 @@ export function createLobby() {
     tellRoom(room);
     sendPresence();
     return { ok: true, id: room.id, round: room.match ? room.match.round : 0, name: row.name };
+  }
+
+  function resumeSlotOp(username, id) {
+    if (seatOf.has(username)) return { error: "Leave the current match first." };
+    const found = slotFor(username, id);
+    if (found.error) return found;
+    const { row, state } = found;
+    const seats = state.seats && typeof state.seats === "object" ? state.seats : {};
+    const humans = humanSeatsOf(seats);
+    for (const seat of humans) {
+      if (seat.username !== username && seatOf.has(seat.username)) {
+        return { error: nameOf(seat.username) + " is in another match. Resume this war once that match is left." };
+      }
+    }
+    const war = warOf(row, state);
+    if (humans.length < 2) {
+      const result = openSlotRoom(row, state);
+      return { ...result, war: war.id };
+    }
+    // (c) A two-player war is not saved until BOTH seats have saved it.
+    if (!war.complete) {
+      if (war.waitingOn.length) {
+        return {
+          error: "Both players must save the war before it can be resumed. Waiting on " + war.waitingOn.join(" and ") + ".",
+          war,
+        };
+      }
+      return {
+        error: "Both players have saved this war, but not the same moment of it. Save again with the clock held.",
+        war,
+      };
+    }
+    // (d) Both seats must select the same war. The first claim waits; the second opens the room.
+    prunePending();
+    dropPending(username);
+    const picks = pendingResume.get(war.id) || new Map();
+    const waitingOn = humans.filter((seat) => seat.username !== username).map((seat) => nameOf(seat.username));
+    picks.set(String(username), { slotId: row.id, at: Date.now(), name: row.name, waitingOn });
+    pendingResume.set(war.id, picks);
+    if (picks.size < humans.length) {
+      return { ok: true, waiting: true, war: war.id, name: row.name, round: Number(row.round) || 0, waitingOn };
+    }
+    pendingResume.delete(war.id);
+    return { ...openSlotRoom(row, state), war: war.id, waitingOn: [] };
+  }
+
+  // What a staked claim is waiting for, so the page can say it. No room is created by this read.
+  function pendingSlotOp(username) {
+    prunePending();
+    for (const [war, picks] of pendingResume) {
+      const pick = picks.get(String(username));
+      if (!pick) continue;
+      return { ok: true, waiting: true, war, name: pick.name, waitingOn: pick.waitingOn };
+    }
+    return { ok: true, waiting: false };
+  }
+
+  function cancelSlotOp(username) {
+    dropPending(username);
+    return { ok: true, waiting: false };
   }
 
   // An invite names a display name; the server resolves it back to the one account, so the real
@@ -1880,7 +1953,7 @@ export function createLobby() {
     };
   }
 
-  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp };
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp };
 }
 
 // What an era sells lives in shop.mjs; it is pure so the roster test can read it without a

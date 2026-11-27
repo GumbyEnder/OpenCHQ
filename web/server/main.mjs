@@ -278,7 +278,7 @@ const server = createServer(async (req, res) => {
   // Listed per account; only an account that held a seat in the saved war is listed one or may
   // resume it (a slot belongs to seats, not to a room id). The slot body is the room store's own
   // packMatch output - /api/slots never serializes a match a second way.
-  if (url.pathname === "/api/slots" || url.pathname === "/api/slots/resume") {
+  if (url.pathname === "/api/slots" || url.pathname === "/api/slots/resume" || url.pathname === "/api/slots/pending") {
     const user = userForToken(tokenFrom(req));
     if (!user) {
       send(res, 401, { error: "Sign in to see your saved wars." });
@@ -288,7 +288,17 @@ const server = createServer(async (req, res) => {
       send(res, 200, lobby.listSlotOp(user.username));
       return;
     }
-    if (req.method === "POST") {
+    // A two-human resume waits for the second seat (manual p.37 l.1146-1150). This read says what
+    // the waiting page is waiting for; the DELETE abandons the claim and creates nothing.
+    if (req.method === "GET" && url.pathname === "/api/slots/pending") {
+      send(res, 200, lobby.pendingSlotOp(user.username));
+      return;
+    }
+    if (req.method === "DELETE" && url.pathname === "/api/slots/pending") {
+      send(res, 200, lobby.cancelSlotOp(user.username));
+      return;
+    }
+    if (req.method === "POST" && (url.pathname === "/api/slots" || url.pathname === "/api/slots/resume")) {
       let body;
       try {
         body = await readBody(req);

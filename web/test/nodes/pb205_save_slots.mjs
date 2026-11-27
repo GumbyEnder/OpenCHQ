@@ -19,6 +19,10 @@
 //        a third account is refused; a bot slot gains no second human; and each seat saves its OWN
 //        copy under its own name (manual p.36 l.1145) - one seat's save is not the other's to list
 //        or to resume;
+//   (c)  a two-player war is saved only when BOTH seats have saved the same moment of it: one copy
+//        reports the war incomplete, names the missing seat, and cannot be resumed;
+//   (d)  a two-player war restarts only when BOTH seats select it (p.37 l.1146-1150): the first
+//        selection returns `waiting` and creates no room, the second opens it for both;
 //   AC4  pruneRooms(-1) deletes the room row and keeps the named slot;
 //   AC5  the stored slot body equals the room store's packed match, field for field.
 
@@ -387,6 +391,13 @@ export async function run(ctx) {
     const twoSaved = await api(ctx.base, alice.token, "/api/slots", { name: "Two Fronts" });
     if (twoSaved.status !== 200) fail("pb205 AC3: the two-human save was refused: " + JSON.stringify(twoSaved.data));
     const twoId = twoSaved.data.slot.id;
+    // (c) One seat's copy is not the war: the summary says so and names the seat not yet saved.
+    if (!twoSaved.data.slot.war || twoSaved.data.slot.war.complete !== false) {
+      fail("pb205 (c): one seat's save was reported as a complete two-player war: " + JSON.stringify(twoSaved.data.slot.war));
+    }
+    if (!(twoSaved.data.slot.war.waitingOn || []).includes(displayOf(b))) {
+      fail("pb205 (c): the incomplete war does not name the second seat: " + JSON.stringify(twoSaved.data.slot.war));
+    }
     // Manual p.36 l.1145: "both players must save the game, but they don't have to save the game
     // under the same name." So each seat saves its own copy. Bob held a seat and did NOT save, so
     // alice's copy is not in his list and is not his to resume - the slot is one account's drawer,
@@ -402,6 +413,9 @@ export async function run(ctx) {
     }
     const bobId = bobSaved.data.slot.id;
     if (bobId === twoId) fail("pb205 AC3: the second seat's save replaced the first seat's row");
+    if (!bobSaved.data.slot.war || bobSaved.data.slot.war.complete !== true) {
+      fail("pb205 (c): the war is still incomplete after both seats saved: " + JSON.stringify(bobSaved.data.slot.war));
+    }
     const bobList2 = await api(ctx.base, bob.token, "/api/slots");
     if (!(bobList2.data.slots || []).some((s) => s.id === bobId)) {
       fail("pb205 AC3: the second seat's own save is not in its list");
@@ -409,30 +423,46 @@ export async function run(ctx) {
     if ((bobList2.data.slots || []).some((s) => s.id === twoId)) fail("pb205 AC3: the first seat's save appeared in the second seat's list");
     const aliceList2 = await api(ctx.base, alice.token, "/api/slots");
     if ((aliceList2.data.slots || []).some((s) => s.id === bobId)) fail("pb205 AC3: the second seat's save appeared in the first seat's list");
-    // Bob leaves (that ends the room), then resumes HIS copy. Both seats come back human.
+    // Bob leaves (that ends the room, and endRoom clears both seats). Both accounts are now out of a
+    // match, so nothing below is answered by the "leave your match" guard.
     const endMark = a.box.length;
     b.send({ op: "leave" });
     await waitRoom(a, (r) => r === null, "the two-human room ended", endMark);
-    // Now bob is out of every match, so the only reason alice's slot is refused is that it is not
-    // his: the ownership check, not the "leave your match first" guard.
-    const bobForeign = await api(ctx.base, bob.token, "/api/slots/resume", { id: twoId });
-    if (bobForeign.status !== 400 || !/another player/.test(String(bobForeign.data.error || ""))) {
-      fail("pb205 AC3: the second seat resumed the first seat's save without saving: " + JSON.stringify(bobForeign.data));
+    // A third account can resume neither copy.
+    const third = await api(ctx.base, charlie.token, "/api/slots/resume", { id: bobId });
+    if (third.status !== 400 || !/another player/.test(String(third.data.error || ""))) {
+      fail("pb205 AC3: a third account resumed a two-human slot: " + JSON.stringify(third.data));
     }
-    const bobMark = b.box.length;
+    // (d) The first selection WAITS: no room is created and no id is handed out.
     const bobResume = await api(ctx.base, bob.token, "/api/slots/resume", { id: bobId });
-    if (bobResume.status !== 200 || !bobResume.data.ok) {
-      fail("pb205 AC3: the second seat holder could not resume its own two-human slot: " + JSON.stringify(bobResume.data));
+    if (bobResume.status !== 200 || bobResume.data.ok !== true || bobResume.data.waiting !== true || bobResume.data.id) {
+      fail("pb205 (d): the first seat's selection did not wait, or opened a room: " + JSON.stringify(bobResume.data));
     }
-    const bRoom = await waitRoom(b, (r) => Boolean(r) && r.id === bobResume.data.id, "bob's resumed two-human frame", bobMark);
+    if (!(bobResume.data.waitingOn || []).includes(displayOf(a))) {
+      fail("pb205 (d): the waiting claim does not name the other seat: " + JSON.stringify(bobResume.data));
+    }
+    const bobPending = await api(ctx.base, bob.token, "/api/slots/pending");
+    if (bobPending.status !== 200 || bobPending.data.waiting !== true) {
+      fail("pb205 (d): the waiting claim is not readable: " + JSON.stringify(bobPending.data));
+    }
+    // (d) The second seat selects its OWN copy of the same war: now the room opens, for both.
+    const bobMark = b.box.length;
+    const aMark = a.box.length;
+    const aliceResume = await api(ctx.base, alice.token, "/api/slots/resume", { id: twoId });
+    if (aliceResume.status !== 200 || aliceResume.data.ok !== true || !aliceResume.data.id) {
+      fail("pb205 (d): the second selection did not open the room: " + JSON.stringify(aliceResume.data));
+    }
+    const bRoom = await waitRoom(b, (r) => Boolean(r) && r.id === aliceResume.data.id, "bob's resumed two-human frame", bobMark);
+    const aRoom = await waitRoom(a, (r) => Boolean(r) && r.id === bRoom.id, "the first selector's room frame", aMark);
     if (!(bRoom.blue && bRoom.blue.kind === "human" && bRoom.red && bRoom.red.kind === "human")) {
       fail("pb205 AC3: the two-human slot did not come back two-human: " + JSON.stringify([bRoom.blue, bRoom.red]));
     }
-    // Alice is re-seated by username: the other seat sees the same war again.
-    const aRoom = await waitRoom(a, (r) => Boolean(r) && r.id === bRoom.id, "the other seat was re-seated");
-    void aRoom;
-    const third = await api(ctx.base, charlie.token, "/api/slots/resume", { id: twoId });
-    if (third.status !== 400) fail("pb205 AC3: a third account resumed a two-human slot");
+    if (Number(aRoom.round) !== savedRound) {
+      fail("pb205 (d): the resumed round " + aRoom.round + " is not the saved " + savedRound);
+    }
+    if (aRoom.clock === "running") fail("pb205 AC2: the resumed room came back running");
+    const bobAfter = await api(ctx.base, bob.token, "/api/slots/pending");
+    if (bobAfter.data.waiting !== false) fail("pb205 (d): the claim survived the room it opened");
     // PB-134: Alice held the clock when the war was saved. Bob's `run` must be REFUSED naming her,
     // and the clock must still be held - a resume that lifted the hold would start a war nobody ran.
     const refusal = await sendWait(b, { op: "run" },
@@ -443,8 +473,22 @@ export async function run(ctx) {
     }
     const afterRefusal = roomRow(ctx, bRoom.id);
     if (!afterRefusal || afterRefusal.clock === "running") fail("pb205 AC2: the resume lifted the saved seat hold");
+    const leftMark = a.box.length;
     b.send({ op: "leave" });
-    await waitRoom(b, (r) => r === null, "the two-human resumed match was left");
+    await waitRoom(a, (r) => r === null, "the two-human resumed match was left", leftMark);
+
+    // (c) With only one copy left, the war is incomplete again and must not start.
+    const dropDb = ctx.sqlite();
+    try { dropDb.prepare("DELETE FROM saves WHERE id = ?").run(bobId); } finally { dropDb.close(); }
+    const incomplete = await api(ctx.base, alice.token, "/api/slots/resume", { id: twoId });
+    if (incomplete.status !== 400 || !/Both players must save/.test(String(incomplete.data.error || ""))) {
+      fail("pb205 (c): a one-copy two-player war was resumed: " + JSON.stringify(incomplete.data));
+    }
+    const aliceList3 = await api(ctx.base, alice.token, "/api/slots");
+    const twoRow = (aliceList3.data.slots || []).find((s) => s.id === twoId);
+    if (!twoRow || !twoRow.war || twoRow.war.complete !== false) {
+      fail("pb205 (c): the list still reports the war complete with one copy: " + JSON.stringify(twoRow && twoRow.war));
+    }
 
     // --- AC4 + AC2 round-trip, in a child process on its own store --------------------------
     const facts = childFacts(root);

@@ -36,6 +36,7 @@ db.exec(`
     mode TEXT NOT NULL,
     round INTEGER NOT NULL,
     state TEXT NOT NULL,
+    war_id TEXT,
     created_at TEXT NOT NULL,
     saved_at TEXT NOT NULL
   );
@@ -49,6 +50,11 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS save_seats_user ON save_seats(username);
 `);
+
+// A store written before the war identity existed has no war_id column. A slot's own id becomes its
+// war identity then, which is right for a bot war and for a lone copy.
+const saveColumns = db.prepare("PRAGMA table_info(saves)").all().map((column) => column.name);
+if (!saveColumns.includes("war_id")) db.exec("ALTER TABLE saves ADD COLUMN war_id TEXT");
 
 const SIDES = ["blue", "red"];
 const NAME_MAX = 40;
@@ -105,6 +111,8 @@ function summaryOf(row, state, viewer) {
     players,
     pieces: Array.isArray(match.pieces) ? match.pieces.length : 0,
     over: match.over === true,
+    // A two-player war is saved only when both seats have saved it (manual p.36-37 l.1145-1150).
+    war: warOf(row, state),
   };
 }
 
@@ -157,6 +165,70 @@ function writeSeats(slotId, seats) {
   for (const row of seatRowsOf(slotId, seats)) insert.run(row.slotId, row.username, row.side, row.kind);
 }
 
+// The human accounts a slot binds, as its seat table records them.
+export function humanSeatsOf(seats) {
+  const out = [];
+  for (const side of SIDES) {
+    const seat = seats && seats[side];
+    if (!seat || seat.kind === "bot" || !seat.username) continue;
+    out.push({ side, username: String(seat.username) });
+  }
+  return out;
+}
+
+// Key-order independent: two copies of the same moment are equal even if a different build wrote
+// their JSON in a different order.
+function bodyKey(value) {
+  if (Array.isArray(value)) return "[" + value.map(bodyKey).join(",") + "]";
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).sort()
+      .filter((key) => value[key] !== undefined)
+      .map((key) => JSON.stringify(key) + ":" + bodyKey(value[key]))
+      .join(",") + "}";
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+// The `side` field is the viewer's own seat, not part of the war: two seats' copies of one moment
+// differ in that field and in nothing else.
+function savedBody(state) {
+  const copy = { ...state };
+  delete copy.side;
+  return bodyKey(copy);
+}
+
+// Manual p.36-37 l.1145-1150: "both players must save the game, but they don't have to save the
+// game under the same name", and "if both players have selected the same game, it restarts at the
+// moment it was saved". So a two-human war is complete only when every bound seat has saved a copy
+// of the SAME moment; one seat's copy is a complete save only for a bot war.
+export function warOf(row, state) {
+  const id = String(row.war_id || row.id);
+  const seats = humanSeatsOf(state && state.seats);
+  if (seats.length < 2) return { id, complete: true, sameMoment: true, waitingOn: [], seats: seats.map((seat) => seat.username) };
+  const bodies = new Map();
+  const waitingOn = [];
+  for (const seat of seats) {
+    const copy = db.prepare(
+      "SELECT * FROM saves WHERE username = ? AND (war_id = ? OR (war_id IS NULL AND id = ?)) ORDER BY saved_at DESC, rowid DESC",
+    ).get(seat.username, id, id);
+    const copyState = copy ? parseState(copy.state) : null;
+    if (!copyState) {
+      waitingOn.push(localName(seat.username));
+      continue;
+    }
+    bodies.set(seat.username, savedBody(copyState));
+  }
+  const keys = [...bodies.values()];
+  const sameMoment = keys.length === seats.length && keys.every((key) => key === keys[0]);
+  return {
+    id,
+    complete: sameMoment,
+    sameMoment,
+    waitingOn,
+    seats: seats.map((seat) => seat.username),
+  };
+}
+
 // Save a live room under a name. An existing name is an OVERWRITE the caller must ask for with
 // `overwrite:true`; without it the answer names the existing slot and nothing is written, so a
 // silent duplicate is impossible (AC1).
@@ -177,19 +249,22 @@ export function saveSlot({ username, name, room, side, overwrite = false }) {
   const body = JSON.stringify(state);
   const round = Number(room.match.round) || 0;
   const stamp = nowIso();
+  // The war identity is the live room both seats are saving, so two copies of one war meet again
+  // at resume even though their names, slots and accounts differ (manual p.36 l.1145).
+  const warId = String(room.id ?? "");
   if (existing) {
     db.prepare(
-      "UPDATE saves SET name = ?, era = ?, mode = ?, round = ?, state = ?, saved_at = ? WHERE id = ?",
-    ).run(clean, String(room.era ?? ""), String(room.mode ?? "bot"), round, body, stamp, existing.id);
+      "UPDATE saves SET name = ?, era = ?, mode = ?, round = ?, state = ?, saved_at = ?, war_id = ? WHERE id = ?",
+    ).run(clean, String(room.era ?? ""), String(room.mode ?? "bot"), round, body, stamp, warId, existing.id);
     writeSeats(existing.id, room.seats);
     const row = db.prepare("SELECT * FROM saves WHERE id = ?").get(existing.id);
     return { ok: true, overwritten: true, slot: summaryOf(row, state, username) };
   }
   const id = randomBytes(8).toString("hex");
   db.prepare(
-    `INSERT INTO saves (id, username, name, name_key, era, mode, round, state, created_at, saved_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, String(username), clean, key, String(room.era ?? ""), String(room.mode ?? "bot"), round, body, stamp, stamp);
+    `INSERT INTO saves (id, username, name, name_key, era, mode, round, state, war_id, created_at, saved_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, String(username), clean, key, String(room.era ?? ""), String(room.mode ?? "bot"), round, body, warId, stamp, stamp);
   writeSeats(id, room.seats);
   const row = db.prepare("SELECT * FROM saves WHERE id = ?").get(id);
   return { ok: true, overwritten: false, slot: summaryOf(row, state, username) };
