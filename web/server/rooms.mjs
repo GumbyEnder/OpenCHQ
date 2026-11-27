@@ -92,6 +92,7 @@ function siteStatics(era) {
         kind: site.kind,
         ...(site.type === undefined ? {} : { type: site.type }),
         ...(site.country_id === undefined ? {} : { country_id: site.country_id }),
+        ...(site.port === undefined ? {} : { port: site.port }),
         ...(site.region === undefined ? {} : { region: site.region }),
       });
     }

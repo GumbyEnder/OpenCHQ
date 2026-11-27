@@ -260,17 +260,19 @@ export async function run(ctx) {
   // stay 76/0/0 green. The mutants that must go red on each are in
   // /mnt/nas/host-ops/openchq/t021-cells-mutants.sh.
   {
-    // D. A NON-air-strip site: a plane standing on a captured dock survives, because a dock is not
-    // an air strip. Unreachable through placement today (aircraft go to city/base/carrier), which is
-    // exactly why it needs a hand-built state - it stops being unreachable the day placement widens,
-    // and then the AIRSTRIP_KINDS guard is the only thing that keeps capture honest.
+    // D. A dock is not a site the original can capture (PB-320). A red infantry standing on a blue
+    // dock takes nothing, and the plane based there is untouched. Before PB-320 this arm pinned the
+    // AIRSTRIP_KINDS guard against a "captured dock"; a dock can no longer be captured, so that
+    // shape is unreachable and the guard is left as the belt it is. The dock rule is the arm now.
     const onDock = { id: "blue:aircraft:30", side: "blue", domain: "land", kind: "aircraft", x: 80, y: 100, strength: 20, maxStrength: 20 };
     const taker = { id: "red:infantry:30", side: "red", domain: "land", kind: "infantry", x: 80, y: 100, strength: 20, maxStrength: 20 };
     const onDockMatch = matchWith([DOCK, INLAND], [onDock, taker]);
     const dockEvents = occupy(onDockMatch);
-    eq("D: the red infantry takes the blue dock",
-      dockEvents.filter((event) => event.type === "capture").map((event) => [event.site, event.side]), [[4, "red"]]);
-    eq("D: a plane on a captured dock survives - a dock is not an air strip",
+    eq("D: a red infantry takes no dock (PB-320)",
+      dockEvents.filter((event) => event.type === "capture").map((event) => [event.site, event.side]), []);
+    eq("D: the blue dock keeps its owner",
+      onDockMatch.sites.find((site) => site.id === 4).owner, "blue");
+    eq("D: a plane on the dock survives - nothing was captured",
       onDockMatch.pieces.map((piece) => piece.id), ["blue:aircraft:30", "red:infantry:30"]);
     eq("D: no destruction event is invented for it",
       dockEvents.filter((event) => event.type === "destroyed").length, 0);

@@ -120,14 +120,17 @@ export async function run(ctx) {
       }
     }
     const countryless = (site) => site.country_id === undefined || site.country_id === null;
+    // PB-320: a dock's owner is its port's owner, not its country's. A 1918 blue Britain owns
+    // docks in country 3, and that is the rule, not a leak - skip docks in the country checks.
+    const isDock = (site) => /^docks?$/.test(String(site.kind));
     for (const site of own.blue) {
-      if (countryless(site)) continue;
+      if (countryless(site) || isDock(site)) continue;
       // A table site's owner came from the file, not from its country.
       if (fromFile && site.type !== undefined) continue;
       if (site.country_id !== 0) fail(era + ": blue owns " + site.name + " in country " + site.country_id);
     }
     for (const site of own.red) {
-      if (countryless(site)) continue;
+      if (countryless(site) || isDock(site)) continue;
       if (fromFile && site.type !== undefined) continue;
       if (site.country_id !== 1) fail(era + ": red owns " + site.name + " in country " + site.country_id);
     }
@@ -137,6 +140,7 @@ export async function run(ctx) {
       if (site.kind === "capital") continue;
       // Facilities are not income sites: the economy only owns cities, docks and wells.
       if (site.kind === "facility") continue;
+      if (isDock(site)) continue;
       // A table year's neutrals are the file's own ruling, not a country the seeder skipped.
       if (fromFile && site.type !== undefined) continue;
       if (site.country_id === 0 || site.country_id === 1) {
@@ -150,7 +154,15 @@ export async function run(ctx) {
     const after = match.sites.map((site) => site.owner ?? null);
     if (JSON.stringify(before) !== JSON.stringify(after)) fail(era + ": a second seeding changed owners");
 
-    counts[era] = { blue: own.blue.length, red: own.red.length, none: own.none.length };
+    // PB-320: the "most of the world stays neutral" claim is about the 84 site records, not the
+    // 150 painted dock cells - every dock now carries its port's owner, so counting them would
+    // make the two-side scenario look like it owns the coasts.
+    const records = match.sites.filter((site) => !/^docks?$/.test(String(site.kind)));
+    const tallyOwners = { blue: 0, red: 0, none: 0 };
+    for (const site of records) {
+      tallyOwners[site.owner === "blue" || site.owner === "red" ? site.owner : "none"] += 1;
+    }
+    counts[era] = tallyOwners;
   }
 
   // 9999 is the concealed start and it rolls like 2023: "9999" is in match.ERAS, so eraOf passes it
@@ -170,9 +182,19 @@ export async function run(ctx) {
     fail("9999's capitals are not one per side: " + JSON.stringify(oddOwners));
   }
 
-  // The board grows with the era, and ownership grows with it but never to the whole earth: a
-  // two-side scenario leaves most of the world neutral by design.
+  // The board grows with the era, and ownership grows with it. The shape of a two-side scenario is
+  // structural, not a frozen figure: both seats hold records, unaligned ground stays unaligned, and
+  // neither seat owns the whole table. Pinning a count here would pin the era table, which this test
+  // does not own - the per-era FILE_TALLY above is what pins the file's own opening.
   if (!(counts["1986"].blue > counts["1918"].blue - 1)) fail("1986 should hold at least as much as 1918");
-  if (counts["1986"].none <= counts["1986"].blue) fail("most of the world should stay neutral in 1986");
+  for (const era of ERAS) {
+    const row = counts[era];
+    const held = row.blue + row.red + row.none;
+    if (held === 0) fail(era + ": no site records were counted at all");
+    if (!(row.blue > 0)) fail(era + ": blue holds no site records");
+    if (!(row.red > 0)) fail(era + ": red holds no site records");
+    if (!(row.none > 0)) fail(era + ": nothing is unaligned, so a two-side board is not two-sided");
+    if (row.blue + row.red >= held) fail(era + ": the two seats own every record; no ground is neutral");
+  }
   return counts;
 }

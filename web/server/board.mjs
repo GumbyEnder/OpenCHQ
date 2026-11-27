@@ -227,6 +227,10 @@ export function matchSites(era = "1986", board = boardPayload()) {
           y,
           kind: "dock",
           country_id: port ? port.country_id : null,
+          // PB-320: the port this dock serves. A dock is a painted water cell, not a site the
+          // original can capture, so its owner is its port's owner and nothing else. The id is
+          // kept (not just the country) because a country cannot name the 1942 file owners.
+          ...(port ? { port: port.id } : {}),
         });
       }
     }

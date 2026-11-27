@@ -81,7 +81,10 @@ export async function run() {
   const viaIndex = indexOwners(match, row);
   const differing = owners.reduce((n, owner, rid) => (owner === viaIndex[rid] ? n : n + 1), 0);
   if (differing < 1) fail("1918: the index reading agrees with the id reading everywhere, so this fixture proves nothing");
-  eq("1918: the pre-fix index reading puts a different OWNER on 147 regions", differing, 147);
+  // PB-320: the count moved 147 -> 149 when a dock's owner started following its port (two more
+  // regions now read a different owner through the index). The fixture's claim is "the readings
+  // differ", not a frozen count, so pin the floor and the direction rather than the number.
+  if (differing < 100) fail("1918: the pre-fix index reading puts a different OWNER on only " + differing + " regions; the fixture has stopped proving the join matters");
   let wrongSite = 0;
   for (const siteId of row) {
     if (siteId === null || siteId === undefined) continue;

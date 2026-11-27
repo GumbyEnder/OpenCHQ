@@ -218,6 +218,8 @@ export function openMatch(era, sites = [], options = {}) {
     // A dock or a well carries the country or region the asset list named, so ownership
     // seeds from the board rather than from a guess.
     ...(site.country_id === undefined ? {} : { country_id: site.country_id }),
+    // PB-320: a dock's port, so its owner can follow the city it serves.
+    ...(site.port === undefined ? {} : { port: site.port }),
     ...(site.region === undefined ? {} : { region: site.region }),
   }));
   // The era's own seats, read from the file rows joined to those sites (T-013b).

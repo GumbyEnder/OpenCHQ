@@ -59,7 +59,19 @@ const CAPITAL_KINDS = new Set(["capital"]);
 // by combat, and a capture pass can never reach it.
 
 function occupiable(kind) {
-  return ownable(kind) || CAPITAL_KINDS.has(kind) || BASE_KINDS.has(kind);
+  // A dock is seedable (its owner must exist for a berth click) but never capturable.
+  return (ownable(kind) && !isDockKind(kind)) || CAPITAL_KINDS.has(kind) || BASE_KINDS.has(kind);
+}
+
+// PB-320: a dock is a painted water cell beside a port, not a site the original can take.
+// The owner byte the capture handler (FUN_1c0d_02ce) rewrites belongs to the 84 site records;
+// docks are terrain (id 1) and have no record there, and Manual l.709 names only cities, bases
+// and oil fields. So a dock is not occupiable, and its owner follows its port - see
+// dockPortOf() and the sync in occupy().
+function isDockKind(kind) {
+  // Direct compare, not Set.has(String(kind)): this runs once per site per occupy pass, and the
+  // allocation was measurable on the 1000-room bench (84k strings a round).
+  return kind === "dock" || kind === "docks";
 }
 
 // A unit's domain. The match's piece shape names land and sea only, so aircraft are
@@ -155,6 +167,18 @@ export function seedOwners(match) {
     if (fromFile && site.type !== undefined) continue;
     const side = sideOfRegion(regionOf(site));
     site.owner = side; // null when the country is not one of the two sides
+  }
+  // PB-320: a dock's owner IS its port's owner. Seeding from the country cannot do that in the
+  // file years (1942's owners come from the era table, and Japan/Korea/Turkey are neither USA
+  // nor USSR), which left all 150 docks neutral beside owned cities - every unit that stepped
+  // on one "captured" it. Docks are synced, never captured: see occupy().
+  for (const site of match.sites) {
+    if (!site || !isDockKind(site.kind)) continue;
+    const port = site.port === undefined || site.port === null
+      ? null
+      : match.sites.find((row) => row && String(row.id) === String(site.port));
+    if (!port) continue; // a dock with no port in play keeps the country seed above
+    site.owner = port.owner === "blue" || port.owner === "red" ? port.owner : null;
   }
   // A rolled era draws its two capitals from the sites a side already owns, so the draw has to run
   // after this seeding. openMatch built the set on the unseeded board, where every owner was still
@@ -385,6 +409,12 @@ export function occupy(match) {
   // dies with it, exactly as a plane that was sitting there. air.missionedSurvivesBaseCaptureSource
   // states that this is UNVERIFIED and needs a DOSBox experiment before anyone flips it.
   const survivorsFlyAway = missionedSurvivesCapture();
+  // PB-320: docks are not occupiable; their owner follows the port they serve. The port ids are
+  // collected inside the capture walk below (which already visits every site), so a board with no
+  // port-bearing dock pays nothing for this rule at all - the bench's 84-site rooms keep their old
+  // tick cost. After the walk, two scans: one to read the ports' final owners, one to stamp the
+  // docks. A dock whose port is not on this year's board keeps whatever the seed gave it.
+  let dockPortIds = null;
   // Air units destroyed by this pass's captures, removed once after the walk (never while the site
   // loop is still reading match.pieces).
   let doomed = null;
@@ -392,6 +422,10 @@ export function occupy(match) {
     const site = sites[i];
     if (!site) continue;
     const kind = site.kind;
+    if (isDockKind(kind) && site.port !== undefined && site.port !== null) {
+      if (!dockPortIds) dockPortIds = new Set();
+      dockPortIds.add(String(site.port));
+    }
     const holder = occupiable(kind) && cells && cells[i] !== null ? byCell.get(cells[i]) || 0 : 0;
 
     // A capital is taken the same way and kept the same way; what makes it different is that the
@@ -466,6 +500,25 @@ export function occupy(match) {
     if (type === 4) row.cities += 1;
     else if (type === 1 || type === 2) row.capitals += 1;
     else if (type === 5) row.wells += 1;
+  }
+
+  // PB-320: the dock follows its city in the same pass the city flips, and silently - a
+  // "dock changed hands" line without a city capture is exactly the defect (a neutral berth
+  // being claimed by the first unit that walked over it). The city's own took/lost line is the
+  // whole event.
+  if (dockPortIds) {
+    const ownerByPortId = new Map();
+    for (const site of sites) {
+      if (!site || site.id === undefined || site.id === null) continue;
+      if (!dockPortIds.has(String(site.id))) continue;
+      ownerByPortId.set(String(site.id), site.owner === "blue" || site.owner === "red" ? site.owner : null);
+    }
+    for (const site of sites) {
+      if (!site || !isDockKind(site.kind)) continue;
+      if (site.port === undefined || site.port === null) continue;
+      const key = String(site.port);
+      if (ownerByPortId.has(key)) site.owner = ownerByPortId.get(key);
+    }
   }
 
   if (doomed) match.pieces = match.pieces.filter((piece) => !piece || !doomed.has(piece.id));

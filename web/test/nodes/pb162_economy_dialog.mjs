@@ -52,7 +52,10 @@ export async function run(ctx) {
   eq("1986 Blue holds 29 type-4 cities", model.held.city, 29);
   eq("1986 Blue holds 3 capitals", model.held.capital, 3);
   eq("1986 Blue holds 6 type-3 bases drawn as cities", model.held.base, 6);
-  eq("1986 Blue holds 27 docks", model.held.dock, 27);
+  // PB-320: a dock is owned by the city it serves, so the 1986 blue figure grew from the 27 docks
+  // a country seed could account for to every berth of a blue port. 150 docks exist; blue holds
+  // 111 of them, red the other 39.
+  eq("1986 Blue holds 111 docks", model.held.dock, 111);
   eq("1986 Blue holds the 11 type-5 oil fields, not world.json's 5 sketch wells", model.held.oilfield, 11);
 
   // 29 cities + one paying extra capital = 31, the figure the payday prints.

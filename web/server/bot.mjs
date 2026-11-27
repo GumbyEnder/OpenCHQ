@@ -461,6 +461,11 @@ export function threatenedSites(match, side) {
   const out = [];
   for (const site of match.sites || []) {
     if (!site || site.owner !== side) continue;
+    // PB-320: a dock is not a site in the original's table, so its AI never defended one. Its
+    // owner follows the city, and defending the city is what defends the port. Without this the
+    // bot spends its one defend action a round on the 150 painted berths - measured on the 3v3
+    // and 3v2 rungs, every match became a draw once docks had owners.
+    if (String(site.kind) === "dock" || String(site.kind) === "docks") continue;
     const threat = siteThreat(match, site);
     if (threat < 0) out.push({ site, threat });
   }
@@ -628,7 +633,11 @@ export function botBuy(match, side, events, urgentSite = null, level = null) {
   const anchored = drawLevel !== null && drawLevel >= 5 && urgentSite
     && Number.isFinite(Number(urgentSite.x)) && Number.isFinite(Number(urgentSite.y));
   const sites = urgentSite ? [urgentSite]
-    : (match.sites || []).filter((site) => site && site.owner === side);
+    // PB-320: only the places that can produce anchor a buy. A dock is a berth, not a city; once
+    // docks carry their port's owner, leaving them here pulled every purchase to the nearest
+    // coast and flipped the 3v3 rung (blue 6/0 -> red 6/0 at 1942, 8 rounds).
+    : (match.sites || []).filter((site) => site && site.owner === side
+      && String(site.kind) !== "dock" && String(site.kind) !== "docks");
   let target = null;
   let best = Infinity;
   // Did the buy land ON the anchor cell? That, and only that, is the intent the buy() escape

@@ -263,21 +263,26 @@ export async function run(ctx) {
     if (seen.overrun === 0) fail("pb123: the real path produced no overrun event, so nothing was tested");
   }
 
-  // ---- 9. the real path: capture of a cell-named dock out of the occupy pass ---------------
+  // ---- 9. the real path: a city capture names its place. A dock capture is no longer produced by
+  // the engine (PB-320: docks follow their city and are never taken), but an older film's event
+  // still has to render without a cell - the prose arm below feeds one directly. ----------------
   {
-    const match = scene([], []);
-    match.sites = [
+    const match = scene([
       { id: "dock3", name: "Dock " + cell.x + "," + cell.y, kind: "dock", x: cell.x, y: cell.y, owner: "red" },
       { id: "k2", name: "Smolensk", kind: "city", x: cell.x + 4, y: cell.y + 2, owner: null },
-    ];
-    match.pieces = [piece("blue:atk", "blue", "tank", cell.x, cell.y), piece("blue:scout", "blue", "infantry", cell.x + 1, cell.y)];
+    ], [piece("blue:atk", "blue", "tank", cell.x + 4, cell.y + 2), piece("blue:scout", "blue", "infantry", cell.x + 1, cell.y)]);
     const { events } = tickMatch(match);
     const captures = (events || []).filter((event) => event.type === "capture");
     if (captures.length !== 1) fail("pb123: the occupy pass produced " + captures.length + " capture events, expected 1");
     const line = only(fail, logLines(match, "blue", events, match.round).filter((entry) => /took|changed hands|was lost/.test(entry.text)),
       "the real capture must be reported once");
     noCell(fail, line, "the real capture line");
-    hasPlace(fail, line, "the real capture line");
+    if (!/Smolensk/.test(line)) fail("pb123: the real capture line does not name the city it took: " + line);
+
+    const dockEvent = { type: "capture", site: "dock3", name: "Dock " + cell.x + "," + cell.y, kind: "dock", side: "blue", from: "red" };
+    const dockLine = only(fail, logLines(match, "blue", [dockEvent], 9), "a dock event from an older film must still render once");
+    noCell(fail, dockLine, "the older film's dock line");
+    hasPlace(fail, dockLine, "the older film's dock line");
   }
 
   // ---- 10. PB-121's bar re-run: every sighting line still names a place --------------------
