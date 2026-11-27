@@ -1564,13 +1564,29 @@ export function createLobby() {
     if (!result || result.error) return { error: (result && result.error) || "That mission was refused." };
     // A mission is flown between rounds, like an escort order: its line belongs to the round that
     // follows it, and without this the round log never mentioned a scramble at all.
-    if (Array.isArray(result.events) && result.events.length) {
+    //
+    // PB-316: but a strike ordered on a HELD clock resolves on the map the moment it is ordered,
+    // and the queue below is only drained by a round (tick.mjs flushes `pendingEvents` inside
+    // tickMatch; the peace beat drains it too, and a war at speed 0 runs neither). So the seats read
+    // the mission's lines AT THE ORDER, through the same `deliverSeatLog` the round flush uses:
+    // that builder writes BOTH human seats, and log.mjs words the strike from each seat's own side
+    // ("an aircraft flew a strike" / "an enemy strike went in"), which a mine-only copy of
+    // `destinationOp`'s block would have deleted for the defender.
+    const missionEvents = Array.isArray(result.events) ? result.events : [];
+    if (missionEvents.length) {
+      deliverSeatLog(room, missionEvents);
+      // The event still has to ride into the round's frame: `appendFrame` stores the round's events
+      // verbatim and film.mjs renders a replay's log from those stored events (AC2), so dropping
+      // the queue would delete the strike from the film of the round it used to ride into. The
+      // queued copies are stamped `loggedOnOrder` and logLines skips them at the flush, so the line
+      // reads exactly once and the film still has the event. The stamp is on the QUEUED copy only,
+      // so the array this op returns is the events as the mission produced them.
       if (!Array.isArray(room.match.pendingEvents)) room.match.pendingEvents = [];
-      room.match.pendingEvents.push(...result.events);
+      room.match.pendingEvents.push(...missionEvents.map((event) => ({ ...event, loggedOnOrder: true })));
     }
     touch(room);
     tellRoom(room);
-    return { ok: true, events: result.events || [] };
+    return { ok: true, events: missionEvents };
   }
 
   // Digging in and repairing are a piece's own orders, so they take a piece id and nothing else.

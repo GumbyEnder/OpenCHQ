@@ -136,11 +136,18 @@ export function logLines(match, side, events, round) {
     lines.push(line);
   };
 
+  // PB-316: a mission ordered on a held clock is delivered to both seats at the ORDER
+  // (lobby.mjs missionOp -> deliverSeatLog) and its copies are still queued for the round's film
+  // frame. The flush hands those stamped copies here as well, so `loggedOnOrder` is what keeps the
+  // strike from reading a second time; the film still renders it, because film.mjs reads the events
+  // appendFrame stored and this filter is local to the seat's log.
+  const rows = (Array.isArray(events) ? events : []).filter((event) => !(event && event.loggedOnOrder === true));
+
   // PB-123: overrun events are grouped per cell per side before the loop, so two units lost on one
   // cell in one round read as ONE line with a count (the sighting shape), and the count cannot
   // drift if this log is rebuilt for the same round.
   const overruns = new Map();
-  for (const event of Array.isArray(events) ? events : []) {
+  for (const event of rows) {
     if (!event || event.type !== "overrun") continue;
     const key = overrunKey(event);
     const row = overruns.get(key) || { count: 0 };
@@ -162,7 +169,7 @@ export function logLines(match, side, events, round) {
     const at = Number.isFinite(Number(event && event.round)) ? Number(event.round) : "?";
     return at + ":" + cell.x + "," + cell.y;
   };
-  for (const event of Array.isArray(events) ? events : []) {
+  for (const event of rows) {
     if (!event) continue;
     const at = roundCellOf(event);
     if (!at) continue;
@@ -173,7 +180,7 @@ export function logLines(match, side, events, round) {
   // PB-202 AC3: every shot used to be dropped, so a fight left no line at all. One line per pair
   // per round, with the shots counted and the strength the target is left on.
   const shots = new Map();
-  for (const event of Array.isArray(events) ? events : []) {
+  for (const event of rows) {
     // PB-211 (PM 8762 §1(b), card 8745 §2 AC1): the militia is a shot like any other and is
     // aggregated here. The gate used to sit in this pass AND in the emit branch; both are out
     // together, because either one alone keeps the city's owner from reading its own militia.
@@ -187,7 +194,7 @@ export function logLines(match, side, events, round) {
   }
   const shotDone = new Set();
 
-  for (const event of Array.isArray(events) ? events : []) {
+  for (const event of rows) {
     if (!event || !event.type) continue;
     const mine = event.side === side;
     const theirs = SIDES.includes(event.side) && event.side !== side;
