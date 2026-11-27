@@ -970,6 +970,12 @@ function completeAsEngage(piece, foe, x, y, events, match, reach) {
     type: "engage",
     side: piece.side,
     pieceId: piece.id,
+    // PB-318: the Log line has to say WHOSE unit closed and on WHAT KIND, so the event carries both
+    // kinds at the moment of the act (the same shape `shot` already uses with attackerKind/
+    // targetKind). Reading them back off `match.pieces` later would miss a target that died in this
+    // round - the PB-208 shape - and the sentence would fall back to "unit".
+    kind: piece.kind,
+    targetKind: foe.kind,
     by: foe.id,
     target: foe.id,
     x: piece.x,

@@ -385,8 +385,13 @@ export function logLines(match, side, events, round) {
         // PB-097b: an attack order that reached an enemy-held cell completes here. It is the
         // player's own unit doing the closing, so only the owner reads it; the enemy arm needs
         // sight, the same as any other enemy movement.
-        if (mine) push("a unit engaged the enemy at range");
-        else if (legible(match, side, event)) push("an enemy unit engaged ours at range");
+        // PB-318 (PM room 10144): the line used to read "a unit engaged the enemy at range", which
+        // named neither side nor target. It now says whose unit and what kind it closed on, in the
+        // same shape as the shot line - and no cell, no distance, no piece id. `kind`/`targetKind`
+        // are written by move.mjs completeAsEngage; an event from before that falls back to "unit"
+        // rather than inventing a noun, and always keeps the side.
+        if (mine) push("your " + unitNoun(event.kind) + " engaged an enemy " + unitNoun(event.targetKind) + " at range");
+        else if (legible(match, side, event)) push("an enemy " + unitNoun(event.kind) + " engaged your " + unitNoun(event.targetKind) + " at range");
         break;
       case "ready":
         if (mine) push("an aircraft is ready for a mission");
