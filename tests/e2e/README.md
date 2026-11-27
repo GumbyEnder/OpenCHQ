@@ -83,3 +83,25 @@ first cut of this script reported 0 rounds/min for that reason, not a server fau
 
 Output: `t004-speed-handcheck-<iso>/` with `summary.json` plus one screenshot per measurement. That
 directory is gitignored; the JSON is what a report quotes.
+
+## pb205-two-human.mjs — the two-human save/resume handshake on a page
+
+    node tests/e2e/pb205-two-human.mjs                    # starts its own server on a free port
+    node tests/e2e/pb205-two-human.mjs --url=<base>       # the shipped build; skips the DB arm
+
+`pb205-save-resume.mjs` drives a BOT war, and the node leg builds the incomplete-war case by deleting
+one copy. This leg covers the two branches neither of those reaches, at 1280x800 and 1024x768 from
+two real browser contexts:
+
+- both seats save their own copy of one two-human war, the first selection waits ("Waiting for
+  <name> to select the same war", no room, `/api/slots/pending` `waiting:true`) and the second
+  selection opens ONE new room for both accounts at the saved round, clock held;
+- both seats saved the SAME war at DIFFERENT moments (a live 1942 room with the clock running at
+  speed 6: one seat saves at round N, the other at round M>N): the list reports `complete:false`,
+  `sameMoment:false`, `waitingOn:[]`, and the selection is refused with "not the same moment of it.
+  Save again with the clock held.", creating nothing;
+- one copy left in the store (local mode only): "Both players must save ..." and no room.
+
+1986 and 2023 open in the cold war, where no round runs until hostilities are declared, so the
+different-moments arm has to use a wartime era (1942 here). Exit 0 when every check passed.
+
