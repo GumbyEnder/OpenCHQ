@@ -3265,6 +3265,23 @@ const DIALOG_PAINTERS = {
       swap.addEventListener("click", () => send({ op: "switch_sides" }));
       group.append(swap);
     }
+    // PB-310 (manual p.35 l.1115-1120): "By pressing Toggle Show-Who, you can switch to 'Show Common'
+    // mode, which displays only those enemy units in scanning range - and only those of your units
+    // that are in the scanning range of an enemy!" The label carries the mode that is ON; the server
+    // owns both the filtered set and the spotted ids, so this button sends an op and never filters.
+    if (controls.showWho) {
+      const on = Boolean(room.showCommon && room.showCommon.on);
+      const who = document.createElement("button");
+      who.type = "button";
+      who.id = "showCommonBtn";
+      who.className = "ghost";
+      who.textContent = "Toggle Show-Who: " + (on ? "Common" : "Normal");
+      who.title = on
+        ? "Back to your own units and the enemy units you can see."
+        : "Show only the units each side can see (manual p.35).";
+      who.addEventListener("click", () => send({ op: "show_common" }));
+      group.append(who);
+    }
     group.append(leave);
     body.append(group);
     if (room.note) body.append(note(room.note));

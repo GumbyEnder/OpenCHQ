@@ -277,7 +277,7 @@ function seatStatus(match, side) {
 // room, not on the match) and carried by the SEAT branch only. The non-seat branch below builds its
 // own object and never reads the argument, so a spectator or the harness cannot receive a word of it
 // — the filter is the branch, not a caller's care.
-export function forSeat(match, side, now = Date.now(), chat = null) {
+export function forSeat(match, side, now = Date.now(), chat = null, showCommon = false) {
   if (!match || !Array.isArray(match.pieces)) {
     return { pieces: [], routes: {}, sites: [], capitals: {}, notes: [] };
   }
@@ -314,10 +314,26 @@ export function forSeat(match, side, now = Date.now(), chat = null) {
   const { own, enemy } = seatPieces(match, side);
   const hidden = !capitalVisible(match, side, enemySide, own);
 
+  // PB-310 (manual p.35 l.1115-1120): "By pressing Toggle Show-Who, you can switch to 'Show Common'
+  // mode, which displays only those enemy units in scanning range - and only those of your units that
+  // are in the scanning range of an enemy!" The second half is the MIRROR of visibleEnemy: the
+  // witness is the enemy, the target is my piece. It reuses the same predicate rather than
+  // re-deriving sight, so "can this be seen" keeps one answer; the enemy's own concealed-era memory
+  // is the gate, because it is the enemy's eyes that matter here. Computed only when the mode is on:
+  // a seat in Normal mode has no spotted set on the wire at all, which is the cheap half of the
+  // fog-leak guard (a field that ships the answer while the mode is off is the same leak one toggle
+  // earlier).
+  const spotted = showCommon
+    ? own.filter((unit) => visibleEnemy(unit, enemy, match, enemySide, now,
+        !capitalVisible(match, enemySide, side, enemy))).map((unit) => unit.id)
+    : null;
+  const spottedIds = spotted ? new Set(spotted) : null;
+
   const pieces = [];
   const routes = {};
 
   for (const unit of own) {
+    if (spottedIds && !spottedIds.has(unit.id)) continue;
     const steps = ownRoutes(unit);
     pieces.push(viewPiece(unit, steps, match.round, side));
     if (steps.length) routes[unit.id] = cloneSteps(steps);
@@ -398,6 +414,10 @@ export function forSeat(match, side, now = Date.now(), chat = null) {
     // PB-224: both sides' satellites, always. AC5's Show Satellites view reads this list; what a
     // satellite SEES is still gated above by revealedRound, so this leaks no ground unit.
     satellites: satelliteView(match),
+    // PB-310: the toggle's own answer, seat branch only and ABSENT in Normal mode. `spotted` is my
+    // piece ids that an enemy can see - ids, never enemy positions or ranges - so the page has the
+    // set without being handed anything the enemy's sight would not already give it.
+    ...(showCommon ? { showCommon: { on: true, spotted } } : {}),
     roundSeconds: roundLength(),
   };
 }

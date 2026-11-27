@@ -41,6 +41,9 @@ export function warControls(room, layoutMode) {
     // the server honours it, and a two-human one, where the server answers with the manual's own
     // limit and the player must be able to read it. Never in a layout, and never over a finished war.
     sides: !inLayout && !(room && room.over),
+    // PB-310 (manual p.35 l.1115-1120): Toggle Show-Who is a view of a LIVE war. Not a layout (there
+    // is no enemy), not a finished one (nothing left to show). The server refuses both as well.
+    showWho: !inLayout && !(room && room.over),
   };
 }
 

@@ -241,6 +241,20 @@ export function deltaBetween(last, view) {
 
 export function createLobby() {
   const sockets = new Map();
+  // PB-310: Show Common is a VIEW mode, not a rule. It belongs to one seat's connection in one room,
+  // so it lives here and is never written onto the match or the room — the opponent's frames are
+  // built for their own side and cannot carry it, which is the "opponent sees nothing" proof.
+  const commonSeats = new Map(); // room id -> side -> true
+  function commonFor(room, side) {
+    const perRoom = commonSeats.get(room.id);
+    return Boolean(perRoom && perRoom[side]);
+  }
+  function setCommon(room, side, on) {
+    let perRoom = commonSeats.get(room.id);
+    if (!perRoom) { perRoom = {}; commonSeats.set(room.id, perRoom); }
+    if (on) perRoom[side] = true;
+    else delete perRoom[side];
+  }
   const invites = new Map();
   const rooms = new Map();
   const seatOf = new Map();
@@ -340,7 +354,7 @@ export function createLobby() {
     // PB-273: the chat entry rides the SEAT frame. It is passed into forSeat rather than stored on
     // the match, so the non-seat (spectator/harness) branch — which builds its own object and never
     // reads it — cannot carry a word of it.
-    const seen = room.match ? forSeat(room.match, you, Date.now(), room.chat || null) : null;
+    const seen = room.match ? forSeat(room.match, you, Date.now(), room.chat || null, commonFor(room, you)) : null;
     return {
       id: room.id,
       mode: room.mode,
@@ -353,6 +367,9 @@ export function createLobby() {
       // PB-273: the last message between the two humans, and whether this room has a chat surface at
       // all. Both are the server's answer: the page does not decide from a seat name it guessed.
       chat: seen ? (seen.chat || null) : null,
+      // PB-310: the seat's Show Common answer, ABSENT in Normal mode. Ids of this seat's pieces the
+      // enemy can see - never an enemy position, a range, or a count of hidden pieces.
+      ...(seen && seen.showCommon ? { showCommon: seen.showCommon } : {}),
       chatOpen: Boolean(room.seats.blue && room.seats.red
         && room.seats.blue.kind === "human" && room.seats.red.kind === "human"),
       // T-032 B1: which of the five opponents this bot room seated, so the page and a hand-check
@@ -493,6 +510,10 @@ export function createLobby() {
 
   function frameFor(room, side, view, username) {
     if (verbose.has(username)) return { op: "room", room: view };
+    // PB-310: the toggle changes the DRAWN SET, so a delta taken against the shadow of the other
+    // mode would hand the page a filtered picture it cannot merge — the same trap the scan path
+    // below avoids. A seat in Show Common gets whole frames until it toggles back.
+    if (commonFor(room, side)) return { op: "room", room: view };
     // PB-158: while an intel pass runs, the reader gets the FULL view. A delta would carry the
     // newly scanned piece but the page's scan snapshot only merges `room` frames, so a delta
     // would hand the scanner a unit it never draws.
@@ -1448,6 +1469,34 @@ export function createLobby() {
     return { ok: true, side: other, left: mine };
   }
 
+  // PB-310 (manual p.35 l.1115-1120): "By pressing Toggle Show-Who, you can switch to 'Show Common'
+  // mode, which displays only those enemy units in scanning range - and only those of your units that
+  // are in the scanning range of an enemy!"
+  //
+  // The toggle is VIEW state: it changes what this seat is sent and nothing else. No order, purse,
+  // clock or piece moves, and because the map is keyed by room and SIDE, the opponent's frames are
+  // built without it. The mode lives on this lobby's map (never on the room), so a reload starts the
+  // seat back in Normal - a session view, which is exactly the scope the card asks for.
+  function showCommonOp(username) {
+    const room = roomFor(username);
+    if (!room || !room.match) return { error: "You are not in a match." };
+    const side = seatUsername(room, username);
+    if (!side) return { error: "You do not hold a seat in this match." };
+    if (isLayoutRoom(room)) return { error: "This is a layout, not a war. Save the setup or leave it." };
+    if (room.match.over) return { error: "The war is over. There is nothing left to show." };
+    const on = !commonFor(room, side);
+    setCommon(room, side, on);
+    // The drawn set just changed, so the shadow this seat holds describes the other mode: drop it and
+    // the next frame (and every frame while the mode is on) is the whole room.
+    forgetSeat(room, side);
+    tellRoom(room);
+    const peer = sockets.get(username);
+    if (peer) peer.send({ op: "show_common", on, text: on
+      ? "Show Common: only the units each side can see are drawn."
+      : "Show Common off: your own units and the enemy units you can see." });
+    return { ok: true, on };
+  }
+
   function missionOp(username, message) {
     const room = roomFor(username);
     if (!room || !room.match) return { error: "You are not in a match." };
@@ -2124,6 +2173,8 @@ export function createLobby() {
     if (op === "resume_war") return resumeWarOp(username, message);
     // PB-309 (manual p.35 l.1126-1127): the solo game's Switch Sides.
     if (op === "switch_sides") return switchSidesOp(username);
+    // PB-310 (manual p.35 l.1115-1120): the live match's Show Common toggle.
+    if (op === "show_common") return showCommonOp(username);
     if (op === "mission") return missionOp(username, message);
     if (op === "entrench") return pieceOp(username, message, "entrench");
     if (op === "repair") return pieceOp(username, message, "repair");
