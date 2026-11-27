@@ -1379,7 +1379,7 @@ export function createLobby() {
     if (!Array.isArray(events) || !events.length) return null;
     const sides = new Set();
     for (const event of events) {
-      if (event && event.type === "destination_set") {
+      if (event && (event.type === "destination_set" || event.type === "transfer")) {
         if (event.side === "blue" || event.side === "red") sides.add(event.side);
         continue;
       }
@@ -1778,13 +1778,11 @@ export function createLobby() {
     }
     // The moving seat reads its own line. The other seat reads nothing while the peace stands -
     // log.mjs gates the enemy arm on the war being on, which is the AC4 invisibility rule.
-    const lines = logLines(room.match, mine, result.events, room.match.round);
-    if (lines.length) {
-      if (!room.log) room.log = { blue: [], red: [] };
-      if (!Array.isArray(room.log[mine])) room.log[mine] = [];
-      room.log[mine].push(...lines);
-      if (peer) peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
-    }
+    // PB-322: the same rule, delivered by the shared helper instead of a second copy of the block -
+    // and the helper brings the 240-line clamp this path never had (a log at peace can only be
+    // trimmed by a round, and a peace runs none). The seat scope is `logSeatsFor`'s: a transfer is
+    // the mover's own order, so only the mover is addressed.
+    deliverSeatLog(room, result.events);
     return { ok: true, events: result.events || [] };
   }
 
