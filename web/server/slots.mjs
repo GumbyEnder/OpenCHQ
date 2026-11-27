@@ -9,9 +9,17 @@
 //   `saves`      the named rows. pruneRooms() is a DELETE over `rooms` and must keep taking
 //                abandoned autosaves; a named slot is a player's record and no idle sweep may
 //                reach it (AC4).
-//   `save_seats` the membership index. A two-human save is listed for BOTH accounts that held a
-//                seat and only those accounts may resume it (AC3); a bot save lists one account
-//                and keeps the bot side a bot.
+//   `save_seats` the account binding, written at save time: which account held which side. A
+//                resume reads the saver's side from it and re-seats every human account the slot
+//                recorded, so a two-human war comes back two-human (AC3); a bot save keeps the bot
+//                side a bot.
+//
+// A slot belongs to the account that saved it, and only that account sees it. The manual is
+// explicit for a two-player game (p.36 l.1145): "both players must save the game, but they don't
+// have to save the game under the same name." So each seat saves its own copy under its own name,
+// and resuming either copy brings BOTH bound accounts back to the same war - the slot carries the
+// seat table, not one seat's half of it. Listing one seat's save for the other would be a
+// deviation from that sentence, and a deviation is the PM's call, not this module's.
 
 import { randomBytes } from "node:crypto";
 import { db } from "./db.mjs";
@@ -187,15 +195,11 @@ export function saveSlot({ username, name, room, side, overwrite = false }) {
   return { ok: true, overwritten: false, slot: summaryOf(row, state, username) };
 }
 
-// Every named slot this account may resume: the ones it saved and the two-human ones it held a
-// seat in. Newest first.
+// Every named slot this account saved, newest first. It is the account's own drawer: the second
+// seat of a two-human war has to save its own copy to see one (manual p.36 l.1145).
 export function listSlots(username) {
   const rows = db.prepare(
-    `SELECT s.* FROM saves s
-       JOIN save_seats ss ON ss.slot_id = s.id
-      WHERE ss.username = ?
-      GROUP BY s.id
-      ORDER BY s.saved_at DESC, s.rowid DESC`,
+    "SELECT * FROM saves WHERE username = ? ORDER BY saved_at DESC, rowid DESC",
   ).all(String(username));
   const out = [];
   for (const row of rows) {
@@ -206,17 +210,21 @@ export function listSlots(username) {
   return out;
 }
 
-// A slot the caller holds a seat in, with its parsed state. A different account gets the same
-// answer as a slot that does not exist, so a slot id is not an account probe.
+// A slot the caller saved, with its parsed state and the side that account held when it saved.
+// A different account gets the same answer as a slot that does not exist, so a slot id is not an
+// account probe - and a seat holder who has not saved does not get the other seat's copy.
 export function slotFor(username, id) {
   if (!id) return { error: "Choose a saved war." };
   const row = db.prepare("SELECT * FROM saves WHERE id = ?").get(String(id));
   if (!row) return { error: "That saved war is gone." };
-  const member = db.prepare("SELECT * FROM save_seats WHERE slot_id = ? AND username = ?").get(row.id, String(username));
-  if (!member) return { error: "That saved war belongs to another player." };
+  if (String(row.username) !== String(username)) return { error: "That saved war belongs to another player." };
   const state = parseState(row.state);
   if (!state || !state.match) return { error: "That saved war cannot be read." };
-  return { row, state, side: member.side };
+  // The binding written at save time. A row without one (a store written before save_seats) falls
+  // back to the seat table itself, which carries the same username.
+  const member = db.prepare("SELECT side FROM save_seats WHERE slot_id = ? AND username = ?").get(row.id, String(username));
+  const side = member ? member.side : seatSideOf(state.seats, username);
+  return { row, state, side };
 }
 
 // The room a slot restores. Held, always: a resume is not a play command (PB-134), and the
