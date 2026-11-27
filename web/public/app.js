@@ -309,6 +309,39 @@ function say(text) {
   flashLine.say(text);
 }
 
+// PB-167b: the toast had no idea where the status line was. `#flash` hung 10 px off the viewport
+// floor, centred, with a 720 px cap, and the status line (`#boardNote`) is the last row of the map's
+// footer - measured at 8a88611, the box covered 106x11 px of it at 1024x768 on a short toast and
+// 194x16 px at 1280x800 on the loaded-transfer refusal. The line a player reads every round is not
+// something a transient acknowledgement may sit on, so the toast is anchored to measured boxes:
+// its bottom edge lands FOOT_GAP px above the footer row, and above the finished-match line when
+// that line is up. Stacked one-liners, never overlapped, at any viewport and any text length.
+const FOOT_GAP = 8;
+let footLift = "";
+function seatFootLines() {
+  if (!flash || !boardNote) return;
+  const inMatch = document.body.classList.contains("in-match");
+  const footer = boardNote.closest(".mapfoot") || boardNote;
+  let footBottom = 0;
+  let flashBottom = 0;
+  if (inMatch) {
+    footBottom = Math.max(FOOT_GAP, Math.round(innerHeight - footer.getBoundingClientRect().top + FOOT_GAP));
+    flashBottom = footBottom;
+    if (resultLine && String(resultLine.textContent || "").trim()) {
+      // The finished-match line keeps its own row; the toast stacks above it rather than trading
+      // one cover for another.
+      resultLine.style.bottom = footBottom + "px";
+      const resultTop = resultLine.getBoundingClientRect().top;
+      flashBottom = Math.max(footBottom, Math.round(innerHeight - resultTop + FOOT_GAP));
+    }
+  }
+  const key = inMatch ? flashBottom + ":" + footBottom : "";
+  if (key === footLift) return;
+  footLift = key;
+  flash.style.bottom = inMatch ? flashBottom + "px" : "";
+  if (resultLine) resultLine.style.bottom = inMatch ? footBottom + "px" : "";
+}
+
 // PB-250/PB-251: the cease fire on the table is this seat's own fact (`room.seat.ceasefire`), so
 // every frame carries the offer and every frame carries the ANSWER too. The proposal line
 // ("until they do, the war continues") is true only while the offer is pending; once the opponent
@@ -1077,6 +1110,8 @@ function drawMatch() {
   const selectionLine = [selectionNote(selected), cargoNote(selected) || airNote(selected)].filter(Boolean).join(" ");
   boardNote.textContent = previewLine(preview) || selectionLine || satelliteNote || politicalNote || escortNote ||
     statusLine(boardPayload, room, result);
+  // PB-167b: the note has just been re-measured, so the toast re-anchors above it.
+  seatFootLines();
   // A capital under threat is the loudest thing on the page, and it stays up until the threat
   // passes: the last ten rounds of a match are not the time to be quiet.
   if (alarmStrip) {
@@ -1813,7 +1848,10 @@ function resizeViewport() {
   drawMatch();
 }
 
-window.addEventListener("resize", () => resizeViewport());
+window.addEventListener("resize", () => {
+  resizeViewport();
+  seatFootLines();
+});
 
 // PB-173: the strip's clock word goes in a slot of its own (see .stripinfo .phase in app.css), so
 // the painter builds the line out of nodes instead of assigning one string. textContent throughout —
@@ -2060,6 +2098,8 @@ function syncShell() {
   if (changed) {
     document.body.classList.toggle("in-match", inMatch);
     refit();
+    // PB-167b: entering or leaving a match changes the footer's row; clear or re-anchor the toast.
+    seatFootLines();
   }
   paintStripInfo(room);
   // The purse at a glance: the economy dialogue explains it, this is the number a player wants to

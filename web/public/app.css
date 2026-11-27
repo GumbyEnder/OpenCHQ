@@ -1194,6 +1194,9 @@ body.in-match .cam { margin-top: 0; }
 body.in-match .cam button { padding: 1px 8px; }
 body.in-match .alarm { margin: 4px 0 0; padding: 3px 8px; font-size: 12px; }
 
+/* PB-167b: the floor offsets below are only the pre-layout defaults. `seatFootLines()` anchors the
+   toast, and the finished-match line under it, to the map footer's measured top, so no toast can sit
+   on the status line at any viewport width or sentence length. */
 body.in-match .flash { bottom: 10px; }
 body.in-match .result { bottom: 50px; }
 
