@@ -1358,12 +1358,33 @@ export function createLobby() {
   // seat's sight memory inside the builder; a skipped call would make a stationary unit's cell look
   // "lost from sight" and re-report it next round. T-035 calls it from the peacetime beat too: that
   // beat runs no round but still carries events (a truce answered, the money tick).
+  // PB-321: which seats an event set is addressed to, decided once. A peacetime starting
+  // destination is the mover's own order, so only the mover reads that line while the peace stands
+  // (the AC4 invisibility rule); every other event set is both human seats' business. A beat with
+  // no event set at all returns null = every seat, because the per-round call is what refreshes
+  // each seat's sight memory (PB-196) and a seat skipped there re-reports a lost cell next round.
+  function logSeatsFor(events) {
+    if (!Array.isArray(events) || !events.length) return null;
+    const sides = new Set();
+    for (const event of events) {
+      if (event && event.type === "destination_set") {
+        if (event.side === "blue" || event.side === "red") sides.add(event.side);
+        continue;
+      }
+      sides.add("blue");
+      sides.add("red");
+    }
+    return sides;
+  }
+
   function deliverSeatLog(room, beatEvents) {
+    const seats = logSeatsFor(beatEvents);
     for (const side of ["blue", "red"]) {
       const seat = room.seats[side];
       if (!seat || seat.kind !== "human") continue;
+      const addressed = !seats || seats.has(side);
       const lines = logLines(room.match, side, beatEvents || [], room.match.round);
-      if (lines.length) {
+      if (lines.length && addressed) {
         // The log outlives the socket: it is part of the room, so a reload shows the match
         // that has been happening instead of an empty window.
         if (!room.log) room.log = { blue: [], red: [] };
@@ -1375,7 +1396,7 @@ export function createLobby() {
         if (room.log[side].length > 240) room.log[side] = room.log[side].slice(-240);
       }
       const peer = sockets.get(seat.username);
-      if (!peer || !lines.length) continue;
+      if (!peer || !lines.length || !addressed) continue;
       peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
     }
   }
@@ -1786,13 +1807,11 @@ export function createLobby() {
       peer.send(reply);
       rememberReply(username, message.id, reply);
     }
-    const lines = logLines(room.match, mine, result.events, room.match.round);
-    if (lines.length) {
-      if (!room.log) room.log = { blue: [], red: [] };
-      if (!Array.isArray(room.log[mine])) room.log[mine] = [];
-      room.log[mine].push(...lines);
-      if (peer) peer.send({ op: "log", roomId: room.id, round: room.match.round, lines });
-    }
+    // PB-321: one seat-scope owner. `logSeatsFor` reads `destination_set` as the mover's own
+    // order, so the mover still reads its line and the other seat still reads nothing - but this
+    // handler no longer keeps a second copy of the delivery block to drift out of step with the
+    // shared one (PB-316 copied it once already). The shared path also brings the 240-line clamp.
+    deliverSeatLog(room, result.events);
     return { ok: true, events: result.events || [] };
   }
 
@@ -2348,6 +2367,13 @@ export function createLobby() {
         blue: ((room.log && room.log.blue) || []).slice(-15),
         red: ((room.log && room.log.red) || []).slice(-15),
       },
+      // PB-321: the seat-log builder's own memory (PB-196). DEBUG only, like the rest of this dump:
+      // it is the one observable that separates "logLines ran for this seat" from "the seat was not
+      // addressed", so the fixture can grade the ordering without a board-shaped coincidence.
+      sightSeen: {
+        blue: ((match.sightSeen && match.sightSeen.blue) || []).slice(-40),
+        red: ((match.sightSeen && match.sightSeen.red) || []).slice(-40),
+      },
       pieces,
       pieceCount: (match.pieces || []).length,
       capitals: capitalListOf(match),
@@ -2355,7 +2381,21 @@ export function createLobby() {
     };
   }
 
-  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp, saveLayoutOp, listLayoutOp, forkFilmOp };
+  // PB-321: the seat-log delivery is a closure, and no shipped room state hands it the two event
+  // sets the rule has to answer. Every round that delivers carries one `income` event per seat (so a
+  // scope that narrowed every event to its own side would still reach both seats), and the only
+  // narrowed set in the build is `destinationOp`'s own. This entry point, beside `debugRoom` and
+  // just as debug-only, hands a synthetic set to the REAL delivery so a fixture can grade arm (b)'s
+  // both-seat rule and PB-196's ordering instead of grepping the source for them. It adds no write
+  // site: the push and the send stay inside `deliverSeatLog`.
+  function debugSeatLog(id, events) {
+    const room = rooms.get(id);
+    if (!room) return null;
+    deliverSeatLog(room, Array.isArray(events) ? events : []);
+    return debugRoom(id);
+  }
+
+  return { join, handle, presence, tickRooms, beginDrain, flushAll, broadcast, debugRoom, debugSeatLog, saveSlotOp, listSlotOp, resumeSlotOp, pendingSlotOp, cancelSlotOp, saveLayoutOp, listLayoutOp, forkFilmOp };
 }
 
 // What an era sells lives in shop.mjs; it is pure so the roster test can read it without a
