@@ -1250,7 +1250,7 @@ function transferLoaderPick(piece) {
     return true;
   }
   pendingLoad = String(piece.id);
-  say("Loaded " + piece.id + ": now pick a friendly city or base inside the restricted radius ("
+  say("Loaded " + pieceLabel(piece.id) + ": now pick a friendly city or base inside the restricted radius ("
     + ((briefing && briefing.restrictedReach) || "?") + " cells).");
   return true;
 }
@@ -1266,7 +1266,7 @@ function dropLoaderPick(piece) {
     return true;
   }
   pendingLoad = String(piece.id);
-  say("Dropping " + piece.id + ": now pick a land cell that is not an enemy city or unit.");
+  say("Dropping " + pieceLabel(piece.id) + ": now pick a land cell that is not an enemy city or unit.");
   return true;
 }
 
@@ -2703,6 +2703,32 @@ function note(text) {
   return p;
 }
 
+// PB-299: a piece id is a wire key ("blue:aircraft:1"), not a name a player can read. Anything the
+// player reads goes through this label; the id itself stays on the element's data-piece and title,
+// so a page leg can still pin a row to the exact piece (PM 9891 §4).
+const PIECE_NOUNS = {
+  infantry: "Infantry",
+  armor: "Armor",
+  artillery: "Artillery",
+  aircraft: "Aircraft",
+  carrier: "Carrier",
+  transport: "Transport",
+  ship: "Ship",
+  submarine: "Submarine",
+  destroyer: "Destroyer",
+  cruiser: "Cruiser",
+  battleship: "Battleship",
+};
+
+function pieceLabel(id) {
+  const raw = String(id === null || id === undefined ? "" : id);
+  const parts = raw.split(":");
+  const kind = parts[1] || "";
+  const number = parts[2] || "";
+  const noun = PIECE_NOUNS[kind] || (kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : "");
+  return noun && number ? noun + " " + number : raw;
+}
+
 function cell(text) {
   const span = document.createElement("span");
   span.textContent = text;
@@ -3009,12 +3035,18 @@ const DIALOG_PAINTERS = {
             return;
           }
           sendOrder({ op: "mission", kind: "mission", piece: plane.id, mode: mission.mode, to: { x: plane.x, y: plane.y } });
-          say(plane.id + ": " + mission.label + " ordered.");
+          say(pieceLabel(plane.id) + ": " + mission.label + " ordered.");
           closeDialog();
         });
         acts.append(button);
       }
-      line.append(cell(plane.id), cell(plane.base || "—"),
+      // PB-299: the PLANE cell reads "Aircraft 1", not "blue:aircraft:1". The wire id stays on the
+      // element so a page leg still pins this row to this plane (data-piece), and the title keeps it
+      // for a player who wants it.
+      const planeName = cell(pieceLabel(plane.id));
+      planeName.dataset.piece = String(plane.id);
+      planeName.title = String(plane.id);
+      line.append(planeName, cell(plane.base || "—"),
         cell(plane.ready ? "ready" : String(plane.roundsLeft) + " rounds"), acts);
       table.append(line);
     }

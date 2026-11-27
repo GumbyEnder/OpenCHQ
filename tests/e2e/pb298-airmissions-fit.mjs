@@ -220,7 +220,7 @@ try {
   async function measureRow() {
     return page.evaluate((id) => {
       const rows = [...document.querySelectorAll("#dialogBody .airtable .buyrow")].filter((r) => !r.classList.contains("head"));
-      const row = rows.find((r) => (r.children[0] ? r.children[0].textContent : "").trim() === String(id));
+      const row = rows.find((r) => { const c = r.children[0]; return Boolean(c) && String(c.dataset.piece || (c.textContent || "").trim()) === String(id); });
       if (!row) return null;
       const away = row.children[2] || null;
       const cellEl = row.children[3] || null;
