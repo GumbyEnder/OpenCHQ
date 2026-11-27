@@ -2206,6 +2206,18 @@ function seatRow(label, seat, yours) {
   return row;
 }
 
+// PB-312: the header names the kind of war. A game against "no opponent" is neither a bot match
+// nor a two-human one: the machine holds no seat, and both seats belong to whoever is at this
+// machine. Read from the seats the server sent, never guessed from the mode string.
+function matchLabel(room) {
+  if (!room) return "";
+  if (room.mode === "layout") return "Layout";
+  const seatList = [room.blue, room.red];
+  if (seatList.some((seat) => seat && seat.kind === "bot")) return "Bot match";
+  if (seatList.some((seat) => seat && seat.kind === "none")) return "No opponent";
+  return room.mode === "human" ? "Human match" : "Bot match";
+}
+
 function renderRoom() {
   // The strip's numbers and the clock button follow every room frame, not only the frame that enters
   // or leaves a match: a purchase changes the purse, and a run/hold changes the button.
@@ -2249,7 +2261,7 @@ function renderRoom() {
   seats.append(seatRow("Blue", room.blue, room.you === "blue"));
   seats.append(seatRow("Red", room.red, room.you === "red"));
   const meta = document.createElement("p");
-  meta.textContent = eraName(room.era) + " · " + (room.mode === "bot" ? "Bot match" : "Human match") + " · clock " + room.clock;
+  meta.textContent = eraName(room.era) + " · " + matchLabel(room) + " · clock " + room.clock;
   const note = document.createElement("p");
   note.className = "fine";
   note.textContent = room.note || "";
@@ -4715,9 +4727,35 @@ function applyOpponents() {
     option.textContent = row.name + " (" + row.level + ")" + (row.label ? " - " + row.label : "");
     levelSelect.appendChild(option);
   }
+  // PB-312 (manual p.35 l.1126-1137): the manual's third setup choice, "no opponent". The word and
+  // the sentinel both come from /api/setup (config/game.json), never from this file; with the
+  // config's entry removed the lobby offers no such choice and the server refuses the sentinel.
+  const none = botTable.none;
+  if (none && none.value) {
+    const option = document.createElement("option");
+    option.value = String(none.value);
+    option.textContent = String(none.name || "NO OPPONENT") + (none.label ? " - " + none.label : "");
+    levelSelect.appendChild(option);
+  }
   const fallback = String(botTable.defaultLevel || 3);
-  const keep = rows.some((row) => String(row.level) === chosen);
+  const keep = rows.some((row) => String(row.level) === chosen) || (none && String(none.value) === chosen);
   levelSelect.value = keep ? chosen : fallback;
+  syncOpponentFields();
+}
+
+// PB-312: the opponent's starting-money spinner is the OPPONENT'S money (manual p.17). With no
+// opponent there is nobody to give it to, so the field is disabled rather than sent and refused.
+function syncOpponentFields() {
+  if (!levelSelect || !handicapInput) return;
+  const none = setupTable && setupTable.bot && setupTable.bot.none;
+  const noOpponent = Boolean(none && none.value && String(levelSelect.value) === String(none.value));
+  if (noOpponent) {
+    handicapInput.disabled = true;
+    handicapInput.value = "";
+    if (handicapNote) handicapNote.textContent = "No opponent: the computer gives no orders on either side, so there is no starting money to set.";
+    return;
+  }
+  applyHandicap();
 }
 
 function applyHandicap() {
@@ -4738,7 +4776,10 @@ function applyHandicap() {
   }
 }
 
-if (eraSelect) eraSelect.addEventListener("change", applyHandicap);
+if (eraSelect) eraSelect.addEventListener("change", syncOpponentFields);
+// PB-312: choosing "no opponent" disables the opponent's starting-money spinner, and choosing a
+// computer level puts it back on the era's own default.
+if (levelSelect) levelSelect.addEventListener("change", syncOpponentFields);
 // PB-125: the lobby preview is era-aware, so changing the era redraws the pre-room frame with that
 // year's own capitals. Purely local: no room exists yet, and the payload already carries every
 // file era's rows.
@@ -4763,8 +4804,16 @@ document.querySelector("#launch").addEventListener("submit", (event) => {
   const message = { op: "bot", era: fields.get("era"), side: fields.get("side") };
   // The opponent level is its own control and independent of the starting-money spinner (T-032
   // B6): the same level with a different spinner is a different handicap, not a different AI.
-  const level = Number(fields.get("level"));
-  if (Number.isInteger(level) && level >= 1) message.level = level;
+  // PB-312: "no opponent" is a WORD, not a level, and the server validates it against the config's
+  // own sentinel - so the page sends the sentinel as it stands and never coerces it to a number.
+  const rawLevel = fields.get("level");
+  const noneSpec = setupTable && setupTable.bot && setupTable.bot.none;
+  if (noneSpec && noneSpec.value && String(rawLevel) === String(noneSpec.value)) {
+    message.level = String(noneSpec.value);
+  } else {
+    const level = Number(rawLevel);
+    if (Number.isInteger(level) && level >= 1) message.level = level;
+  }
   // A disabled field sends nothing: the server then uses the era's default, which is the same
   // number the field would have carried.
   if (handicapInput && !handicapInput.disabled && String(handicapInput.value).trim() !== "") {

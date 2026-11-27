@@ -89,8 +89,10 @@ function summaryOf(row, state, viewer) {
     if (!seat) continue;
     players.push({
       side: seatSide,
-      kind: seat.kind === "bot" ? "bot" : "human",
-      name: seat.kind === "bot" ? "Computer" : localName(seat.username),
+      // PB-312: an empty seat (a game against "no opponent") is neither a player nor the
+      // computer. It is reported as its own kind so a saved war does not claim two humans.
+      kind: seat.kind === "bot" ? "bot" : seat.kind === "none" ? "none" : "human",
+      name: seat.kind === "bot" ? "Computer" : seat.kind === "none" ? "No opponent" : localName(seat.username),
     });
   }
   const match = state.match && typeof state.match === "object" ? state.match : {};
@@ -166,11 +168,13 @@ function writeSeats(slotId, seats) {
 }
 
 // The human accounts a slot binds, as its seat table records them.
+// PB-312: an empty seat holds no player, so a game against "no opponent" is ONE account's war -
+// saved and resumed like a solo game, with no phantom second seat left waiting to save its copy.
 export function humanSeatsOf(seats) {
   const out = [];
   for (const side of SIDES) {
     const seat = seats && seats[side];
-    if (!seat || seat.kind === "bot" || !seat.username) continue;
+    if (!seat || seat.kind === "bot" || seat.kind === "none" || !seat.username) continue;
     out.push({ side, username: String(seat.username) });
   }
   return out;

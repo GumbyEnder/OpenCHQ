@@ -682,6 +682,37 @@ export function opponentName(level) {
   return row ? row.name : null;
 }
 
+// PB-312 (manual p.35 l.1126-1137): the original's Switch Sides works "in a solo game or a game
+// against 'no opponent'". A game against NO OPPONENT is a third setup choice, not the two-human
+// entry zero (ANOTHER HUMAN, a linked second player) and not a level-1 computer: no seat at all is
+// given to the machine, so neither side is ever ordered by it. The page types neither the sentinel
+// nor the name; both come from config/game.json through /api/setup, so the lobby, the server's own
+// validation and the node legs read one table.
+export function noOpponentSpec() {
+  const block = botSpec().none;
+  if (!block || typeof block !== "object") return null;
+  const value = String(block.value || "").trim();
+  if (!value) return null;
+  return {
+    value,
+    name: String(block.name || "NO OPPONENT"),
+    label: String(block.label || ""),
+  };
+}
+
+// A request names "no opponent" by the config's own sentinel - never by a level number, so the five
+// computer levels and the two-human entry keep their meanings.
+export function isNoOpponent(value) {
+  const spec = noOpponentSpec();
+  return Boolean(spec) && value !== undefined && value !== null && String(value) === spec.value;
+}
+
+// The seat the machine does NOT take in a no-opponent game. It is the layout sandbox's own kind
+// (`none`): a side on the board with nobody holding it.
+export function noOpponentSeatName() {
+  return "No opponent";
+}
+
 // 0xe94c = level*2 - 4 (DECODED, T-032 Part A). Zero for level 2 by the bytes, not by omission.
 export function spareActionBudget(level) {
   const spec = botSpec().spareActionBudget || {};

@@ -14,6 +14,7 @@ import { territoryGeometry } from "./territory.mjs";
 import {
   defaultOpponentLevel,
   handicapSpec,
+  noOpponentSpec,
   opponentLevels,
   opponents,
   roundSeconds,
@@ -226,6 +227,10 @@ const server = createServer(async (req, res) => {
         opponents: opponents(),
         levels: opponentLevels(),
         defaultLevel: defaultOpponentLevel(),
+        // PB-312: the manual's "no opponent" is its own entry, served from config/game.json so the
+        // lobby offers the same word the server validates. Null when the config carries none, and
+        // then the lobby offers no such choice and a request naming it is refused as unknown.
+        none: noOpponentSpec(),
         spareActions: Object.fromEntries(opponentLevels().map((level) => [level, spareActionBudget(level)])),
       },
       note: "Handicap is the OPPONENT'S starting money (Manual p.17); every era carries the spinner, 2023 included.",

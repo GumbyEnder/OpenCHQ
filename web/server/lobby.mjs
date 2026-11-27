@@ -17,7 +17,7 @@ import { logLines } from "./log.mjs";
 // read by a live page, and every call is wrapped so a storage fault can never stop a match.
 import { appendFrame, armRestoredFilm, closeFilm, filmFor, forkPackedMatch, framesOf, startFilm } from "./history.mjs";
 import { scanActiveFor, scanAnyActive } from "./scan.mjs";
-import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX, defaultOpponentLevel, opponentLevelOf, opponentName, startPool } from "./rules.mjs";
+import { handicapDefault, handicapSpec, roundSeconds, speedSeconds, speedDue, clampSpeed, SPEED_MIN, SPEED_MAX, defaultOpponentLevel, noOpponentSeatName, isNoOpponent, opponentLevelOf, opponentName, startPool } from "./rules.mjs";
 import { isSatelliteKind, shopFor } from "./shop.mjs";
 import { buySatellite, orderSatellite, planSatellite, satelliteById } from "./satellite.mjs";
 import { compatUnitKind } from "./migrate.mjs";
@@ -741,11 +741,17 @@ export function createLobby() {
     // naming none gets the lobby default; a request naming something that is not one of the five
     // is refused rather than coerced, because "level 9" silently becoming level 3 is a different
     // game than the one the player picked.
+    //
+    // PB-312 (manual p.35 l.1126-1137): "no opponent" is its own setup choice, named by the
+    // config's own sentinel and never by a level number. In that game the machine is given NO seat,
+    // so neither side is ever ordered by it - which is what makes the manual's second Switch Sides
+    // case a real game rather than a level-1 computer that happens to stand still.
+    const noOpponent = isNoOpponent(level);
     let opponentLevel = defaultOpponentLevel();
-    if (level !== undefined && level !== null && String(level) !== "") {
+    if (!noOpponent && level !== undefined && level !== null && String(level) !== "") {
       const wanted = opponentLevelOf(level);
       if (wanted === null) {
-        return { error: "The opponent must be one of the five computer levels (1 to 5)." };
+        return { error: "The opponent must be one of the five computer levels (1 to 5), or no opponent." };
       }
       opponentLevel = wanted;
     }
@@ -756,6 +762,12 @@ export function createLobby() {
     const hasSpinner = handicapDefault(year) !== null;
     let spinner = null;
     if (handicap !== undefined && handicap !== null && String(handicap) !== "") {
+      // PB-312: the spinner is the OPPONENT'S starting money (manual p.17). With no opponent there
+      // is nobody to give it to, so the request is answered with a sentence rather than silently
+      // opening the era's standard pools behind a number the caller thinks it set.
+      if (noOpponent) {
+        return { error: "A game with no opponent has nobody to give the starting money to. Leave that field empty." };
+      }
       const value = Number(handicap);
       if (!Number.isInteger(value) || value < spec.min || value > spec.max) {
         return {
@@ -767,6 +779,9 @@ export function createLobby() {
     }
     const room = {
       id: randomBytes(8).toString("hex"),
+      // PB-312: a no-opponent game is a live war like any other; it is the SEAT that says the
+      // machine is not playing. `mode` keeps its two values (bot / human) so films, saves and the
+      // layout gate read exactly what they read before.
       mode: "bot",
       era: year,
       clock: "held",
@@ -782,11 +797,19 @@ export function createLobby() {
       },
       match: opened(year, sitesForMatch(year), {
         ...(spinner === null ? {} : { handicapSide: other, opponentPool: spinner }),
-        opponentLevel,
+        // No opponent: the match carries no opponent level at all, so nothing downstream can
+        // re-open this room as a bot game on the strength of a number that was never chosen.
+        ...(noOpponent ? {} : { opponentLevel }),
       }),
     };
     room.seats[mine] = { username, kind: "human" };
-    room.seats[other] = { username: "Bot", kind: "bot" };
+    room.seats[other] = noOpponent
+      ? { username: noOpponentSeatName(), kind: "none" }
+      : { username: "Bot", kind: "bot" };
+    if (noOpponent) {
+      room.note = "No opponent: the computer gives no orders on either side. " +
+        "Press Switch Sides to hand the seat over.";
+    }
     if (layout) {
       const applied = applyLayout(room.match, mine, layout);
       if (applied.error) return applied;
@@ -885,6 +908,14 @@ export function createLobby() {
     if (seatOf.has(username)) return { error: "Leave the current match first." };
     const film = filmFor(username, String(id || ""));
     if (!film) return { error: "No such film.", notFound: true };
+    // PB-312: Film to Game opens a game against the COMPUTER (PB-305's own definition). A film of a
+    // war against "no opponent" has no computer in it, so forking it would silently seat a bot on the
+    // side nobody held and call the result the same war. Refused with a sentence instead.
+    if (String(film.blue_user || "") === noOpponentSeatName() || String(film.red_user || "") === noOpponentSeatName()) {
+      return {
+        error: "That film is a war against no opponent. Film to Game opens a game against the computer, and that war had none.",
+      };
+    }
     const frames = framesOf(film.id, undefined, 0, Number.MAX_SAFE_INTEGER);
     if (!frames.length) return { error: "That film has no rounds to play." };
     const wanted = Number(atRound);
@@ -1441,12 +1472,20 @@ export function createLobby() {
     const theirs = room.seats[other];
     // (b): a two-human war keeps its sides - the manual's own limit ("only ... a solo game"). The
     // refusal is a sentence on the wire, never a silent no-op.
-    if (!theirs || theirs.kind !== "bot") {
+    //
+    // PB-312: the manual's second case, a game against "no opponent", switches too. Its partner
+    // seat is `none` (nobody holds it), not a bot, and that seat stays empty across the swap: the
+    // machine must not inherit a side merely because a player left it.
+    const machineSeat = theirs && theirs.kind === "bot";
+    const emptySeat = theirs && theirs.kind === "none";
+    if (!machineSeat && !emptySeat) {
       return {
-        error: "Switch Sides only works in a solo game against the computer. In a two-player game each player keeps the side they started with (manual p.35).",
+        error: "Switch Sides only works in a solo game or against no opponent. In a two-player game each player keeps the side they started with (manual p.35).",
       };
     }
-    room.seats[mine] = { username: "Bot", kind: "bot" };
+    room.seats[mine] = emptySeat
+      ? { username: noOpponentSeatName(), kind: "none" }
+      : { username: "Bot", kind: "bot" };
     room.seats[other] = { username, kind: "human" };
     stampSeats(room);
     // A seat's shadow is a picture of the side it held. After the swap both shadows describe the
@@ -1461,7 +1500,9 @@ export function createLobby() {
     const humanHeld = holds[mine] === true;
     holds[mine] = false;
     holds[other] = humanHeld;
-    room.note = "You are now the " + other + " side. The computer plays " + mine + ".";
+    room.note = emptySeat
+      ? "You are now the " + other + " side. No opponent plays " + mine + "."
+      : "You are now the " + other + " side. The computer plays " + mine + ".";
     saveRoom(room);
     tellRoom(room);
     const peer = sockets.get(username);

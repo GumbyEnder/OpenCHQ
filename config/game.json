@@ -212,6 +212,7 @@
       { "level": 4, "name": "GEN. WIN MOORE", "label": "Marches; may repeat a destination", "order": 4 },
       { "level": 5, "name": "MARS GOD OF WAR", "label": "Marches; may buy before a site is ready", "order": 5 }
     ],
+    "none": { "value": "none", "name": "NO OPPONENT", "label": "Two players, one machine: the computer gives no orders" },
     "opponentOrder": [1, 2, 3, 4, 5],
     "defaultLevel": 3,
     "spareActionBudget": {
