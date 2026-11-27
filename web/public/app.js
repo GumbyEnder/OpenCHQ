@@ -4976,6 +4976,10 @@ window.__chq = {
   me: () => me,
   users: () => users.slice(),
   room: () => room,
+  // PB-323: paint the strip's line for a room object the leg supplies, through the same producer the
+  // frame uses. A leg measuring the widest era line ("Concealed") would otherwise have to open that
+  // war; composing the string in the leg would grade the leg's own copy, not the page's.
+  stripPreview: (preview) => paintStripInfo(preview),
   // PB-305: the film the bar is showing (null when none), so a leg reads the round it stepped to
   // instead of parsing the label.
   film: () => film,

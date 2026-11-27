@@ -1352,3 +1352,68 @@ body.filming .speedctl,
 body.filming #nav,
 body.filming .gamebtns { display: none; }
 body.filming #filmbar { display: flex; }
+
+/* ---- PB-323: the round number and the clock word are mandatory at every width ------------
+   PB-180/PB-173 made #stripInfo read round + clock whole, and PB-276/PB-291 spent that width
+   buying the command cluster its own row: at 196fe06 the readout is 63 px of box for 169 px of
+   text at 1024x768 and 87 px at 1280x800, so the player is shown "1942 · blue ·" with the round
+   number and the clock word cut off by an ellipsis. A string compare cannot see that; the box
+   can. The readout is content-sized again (PM 10211 §2 priority 1) and the row's padding, the
+   buttons' padding and their label size are what give way, because those are invisible next to
+   losing the number the round is counted in. No control moves, is hidden, or becomes a scroll
+   window: the strip stays one row of the same height, which is what every geometry leg grades. */
+/* Every width: the readout is content-sized (its basis is its own text), so a row with room left
+   never ellipsizes it. `max-width: none` is part of the fix, not tidiness: the <=1100 block caps it
+   at 64 px, which is what turned a 169 px sentence into a 63 px window. */
+body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: none; }
+
+/* The band is 1500, not 1280: the row is already ~12 px over at 1440x900 (PB-180's own arm read
+   narrow there), and a fix that leaves two widths wedged is the same defect with a narrower
+   window. At 1500 and below the commands compact (11 px labels, 3 px side padding) and the strip's
+   own gaps shrink; above it there is room for the full-size row and nothing here applies. */
+@media (max-width: 1500px) {
+  body.in-match #strip { gap: 4px; padding: 0 4px; }
+  body.in-match #strip > .nav { gap: 1px; }
+  body.in-match #strip > .nav .navbtn { padding: 2px 3px; font-size: 11px; }
+  body.in-match .gamebtns .navbtn { padding: 2px 2px; font-size: 11px; }
+  body.in-match .speedctl .speedbtn { padding: 2px 2px; font-size: 11px; }
+  body.in-match .speedreadout { width: 92px; padding: 0 3px; font-size: 11px; }
+  body.in-match .account .ghost { padding: 2px 4px; font-size: 11px; }
+  body.in-match .debugtoggle { padding: 2px 4px; font-size: 11px; }
+  body.in-match .pursechip { min-width: 30px; }
+  /* Content-sized, never a shrink target: `flex: 1 100 auto` above is what turned the readout into
+     the row's elastic box. The brand still shrinks as a box (its purse chip gives), but the
+     readout itself keeps its own text width. */
+  body.in-match #strip > .brand { flex: 0 1 auto; min-width: 0; }
+  /* The <=1100 block caps this at 64 px (`max-width: 64px`) — that cap IS the defect's second
+     half: it turns the readout into a fixed 64 px window whatever the row has left. */
+  body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: none; }
+}
+
+/* The longest readout the strip can be asked for is a Concealed-year war in its running state
+   ("Concealed · blue · round 12 · running", 199.5 px at this size). It is 30 px wider than the 1942
+   sentence, so at 1024 the last 18 px of it come from the row's own gaps and padding and 12 from the
+   speed readout's slot, which is sized for "Speed 0 · paused" and no longer needs 96 px at 11 px
+   type. Nothing here is a control: no button moves, shrinks below its own label, or hides. */
+@media (max-width: 1100px) {
+  body.in-match #strip { gap: 2px; padding: 0; }
+  /* Three more gaps, none of them inside a label: the brand's own gap (which only separates the
+     readout from the purse), the account box's (name/Sign out/Debug), and the speed cluster's. */
+  body.in-match #strip > .brand { gap: 8px; }
+  body.in-match #strip > .whoami { gap: 6px; }
+  body.in-match .speedctl { gap: 2px; }
+  /* "Speed 0 · paused" measures 86.9 px at 11 px type; 90 keeps the slot fixed (PB-143: a
+     content-sized readout moved the + button 20.75 px sideways) and returns 2 px to the row. */
+  body.in-match .speedreadout { width: 90px; }
+  /* PB-291 gave the cluster `flex: 1 1 auto`, so every pixel freed anywhere in the row became
+     cluster width and the readout never saw it. At this width the cluster is content-sized: the
+     row's slack sits between the commands and the account box (`margin-left: auto` there), and the
+     only shrink target left is the readout, which is what PB-323 is asking for. */
+  body.in-match #strip > .nav { flex: 0 1 auto; }
+  /* 8 px more, from side padding on the ten command labels: at 11 px type the last glyph of "Buy",
+     "Air", "Kit", "Map", "War" and "Log" still prints whole, and the leg grades every button's
+     scrollWidth against its clientWidth rather than eyeballing a screenshot. */
+  body.in-match #strip > .nav .navbtn { padding: 2px 2px; }
+  body.in-match .account .ghost,
+  body.in-match .debugtoggle { padding: 2px 3px; }
+}
