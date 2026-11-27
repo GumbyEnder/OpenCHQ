@@ -111,6 +111,9 @@ import {
 const gate = document.querySelector("#gate");
 const play = document.querySelector("#play");
 const account = document.querySelector("#account");
+// PB-314: the Change-password disclosure follows `me`, the same fact the account line branches on.
+// It used to be hidden only by `body.in-match` (app.css), so the signed-out gate painted it.
+const passwordBox = document.querySelector("#passwordBox");
 const people = document.querySelector("#people");
 const invites = document.querySelector("#invites");
 const roomBox = document.querySelector("#room");
@@ -1917,6 +1920,10 @@ async function loadBoard() {
 
 function renderAccount() {
   account.textContent = "";
+  // PB-314: the disclosure is a session control, so it follows the same fact the account line does.
+  // Static markup ships it hidden; this covers first paint after a session check, sign-in and
+  // sign-out with no reload. Inside a match app.css:591 still hides it — unchanged.
+  passwordBox.classList.toggle("hidden", !me);
   if (!me) return;
   // PB-187b: the handle lives in its own span so the ellipsis can only eat the name. While the
   // name and the Sign out button shared one clipping box, a long handle clipped the button itself.
