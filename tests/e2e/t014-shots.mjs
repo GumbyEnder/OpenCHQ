@@ -1,13 +1,14 @@
 // T-014 evidence shots: the same 1942 round-0 board, twice, at the whole-world fit and zoomed in,
 // with the hover tooltip up and the Kit legend open.
 //
-//   node t014-shots.mjs --url=http://127.0.0.1:8107 --out=/mnt/nas/projects/OpenCHQ/local/t014-shots --tag=after
+//   node t014-shots.mjs --url=http://127.0.0.1:8107 --out=<dir> --tag=after
 //
 // The screenshots are written outside the repo on purpose: they are board pixels of a live match.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const arg = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
@@ -15,7 +16,7 @@ const arg = (name, fallback = "") => {
   return fallback;
 };
 const BASE = (arg("url", "") || "").replace(/\/+$/, "");
-const OUT = arg("out", "/mnt/nas/projects/OpenCHQ/local/t014-shots");
+const OUT = evidenceDir("t014-shots", arg("out", ""));
 const TAG = arg("tag", "after");
 const ERA = arg("era", "1942");
 if (!BASE) { console.error("usage: node t014-shots.mjs --url=<base> --out=<dir> --tag=<label>"); process.exit(2); }

@@ -12,11 +12,12 @@
 //   node tests/e2e/t015-garrison-handcheck.mjs --url=https://openchq-web-production.up.railway.app
 //   node tests/e2e/t015-garrison-handcheck.mjs --url=http://127.0.0.1:8101 --out=/mnt/nas/.../local/t015-shots
 //
-// Screenshots and the JSON evidence land in --out (default /mnt/nas/projects/OpenCHQ/local/t015-shots).
+// Screenshots and the JSON evidence land in --out (default tests/e2e/t015-shots-<stamp> under this worktree).
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argOf = (name, fallback = "") => {
@@ -28,7 +29,7 @@ const argOf = (name, fallback = "") => {
 const BASE = (argOf("url", process.env.E2E_URL || "") || "").replace(/\/+$/, "");
 if (!BASE) { console.error("usage: node t015-garrison-handcheck.mjs --url=<base url>"); process.exit(2); }
 const ERA = argOf("era", "1942");
-const OUT = path.resolve(argOf("out", "/mnt/nas/projects/OpenCHQ/local/t015-shots"));
+const OUT = evidenceDir("t015-shots", argOf("out", ""));
 const CAPITAL = argOf("capital", "");           // default: the first enemy-held capital
 const MAX_ROUNDS = Number(argOf("rounds", "60")) || 60;
 const SPEED = Number(argOf("speed", "6")) || 6;

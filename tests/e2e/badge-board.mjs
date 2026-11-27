@@ -2,17 +2,18 @@
 // shapes instead of guessing at 14 px. Uses the real render.mjs paintBadge and the real badges.mjs
 // geometry - not the SVG mockup path.
 //
-//   node badge-board.mjs --url=http://127.0.0.1:8107 --out=/mnt/nas/projects/OpenCHQ/local/t014-shots
+//   node badge-board.mjs --url=http://127.0.0.1:8107 --out=<dir>
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const arg = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const BASE = (arg("url", "") || "").replace(/\/+$/, "");
-const OUT = arg("out", "/mnt/nas/projects/OpenCHQ/local/t014-shots");
+const OUT = evidenceDir("t014-shots", arg("out", ""));
 if (!BASE) { console.error("usage: node badge-board.mjs --url=<base> [--out=dir]"); process.exit(2); }
 
 const { chromium } = await loadPlaywright();

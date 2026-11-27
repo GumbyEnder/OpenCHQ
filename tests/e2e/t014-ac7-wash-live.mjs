@@ -3,18 +3,19 @@
 // frame the player sees is the frame in the PNG.
 //
 //   node t014-ac7-wash-live.mjs --url=https://openchq-web-production.up.railway.app \
-//        --out=/mnt/nas/projects/OpenCHQ/local/t014-shots --tag=live-ac7
+//        --out=<dir> --tag=live-ac7
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const arg = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const BASE = (arg("url", "") || "").replace(/\/+$/, "");
-const OUT = arg("out", "/mnt/nas/projects/OpenCHQ/local/t014-shots");
+const OUT = evidenceDir("t014-shots", arg("out", ""));
 const TAG = arg("tag", "live-ac7");
 const ERA = arg("era", "1942");
 const ZOOM = Number(arg("zoom", "2"));

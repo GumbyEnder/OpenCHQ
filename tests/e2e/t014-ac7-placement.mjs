@@ -1,7 +1,7 @@
 // T-014 AC7: the placement wash (cyan ready / amber unready) and the city squares stay readable
 // while badges are on the board (PB-029).
 //
-//   node t014-ac7-placement.mjs --url=http://127.0.0.1:8107 --out=/mnt/nas/projects/OpenCHQ/local/t014-shots
+//   node t014-ac7-placement.mjs --url=http://127.0.0.1:8107 --out=<dir>
 //
 // Arming a Buy row is the player's own path: the page sends {op:"placement"}, the server answers with
 // a mask, and paintPlacement paints it. Nothing here fakes a state.
@@ -9,13 +9,14 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const arg = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 const BASE = (arg("url", "") || "").replace(/\/+$/, "");
-const OUT = arg("out", "/mnt/nas/projects/OpenCHQ/local/t014-shots");
+const OUT = evidenceDir("t014-shots", arg("out", ""));
 const TAG = arg("tag", "ac7");
 const ERA = arg("era", "1942");
 if (!BASE) { console.error("usage: node t014-ac7-placement.mjs --url=<base> --out=<dir> [--tag=ac7]"); process.exit(2); }

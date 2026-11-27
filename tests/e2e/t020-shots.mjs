@@ -6,13 +6,14 @@
 // fog exhibit is the Concealed (9999) era, where the painter really does draw the fog layer; the
 // shot records paintReport().fogged and the layer list from the frame itself.
 //
-//   node t020-shots.mjs --url=http://127.0.0.1:8120 --out=/mnt/nas/projects/OpenCHQ/local/t020-shots
+//   node t020-shots.mjs --url=http://127.0.0.1:8120 --out=<dir>
 //
 // Screenshots are board pixels of a live match: they belong outside the repo, under local/.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadPlaywright } from "./playwright.mjs";
+import { evidenceDir } from "./evidence.mjs";
 
 const arg = (name, fallback = "") => {
   const hit = process.argv.find((v) => v.startsWith("--" + name + "="));
@@ -20,7 +21,7 @@ const arg = (name, fallback = "") => {
   return fallback;
 };
 const BASE = (arg("url", "") || "").replace(/\/+$/, "");
-const OUT = arg("out", "/mnt/nas/projects/OpenCHQ/local/t020-shots");
+const OUT = evidenceDir("t020-shots", arg("out", ""));
 if (!BASE) { console.error("usage: node t020-shots.mjs --url=<base> --out=<dir>"); process.exit(2); }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
