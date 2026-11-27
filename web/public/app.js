@@ -52,7 +52,7 @@ import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
 // The shell: the strip a match collapses the navigation into, and the box the map may fill.
 import { BOARD_H, BOARD_W, debugRows, fitCells, stripInfoParts } from "./shell.mjs";
 // The navigation itself, and the two dialogues this page was missing: buying and the economy.
-import { NAV, buyRows, economyModel, foeIncomeValue, navFor, oilLine, paydayRows, reserveLine, untypedCount } from "./dialogs.mjs";
+import { NAV, buyRows, economyModel, foeIncomeValue, navFor, navHint, oilLine, paydayRows, reserveLine, untypedCount, warControls } from "./dialogs.mjs";
 // T-031 step 3: the War Films replay. The pure view model lives in film.mjs so the node tests and the
 // page toggle the same four shows (Show Red / Blue / Common / Both) with one implementation.
 import {
@@ -3175,20 +3175,23 @@ const DIALOG_PAINTERS = {
     // Cease Fire." p.32 War Status: "only after the mandatory time has elapsed." The counter is the
     // server's own `peace` object - the page never recomputes a deadline.
     const peace = room.peace;
+    // PB-308: a layout sandbox has no war to run and no peace to leave. The wire refuses both, so
+    // the panel does not paint them; only the readout and Leave remain.
+    const controls = warControls(room, inLayout());
     definition(dl, "Blue", room.blue ? (room.blue.kind === "bot" ? "Bot" : room.blue.username) : "—");
     definition(dl, "Red", room.red ? (room.red.kind === "bot" ? "Bot" : room.red.username) : "—");
     definition(dl, "You", room.you || "—");
     definition(dl, "Era", eraName(room.era));
     definition(dl, "Clock", room.clock || "—");
     definition(dl, "Round", String(room.round));
-    if (peace && peace.active) {
+    if (controls.peace) {
       const left = Math.max(0, Math.trunc(Number(peace.remaining) || 0));
       definition(dl, peace.coldWar ? "Cold war" : "Cease-fire",
         left > 0 ? left + (left === 1 ? " round of mandatory peace left" : " rounds of mandatory peace left")
           : "the mandatory peace has elapsed");
     }
     body.append(dl);
-    if (peace && peace.active) {
+    if (controls.peace) {
       const peacetime = document.createElement("p");
       peacetime.className = "dialogfoot";
       peacetime.textContent = "Peacetime: units transfer instantly, oil is neither used nor generated, cities do not go unready, cash still accrues, production may stand on any friendly ground, starting destinations may be set, and the enemy is invisible except to an Intel Scan.";
@@ -3218,15 +3221,11 @@ const DIALOG_PAINTERS = {
     }
     const group = document.createElement("div");
     group.className = "dialogbuttons";
-    const run = document.createElement("button");
-    run.type = "button";
-    run.textContent = room.clock === "running" ? "Hold the clock" : "Run the clock";
-    run.addEventListener("click", () => send({ op: room.clock === "running" ? "hold" : "run" }));
     // PB-245 (p.31-32): Begin Hostilities / Cease Fire, exactly as the manual's War Status names it.
     // The server owns the mandatory counter and the refusal; the button is only disabled while the
     // server says the counter is still running, so a click can never be the page's own guess about
     // the deadline. Without this control an accepted cease fire is a war the page cannot restart.
-    if (peace && peace.active) {
+    if (controls.begin) {
       const begin = document.createElement("button");
       begin.type = "button";
       begin.textContent = "Begin Hostilities";
@@ -3237,12 +3236,21 @@ const DIALOG_PAINTERS = {
       begin.addEventListener("click", () => send({ op: "resume_war" }));
       group.append(begin);
     }
+    // PB-308: the sandbox clock is held and the server refuses run/hold in a layout, so the page
+    // does not offer a clock button that can only be refused there.
+    if (controls.clock) {
+      const run = document.createElement("button");
+      run.type = "button";
+      run.textContent = room.clock === "running" ? "Hold the clock" : "Run the clock";
+      run.addEventListener("click", () => send({ op: room.clock === "running" ? "hold" : "run" }));
+      group.append(run);
+    }
     const leave = document.createElement("button");
     leave.type = "button";
     leave.className = "ghost";
     leave.textContent = "Leave the match";
     leave.addEventListener("click", () => send({ op: "leave" }));
-    group.append(run, leave);
+    group.append(leave);
     body.append(group);
     if (room.note) body.append(note(room.note));
   },
@@ -3724,7 +3732,8 @@ function paintDialog() {
   const item = navFor(openDialogId);
   const painter = DIALOG_PAINTERS[openDialogId];
   document.getElementById("dialogTitle").textContent = item ? item.title : openDialogId;
-  document.getElementById("dialogHint").textContent = item ? item.hint : "";
+  // PB-308: the War hint must not promise "the clock, and the way out" inside a layout sandbox.
+  document.getElementById("dialogHint").textContent = navHint(item, inLayout());
   // A state refresh redraws the body, so put back what the player was looking at: the scroll
   // position and the focused control. Closing is the player's decision, not the clock's.
   const view = keepView(body.scrollTop, document.activeElement && body.contains(document.activeElement)

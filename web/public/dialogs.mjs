@@ -25,6 +25,30 @@ export function navFor(id) {
   return NAV.find((item) => item.id === id) || null;
 }
 
+// PB-308 (manual p.37 l.1160-1171): a layout sandbox is a pregame setup, not a war. The wire already
+// refuses `run`/`hold` and `resume_war` there ("This is a layout, not a war. Save the setup or leave
+// it.", lobby.mjs), so the War panel must not paint a control that is guaranteed to be refused.
+// `layoutMode` is the page's own room.mode reading, never a guess from the clock: a layout and a
+// held war both read "held". The three keys stay separate so a leg can pin each offer on its own.
+export function warControls(room, layoutMode) {
+  const inLayout = layoutMode === true;
+  const peaceActive = !inLayout && Boolean(room && room.peace && room.peace.active);
+  return {
+    clock: !inLayout,
+    peace: peaceActive,
+    begin: peaceActive,
+  };
+}
+
+// PB-308: the War panel's nav hint promised "the clock, and the way out" - the two things a layout
+// sandbox does not have. In a layout the panel is only a readout of the two sides; the ways out are
+// the strip's Save Setup and the panel's own Leave, and the hint does not re-word the wire's sentence.
+export function navHint(item, layoutMode) {
+  if (!item) return "";
+  if (item.id === "war" && layoutMode === true) return "Who holds which side in this layout.";
+  return item.hint;
+}
+
 // The purchase row: the original's own four columns - unit, how many you hold, how many you have
 // seen of the enemy's, and the price. "Known" is only what this seat can see, which is why the
 // server filters the pieces in the first place.
