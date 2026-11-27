@@ -43,9 +43,15 @@ export function stripInfoParts(room) {
   if (!room) return [];
   const era = String(room.era) === "9999" ? "Concealed" : String(room.era || "");
   const side = room.you || (room.seat && room.seat.side) || "";
+  // PB-311 (PM 10093 item 2): a layout sandbox is not a war. The peace block below is copy about a
+  // war that is not running ("cold war, war may resume"), which the PM read on live 50758d6 in a
+  // layout at both widths. Name the layout in the strip instead, so the reader is told what they are
+  // looking at; era, side, round and the held clock are true there and stay.
+  const layout = String(room.mode || "") === "layout";
   const parts = [];
   if (era) parts.push({ text: era });
   if (side) parts.push({ text: side });
+  if (layout) parts.push({ text: "layout" });
   if (room.round !== undefined && room.round !== null) parts.push({ text: "round " + room.round });
   if (room.clock) {
     // PB-142: speed 0 accepts orders and lets no time pass, and the server keeps the clock at
@@ -60,7 +66,7 @@ export function stripInfoParts(room) {
   // Cease Fire" (p.32 War Status). This strip is the page's monitor row, so the counter rides it:
   // the label names the condition, the number is the rounds left, and a war simply has no part.
   const peace = room.peace;
-  if (peace && peace.active) {
+  if (!layout && peace && peace.active) {
     const left = Math.max(0, Math.trunc(Number(peace.remaining) || 0));
     parts.push({
       text: (peace.coldWar ? "cold war" : "cease-fire") +
