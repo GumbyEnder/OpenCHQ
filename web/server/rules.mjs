@@ -181,6 +181,11 @@ export function terrainTables() {
     shoreFire: {
       enabled: Boolean(block.shoreFire && block.shoreFire.wired === true),
       range: Math.max(0, Number(block.shoreFire && block.shoreFire.range) || 0),
+      // PB-347: the runtime gate is SQUARED distance (FUN_188b_0216, `2 < d^2`). `range2` is the
+      // threshold; `range` is kept for readers and squares into range2 when range2 is absent.
+      range2: block.shoreFire && block.shoreFire.range2 !== undefined
+        ? Math.max(0, Number(block.shoreFire.range2) || 0)
+        : Math.max(0, Number(block.shoreFire && block.shoreFire.range) || 0) ** 2,
       cap: Number(block.shoreFire && block.shoreFire.cap) || 30,
       halveBelow: Number(block.shoreFire && block.shoreFire.halveBelow) || 25,
     },

@@ -220,7 +220,9 @@ export async function run(ctx) {
   // ---- shore fire: wired behind a disassembly label, arithmetic pinned ---------------------
   eq(block.shoreFire.wired, true, "shoreFire is wired in T-016");
   eq(block.shoreFire.tag, "disassembly", "shore fire is disassembly only, never measured");
-  eq(Number(block.shoreFire.range), 2, "shore fire starts beyond 2 cells");
+  eq(Number(block.shoreFire.range2), 2,
+    "shore fire starts beyond d2=2 (PB-347: the runtime gate is squared distance, FUN_188b_0216)");
+  eq(Number(block.shoreFire.range), 2, "range (cells) stays in config for readers");
   {
     const land = (strength, id) => ({ x: 4, y: 4, strength, kind: "infantry", domain: "land", id });
     // The probe ship must be a kind the damage table HAS a row for: `battleship` has no
@@ -228,45 +230,49 @@ export async function run(ctx) {
     // — an assertion that stays green with the shore-fire branch deleted. A `cruiser` reads base
     // 12 and covered 12 against land, so the numbers are real.
     const ship = (x) => ({ x, y: 4, kind: "cruiser", domain: "sea", id: "hull" });
+    // PB-347: the gate is d2 > 2, so a 2-cell orthogonal shot (d2=4) IS shore fire and a (1,1)
+    // diagonal (d2=2) is not. The full-strength cap of 70 leaves the covered 12 untouched.
     const close = damageFor(ship(2), land(100, "near"));
-    eq(close.shoreFire, false, "a 2-cell shot was treated as shore fire");
-    eq(close.amount, close.covered, "a 2-cell shot was capped");
+    eq(close.shoreFire, true, "a 2-cell shot is d2=4 > 2 and must take the shore path");
+    eq(close.amount, close.covered, "a 2-cell shot at full strength must ride the cap");
+    const touching = damageFor(ship(3), land(100, "touching"));
+    eq(touching.shoreFire, false, "a 1-cell shot is d2=1 and must not take the shore path");
     eq(close.base, 12, "the probe cruiser no longer reads its table damage; the block below is vacuous");
     const beyond = damageFor(ship(0), land(100, "far"));
     eq(beyond.shoreFire, true, "a 6-cell sea shot did not take the shore-fire path");
     eq(beyond.amount, Math.min(beyond.covered, 100 - 30), "long shot did not cap at strength-30");
     eq(beyond.amount, 12, "a long shot at full strength is not the full covered damage");
-    // The halving clause is pinned either side of its own edge: 20 is well under `halveBelow`,
-    // 24 is the last strength that still halves (12 -> 6). A pin on 20 alone leaves the doc's
-    // "s=20/24 -> 6" sentence quoting a probe instead of a test.
+    // PB-347: the clause is sequential. At strength 20/24 the cap is -10/-6, so the shot is
+    // halved and then min(amount, cap) clamps it to 0: the original does not fire at all.
     const halved = [];
     for (const s of [20, 24]) {
       halved.push(s);
       const half = damageFor(ship(0), land(s, "wounded" + s));
       eq(half.shoreFire, true, `a shot at a ${s}-strength target did not take the shore-fire path`);
-      eq(half.amount, half.covered / 2, `a shot at a ${s}-strength target was not halved`);
-      eq(half.amount, 6, `the ${s}-strength shot is not half of the cruiser base`);
+      eq(half.amount, 0, `a ${s}-strength target has a negative cap, so the original deals 0`);
     }
     // The rows above bite one at a time, but an emptied or trimmed `of [...]` list leaves the
     // suite green: deleting an assertion is invisible to the assertions that survive it. So the
     // loop records the strengths it actually visited and the record is compared to the literal
     // row set (PM ruling, room 4723). An empty loop now lands here instead of passing silently.
     eq(halved.join(","), "20,24", "the halving loop did not exercise the row set 20,24");
-    // 25-30 is an immunity band, not a floor: at strength >= halveBelow (25) the cap branch wins
-    // and max(0, strength - 30) is zero. Assert the band by number so a change to either clause
-    // moves a value instead of emptying a comparison.
+    // 25-30 keeps a non-positive cap (-5..0), so the shot is halved and then clamped to 0. The band
+    // is asserted by number so a change to either clause moves a value, not an empty comparison.
     const bandRows = [];
     for (const s of [25, 26, 27, 28, 29, 30]) {
       bandRows.push(s);
       const band = damageFor(ship(0), land(s, "band" + s));
       eq(band.shoreFire, true, `a shot at a ${s}-strength target did not take the shore-fire path`);
-      eq(band.amount, 0, `a ${s}-strength target took ${band.amount} shore fire; 25-30 is an immunity band`);
+      eq(band.amount, 0, `a ${s}-strength target took ${band.amount} shore fire; the cap is not positive`);
     }
     eq(bandRows.join(","), "25,26,27,28,29,30", "the immunity loop did not exercise the six rows 25-30");
     const just = damageFor(ship(0), land(31, "just"));
     eq(just.amount, 1, "a 31-strength target did not take exactly strength-30");
+    // strength 45 -> cap 15 (< halveBelow), so the shot is halved (6) and then capped at 15.
     const healthy = damageFor(ship(0), land(45, "healthy"));
-    eq(healthy.amount, healthy.covered, "a 45-strength target was capped but sits inside strength-30");
+    eq(healthy.amount, healthy.covered / 2, "a 45-strength target must be halved and then ride its 15 cap");
+    const fifty = damageFor(ship(0), land(50, "fifty"));
+    eq(fifty.amount, Math.min(fifty.covered / 2, 20), "a 50-strength target must read min(covered/2, 20)");
   }
 
   // ---- a config edit moves the runtime ----------------------------------------------------
@@ -280,7 +286,7 @@ export async function run(ctx) {
     cfg.terrain.pathCost.limit = 100;
     cfg.terrain.crawlPace.refused = ["wasteland", "polar"];
     cfg.terrain.digIn.value = ["plain"];
-    cfg.terrain.shoreFire.range = 10;
+    cfg.terrain.shoreFire.range2 = 100; // PB-347: the runtime gate reads the squared threshold
     cfg.terrain.crawlPace.beats.forest = 3;
     const alt = path.join(dir, "game.json");
     writeFileSync(alt, JSON.stringify(cfg, null, 2));
@@ -294,7 +300,7 @@ export async function run(ctx) {
     must(!digInIds().has(10), "a narrowed dig-in list did not reach digInIds");
     const wide = damageFor({ x: 0, y: 4, kind: "cruiser", domain: "sea", id: "hull" },
       { x: 6, y: 4, strength: 100, kind: "infantry", domain: "land", id: "dug" });
-    eq(wide.shoreFire, false, "a configured shore-fire range of 10 did not reach combat.damageFor");
+    eq(wide.shoreFire, false, "a configured shoreFire.range2 of 100 did not reach combat.damageFor");
     eq(wide.amount, wide.covered, "a shot inside the configured range was still capped");
   } finally {
     if (shipped) process.env.OPENCHQ_CONFIG = shipped;

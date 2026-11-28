@@ -55,10 +55,6 @@ export const DEVIATIONS = [
     note: "coverFor()/damageFor() apply it and t016_terrain.mjs pins the arithmetic; s2.1, s4 :183 and s10 item 5 are stale." },
   { id: "D4", formula: "s2.3 ship-vs-land cap ('Not wired: T-009b')", doc: "unwired", server: "wired", cls: "doc error", card: "PB-350",
     note: "combat.damageFor applies config.terrain.shoreFire (tag disassembly, PM 4572 interim); s2.3 and s10 item 5 are stale." },
-  { id: "D5", formula: "s2.3 shore fire: cap<25 halves, then the cap applies to the result", doc: "half when cap = strength-30 is under 25, then min(amount, cap)", server: "half when strength<25, OTHERWISE min(amount, strength-30)", cls: "server defect", card: "PB-347",
-    note: "decompiled.c 7082-7093 is sequential, not either/or: at strength 20 the original never fires (cap -10) while the port deals half the shot." },
-  { id: "D6", formula: "s2.3 shore-fire range test", doc: "dist^2 > 2 (FUN_188b_0216 output)", server: "Chebyshev cells > 2", cls: "server defect", card: "PB-347",
-    note: "a land target at (2,2) is d2=8 in the original's test and Chebyshev 2 here, so the port does not cap a shot the original caps." },
   { id: "D7", formula: "s6 air strike, sea", doc: "34 for kinds 5-7, 25 for kinds 8/9 (four strikes on a cruiser/carrier)", server: "34 for every sea kind (max x 0.34)", cls: "server defect", card: "PB-348",
     note: "config.airStrikeSeaAmount carries one number; measured.combat.airStrike.shipDamage already records the per-kind split." },
   { id: "D8", formula: "s6 air strike, land", doc: "(strength>>1)+1, so 100 leaves 49", server: "before x 0.5, so 100 leaves 50", cls: "server defect", card: "PB-348",
@@ -259,10 +255,10 @@ export async function run(ctx) {
   eq(squaredDistance({ x: 100, y: 100 }, { x: 102, y: 102 }), 8, "s3 (2,2) is d2=8");
   eq(squaredDistance({ x: 2, y: 50 }, { x: 318, y: 50 }), 16, "s3 X wraps: (4,0) across the seam is d2=16");
 
-  // ---- s2.3 — shore fire: the cap and its range unit ------------------------------------------
-  // A sea attacker more than `range` cells from a land target. D5: the original halves when the
-  // CAP is under 25 (strength < 55) and then applies min(amount, cap) regardless; the port halves
-  // only when the target's STRENGTH is under 25 and otherwise applies only the cap.
+  // ---- s2.3 — shore fire: the sequential clause and the squared range (PB-347) ----------------
+  // decompiled.c 7082-7093 is SEQUENTIAL, not either/or: cap = strength - 30; if cap < 25 halve;
+  // then amount = min(amount, cap) ALWAYS; fire only when 0 < amount. The range gate is the squared
+  // distance (`2 < d^2`, FUN_188b_0216), so a (2,2) diagonal is in range and is capped.
   let waterCell = null;
   for (let i = 0; i < cells.length - 1 && !waterCell; i++) {
     const x = i % CELL_W;
@@ -277,22 +273,32 @@ export async function run(ctx) {
   );
   const weak = ashore(20);
   must(weak.shoreFire === true, "s2.3 a cruiser 3 cells from land must be reading the shore clause");
-  eq(weak.amount, weak.covered / 2,
-    "D5: at strength 20 the port still halves (the original's cap is -10, so it never fires)");
+  eq(weak.amount, 0,
+    "s2.3 at strength 20 the cap is -10: halve the shot, then min(amount, cap) -> 0 (no shot)");
   const mid = ashore(50);
-  eq(mid.amount, Math.min(mid.covered, 20),
-    "D5: at strength 50 the port applies the cap alone; the original reads min(covered/2, 20)");
+  eq(mid.amount, Math.min(mid.covered / 2, 20),
+    "s2.3 at strength 50 the cap is 20: halve the covered shot, then cap it at 20");
   eq(ashore(100).amount, 12, "s2.3 at full strength the cap is 70, so the cruiser's 8->1 cell of 12 rides uncapped");
-  // D6: the range test is in cells here and in d^2 in the original. A target at (2,2) is d2=8 > 2
-  // (the original caps) and Chebyshev 2, which is not > 2 (the port does not).
+  // The refusal is at the resolve layer too: a non-positive shore result is not a 0-damage hit, it
+  // is no shot at all (`if (0 < (int)local_8)`, decompiled.c 7082-7093).
+  const noShotMatch = { round: 2, pieces: [
+    piece("blue:cruiser", "blue", "cruiser", waterCell.x - 3, waterCell.y),
+    piece("red:foot", "red", "infantry", waterCell.x, waterCell.y, { strength: 20 }),
+  ] };
+  const noShot = resolve(noShotMatch);
+  eq(noShot.length, 0, "s2.3 a strength-20 shore target takes no shot event at resolve (base > 0 alone is not enough)");
+  eq(noShotMatch.pieces[1].strength, 20, "s2.3 the strength-20 target is untouched, not damaged for 0");
+  // (2,2) diagonal: Chebyshev 2 would miss the old gate; d2 = 8 > range2 2 is in range.
   const diagonal = damageFor(
     piece("blue:cruiser", "blue", "cruiser", waterCell.x - 2, waterCell.y - 2),
-    piece("red:foot", "red", "infantry", waterCell.x, waterCell.y, { strength: 100 }),
+    piece("red:foot", "red", "infantry", waterCell.x, waterCell.y, { strength: 50 }),
     cfg,
   );
-  must(diagonal.shoreFire === false, "D6: the port's shore range no longer reads Chebyshev; re-measure");
   must(squaredDistance({ x: waterCell.x - 2, y: waterCell.y - 2 }, waterCell) === 8,
-    "D6: the diagonal is d2=8, which the original's >2 test caps");
+    "s2.3 the (2,2) diagonal is d2=8, which the original's >2 test takes");
+  must(diagonal.shoreFire === true, "s2.3 a (2,2) diagonal must read as a shore shot (d2 8 > range2 2)");
+  eq(diagonal.amount, Math.min(diagonal.covered / 2, 20),
+    "s2.3 the diagonal shot is capped like any shot beyond range2");
 
   // ---- s5 :186 — attrition, the floor, and the militia pair ----------------------------------
   // The 0x1996 bytes are the doc's per-PASS amounts; the port's rates are per ROUND stand-ins
@@ -375,9 +381,9 @@ export async function run(ctx) {
     "wasteland 34 live (s11): the 1942 board has no wasteland cell",
     "desert/jungle attrition live (s11): desert did not fire in three runs; jungle never run",
     "air strike live (s11): the event path never reached the damage call; s6 grades the port against decompiled.c, not a live leg",
-    "ship-vs-land cap (s2.3): config tag disassembly, never live-measured; D5/D6 are code-vs-code findings",
+    "ship-vs-land cap (s2.3): the sequential order and d^2 gate are code-vs-code (PB-347); config tag disassembly, still never live-measured in DOSBox",
     "kinds 4/5/6 (s2): unused or AI-side, no remake actor, so their rows are graded as data only",
   ];
-  console.log("combat_vs_doc: " + DEVIATIONS.length + " deviations (D1-D13), " + unverified.length +
-    " items UNVERIFIED; tests only, no product change");
+  console.log("combat_vs_doc: " + DEVIATIONS.length + " deviations, " + unverified.length +
+    " items UNVERIFIED; PB-347 fixes the s2.3 clause order and range unit, the other rows stay open");
 }
