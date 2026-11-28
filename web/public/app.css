@@ -1074,8 +1074,14 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
 .navbtn.danger:hover { background: #3a1418; }
 /* PB-173: the pause glyph (❚❚) is 12 px wider than the play glyph (▶), so the button changed width
    with the clock and took the speed control with it. A fixed 43 px box centred on the glyph is
-   glyph-independent — and it is the width the card's own candidate probe measured to 0.00 px. */
-.navbtn.clockbtn { min-width: 43px; width: 43px; padding-left: 0; padding-right: 0; text-align: center; font-size: 13px; }
+   glyph-independent — and it is the width the card's own candidate probe measured to 0.00 px.
+   PB-340: the clock is a match command like speed and the game buttons, and every one of those is
+   hidden until a match exists. The clock was the one strip control with no default `display` rule,
+   so the signed-out landing painted a lone ▶ over the masthead (PM 10521 §2, live eceac31). The
+   producer is the same single fact the rest of the shell switches on: `body.in-match`, which
+   syncShell() sets from `Boolean(room)` on every room frame, sign-in and sign-out. */
+.navbtn.clockbtn { display: none; min-width: 43px; width: 43px; padding-left: 0; padding-right: 0; text-align: center; font-size: 13px; }
+body.in-match .clockbtn { display: inline-block; }
 .navbtn:disabled { opacity: 0.4; cursor: default; }
 .gamebtns { display: none; gap: 4px; align-items: center; }
 body.in-match .gamebtns { display: flex; }
