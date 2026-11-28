@@ -352,7 +352,11 @@ button.ghost {
    scales with the font when it changes; the empty state keeps the rectangle because the box never
    depends on its text. */
 .modeflag {
-  display: inline-block;
+  /* PB-328: no match, no slot. The box is PB-317's and is sized by the stylesheet, but the slot must
+     not be laid out at all outside a match — `.mapfoot` is a flex row with a 12 px gap, so even a
+     0-width item would push the footer line by the gap. `body.in-match` is the page's own match state
+     (syncShell), so the box is a function of the state and not of the word inside it. */
+  display: none;
   flex: 0 0 auto;
   width: 14ch;
   height: 16px;
@@ -364,6 +368,8 @@ button.ghost {
   white-space: nowrap;
   overflow: hidden;
 }
+
+body.in-match .modeflag { display: inline-block; }
 
 .chatbar input {
   width: min(46ch, 58vw);
