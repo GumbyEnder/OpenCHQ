@@ -248,6 +248,16 @@ export async function run(ctx) {
     if (land.length !== 1) fail("pb355 (d): the unowned dock must charge a land hull once, got " + land.length);
     eq(walker.pinned, true, "pb355 (d)/D12: the land arm is still pinned on an unowned dock");
 
+    // PB-356 retracts D11's floor: 0x199a is the 0xf4 row (0x80 set = no floor), so a 25-strength
+    // hull goes to 5 and the next beat takes it to 0 and clears the slot. Manual p.10.
+    const thin = hull("submarine", dock, 25);
+    beat(bare.list, thin, 2);
+    eq(thin.strength, 5, "pb355 (d)/D11: the unowned 20 is not floored - 25 -> 5, not 20");
+    const shot = resolveBeat(bare.list, thin, 4);
+    eq(thin.strength, 0, "pb355 (d)/D11: the second beat takes the 5 to 0");
+    if (!shot.some((event) => event.type === "destroyed" && event.pieceId === "blue:submarine")) {
+      fail("pb355 (d)/D11: the unowned 20 must remove the hull at 0, not leave it on the cell");
+    }
   }
   {
     // 1918 drops 96 of the towns the docks serve. Those docks must be null - not country-seeded -

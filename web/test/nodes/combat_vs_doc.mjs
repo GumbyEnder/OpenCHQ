@@ -390,12 +390,19 @@ export async function run(ctx) {
   eq(beat.side, null, "PB-349/D11: an unowned site's militia has no owner side to name");
   eq(neutral.squat.pinned, true, "s5/D12: the neutral beat pins too");
 
-  // The two branches differ in ONE more way: the neutral 20 is floored at strength 20 (its live leg
-  // stops at 20), while the enemy site's 2 has no floor and can kill.
-  const flooredNeutral = militiaMatch(null, 25);
-  eq(flooredNeutral.squat.strength, 20, "s5 the neutral militia is floored at strength 20: 25 -> 20, not 5");
+  // PB-356 retracts D11's floor. Neither militia branch is floored: 0x199a is the terrain table's
+  // 0xf4 byte (0x80 set = through the combat path) and 9089-9093's min(amount, strength-20) sits on
+  // the 0x80-CLEAR attrition rows only (lake 3 -> the 22 -> 20 leg, asserted in the attrition arm
+  // above). Manual p.10: the militia "can kill a weakened unit trying to capture a city". The
+  // DOSBox unowned-site k7 leg read 25 -> 5 -> 0 with the slot cleared (room 10604).
+  const thinNeutral = militiaMatch(null, 25);
+  eq(thinNeutral.squat.strength, 5, "s5 the unowned 20 is not floored: 25 -> 5, not 20");
+  const lethalNeutral = militiaMatch(null, 5);
+  eq(lethalNeutral.squat.strength, 0, "s5 the unowned 20 can take a 5-strength squatter to 0");
+  must(lethalNeutral.events.some((event) => event.type === "destroyed" && event.pieceId === "blue:foot"),
+    "s5 the unowned 20 must remove the piece it kills, not leave it at 0");
   const brittleEnemy = militiaMatch("red", 2);
-  eq(brittleEnemy.squat.strength, 0, "s5 the enemy site's 2 has no floor: a 2-strength squatter dies");
+  eq(brittleEnemy.squat.strength, 0, "s5 the enemy site's 2 has no floor either: a 2-strength squatter dies");
 
   // D12 end to end: a pinned squatter holding an order does not take its step this round, and a
   // twin with the same order and no pin does. Both stand on the same plain pair, so the arm grades

@@ -231,6 +231,14 @@ The **20 % floor** in p.21 is the `strength − 20` term at 9089-9093 (`min(amou
 unit stops losing strength to terrain at 20, and nothing but wasteland can kill it. 20 is 20 % of
 the 100 bar, so the manual and the code agree on the floor and disagree on the terrain list.
 
+**The floor is on the `0x80`-CLEAR rows only** (PB-356). The rows it holds on are the attrition
+bytes with the combat-path bit clear — lake `3`, polar `5`, desert/jungle `0x23` — which is exactly
+the lake 22 → 20 leg. The site rows, `0xf4`, carry `0x80`: they drain through the combat path and
+9089-9093 never runs for them. That is why the militia's unowned 20 **can kill** (p.10: "can kill a
+weakened unit trying to capture a city") and why the DOSBox unowned-site leg went 25 → 5 → 0 with
+the slot cleared. The port's shipped D11 floor (PB-349) read 9089-9093 onto the `0xf4` row and is
+retracted in PB-356; the attrition floor itself is unchanged.
+
 **Repair** — `FUN_1c0d_0656` at 9291-9297: `strength += 10` when all of: no destination, no fight
 this or the previous pass (`0xc46 & 0x58` clear both), `strength < 100`, the piece stands on its own
 site, and `0x1986[terrain] != 0` (docks 2, capital/base/city/oilfield 1, everything else 0). Clamp
@@ -250,8 +258,10 @@ The runtime's `repairPerRound` stays the STAND-IN 5 until D-017 picks a per-roun
 measured figures live in `measured.combat.repairPerPass` as reference rows.
 
 **Militia** (`FUN_1c0d_00b4` 9056-9077): standing on an **enemy-owned** site costs 2 strength per
-pass and zeroes the piece's move points (−10) — pinned against the town. Standing on an **unowned**
-site costs 20 per pass until the capture lands. City militia damage is therefore 2 (enemy city) or
+pass and zeroes the piece's move points (−10) — pinned against the town, for a land kind only: a sea
+hull takes the same 2 and is never pinned (next paragraph, and Manual p.24). Standing on an **unowned**
+site costs 20 per pass until the capture lands, and it is **not floored**: 0x199a is the `0xf4` row,
+so a 25-strength squatter goes 25 → 5 → 0 and is removed (PB-356). City militia damage is therefore 2 (enemy city) or
 20 (neutral city), not one number; the runtime's single `militiaDamage` is a stand-in for both.
 
 **Fire is not gated by kind; the pin is** (`decompiled.c` 9054/9060-9063/9073-9077, live
@@ -277,12 +287,11 @@ the zeroed move points, so that byte is not modelled separately.
 **The port ships this split** (PB-355 b). One predicate, `pinnedByBeat` in `web/server/combat.mjs`,
 now guards BOTH pin sites — the contact pin and the militia pin: `domain !== "sea" && transport !==
 true`, the remake's spelling of the original's `kind < 7`. A submarine, cruiser or carrier standing on
-an enemy or unowned dock still takes the 2 or the 20, keeps its order and steps it; a land hull on the
-same cell is pinned exactly as before, so G3 (land still pins) grades the store rather than its
-absence. `game.json`'s `militiaDamage` / `measured.combat.militia` are untouched — this commit moves
-the pin, not the damage. `web/test/nodes/pb355_dock_owner.mjs` grades own / enemy / unowned docks for
-all three hulls, the later tick, the step, and the land control, over both the extract board and the
-baked board.
+an enemy or unowned dock still takes the 2 or the 20 and keeps its order (`pieceState` reads `moving`),
+and so does a cargo hull; a land hull on the same cell is pinned exactly as before. `game.json`'s
+`militiaDamage` / `measured.combat.militia` are untouched — this commit moves the pin, not the
+damage. `web/test/nodes/pb355_dock_owner.mjs` grades own / enemy / unowned docks for all three hulls,
+plus the land control, over both the extract board and the baked board.
 
 **A dock cell is a town's footprint cell.** `FUN_188b_00a4` stores the site at the piece's own cell in
 `0xc478` (`MOV [0xc478],AX`, `188b:00c8`), and that lookup is `FUN_2724_00e3`, which matches a site's
