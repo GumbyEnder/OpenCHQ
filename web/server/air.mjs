@@ -618,10 +618,18 @@ export function sendMission(match, side, pieceId, mode, target) {
         // is indexed by - so the amounts come from config's measured.combat.airStrike.shipDamage
         // and this module keeps no second table. A hull the table has no name for reads as the
         // cargo class (`transportDamageKind` 5), the same default a transport's damage row uses.
-        const kind = String(combat.damageKind[String(target.kind)] ?? (Number(target.kind) || 0));
-        const amount = Number(shipDamage[kind] ?? shipDamage[String(combat.transportDamageKind)] ?? 0);
+        // PB-351: `strike_hit.kind` reports the class that actually CHOSE the amount, not the
+        // target's unmapped kind. A destroyer/transport-class hull (`kind: "destroyer"`, or a
+        // numeric kind with no shipDamage row) pays from transportDamageKind 5; reporting its raw
+        // kind wrote 0 next to an amount of 34, i.e. named a row that paid nothing. Nothing
+        // consumes the field yet - this is record hygiene - so only the reported value moves.
+        const named = String(combat.damageKind[String(target.kind)] ?? (Number(target.kind) || 0));
+        const paidKind = Object.prototype.hasOwnProperty.call(shipDamage, named)
+          ? named
+          : String(combat.transportDamageKind);
+        const amount = Number(shipDamage[paidKind] ?? 0);
         const hit = applyDamage(target, amount, max);
-        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: "sea", kind: Number(kind) || 0, amount, before, strength: hit.after, round: Number(match.round) || 0, note: STRIKE_NOTE });
+        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: "sea", kind: Number(paidKind) || 0, amount, before, strength: hit.after, round: Number(match.round) || 0, note: STRIKE_NOTE });
         if (hit.dead) doomed.add(target.id);
       } else {
         // decompiled.c 8795-8814: `(strength >> 1) + 1`, one point under half. The original's bar is
