@@ -11,6 +11,16 @@
 //
 // This leg reads real bounding boxes off a real page in a real match at every named width, and it
 // toggles the clock at each width — a slot that holds at 1440 and breaks at 1280 is not a slot.
+//
+// PB-341 (test debt, no product change): two arms graded the SERVER's own copy as layout.
+//   - the income leg's unit is state, not a constant: a peace seat reads "+500M/s" (PB-268), a war
+//     seat "+1.55b/rd", so the `b/rd` literals are gone and the DOM is graded against the page's
+//     own purseSummary(seat) plus "the strip is shorter than the title's full string".
+//   - the speed-1 -> 0 -> 6 walk now starts after 1986's one-round mandatory peace has ended, so
+//     the dropped "· cold war" clause is not read as the clock word walking the row.
+//   - the Sign out arm's 1440-vs-1280 width tie is gone: the <=1500 breakpoint's 2 px side padding
+//     makes the button 4 px narrower there by design; the squeeze it guards is still measured
+//     directly (right edge inside #account, scrollW <= clientW, hit test = BUTTON).
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
@@ -21,7 +31,7 @@ import { loadPlaywright } from "./playwright.mjs";
 // The full economy string the title must carry is the SAME function the page renders the dialogue
 // with — not a regex over a substring, so "the ledger is one hover away" is measured against the
 // seat the server actually sent (frodo 8327 §6).
-import { purseText } from "../../web/public/command.mjs";
+import { purseSummary, purseText } from "../../web/public/command.mjs";
 import { evidenceDir } from "./evidence.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -241,7 +251,6 @@ try {
     return { cash, chip, cashBox, brand, items, strip: { scrollW: strip.scrollWidth, clientW: strip.clientWidth } };
   }, { cash, round, row: ROW });
 
-  const signoutW = {};
   for (const { w, h, label } of WIDTHS) {
     await page.setViewportSize({ width: w, height: h });
     await sleep(500);
@@ -286,6 +295,12 @@ try {
     // of it, never its existence.
     const seat = await page.evaluate(() => (window.__chq.room() || {}).seat || null);
     const full = seat ? purseText(seat, false) : "";
+    // PB-341: the income leg's UNIT is a server state, not a constant. A peace seat pays
+    // "+500M/s" (PB-268: the cold war has no round to bill), a war seat pays "+1.55b/rd"; the
+    // old `b/rd` literal graded a peace seat red for reading correctly. Grade the DOM against the
+    // page's own purseSummary(seat) and require the strip to be the SHORTER of the two strings —
+    // that keeps "summary in the strip, ledger in the title" pinned without assuming a unit.
+    const summary = seat ? purseSummary(seat) : "";
     const titleHasFull = Boolean(full) && full.length > 40 && ((run.rows.purseChip || {}).title || "").includes(full);
     mark("#purseChip title carries the full economy string at " + label,
       titleHasFull,
@@ -303,11 +318,13 @@ try {
         el.innerHTML = before;
         return { fits, detail };
       });
+      const summaryOk = Boolean(chip) && Boolean(summary) && chip.text === summary
+        && / \+\S/.test(summary) && summary.length < full.length;
       mark("#purseChip shows its whole summary at " + label,
         Boolean(chip) && chip.clientW > 0 && chip.scrollW <= chip.clientW
-          && /\db \+.*b\/rd/.test(chip.text) && wide.fits && LEDGER.test(chip.title),
+          && summaryOk && wide.fits && LEDGER.test(chip.title),
         JSON.stringify({ text: chip && chip.text, scrollW: chip && chip.scrollW, clientW: chip && chip.clientW,
-          w: chip && chip.w, textOk: /\db \+.*b\/rd/.test((chip && chip.text) || ""),
+          w: chip && chip.w, summary, summaryOk,
           nat: Boolean(chip) && chip.scrollW <= chip.clientW, wide: wide.fits, at116b: wide.detail,
           titleHasLedger: LEDGER.test((chip && chip.title) || "") }));
       // PB-187b (frodo 8371 §4): the handle ellipsizes; the Sign out button is a CONTROL and used to
@@ -343,25 +360,33 @@ try {
           who.textContent = before;
           return out;
         }, chars);
-        signoutW[label + "/" + chars] = acct.signout ? acct.signout.w : null;
+        // PB-341: the old tie required the button's border-box width to be IDENTICAL at 1440 and
+        // 1280. It is not, and must not be: the <=1500 block gives the two account buttons 2 px
+        // side padding instead of 4 (measured 50.38 px at 1440 vs 46.38 px at 1280, both arms
+        // whole at scrollW === clientW). The breakpoint is a padding change, not a squeeze — the
+        // squeeze the arm exists for is "ink clipped by the ellipsis box", which the RIGHT-edge,
+        // scroll<=client and hit-test clauses below measure directly at the width that runs.
         mark("Sign out is whole and hittable beside a " + chars + "-char handle at " + label,
           Boolean(acct.signout) && (acct.name || "").length === chars
             && acct.signout.right <= acct.account.right + 0.5
             && acct.signout.scrollW <= acct.signout.clientW
-            && acct.hit === "BUTTON" && acct.text === "Sign out"
-            && (label.indexOf("1280") !== 0 || signoutW["1440x900/" + chars] == null
-              || near(acct.signout.w, signoutW["1440x900/" + chars])),
+            && acct.signout.w >= acct.signout.scrollW
+            && acct.hit === "BUTTON" && acct.text === "Sign out",
           JSON.stringify(acct));
       }
     } else {
       const cash = run.rows.purseCash;
       const chip = run.rows.purseChip;
+      // PB-341: same unit trap as the summary arm. The title has to CARRY THE SUMMARY the chip
+      // paints (cash + whichever income shape the server sent) plus the ledger; a `b/rd` literal
+      // reds a correct peace seat whose title reads "+500M/s".
+      const titleHasSummary = Boolean(summary) && (chip ? chip.title : "").includes(summary);
       mark("#purseChip keeps the cash figure whole at " + label,
         Boolean(cash) && cash.clientW > 0 && cash.scrollW <= cash.clientW
-          && /^\d+b$/.test(cash.text) && /b\/rd/.test(chip ? chip.title : "")
+          && /^\d+b$/.test(cash.text) && titleHasSummary
           && LEDGER.test(chip ? chip.title : ""),
         JSON.stringify({ cash: cash && cash.text, scrollW: cash && cash.scrollW, clientW: cash && cash.clientW,
-          chipText: chip && chip.text, titleHasIncome: Boolean(chip && /b\/rd/.test(chip.title)),
+          chipText: chip && chip.text, summary, titleHasSummary,
           // frodo 8343 §2: the PASS condition asserts the full LEDGER on the title, so the detail
           // prints that same field. `titleHasIncome` alone under-reports what the mark requires.
           titleHasLedger: LEDGER.test((chip && chip.title) || "") }));
@@ -402,7 +427,27 @@ try {
   // The speed axis, at the widest viewport: 1 -> 0 ("paused") -> 6 must not move the control either.
   await page.setViewportSize({ width: WIDTHS[0].w, height: WIDTHS[0].h });
   await sleep(400);
+  // PB-341: measure this axis on the WAR-STATE readout. 1986 opens inside the mandatory peace, and
+  // its "· cold war" clause is a SERVER text that legitimately drops the moment the first round
+  // ends — measured on 99f889b: round 0 "1986 · blue · round 0 · running · cold war" is 224.17 px,
+  // round 1 "1986 · blue · round 1 · running" is 168.81 px. The old axis took its speed-1 baseline
+  // at round 0 and its speed-6 reading at round 1, so it graded a text change as a layout walk and
+  // red five arms ("#stripInfo keeps its width", "#purseChip keeps its width", and the three
+  // controls moving by the net 55.36 - 4.69 px of that reflow). What PB-173 pins is the CLOCK WORD
+  // walking the row: burn the peace first (speed 6 reaches round 1 inside a second), then walk the
+  // speeds with the same head text.
+  await setSpeed(6);
+  await sleep(900);
   await setSpeed(1);
+  let warState = false;
+  try {
+    await page.waitForFunction(
+      () => !/cold war/.test((document.getElementById("stripInfo") || {}).textContent || ""),
+      null, { timeout: 15000, polling: 100 });
+    warState = true;
+  } catch (err) { void err; }
+  mark("the speed axis starts on the war-state readout (cold-war clause gone)", warState,
+    JSON.stringify(await page.evaluate(() => (document.getElementById("stripInfo") || {}).textContent)));
   await sleep(400);
   const base1 = await snap("speed1");
   series.push(base1);
