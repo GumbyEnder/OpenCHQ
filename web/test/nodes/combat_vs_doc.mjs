@@ -5,7 +5,7 @@
 //   - a modifier is applied on the wrong side of flank/rear          -> the ordering arm reds
 //   - a range threshold is graded through the wrong distance          -> the s3 arms name the cell
 //   - the attrition/militia pairs lose one side of the doc's pair     -> s5 arms red
-//   - an air strike stops taking its per-kind amount                  -> s6 arms red
+//   - an air strike loses its per-kind amount or its integer +1       -> s6 arms red
 //   - a DEVIATION row starts or stops being true                      -> the pinned arm reds and
 //     the row must be re-measured, never quietly edited
 //
@@ -55,10 +55,6 @@ export const DEVIATIONS = [
     note: "coverFor()/damageFor() apply it and t016_terrain.mjs pins the arithmetic; s2.1, s4 :183 and s10 item 5 are stale." },
   { id: "D4", formula: "s2.3 ship-vs-land cap ('Not wired: T-009b')", doc: "unwired", server: "wired", cls: "doc error", card: "PB-350",
     note: "combat.damageFor applies config.terrain.shoreFire (tag disassembly, PM 4572 interim); s2.3 and s10 item 5 are stale." },
-  { id: "D7", formula: "s6 air strike, sea", doc: "34 for kinds 5-7, 25 for kinds 8/9 (four strikes on a cruiser/carrier)", server: "34 for every sea kind (max x 0.34)", cls: "server defect", card: "PB-348",
-    note: "config.airStrikeSeaAmount carries one number; measured.combat.airStrike.shipDamage already records the per-kind split." },
-  { id: "D8", formula: "s6 air strike, land", doc: "(strength>>1)+1, so 100 leaves 49", server: "before x 0.5, so 100 leaves 50", cls: "server defect", card: "PB-348",
-    note: "config labels the 0.5 as the manual's rounding; the code's +1 is the doc's, and one point is the whole disagreement." },
   { id: "D9", formula: "s5 attrition and repair rates", doc: "per PASS (lake 3, polar 5, desert/jungle 3, site 20; repair +10 every other call)", server: "per ROUND stand-in (0.5 for those terrains, 1 wasteland; repair 5)", cls: "unmeasured stand-in", card: "D-017",
     note: "labelled STAND-IN in config; no per-round figure exists until the speed ruling. Not a defect." },
   { id: "D10", formula: "s5 attrition on a city/base/capital/dock with no site row", doc: "20 per pass", server: "0 (the site branch skips a cell with no site row)", cls: "server defect", card: "PB-349",
@@ -353,8 +349,12 @@ export async function run(ctx) {
   eq(neutral.squat.strength, 100, "D11: an unowned site pays nothing in the port");
 
   // ---- s6 :233 — one air-strike case per target class -----------------------------------------
-  // FUN_1ac5_0dbe 8795-8814 after the aircraft survives the run in: land (s>>1)+1; kinds 5-7 34;
-  // kinds 8/9 25 (MANUAL-CONTRADICTED p.25, the code governs the port, s9 item 1).
+  // MEASURED-OVER-MANUAL. The measured source is FUN_1ac5_0dbe @ 1ac5:0dbe, decompiled.c
+  // 8795-8814 (docs/re/COMBAT.md s6 :233-245, s9 item 1), after the aircraft survives the run in:
+  // land (s>>1)+1; kinds 5-7 34; kinds 8/9 25. Manual p.25 prints "three strikes sink a ship";
+  // that holds for kinds 5-7 only, a cruiser or carrier needs four (25 x 4), and the port follows
+  // the measured code (room 3544 ruling 1). PB-348 made the runtime read the kind and the integer
+  // formula; the four arms below used to pin the old shape.
   const strike = (target) => {
     const plane = { id: "blue:plane", side: "blue", domain: "air", kind: "aircraft", x: 80, y: 44, path: [], pace: 1 };
     const home = { id: "home", name: "Testville", kind: "city", owner: "blue", x: 80, y: 44 };
@@ -364,13 +364,51 @@ export async function run(ctx) {
     return target;
   };
   eq(strike(piece("red:sub", "red", "submarine", 85, 44)).strength, 66,
-    "s6 a sub takes 34 per strike (kind 7, three strikes from full)");
-  eq(strike(piece("red:cruiser", "red", "cruiser", 85, 44)).strength, 66,
-    "D7: the port's cruiser strike no longer reads 34; re-measure (doc: 25, four strikes)");
-  eq(strike(piece("red:carrier", "red", "carrier", 85, 44)).strength, 66,
-    "D7: the carrier takes the same single sea amount");
-  eq(strike(piece("red:foot", "red", "infantry", 85, 44)).strength, 50,
-    "D8: the port's land strike no longer reads 50; re-measure (doc: (s>>1)+1 leaves 49)");
+    "s6 a submarine (kind 7) takes 34 and is three strikes from full (decompiled.c 8795-8814)");
+  eq(strike(piece("red:cruiser", "red", "cruiser", 85, 44)).strength, 75,
+    "s6 a cruiser (kind 8) takes 25, not the kind 5-7 amount (8795-8814, s9 item 1)");
+  eq(strike(piece("red:carrier", "red", "carrier", 85, 44)).strength, 75,
+    "s6 a carrier (kind 9) takes 25, four strikes from full");
+  eq(strike(piece("red:foot", "red", "infantry", 85, 44)).strength, 49,
+    "s6 land damage is (strength>>1)+1 = 51, so 100 leaves 49 - one point under half (s6 :237)");
+
+  // The sea amount is chosen by the target's kind out of ONE table: the runtime map is built from
+  // measured.combat.airStrike.shipDamage, so a second copy of 34/34/34/25/25 cannot drift from it.
+  const runtimeShip = combatRules().airStrikeShipDamage;
+  for (const kind of ["5", "6", "7", "8", "9"]) {
+    eq(Number(runtimeShip[kind]), Number(measured.airStrike.shipDamage[kind]),
+      "PB-348: combat.airStrikeShipDamage[" + kind + "] must be measured.combat.airStrike.shipDamage[" + kind + "]");
+  }
+  eq(JSON.stringify(Object.keys(runtimeShip).sort()), JSON.stringify(["5", "6", "7", "8", "9"]),
+    "PB-348: the runtime's ship table carries exactly the five measured hull kinds");
+  must(cfg.airStrikeSeaAmount === undefined && cfg.airStrikeLandFactor === undefined,
+    "PB-348: the single-factor levers are retired from combatRules(), not merely unused");
+
+  // The count the page gets wrong (s6 :239, s9 item 1): kinds 5-7 die on the third strike, a
+  // cruiser or carrier on the fourth. Counted on one board, one hull at a time.
+  const sinkIn = (kind) => {
+    const plane = { id: "blue:plane", side: "blue", domain: "air", kind: "aircraft", x: 80, y: 44, path: [], pace: 1 };
+    const home = { id: "home", name: "Testville", kind: "city", owner: "blue", x: 80, y: 44 };
+    const hull = piece("red:" + kind, "red", kind, 85, 44);
+    const match = { round: 1, pieces: [plane, hull], sites: [home], capitals: {}, sides: {} };
+    const seen = [];
+    for (let i = 0; i < 4; i += 1) {
+      match.round = Number(match.round) + 1;
+      plane.inactiveUntil = 0;
+      plane.readyAnnounced = false;
+      const result = sendMission(match, "blue", "blue:plane", "strike", { x: 85, y: 44 });
+      must(!result.error, "s6 the " + kind + " strike was refused: " + result.error);
+      seen.push(Number(hull.strength));
+      if (!match.pieces.some((row) => row.id === hull.id)) return seen;
+    }
+    return seen;
+  };
+  eq(sinkIn("submarine").join(","), "66,32,0",
+    "s6 a kind-7 hull leaves 66, 32, 0 over three strikes (34 each)");
+  eq(sinkIn("cruiser").join(","), "75,50,25,0",
+    "s6 a kind-8 cruiser leaves 75, 50, 25, 0 over FOUR strikes (25 each) - the count s9 item 1 exists to keep");
+  eq(sinkIn("carrier").join(","), "75,50,25,0",
+    "s6 a kind-9 carrier is the cruiser's class: four strikes, not three");
   eq(measured.airStrike.shipDamage["8"], 25, "s6 the doc's per-kind table still records 25 for kind 8");
 
   // ---- what this node leaves UNVERIFIED, by the doc's own marks --------------------------------
@@ -385,5 +423,5 @@ export async function run(ctx) {
     "kinds 4/5/6 (s2): unused or AI-side, no remake actor, so their rows are graded as data only",
   ];
   console.log("combat_vs_doc: " + DEVIATIONS.length + " deviations, " + unverified.length +
-    " items UNVERIFIED; PB-347 fixes the s2.3 clause order and range unit, the other rows stay open");
+    " items UNVERIFIED; PB-347 fixed the s2.3 clause order and range unit, PB-348 the s6 per-kind sea amount and the land +1, the other rows stay open");
 }

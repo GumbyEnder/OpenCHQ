@@ -147,8 +147,10 @@ export async function run(ctx) {
     const afterStrike = gate.debugRoom(roomId);
     const targetNow = (afterStrike.pieces || []).find((p) => p.id === target.id) || {};
     if (Number(afterStrike.round) !== 0) fail("(i) the strike moved the round to " + afterStrike.round);
-    if (Number(targetNow.strength) !== startStrength / 2) {
-      fail("the strike did not resolve on the map at speed 0: " + JSON.stringify({ before: startStrength, now: targetNow.strength }));
+    // PB-348: land damage is the original's (strength >> 1) + 1, not a half of the bar.
+    if (Number(targetNow.strength) !== startStrength - ((Math.floor(startStrength) >> 1) + 1)) {
+      fail("the strike did not resolve on the map at speed 0: " + JSON.stringify({ before: startStrength, now: targetNow.strength })
+        + " - expected " + (startStrength - ((Math.floor(startStrength) >> 1) + 1)) + " ((s>>1)+1, decompiled.c 8795-8814)");
     }
     const air0 = (lastRoom(alice).seat.air || []).find((p) => String(p.id) === String(plane.id)) || {};
     if (air0.ready !== false || Number(air0.roundsLeft) !== 8) {

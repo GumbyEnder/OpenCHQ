@@ -533,6 +533,18 @@ export function combatRules() {
     const id = Number(code);
     if (Number.isInteger(id) && id > 0) kindNine[id] = Math.max(0, finiteNumber(value, 0));
   }
+  // PB-348: the air strike's sea loss is chosen by the target's kind (decompiled.c 8795-8814), and
+  // the per-kind table already lives in measured.combat.airStrike.shipDamage. It is read here, once,
+  // so air.mjs indexes the same object the report cites instead of carrying a second copy of
+  // 34/34/34/25/25. The two single-factor levers this replaced (airStrikeLandFactor for land,
+  // airStrikeSeaAmount for every hull) are retired: one rounded 49 up to 50 and the other gave a
+  // cruiser three-strike survivability it does not have (docs/re/COMBAT.md s6, s9 item 1).
+  const airStrikeShipDamage = {};
+  for (const [code, value] of Object.entries((measured.airStrike || {}).shipDamage || {})) {
+    const kind = Number(code);
+    if (!Number.isInteger(kind) || kind < 1) continue;
+    airStrikeShipDamage[String(kind)] = Math.max(0, finiteNumber(value, 0));
+  }
   const maxStrength = Math.max(1, finiteNumber(combatValue("maxStrength"), 100));
   const built = {
     maxStrength,
@@ -560,8 +572,7 @@ export function combatRules() {
     attritionPerRound: Object.fromEntries(Object.entries(attrition).map(([terrain, value]) => [terrain, Math.max(0, finiteNumber(value, 0))])),
     attritionFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("attritionFloor"), 0))),
     repairPerRound: Math.max(0, finiteNumber(combatValue("repairPerRound"), 0)),
-    airStrikeLandFactor: Math.min(1, Math.max(0, finiteNumber(combatValue("airStrikeLandFactor"), 0))),
-    airStrikeSeaAmount: Math.max(0, finiteNumber(combatValue("airStrikeSeaAmount"), 0)),
+    airStrikeShipDamage,
     paradropLoss: Math.min(1, Math.max(0, finiteNumber(combatValue("paradropLoss"), 0))),
     bombardFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("bombardFloor"), 0))),
     militiaDamage: Math.max(0, finiteNumber(combatValue("militiaDamage"), 0)),

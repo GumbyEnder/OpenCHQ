@@ -171,7 +171,9 @@ export async function run(ctx) {
   if (/[0-9$]/.test(String(note))) fail("the strike note invented a number: " + note);
   if (note !== STRIKE_NOTE) fail("the strike event lost its note: " + note);
 
-  // --- a strike halves a land target, and three sink a ship (T-003) -------------------
+  // --- a strike pays (s>>1)+1 on land, and the hull's kind sets the sea count (PB-348) ---
+  // decompiled.c 8795-8814 / docs/re/COMBAT.md s6 :233-245: land damage is (strength >> 1) + 1, so
+  // 100 leaves 49; kinds 5-7 take 34 (three strikes) and kinds 8/9 take 25 (four).
   const land = freshMatch();
   const bomber = plane("blue:air", "blue", 80, 40);
   const target = { id: "red:inf", side: "red", domain: "land", kind: "infantry", x: 82, y: 40, path: [], pace: 1, facing: null, fighting: null, shots: 0, strength: 100, maxStrength: 100 };
@@ -179,19 +181,25 @@ export async function run(ctx) {
   land.round = 1;
   const halved = sendMission(land, "blue", "blue:air", "strike", { x: 82, y: 40 });
   if (halved.error) fail("the strike on a land unit was refused: " + halved.error);
-  if (target.strength !== 50) fail("a strike did not halve a land unit: " + target.strength);
+  if (target.strength !== 100 - ((100 >> 1) + 1)) fail("a strike did not leave a full land unit at 49 (8795-8814): " + target.strength);
 
   const fleet = freshMatch();
   const flyer = plane("blue:air", "blue", 80, 40);
   const hull = { id: "red:ship", side: "red", domain: "sea", kind: "cruiser", x: 82, y: 40, path: [], pace: 1, facing: null, fighting: null, shots: 0, strength: 100, maxStrength: 100 };
   fleet.pieces = [flyer, hull];
+  // A cruiser is kind 8: 25 a strike, so the third leaves it on 25 and the fourth sinks it.
   for (let i = 0; i < 3; i++) {
     flyer.inactiveUntil = 0;
     fleet.round = i + 1;
     const hit = sendMission(fleet, "blue", "blue:air", "strike", { x: 82, y: 40 });
     if (hit.error) fail("sea strike " + (i + 1) + " was refused: " + hit.error);
   }
-  if (fleet.pieces.some((piece) => piece.id === "red:ship")) fail("three strikes did not sink a ship");
+  if (!fleet.pieces.some((piece) => piece.id === "red:ship")) fail("three strikes sank a kind-8 cruiser; it takes 25 a strike and needs four (8795-8814)");
+  flyer.inactiveUntil = 0;
+  fleet.round = 5;
+  const fourth = sendMission(fleet, "blue", "blue:air", "strike", { x: 82, y: 40 });
+  if (fourth.error) fail("the fourth sea strike was refused: " + fourth.error);
+  if (fleet.pieces.some((piece) => piece.id === "red:ship")) fail("four strikes did not sink the cruiser");
 
   // --- the tick keeps running with an aircraft in the match --------------------------
   const live = freshMatch();

@@ -266,18 +266,27 @@ export async function run(ctx) {
     const landMatch = matchOf([plane, land], { sites: [city] });
     const strike = sendMission(landMatch, "blue", "blue:air:1", "strike", { x: 85, y: 44 });
     if (strike.error) fail("the strike was refused: " + strike.error);
-    if (!near(land.strength, cfg.maxStrength * cfg.airStrikeLandFactor)) {
-      fail("an air strike did not halve a land unit: " + land.strength);
+    // PB-348: land damage is the original's integer (strength >> 1) + 1, so a full bar leaves 49.
+    if (!near(land.strength, cfg.maxStrength - ((Math.floor(cfg.maxStrength) >> 1) + 1))) {
+      fail("an air strike did not leave a full land unit at 49 (8795-8814): " + land.strength);
     }
     const sea = ship("red:s", "red", "cruiser", 85, 44);
     const seaMatch = matchOf([plane, sea], { sites: [city] });
+    // PB-348: a cruiser is kind 8 - 25 per strike, so it takes FOUR, not the page's three.
     for (let i = 0; i < 3; i++) {
       plane.inactiveUntil = 0;
       seaMatch.round = i + 1;
       const result = sendMission(seaMatch, "blue", "blue:air:1", "strike", { x: 85, y: 44 });
       if (result.error) fail("strike " + (i + 1) + " was refused: " + result.error);
     }
-    if (seaMatch.pieces.some((piece) => piece.id === "red:s")) fail("three strikes did not sink the ship");
+    if (!seaMatch.pieces.some((piece) => piece.id === "red:s")) {
+      fail("three strikes sank a cruiser; kinds 8/9 take 25, so it survives at 25 (8795-8814)");
+    }
+    plane.inactiveUntil = 0;
+    seaMatch.round = 4;
+    const fourth = sendMission(seaMatch, "blue", "blue:air:1", "strike", { x: 85, y: 44 });
+    if (fourth.error) fail("the fourth strike was refused: " + fourth.error);
+    if (seaMatch.pieces.some((piece) => piece.id === "red:s")) fail("four strikes did not sink the cruiser");
   }
 
   // --- AC11: paradrop costs a quarter ------------------------------------------------------

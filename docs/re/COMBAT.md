@@ -276,7 +276,9 @@ the function.
 1. **MANUAL-CONTRADICTED, Manual p.25: "three strikes sink a ship".** True only for kinds 5-7
    (34 per strike: 100 → 66 → 32 → 0). Cruisers and carriers (kinds 8/9) lose 25 per strike and
    need **four**: 100 → 75 → 50 → 25 → 0. `FUN_1ac5_0dbe @ 1ac5:0dbe`, 8795-8814. Config:
-   `combat.airStrikeSeaAmount` and `measured.combat.airStrike.manualContradiction`.
+   `measured.combat.airStrike.shipDamage` (the one table `combat.airStrikeShipDamage` is built from;
+   PB-348 retired the single `combat.airStrikeSeaAmount` lever) and
+   `measured.combat.airStrike.manualContradiction`.
 2. p.22 "every other round": the original fires every pass while in contact. `shotEveryRounds: 2`
    is the remake's pacing choice (D-017), labelled DELIBERATE DEVIATION, not a measurement.
 3. p.25 "halves": `(str>>1)+1`, so 100 → 49, one point under half.

@@ -26,7 +26,9 @@ const configFile = path.resolve(here, "..", "..", "..", "config", "game.json");
 const MEASURED_BASE_DAMAGE = { infantry: 17, tank: 20, cruiser: 25, carrier: 25, submarine: 34 };
 
 export async function run(ctx) {
-  const { fail } = ctx;
+  // The single-node driver `test/nodes/_only.mjs` runs a node with an EMPTY ctx, so a red arm there
+  // would otherwise surface as "fail is not a function" instead of the sentence that names the defect.
+  const fail = typeof ctx.fail === "function" ? ctx.fail : (message) => { throw new Error(message); };
   const config = JSON.parse(readFileSync(configFile, "utf8"));
   const block = config.combat || {};
 
@@ -179,8 +181,26 @@ export async function run(ctx) {
   if (Number(air.shipDamage["8"]) !== 25 || Number(air.shipDamage["5"]) !== 34) {
     fail("airStrike per-kind ship loss is not 34 for kind 5-7 / 25 for kind 8-9");
   }
-  if (cfg.airStrikeLandFactor !== 0.5) {
-    fail("airStrikeLandFactor is " + cfg.airStrikeLandFactor + ", not the manual's 0.5 that the runtime carries");
+  // PB-348: the two single-factor levers are retired, and the runtime reads this object. A key that
+  // comes back is a second source of the same number; a runtime map that disagrees with shipDamage
+  // is the same defect one layer down.
+  if (cfg.airStrikeLandFactor !== undefined) {
+    fail("airStrikeLandFactor is back in combatRules() as " + cfg.airStrikeLandFactor + "; PB-348 retired it for (strength >> 1) + 1");
+  }
+  if (cfg.airStrikeSeaAmount !== undefined) {
+    fail("airStrikeSeaAmount is back in combatRules() as " + cfg.airStrikeSeaAmount + "; PB-348 retired it for the per-kind ship table");
+  }
+  for (const kind of ["5", "6", "7", "8", "9"]) {
+    if (Number(cfg.airStrikeShipDamage[kind]) !== Number(air.shipDamage[kind])) {
+      fail("combat.airStrikeShipDamage[" + kind + "] is " + JSON.stringify(cfg.airStrikeShipDamage[kind])
+        + ", not measured.combat.airStrike.shipDamage[" + kind + "] = " + air.shipDamage[kind]);
+    }
+  }
+  if (!/MANUAL-CONTRADICTED/.test(String(air.source || ""))) {
+    fail("measured.combat.airStrike.source lost its MANUAL-CONTRADICTED label (s9 item 1)");
+  }
+  if (!/8795-8814/.test(String(air.source || ""))) {
+    fail("measured.combat.airStrike.source no longer cites decompiled.c 8795-8814");
   }
 
   // --- entrenchment and pinning have no original timer --------------------------------------

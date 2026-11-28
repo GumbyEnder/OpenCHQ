@@ -587,12 +587,21 @@ export function sendMission(match, side, pieceId, mode, target) {
     });
   }
 
-  // What a strike actually does (Manual p.25): a land unit loses half its remaining strength; a
-  // sea unit takes a constant amount, so three strikes from full sink it. Cargo still cannot
-  // defend itself and is lost.
+  // What a strike actually does. Manual p.25 says "halves" and "three strikes sink a ship"; the
+  // code governs the port (room 3544 ruling 1), and FUN_1ac5_0dbe @ 1ac5:0dbe, decompiled.c
+  // 8795-8814 is what it does (docs/re/COMBAT.md s6, s9 item 1):
+  //   * land: damage is `(strength >> 1) + 1`, the integer shift plus one - so a full bar leaves 49,
+  //     one point UNDER half, and the bar reaches 0 on the sixth strike.
+  //   * sea: the constant is chosen by the target's KIND - 34 for kinds 5-7 and 25 for kinds 8/9 -
+  //     so a cruiser or carrier needs FOUR strikes, not the page's three.
+  // MEASURED-OVER-MANUAL: 34/34/34/25/25 and (s>>1)+1 are the EXE's own bytes, read at
+  // decompiled.c 8795-8814 and tabulated in docs/re/COMBAT.md s6 :233-245 / s9 item 1; Manual
+  // p.25's "three strikes sink a ship" holds for kinds 5-7 only, and the measured code governs
+  // the port (room 3544 ruling 1). Cargo still cannot defend itself and is lost.
   if (mission.type === "strike") {
     const combat = combatRules();
     const max = combat.maxStrength;
+    const shipDamage = combat.airStrikeShipDamage;
     const doomed = new Set();
     const caught = (match.pieces || []).filter(
       (piece) => piece && piece.side !== side && Number(piece.x) === at.x && Number(piece.y) === at.y,
@@ -605,14 +614,23 @@ export function sendMission(match, side, pieceId, mode, target) {
       }
       const before = ensureStrength(target, max);
       if (target.domain === "sea") {
-        const amount = Number((max * combat.airStrikeSeaAmount).toFixed(2));
+        // The port's own kind names are read through `damageKind` - the same map the damage matrix
+        // is indexed by - so the amounts come from config's measured.combat.airStrike.shipDamage
+        // and this module keeps no second table. A hull the table has no name for reads as the
+        // cargo class (`transportDamageKind` 5), the same default a transport's damage row uses.
+        const kind = String(combat.damageKind[String(target.kind)] ?? (Number(target.kind) || 0));
+        const amount = Number(shipDamage[kind] ?? shipDamage[String(combat.transportDamageKind)] ?? 0);
         const hit = applyDamage(target, amount, max);
-        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: "sea", amount, before, strength: hit.after, round: Number(match.round) || 0, note: STRIKE_NOTE });
+        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: "sea", kind: Number(kind) || 0, amount, before, strength: hit.after, round: Number(match.round) || 0, note: STRIKE_NOTE });
         if (hit.dead) doomed.add(target.id);
       } else {
-        target.strength = Number((before * combat.airStrikeLandFactor).toFixed(2));
-        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: target.domain, factor: combat.airStrikeLandFactor, before, strength: target.strength, round: Number(match.round) || 0, note: STRIKE_NOTE });
-        if (target.strength <= 0) doomed.add(target.id);
+        // decompiled.c 8795-8814: `(strength >> 1) + 1`, one point under half. The original's bar is
+        // an integer; a fractional stand-in (attrition is a per-round rate) is floored to the byte
+        // the original shifts rather than rounded up to a nicer half.
+        const dealt = (Math.floor(before) >> 1) + 1;
+        const hit = applyDamage(target, dealt, max);
+        events.push({ type: "strike_hit", side, pieceId: plane.id, target: target.id, domain: target.domain, amount: dealt, before, strength: hit.after, round: Number(match.round) || 0, note: STRIKE_NOTE });
+        if (hit.dead) doomed.add(target.id);
       }
     }
     if (doomed.size > 0) {
