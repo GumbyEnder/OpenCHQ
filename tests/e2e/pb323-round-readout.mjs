@@ -32,6 +32,10 @@
 //   (e)  a clock-word change moves no control (x/y within 1 px), and the strip stays one row;
 //   (f)  the full sentence is in the title (title covers text; 1986's title keeps "war may resume"
 //        at every width, and the painted line still names "cold war" there).
+//   (h)  PB-331: the purse text clears the readout's right edge by the width's own gap - >= 4 px at
+//        1024, exactly 8 px at 1280 and exactly 12 px at 1440 ("unchanged" for the two wider bands) -
+//        in W1 (round 0) and W2 (round >= 10), held and running, in every era. The defect was 2.00 px
+//        at 1024 in every era and both clock states, which is why the strip read "cold war50b".
 //
 // What breaks if this is removed: at 1024x768 the player is shown the era and the side of a war whose
 // round number and clock state are off the edge of the row - the two facts the original puts on its
@@ -119,6 +123,18 @@ const snapshot = (page) => page.evaluate(() => {
   }
   const nav = document.getElementById("nav");
   const nr = nav ? nav.getBoundingClientRect() : null;
+  // PB-331: the purse's own text edge, so the gap is measured to the TEXT and not only to a box
+  // that may be wider than what it paints.
+  const pu = document.getElementById("purseChip");
+  let purse = null;
+  if (pu) {
+    const pr = pu.getBoundingClientRect();
+    const prange = document.createRange();
+    prange.selectNodeContents(pu);
+    const ptx = prange.getBoundingClientRect();
+    purse = { left: round2(pr.left), textLeft: round2(ptx.left), w: round2(pr.width),
+      text: (pu.textContent || "").trim(), clipped: pu.scrollWidth > pu.clientWidth + 1 };
+  }
   return {
     text: (info.textContent || "").trim(),
     title: info.getAttribute("title") || "",
@@ -135,6 +151,7 @@ const snapshot = (page) => page.evaluate(() => {
     clock: window.__chq.room() ? window.__chq.room().clock : null,
     speed: window.__chq.room() ? window.__chq.room().speed : null,
     round: window.__chq.room() ? window.__chq.room().round : null,
+    purse,
   };
 });
 
@@ -145,6 +162,26 @@ function readoutFit(snap) {
     snap.range.right <= snap.box.right + 0.5 &&
     snap.range.width <= snap.contentWidth + 0.5;
   return { integerOk, rangeOk };
+}
+
+// PB-331 (PM 10362 §2, 10426 §2): the gap between the readout's right edge and the purse's TEXT.
+// The row's own numbers are 4 px at 1024, 8 px at 1280 and 12 px at 1440. The two wider bands are
+// graded EXACT because the AC says "unchanged"; the 1024 band is a floor (>= 4) because that row is
+// packed to the pixel and a future reclaim may only ever widen it.
+function purseGap(snap, width) {
+  const floor = width >= 1440 ? 12 : width >= 1280 ? 8 : 4;
+  const exact = width >= 1280;
+  const gap = snap && snap.purse ? round2(snap.purse.textLeft - snap.box.right) : null;
+  const ok = gap !== null && (exact ? Math.abs(gap - floor) <= 0.51 : gap >= floor - 0.01);
+  return { ok, gap, floor, exact, purse: snap ? snap.purse || null : null, text: snap ? snap.text : "" };
+}
+
+function markPurse(snap, width, phase, at) {
+  const g = purseGap(snap, width);
+  const want = g.exact ? g.floor + " px (exact, unchanged)" : ">= " + g.floor + " px";
+  mark("(h) " + phase + ": the purse text clears the readout by " + want + at, g.ok,
+    JSON.stringify({ gap: g.gap, floor: g.floor, exact: g.exact, readoutRight: snap ? snap.box.right : null,
+      purseTextLeft: g.purse ? g.purse.textLeft : null, purse: g.purse, painted: g.text }));
 }
 
 function overlaps(a, b) {
@@ -394,6 +431,36 @@ async function main() {
       mark("(e) the strip stayed one row of the same height" + at,
         Math.abs(running.strip.h - beforePlay.strip.h) <= 1 && Math.abs(running.box.y - beforePlay.box.y) <= 1,
         JSON.stringify({ held: { h: beforePlay.strip.h, y: beforePlay.box.y }, running: { h: running.strip.h, y: running.box.y } }));
+
+      // ---- (h) the purse gap, W1 (round 0) and W2 (round >= 10) --------------------------------
+      // PB-331: W1 is the launched round-0 line (widest PAINTED text), W2 is round >= 10 (widest
+      // HEAD). Both are real rooms, held and running; the floor is the width's own number.
+      markPurse(held, viewport.width, "W1 held", at);
+      markPurse(running, viewport.width, "W1 running", at);
+
+      // W2 is reached by playing: speed 6 and the clock running until the round reads 10.
+      await page.evaluate(() => { for (let i = 0; i < 5; i += 1) document.getElementById("speedUp").click(); });
+      let w2 = null;
+      for (const t0 = Date.now(); Date.now() - t0 < 60000;) {
+        const s = await snapshot(page);
+        if (s && s.round >= 10 && s.clock === "running") { w2 = s; break; }
+        await sleep(250);
+      }
+      mark("(h) W2 running: a real room reached round 10" + at, Boolean(w2),
+        JSON.stringify(w2 ? { round: w2.round, speed: w2.speed, painted: w2.text } : { reached: false }));
+      if (w2) markPurse(w2, viewport.width, "W2 running", at);
+      await page.evaluate(() => document.getElementById("clockBtn").click());
+      await page.waitForFunction(() => window.__chq.room() && window.__chq.room().clock === "held", null,
+        { timeout: 25000, polling: 80 });
+      await sleep(350);
+      const w2Held = await snapshot(page);
+      if (w2Held) markPurse(w2Held, viewport.width, "W2 held", at);
+      // The screenshot the AC asks for: 1024, the width whose row is packed to the pixel.
+      if (viewport.width === 1024 && era === "1986") {
+        const shot = path.join(OUT, "pb331-1024x768-purse.png");
+        await page.screenshot({ path: shot });
+        mark("(h) the 1024 screenshot was written" + at, true, shot);
+      }
 
       // ---- (g) the win line: producer arm -------------------------------------------------------
       // PM 10342 §2(c): the head plus the result is painted whole, the capital detail is what the

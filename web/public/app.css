@@ -1437,8 +1437,13 @@ body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: non
      is gaps/padding first, the purse floor second; nothing here moves, hides or shrinks a control. */
   body.in-match #strip { gap: 1px; padding: 0; }
   /* Three more gaps, none of them inside a label: the brand's own gap (which only separates the
-     readout from the purse), the account box's (name/Sign out/Debug), and the speed cluster's. */
-  body.in-match #strip > .brand { gap: 2px; }
+     readout from the purse), the account box's (name/Sign out/Debug), and the speed cluster's.
+     PB-331 (PM 10362 §2, 10426 §2): the brand gap was 2 px here and that is the whole of the gap
+     between the readout's right edge and the purse text - the strip read "cold war50b" with the
+     two boxes touching. The floor is 4 px at 1024 (1280 keeps 8, 1440 keeps 12, both untouched).
+     The 2 px is the row's own slack where it lands (the account box's auto margin), so no label,
+     button or readout gives a pixel. */
+  body.in-match #strip > .brand { gap: 4px; }
   body.in-match #strip > .whoami { gap: 1px; }
   body.in-match .speedctl { gap: 1px; }
   body.in-match .pursechip { min-width: 27px; }
