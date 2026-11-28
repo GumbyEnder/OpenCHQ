@@ -13,6 +13,10 @@
 // passed while the campaign board paid nothing. This arm asks the grid: the coordinate comes from
 // boardPayload().cells (the extract), and attritionStep is called with NO lookup.
 //
+// Skip reachability (NIT-1, frodo 10587): skips when no board resolves at all, bundled included.
+// An absent extract does NOT skip it - boardPayload() falls through to the baked world and this
+// node grades that real board, so the suite must read it green there, never "skipped".
+//
 // frodo's probe (room 10579) found 33/36 rows; the three reds were these.
 
 import { readFileSync } from "node:fs";
