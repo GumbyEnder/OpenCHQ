@@ -64,7 +64,9 @@ function ids(view) {
 
 export async function run(ctx) {
   const dataRoot = resolveDataRoot();
-  must(Boolean(dataRoot), "the reference extract is not mounted, so the lane graph cannot be read");
+  if (!dataRoot) {
+    return ctx.skip("pb302_sub_radar: no reference extract is mounted (set OPENCHQ_DATA / OPENCHQ_EXTRACT), so the lane graph cannot be read");
+  }
 
   // A lane waypoint is water by construction (joinLane's default accept test), so a boat standing
   // on it is on a real lane cell, not on a remembered coordinate.
