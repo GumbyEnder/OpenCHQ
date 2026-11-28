@@ -412,7 +412,10 @@ const server = createServer(async (req, res) => {
       : login(body.username, body.password);
     if (result.error) {
       noteFailure(key);
-      send(res, 400, { error: result.error });
+      // PB-339: a refusal that has an identity says so (`code`), so the page can name the failure
+      // from its own copy of the sentence instead of echoing this body. Additive: bodies without a
+      // code keep the shape every earlier leg reads.
+      send(res, 400, result.code ? { error: result.error, code: result.code } : { error: result.error });
       return;
     }
     noteSuccess(key);

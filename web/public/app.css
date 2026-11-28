@@ -83,6 +83,20 @@ h1 {
 
 form { display: grid; gap: 10px; }
 
+/* PB-339: the sign-in refusal, inline under the password field. The form is a one-column grid, so
+   the line is exactly the card's content width; `overflow-wrap` breaks the sentence rather than the
+   column, and `[hidden]` wins over the class's display so an empty line takes no space. */
+.formproblem {
+  margin: 0;
+  max-width: 100%;
+  color: var(--gold);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.formproblem[hidden] { display: none; }
+
 /* PB-327: a <select>'s min-content is the width of its LONGEST option, and the lobby's opponent list
    carries the original's five names with their notes ("MARS GOD OF WAR (5) - ..."). With a one-auto-
    column grid the column is sized to that min-content, so the launch form laid out 510 px wide inside a

@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
+// PB-339: the refusal's sentence is produced once, here and on the page, from public/signincopy.mjs.
+import { CREDENTIALS_REFUSED, CREDENTIALS_REFUSED_CODE } from "../public/signincopy.mjs";
 
 const root = process.env.OPENCHQ_WEB_DATA || path.join(homedir(), ".local", "share", "openchq");
 mkdirSync(root, { recursive: true });
@@ -82,11 +84,11 @@ export function register(username, password) {
 export function login(username, password) {
   const key = String(username ?? "").trim().toLowerCase();
   const row = db.prepare("SELECT id, username, pass_salt, pass_hash FROM users WHERE username_key = ?").get(key);
-  if (!row) return { error: "Those credentials did not match." };
+  if (!row) return { error: CREDENTIALS_REFUSED, code: CREDENTIALS_REFUSED_CODE };
   const got = scryptSync(String(password ?? ""), Buffer.from(row.pass_salt, "hex"), 32);
   const expect = Buffer.from(row.pass_hash, "hex");
   if (got.length !== expect.length || !timingSafeEqual(got, expect)) {
-    return { error: "Those credentials did not match." };
+    return { error: CREDENTIALS_REFUSED, code: CREDENTIALS_REFUSED_CODE };
   }
   return { user: { id: row.id, username: row.username } };
 }
@@ -139,7 +141,7 @@ export function userForToken(token) {
 export function changePassword(username, current, next, keepToken) {
   const key = String(username ?? "").trim().toLowerCase();
   const row = db.prepare("SELECT id, pass_salt, pass_hash FROM users WHERE username_key = ?").get(key);
-  if (!row) return { error: "Those credentials did not match." };
+  if (!row) return { error: CREDENTIALS_REFUSED };
   const got = scryptSync(String(current ?? ""), Buffer.from(row.pass_salt, "hex"), 32);
   const expect = Buffer.from(row.pass_hash, "hex");
   if (got.length !== expect.length || !timingSafeEqual(got, expect)) {

@@ -180,6 +180,11 @@
         <form id="login">
           <label>Name <input name="username" autocomplete="username" required></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <!-- PB-339: a refused sign-in names itself where the player is already looking - inside
+               the form, under the password field - and stays until the next submit or edit. The
+               sentence is the page's own copy (public/signincopy.mjs), never the server's body, and
+               an empty p takes no space. -->
+          <p id="loginProblem" class="formproblem" role="alert" hidden></p>
           <button type="submit">Enter</button>
         </form>
       </div>

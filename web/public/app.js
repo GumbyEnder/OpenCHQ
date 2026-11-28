@@ -110,6 +110,9 @@ import {
 import { dialogAfter, focusKeyOf, keepView } from "./dialogstate.mjs";
 import { formatBillions, formatWholeBillions, nextDoorMode, purchaseText } from "./command.mjs";
 import { createLateOrders, createOrderWatch, queuedText } from "./orderwatch.mjs";
+// PB-339: the refused-credentials sentence has one producer, shared with the server, so the inline
+// line under the password field and the answer body are the same words.
+import { CREDENTIALS_REFUSED, CREDENTIALS_REFUSED_CODE } from "./signincopy.mjs";
 // How long the page waits to reconnect, and how long one attempt may hang before it is a failure.
 // Both numbers are bounded so a 10 s outage cannot cost a minute (PB-025).
 import {
@@ -476,7 +479,14 @@ async function post(url, body) {
     body: JSON.stringify(body || {}),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Request failed");
+  if (!res.ok) {
+    const err = new Error(data.error || "Request failed");
+    // PB-339: the answer's identity travels with the error, so a caller can name the failure from
+    // its own copy of the sentence instead of echoing the body it was handed.
+    err.status = res.status;
+    err.code = data.code || "";
+    throw err;
+  }
   return data;
 }
 
@@ -4903,16 +4913,46 @@ async function signOut() {
   flashLine.clearResult();
 }
 
-document.querySelector("#login").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const fields = new FormData(event.target);
-  try {
-    await post("/api/login", { username: fields.get("username"), password: fields.get("password") });
-    connect();
-  } catch (err) {
-    say(err.message);
-  }
-});
+// PB-339: a refused sign-in currently spoke only through the bottom toast. The player's eyes are on
+// the form, so the same sentence now sits inside it, under the password field: shown on a refusal,
+// cleared by the next submit or by editing either field, and cleared again by a successful sign-in.
+// The line is the page's own copy of the sentence (public/signincopy.mjs) keyed on the answer's
+// `code`, so a 429 or a transport failure keeps its own wording in the toast and no field id or raw
+// server body is ever painted into the form.
+const loginForm = document.querySelector("#login");
+const loginProblem = document.getElementById("loginProblem");
+
+function clearLoginProblem() {
+  if (!loginProblem) return;
+  loginProblem.textContent = "";
+  loginProblem.hidden = true;
+}
+
+function showLoginProblem() {
+  if (!loginProblem) return;
+  loginProblem.textContent = CREDENTIALS_REFUSED;
+  loginProblem.hidden = false;
+}
+
+if (loginForm) {
+  for (const field of loginForm.querySelectorAll("input")) field.addEventListener("input", clearLoginProblem);
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const fields = new FormData(event.target);
+    clearLoginProblem();
+    try {
+      await post("/api/login", { username: fields.get("username"), password: fields.get("password") });
+      clearLoginProblem();
+      // A successful sign-in must not leave the refusal riding the six-second toast into the lobby.
+      // Only that sentence is ours to wipe; anything else on the line is not this handler's to clear.
+      if (flashLine.text() === CREDENTIALS_REFUSED) flashLine.clear();
+      connect();
+    } catch (err) {
+      if (err.code === CREDENTIALS_REFUSED_CODE) showLoginProblem();
+      say(err.message);
+    }
+  });
+}
 
 document.querySelector("#register").addEventListener("submit", async (event) => {
   event.preventDefault();
