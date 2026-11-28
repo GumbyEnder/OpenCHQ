@@ -47,24 +47,19 @@ export const name = "combat_vs_doc";
 // that arm in the same commit that edits this table.
 // ---------------------------------------------------------------------------------------------
 export const DEVIATIONS = [
-  { id: "D1", formula: "s2 0x18f0 cell [9][0]", doc: 25, server: 34, cls: "doc error", card: "PB-350",
-    note: "COMBAT.md:72 transcribes row 9 col 0 as 25; the EXE byte is 34 (0x341a0+81) and config agrees. Column 0 is never read at runtime (kind 0 is an empty slot)." },
-  { id: "D2", formula: "s2 0x18f0 cell [4][0]", doc: 0, server: 35, cls: "doc error", card: "PB-350",
-    note: "COMBAT.md:67 transcribes row 4 col 0 as 0; the EXE byte is 35 (0x341a0+36). Kind 4 is unused." },
-  { id: "D3", formula: "s2.1 terrain cover ('Not wired: T-009b')", doc: "unwired", server: "wired", cls: "doc error", card: "PB-350",
-    note: "coverFor()/damageFor() apply it and t016_terrain.mjs pins the arithmetic; s2.1, s4 :183 and s10 item 5 are stale." },
-  { id: "D4", formula: "s2.3 ship-vs-land cap ('Not wired: T-009b')", doc: "unwired", server: "wired", cls: "doc error", card: "PB-350",
-    note: "combat.damageFor applies config.terrain.shoreFire (tag disassembly, PM 4572 interim); s2.3 and s10 item 5 are stale." },
   { id: "D9", formula: "s5 attrition and repair rates", doc: "per PASS (lake 3, polar 5, desert/jungle 3, site 20; repair +10 every other call)", server: "per ROUND stand-in (0.5 for those terrains, 1 wasteland; repair 5)", cls: "unmeasured stand-in", card: "D-017",
     note: "labelled STAND-IN in config; no per-round figure exists until the speed ruling. Not a defect." },
-  { id: "D13", formula: "s2.2 flank multiplier", doc: "'x1.5' (s2.2 :121, :125)", server: "d + floor(d x 0.5), the original's integer form (13 -> 19)", cls: "doc error", card: "PB-350",
-    note: "decompiled.c 7070 is `local_8 += local_8/2`, so 13 reads 19, not 19.5. The port is faithful; the doc's prose rounds." },
 ];
 
 // PB-349 closed D10, D11 and D12 at this commit, so their rows are gone: the table holds only what
 // is still measured-and-unfixed. The arms that pinned them are now positive assertions in the s5
 // block below (a site cell with no row drains, an unowned site pays 20 into the floor, the beat
 // pins the occupant), and the three server files name the routine each figure comes from.
+//
+// PB-350 closes D1, D2, D3, D4 and D13 on top of that: the doc prints the dumped bytes, its cover
+// and shore-cap sentences say wired, and its flank prose gives the integer form. Those rows are gone
+// too; the arms they pinned are now positive assertions (the 81-cell match parsed from the doc's own
+// fence, the two repaired cells by value, and 13 -> 19 flank).
 
 const must = (ok, message) => {
   if (!ok) throw new Error(message);
@@ -81,18 +76,35 @@ const matrix = measured.damageMatrix || {};
 const rows = matrix.rows || {};
 const kindNine = matrix.kindNineColumn || {};
 
-// The doc's transcript of 0x18f0 (COMBAT.md:62-73), verbatim, row = attacker, col = target.
-const DOC_ROWS = {
-  1: [0, 20, 17, 15, 0, 25, 25, 35, 35],
-  2: [35, 26, 20, 20, 0, 25, 25, 35, 35],
-  3: [35, 20, 17, 15, 0, 25, 25, 35, 35],
-  4: [0, 0, 0, 0, 0, 0, 0, 0, 0],
-  5: [0, 18, 16, 14, 0, 10, 10, 5, 5],
-  6: [5, 9, 8, 7, 0, 10, 10, 5, 5],
-  7: [5, 0, 0, 0, 0, 100, 100, 25, 34],
-  8: [34, 12, 10, 6, 0, 50, 50, 34, 25],
-  9: [25, 10, 8, 5, 0, 50, 50, 25, 20],
-};
+// The doc's transcript of 0x18f0 lives in the FENCE under `tgt 0   1 ... 8` in docs/re/COMBAT.md.
+// It is PARSED from the doc here, never copied: a second copy inside this node would agree with
+// itself while the artifact a reader gets drifted (PB-350 R1). Row = attacker kind, col = target.
+// Cite the fence and the byte, never a line number: the fence moves whenever the prose above it is
+// edited, and the two cells PB-350 repaired are identified by their dumped addresses - row 4 col 0
+// is `0x341a0 + 36` (35) and row 9 col 0 is `0x341a0 + 81` (34). Both are unread at runtime (kind 0
+// is an empty slot), so no behaviour sits behind them.
+const DOC_PATH = new URL("../../../docs/re/COMBAT.md", import.meta.url);
+const DOC_TEXT = readFileSync(DOC_PATH, "utf8");
+function docTable(text) {
+  const fences = [...text.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((hit) => hit[1]);
+  const fence = fences.find((body) => /^\s*tgt\s+0\s+1\s+2\s+3\s+4\s+5\s+6\s+7\s+8\s*$/m.test(body));
+  if (!fence) throw new Error("COMBAT.md has no fenced 0x18f0 table (header `tgt 0 1 2 ... 8`)");
+  const out = {};
+  for (const line of fence.split("\n")) {
+    const hit = /^\s*atk\s+([1-9])\s+(.+?)\s*$/.exec(line);
+    if (!hit) continue;
+    const cells = hit[2].split(/\s+/).map(Number);
+    if (cells.length !== 9 || cells.some((n) => !Number.isInteger(n))) {
+      throw new Error("COMBAT.md fence, atk " + hit[1] + ": not nine integer cells: " + hit[2]);
+    }
+    out[Number(hit[1])] = cells;
+  }
+  for (let attacker = 1; attacker <= 9; attacker++) {
+    if (!out[attacker]) throw new Error("COMBAT.md fence has no atk " + attacker + " row");
+  }
+  return out;
+}
+const DOC_ROWS = docTable(DOC_TEXT);
 const SEA = new Set(["submarine", "cruiser", "carrier"]);
 const piece = (id, side, kind, x, y, extra = {}) => ({
   id, side, domain: SEA.has(kind) ? "sea" : "land", kind, x, y,
@@ -128,18 +140,31 @@ export async function run(ctx) {
         "kindNineColumn[9] is " + kindNine["9"] + ", EXE byte 0x341fa is " + bytes[0x341a0 + 90]);
     }
   }
-  // The doc's transcript disagrees with the binary at exactly the two cells D1/D2 name. If a third
-  // cell ever moves this reds, because the deviation table would then be incomplete.
+  // PB-350 R1: the doc's own fence, parsed above, against the config copy of the dumped table. This
+  // is the inverse of the arm it replaces (which pinned the two known mismatches ["4,0","9,0"]): the
+  // set is now empty, so a cell that drifts in EITHER direction reds here NAMING that cell - the
+  // gate's A5 mutant (one cell rewritten in the fence) reds at [1][2].
   const docErrors = [];
   for (let attacker = 1; attacker <= 9; attacker++) {
     for (let target = 0; target <= 8; target++) {
-      if (DOC_ROWS[attacker][target] !== Number(rows[String(attacker)][target])) docErrors.push(attacker + "," + target);
+      const doc = Number(DOC_ROWS[attacker][target]);
+      const live = Number(rows[String(attacker)][target]);
+      if (doc !== live) docErrors.push("[" + attacker + "][" + target + "] doc " + doc + " vs measured " + live);
     }
   }
-  eq(docErrors, ["4,0", "9,0"],
-    "COMBAT.md s2's table now disagrees with the EXE at " + JSON.stringify(docErrors) + "; D1/D2 are the only known cells");
-  eq(DOC_ROWS[9][0], DEVIATIONS[0].doc, "COMBAT.md:72 no longer says D1's 25");
-  eq(DOC_ROWS[4][0], DEVIATIONS[1].doc, "COMBAT.md:67 no longer says D2's 0");
+  must(docErrors.length === 0,
+    "COMBAT.md s2's fenced table disagrees with measured.damageMatrix at " + docErrors.join("; "));
+  // The two repaired cells by the address they were dumped from, not by a line number.
+  eq(DOC_ROWS[4][0], 35, "COMBAT.md fence row 4 col 0 reads " + DOC_ROWS[4][0] + "; the dumped byte 0x341a0+36 is 35 (PB-350)");
+  eq(DOC_ROWS[9][0], 34, "COMBAT.md fence row 9 col 0 reads " + DOC_ROWS[9][0] + "; the dumped byte 0x341a0+81 is 34 (PB-350)");
+
+  // PB-350 also corrected prose, and prose with no arm is prose the next edit re-breaks. This reads
+  // the doc itself (DOC_TEXT above): the cover and shore-cap sentences no longer say "not wired",
+  // and the flank sentence gives the integer form. The two repaired CELLS are graded by the parsed
+  // fence above, so they are not re-asserted as strings here - spacing is not the artifact.
+  must(!/not wired yet \(T-009b\)/.test(DOC_TEXT), "COMBAT.md s4 still says terrain cover is not wired (PB-350)");
+  must(!/\*\*Not wired\*\* \(T-009b\)/.test(DOC_TEXT), "COMBAT.md s2.3 still says the shore cap is not wired (PB-350)");
+  must(/\*\*×1\.5 rounded down\*\*/.test(DOC_TEXT), "COMBAT.md s2.2 no longer gives the integer flank form (PB-350)");
 
   // The runtime's pairing call, for every kind the eras field (named kinds only: 4 is unused and
   // 5/6 are AI hulls with no remake actor). Target 9 is the a*9+9 out-of-row read, so it comes
@@ -214,7 +239,7 @@ export async function run(ctx) {
   // would read 19.5 and 20 would read 30.
   const flank = damageFor({ ...attacker, facing: "n" }, { ...dugIn }, cfg);
   must(flank.flank === true, "s2.2 the perpendicular attack no longer reads as a flank");
-  eq(flank.amount, 19, "D13: flank is the integer form 13 + 13/2 = 19, not x1.5 = 19.5");
+  eq(flank.amount, 19, "s2.2 flank is the integer form 13 + 13/2 = 19, not x1.5 = 19.5");
   eq(damageFor(
     piece("blue:tank2", "blue", "tank", plainCell.x, plainCell.y, { facing: "n" }),
     piece("red:foot2", "red", "infantry", plainCell.x, plainCell.y, { facing: "w", fighting: "blue:third", entrenched: true }),
