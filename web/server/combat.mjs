@@ -590,10 +590,30 @@ export function resolve(match) {
         paid.add(piece.id);
         piece.militiaSite = key;
         piece.militiaRound = round;
-        const militia = applyDamage(piece, combat.militiaDamage, max);
+        // PB-349 (D11): 9056-9077 is a two-value table, not one number - 2 on an ENEMY-owned site
+        // and 20 on an UNOWNED one until the capture lands (docs/re/COMBAT.md s5 :228-231, live leg
+        // docs/re/t009b/militia-2026-11-13.txt 100 -> 80). Both values are read from
+        // measured.combat.militia through combatRules(); neither is a literal here. Only the
+        // neutral branch is floored - 9089-9093's min(amount, strength-20) - so the enemy site's
+        // 2 can kill and the unowned site's 20 cannot take a unit under 20.
+        const neutral = site.owner === null || site.owner === undefined;
+        const before = ensureStrength(piece, max);
+        let amount = neutral ? combat.militiaNeutralDamage : combat.militiaDamage;
+        if (neutral) {
+          const floor = combat.attritionFloor * max;
+          amount = Math.max(0, Math.min(amount, before - floor));
+        }
+        if (amount <= 0) return; // at the floor: the beat happens, nothing more is taken
+        const militia = applyDamage(piece, amount, max);
+        // PB-349 (D12): the same routine takes the occupant's move points to -10 ("pinned against
+        // the town", docs/re/COMBAT.md s5). The port has no move-point field; the shape it does
+        // have for "stands until it is re-ordered" is `pinned`, which the step loop honours
+        // (move.mjs advance) and the badges render, so the zeroing lands there instead of as a
+        // second, parallel counter nothing else reads.
+        piece.pinned = true;
         log.push({
           type: "shot",
-          side: site.owner,
+          side: site.owner || null,
           pieceId: "militia:" + (site.id ?? site.name ?? "city"),
           target: piece.id,
           // PB-211 gate (f): the militia is a producer like any other, and the log/lexicon reads
@@ -601,11 +621,14 @@ export function resolve(match) {
           targetSide: piece.side,
           attackerKind: "militia",
           targetKind: kindOf(piece),
-          amount: combat.militiaDamage,
+          amount,
           strength: militia.after,
           flank: false,
           entrenched: false,
           militia: true,
+          // PB-349 (D12): the row says the beat also pinned the occupant, so a leg can assert the
+          // refusal from the log instead of re-deriving it from the piece.
+          pinned: true,
           at: { x: piece.x, y: piece.y },
           round,
           note: MILITIA_NOTE,
@@ -615,11 +638,14 @@ export function resolve(match) {
 
       // (a) The occupation: every enemy piece standing inside the city, defender or not. This is
       // the manual's case, and it is the half the old `hits` walk could not express.
+      // PB-349 (D11): an unowned site is a second case, not a skipped one - the squatter pays 20
+      // until the capture lands, so the gate is "the piece does not own this site", not "the site
+      // has an owner".
       for (let i = 0; byCell && i < pieces.length; i++) {
         const piece = pieces[i];
         const site = piece ? siteOfCell(piece) : null;
         if (!site || !MILITIA_SITES.has(String(site.kind))) continue;
-        if (!site.owner || site.owner === piece.side) continue;
+        if (site.owner === piece.side) continue;
         pay(piece, site);
       }
 
