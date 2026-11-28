@@ -115,8 +115,16 @@ export async function run(ctx) {
     ok(/saveName\.value = pick\.name/.test(prompt), "the prompt does not fill the title field with the pick (AC (a))");
     ok(/saveConfirmText\.textContent = pick\.sentence/.test(prompt), "the prompt does not paint the shared sentence (AC (a))");
     ok(/saveConfirm\.classList\.remove\("hidden"\)/.test(prompt), "the prompt does not open the confirm (AC (a))");
-    ok((app.match(/saveConfirmText\.textContent =/g) || []).length === 2,
-      "a third producer writes #saveConfirmText: the two paths can drift (found "
+    // PB-336: the exists branch routes through promptOverwrite too, so there is ONE writer of
+    // #saveConfirmText. It used to be two (the exists branch composed its own sentence, with no
+    // meta and the raw typed spelling), and a second writer is how the two drift apart again.
+    // The branch arm is checked FIRST so a mutant that restores the old sentence is named as
+    // PB-336's, not as a generic producer count.
+    const saveNowBody = bodyOf(app, "async function saveNow(name, overwrite) {");
+    ok(/promptOverwrite\(hit\)/.test(saveNowBody) && !/already exists\. Overwrite it with this round/.test(saveNowBody),
+      "the exists branch writes its own sentence instead of the shared prompt (PB-336)");
+    ok((app.match(/saveConfirmText\.textContent =/g) || []).length === 1,
+      "a second producer writes #saveConfirmText: the paths can drift (found "
       + (app.match(/saveConfirmText\.textContent =/g) || []).length + " assignments)");
     ok(/promptOverwrite\(hit\)/.test(bodyOf(app, "saveForm?.addEventListener(\"submit\", (event) => {")),
       "a typed duplicate no longer reaches the same prompt as a picked row (AC (a))");

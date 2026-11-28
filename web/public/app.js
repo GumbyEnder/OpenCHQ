@@ -4214,11 +4214,25 @@ async function saveNow(name, overwrite) {
   const { ok, data } = await slotPost("/api/slots", { name, overwrite: Boolean(overwrite) });
   if (!ok) {
     if (data.exists) {
-      // The server's own name rule folded this into a slot the list had not shown (whitespace or
-      // case): ask here, with the slot the server named, rather than making the player guess.
-      saveConfirmText.textContent = "A saved war named \"" + name + "\" already exists. Overwrite it with this round?";
-      saveConfirm.classList.remove("hidden");
-      saveStatus.textContent = "";
+      // PB-336: the server's name rule folded the typed title into a slot the list did not match
+      // (internal whitespace or a tab). Ask about the SLOT the server named, through the same
+      // producer a row click uses - no second wording, and no echo of the raw typed spelling.
+      const hit = saveSlots.find((slot) => String(slot.id) === String(data.id));
+      if (hit) {
+        promptOverwrite(hit);
+        return;
+      }
+      // The list was painted before that slot existed (a save from another tab): re-read, then ask.
+      try {
+        saveSlots = await readSlots();
+        paintSaveExisting();
+        const fresh = saveSlots.find((slot) => String(slot.id) === String(data.id));
+        if (fresh) {
+          promptOverwrite(fresh);
+          return;
+        }
+      } catch { /* the refusal below is still the honest answer */ }
+      saveStatus.textContent = data.error || "The war was not saved.";
       return;
     }
     saveStatus.textContent = data.error || "The war was not saved.";
