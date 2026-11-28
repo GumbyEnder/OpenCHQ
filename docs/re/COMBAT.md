@@ -274,6 +274,16 @@ live measurement. The pin's enemy branch also tests a byte one level down (`CMP 
 0x80`, `1c0d:0197`, BX = the routine's second argument); D12 already ships `pinned` as a stand-in for
 the zeroed move points, so that byte is not modelled separately.
 
+**The port ships this split** (PB-355 b). One predicate, `pinnedByBeat` in `web/server/combat.mjs`,
+now guards BOTH pin sites — the contact pin and the militia pin: `domain !== "sea" && transport !==
+true`, the remake's spelling of the original's `kind < 7`. A submarine, cruiser or carrier standing on
+an enemy or unowned dock still takes the 2 or the 20, keeps its order and steps it; a land hull on the
+same cell is pinned exactly as before, so G3 (land still pins) grades the store rather than its
+absence. `game.json`'s `militiaDamage` / `measured.combat.militia` are untouched — this commit moves
+the pin, not the damage. `web/test/nodes/pb355_dock_owner.mjs` grades own / enemy / unowned docks for
+all three hulls, the later tick, the step, and the land control, over both the extract board and the
+baked board.
+
 **A dock cell is a town's footprint cell.** `FUN_188b_00a4` stores the site at the piece's own cell in
 `0xc478` (`MOV [0xc478],AX`, `188b:00c8`), and that lookup is `FUN_2724_00e3`, which matches a site's
 centre and its eight ring cells - facilities (subtype 5) centre only. A dock painted beside a town is

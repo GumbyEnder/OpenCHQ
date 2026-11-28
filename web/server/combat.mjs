@@ -45,6 +45,16 @@ export const MILITIA_NOTE = "City militia.";
 // base, dock or capital; a facility has none.
 const MILITIA_SITES = new Set(["city", "base", "dock", "docks", "capital"]);
 
+// PB-355 (b): ONE kind test, two different gates. FUN_1c0d_00b4 writes the militia pin
+// (*(u16*)(i*2+0x6fe) = 0xfff6) inside `(local_4 = 0x82, bVar1 < 7)` at 9061-9063 (live
+// 1c0d:0186-018b), so kinds 7-11 - submarine, cruiser, carrier, transport - pay the shot and are
+// never pinned. Manual p.24: "Sea units that engage in combat do not suffer a loss of mobility; sea
+// units are never 'pinned.'" The contact pin has read this split since PB-072; the militia pin did
+// not, so a submarine that crossed onto an enemy dock stood there until it was re-ordered. The
+// remake's land hull at sea carries the `transport` flag, so both halves of the original's test
+// move here: sea domain out, cargo on a land hull out.
+const pinnedByBeat = (piece) => Boolean(piece) && piece.domain !== "sea" && piece.transport !== true;
+
 // Chebyshev distance 1, X wraps around the board edge, Y does not.
 export function adjacent(a, b) {
   if (!a || !b) return false;
@@ -477,8 +487,7 @@ export function resolve(match) {
       piece.fightRounds = Number(piece.fightRounds || 0) + 1;
       if (
         combat.pinRounds > 0 &&
-        piece.domain !== "sea" &&
-        piece.transport !== true &&
+        pinnedByBeat(piece) &&
         piece.fightRounds >= combat.pinRounds &&
         piece.pinned !== true
       ) {
@@ -610,7 +619,19 @@ export function resolve(match) {
         // have for "stands until it is re-ordered" is `pinned`, which the step loop honours
         // (move.mjs advance) and the badges render, so the zeroing lands there instead of as a
         // second, parallel counter nothing else reads.
-        piece.pinned = true;
+        //
+        // PB-355 (b): and it is gated by kind. The 0xfff6 store sits inside `bVar1 < 7` (9061-9063),
+        // so a sea hull (or cargo on one) takes the shot and keeps its mobility - Manual p.24. The
+        // damage above is NOT gated: `local_4 = 0x82` is assigned before that test, and the unowned
+        // branch's byte outside it, so a submarine still pays 2 or 20.
+        const pinned = pinnedByBeat(piece);
+        if (pinned) {
+          piece.pinned = true;
+        } else if (piece.pinned === true) {
+          // A room saved before this fix can hold a sea piece the militia had pinned. The original
+          // never pins one, so the stale flag is cleared at the same beat that would have set it.
+          piece.pinned = false;
+        }
         log.push({
           type: "shot",
           side: site.owner || null,
@@ -627,8 +648,9 @@ export function resolve(match) {
           entrenched: false,
           militia: true,
           // PB-349 (D12): the row says the beat also pinned the occupant, so a leg can assert the
-          // refusal from the log instead of re-deriving it from the piece.
-          pinned: true,
+          // refusal from the log instead of re-deriving it from the piece. PB-355 (b): false for a
+          // sea hull, because the pin - not the shot - is the branch inside `bVar1 < 7`.
+          pinned,
           at: { x: piece.x, y: piece.y },
           round,
           note: MILITIA_NOTE,
