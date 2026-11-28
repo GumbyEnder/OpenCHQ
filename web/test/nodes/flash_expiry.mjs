@@ -123,7 +123,9 @@ export function run(ctx) {
   if (!sayResult) fail("app.js has no sayResult() to inspect");
   const sayResultCode = sayResult.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
   if (/\bsay\(/.test(sayResultCode)) fail("sayResult() still writes the expiring flash");
-  if ((sayResult.match(/flashLine\.result\(/g) || []).length !== 3) {
+  // PB-199 adds a fourth branch (a resignation named from result.reason), so the count moved 3 -> 4:
+  // the arm is "every branch routes to the result line", not "there are three of them".
+  if ((sayResult.match(/flashLine\.result\(/g) || []).length !== 4) {
     fail("sayResult() does not route every branch to the result line");
   }
 

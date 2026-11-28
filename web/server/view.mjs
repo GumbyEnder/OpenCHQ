@@ -448,9 +448,17 @@ export function resultOf(match) {
   // PB-200 AC3: a cease fire ends the match with its own reason and no winner. A truce is not a
   // victory, so `winner` stays null and the end screen says so instead of printing a winner.
   const truce = kind === "ceasefire" ? match.winReason : null;
+  // PB-199: the side that ENDED the war, so the end screen can name who resigned instead of asking
+  // the note. A resignation and a cease fire both carry their author; a capital win has none.
+  const ender = kind === "resignation"
+    ? (match.winReason.side ?? match.winReason.by ?? null)
+    : truce
+      ? (truce.by ?? null)
+      : null;
   return {
     winner: match.winner || null,
     reason: truce ? "ceasefire" : reason ? "capitals" : (match.winner ? "resignation" : "over"),
+    by: ender === "blue" || ender === "red" ? ender : null,
     ceasefire: truce
       ? { by: truce.by ?? null, round: truce.round ?? null }
       : null,
@@ -474,6 +482,12 @@ export function resultNote(match) {
       ? " at round " + result.ceasefire.round
       : "";
     return "The war ended by cease fire" + at + ". Neither side won.";
+  }
+  // PB-199 (a): a resignation has no capital to name, so the sentence names the side that resigned
+  // and the side that won. Written here, once, so the end screen, the log line and the film cannot
+  // disagree about it; a saved match that ended before `side` existed keeps the bare "<Side> wins."
+  if (result.reason === "resignation" && result.by && result.winner) {
+    return sideWord(result.by) + " resigned. " + who + " wins.";
   }
   if (result.reason === "capitals" && result.lastCapital && result.lastCapital.name) {
     const n = result.capitals.length;
