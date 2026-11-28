@@ -12,6 +12,9 @@ import { CELL_W, CELL_H, TERRAIN, boardPayload, resolveDataRoot } from "./board.
 import { landPace, isRefused, combatRules, cellsPerRound, pathCostFor, walkCostLimit, digInIds } from "./rules.mjs";
 import { seaRoute, waterStepRoute } from "./lanes.mjs";
 import { inactiveRounds, isAircraft, isAirStrip } from "./air.mjs";
+// NIT-2: the crossing predicate is the same layer test combat/economy use, so a piece shaped
+// `{kind: "aircraft"}` with no `domain` is still a plane and is never told it becomes cargo.
+import { layerOf } from "./placement.mjs";
 import { movementBlocked, oilCostPerCell, oilMeterFor, syncOilSeat } from "./resources.mjs";
 // PB-245 AC5: a peacetime transfer is instant and may not land in neutral or enemy territory
 // (manual printed p.31). The state is peace.mjs, the territory question is territory.mjs.
@@ -487,14 +490,17 @@ export function planOrder(match, side, pieceId, toX, toY) {
   // and one cruiser hit kills cargo). The count comes from the same path the order stores, so the
   // ack cannot disagree with the plan.
   //
-  // Only a LAND piece becomes cargo (move.mjs syncTransport stamps `transport` on `domain !== "sea"`
+  // Only a GROUND piece becomes cargo (move.mjs syncTransport stamps `transport` on `domain !== "sea"`
   // in water). A hull ordered along a lane is sailing, and an aircraft is flying; neither may be
   // told it will be "cargo, one hit sinks it" because its line happens to cross a water cell.
+  // NIT-2: the test is placement.layerOf, the same ground/air split combat, economy and air use -
+  // not `domain === "land"`, which called a pipe spent at sea "land": a piece shaped
+  // `{kind: "aircraft"}` with no `domain` read as a land unit and was marked a crossing.
   let seaSteps = 0;
   for (const step of path) {
     if (isWater(step.x, step.y)) seaSteps += 1;
   }
-  const crossing = seaSteps > 0 && String(piece.domain || "").toLowerCase() === "land";
+  const crossing = seaSteps > 0 && layerOf(piece) === "ground";
   return { ok: true, path, rounds, seaSteps, crossing };
 }
 

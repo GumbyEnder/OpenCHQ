@@ -40,7 +40,9 @@ function opening(match) {
 }
 
 export async function run(ctx) {
-  const { fail } = ctx;
+  // The single-node driver `test/nodes/_only.mjs` runs a node with an EMPTY ctx, so a red arm there
+  // must surface the sentence that names the defect instead of "fail is not a function".
+  const fail = typeof ctx.fail === "function" ? ctx.fail : (message) => { throw new Error(message); };
   const skip = ctx.skip || (() => {});
   const board = boardPayload();
   if (!board || !board.cells) skip("no board on this host (neither extract nor bundled world)");
@@ -90,6 +92,35 @@ export async function run(ctx) {
     if (!sail.error && sail.seaSteps > 0 && sail.crossing === true) {
       fail("a cruiser's own water lane was marked a crossing (sea piece told it becomes cargo)");
     }
+  }
+
+  // ---- NIT-2: an aircraft is air even though its DOMAIN reads "land" --------------------------
+  // economy's DOMAIN_BY_KIND buys `aircraft` with domain "land" (the match's piece shape names
+  // land and sea only), so a `domain === "land"` crossing test told a plane it becomes cargo. The
+  // predicate is placement.layerOf, the same ground/air split combat/economy/air use.
+  {
+    const air = open();
+    const plane = {
+      id: "blue:aircraft:n2", side: "blue", domain: "land", kind: "aircraft",
+      x: START.x, y: START.y, path: [], pace: 1, facing: null, fighting: null, shots: 0,
+      strength: 100, maxStrength: 100,
+    };
+    if (air.pieces.some((p) => p.x === START.x && p.y === START.y && p.kind === "aircraft")) {
+      skip("the 1942 opening already parks an aircraft on " + START.x + "," + START.y);
+    }
+    air.pieces.push(plane);
+    const fly = planOrder(air, "blue", plane.id, NAGOYA.x, NAGOYA.y);
+    if (fly.error) fail("the aircraft's order across the water was refused: " + fly.error);
+    if (!(fly.seaSteps > 0)) skip("this host's board has no water on the aircraft's line");
+    if (fly.crossing === true) {
+      fail("an aircraft (kind aircraft, domain land) was marked a crossing over " + fly.seaSteps
+        + " water steps - a plane is never cargo (NIT-2: gate on layerOf, not domain)");
+    }
+    const flown = issueOrder(air, "blue", plane.id, NAGOYA.x, NAGOYA.y);
+    if (flown.error) fail("the aircraft's order was refused at issue: " + flown.error);
+    if (flown.crossing === true) fail("the issued aircraft order carried crossing:true (a plane told it becomes cargo)");
+    const flyAck = ackText({ op: "ordered", ...flown });
+    if (/cargo/.test(flyAck)) fail("the aircraft's ack warns about cargo: " + flyAck);
   }
 
   // ---- AC2: the loss of cargo names the unit the player ordered ------------------------------
