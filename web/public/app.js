@@ -4929,6 +4929,10 @@ const eraSelect = launchForm ? launchForm.querySelector('select[name="era"]') : 
 const handicapInput = launchForm ? launchForm.querySelector('input[name="handicap"]') : null;
 const levelSelect = launchForm ? launchForm.querySelector('select[name="level"]') : null;
 const handicapNote = document.getElementById("handicapNote");
+// PB-332: the behaviour note ("Marches; may repeat a destination") is one line UNDER the select,
+// never inside it — the closed control shows the opponent's name and level only, so the widest of
+// the original's names cannot be clipped at 1024/1280/1440. The same note is the select's title.
+const opponentNote = document.getElementById("opponentNote");
 let setupTable = null;
 
 // T-032 B1: the five computer opponents come from /api/setup in DS:0x4fea order. The page types
@@ -4943,7 +4947,9 @@ function applyOpponents() {
   for (const row of rows) {
     const option = document.createElement("option");
     option.value = String(row.level);
-    option.textContent = row.name + " (" + row.level + ")" + (row.label ? " - " + row.label : "");
+    // PB-332: name and level only. The config's label is a behaviour note, and it lives in the
+    // line under the select (and the select's title), not in the closed control's text.
+    option.textContent = row.name + " (" + row.level + ")";
     levelSelect.appendChild(option);
   }
   // PB-312 (manual p.35 l.1126-1137): the manual's third setup choice, "no opponent". The word and
@@ -4953,7 +4959,7 @@ function applyOpponents() {
   if (none && none.value) {
     const option = document.createElement("option");
     option.value = String(none.value);
-    option.textContent = String(none.name || "NO OPPONENT") + (none.label ? " - " + none.label : "");
+    option.textContent = String(none.name || "NO OPPONENT");
     levelSelect.appendChild(option);
   }
   const fallback = String(botTable.defaultLevel || 3);
@@ -4962,9 +4968,29 @@ function applyOpponents() {
   syncOpponentFields();
 }
 
+// PB-332: the note under the select is the chosen opponent's own row from /api/setup, so the page
+// still types none of this copy. It changes with the selection, and the same sentence becomes the
+// select's title (a hover explains the level without opening the list).
+function opponentRowFor(value) {
+  const botTable = (setupTable && setupTable.bot) || {};
+  const none = botTable.none;
+  if (none && none.value && String(none.value) === String(value)) return none;
+  const rows = Array.isArray(botTable.opponents) ? botTable.opponents : [];
+  return rows.find((row) => String(row.level) === String(value)) || null;
+}
+
+function syncOpponentNote() {
+  if (!levelSelect) return;
+  const row = opponentRowFor(levelSelect.value);
+  const note = row && row.label ? String(row.label) : "";
+  if (opponentNote) opponentNote.textContent = note;
+  levelSelect.title = note;
+}
+
 // PB-312: the opponent's starting-money spinner is the OPPONENT'S money (manual p.17). With no
 // opponent there is nobody to give it to, so the field is disabled rather than sent and refused.
 function syncOpponentFields() {
+  syncOpponentNote();
   if (!levelSelect || !handicapInput) return;
   const none = setupTable && setupTable.bot && setupTable.bot.none;
   const noOpponent = Boolean(none && none.value && String(levelSelect.value) === String(none.value));

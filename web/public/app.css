@@ -96,6 +96,11 @@ form { display: grid; gap: 10px; }
 
 label { display: grid; gap: 4px; color: var(--muted); font-size: 14px; }
 
+/* PB-332: the opponent's behaviour note, one line under the closed select. It is a wrapped line,
+   not a clipped one: the select above shows the name and level only. */
+.opponentNote { color: var(--muted); font-size: 13px; line-height: 1.35; }
+.opponentNote:empty { display: none; }
+
 input, select, button {
   font: inherit;
   color: var(--ink);

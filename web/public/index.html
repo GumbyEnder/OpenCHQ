@@ -217,6 +217,10 @@
             <select name="level" id="opponentLevel">
               <option value="3" selected>COL. BUCK ZEAL (3)</option>
             </select>
+            <!-- PB-332: the closed select carries the opponent's name and level only; the original's
+                 behaviour note is this line under the control (and the select's title), filled from
+                 config/game.json by /api/setup and updated with the choice. -->
+            <span class="opponentNote" id="opponentNote"></span>
           </label>
           <label id="handicapRow">Opponent's starting money (bil$)
             <input name="handicap" type="number" min="0" max="999" step="1" inputmode="numeric" autocomplete="off">
