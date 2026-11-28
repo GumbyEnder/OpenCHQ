@@ -331,21 +331,21 @@ export function damageFor(attacker, defender, combat = null) {
     amount *= block.entrenchDamageFactor;
     entrenched = true;
   }
-  // Shore fire (DS:0x194c path, disassembly only): a ship firing farther than `range` has its shot
-  // halved while the target is under `halveBelow` strength, and is otherwise capped at
-  // max(0, strength - cap). With `halveBelow` 25 and `cap` 30 the clauses meet at 25: from 25 to 30
-  // strength the halving no longer applies and the cap branch wins with max(0, s - 30) = 0, so that
-  // band takes NO shore fire at all (s=31 takes 1, s=45+ takes the full shot). The cap is therefore
-  // a floor on the target's REMAINING strength, not on the damage. This is labelled `disassembly`
-  // in config and is NOT live-measured - see docs/re/T016_TERRAIN.md s5 and Q47.
+  // Shore fire (DS:0x194c path, disassembly only). PB-347: the original (decompiled.c 7082-7093,
+  // FUN_194c_000e) is SEQUENTIAL, not either/or - cap = strength - 30; when that cap is under 25 the
+  // shot is halved; then min(amount, cap) applies ALWAYS; a result that is not positive is no shot.
+  // The range gate is the squared distance from FUN_188b_0216 (`2 < d^2`), not a Chebyshev cell
+  // count, so a (2,2) diagonal is in range. Values stay labelled `disassembly` in config and are
+  // NOT live-measured - see docs/re/T016_TERRAIN.md s5 and Q47.
   const shore = terrainTables().shoreFire;
   let shoreFire = false;
   if (shore.enabled && attacker.domain === "sea" && defender.domain !== "sea"
-      && distance(attacker, defender) > shore.range) {
+      && squaredDistance(attacker, defender) > shore.range2) {
     shoreFire = true;
-    const strength = ensureStrength(defender, block.maxStrength);
-    if (strength < shore.halveBelow) amount = amount / 2;
-    else amount = Math.min(amount, Math.max(0, strength - shore.cap));
+    const strength = Number(defender.strength);
+    const cap = strength - shore.cap;
+    if (cap < shore.halveBelow) amount = amount / 2;
+    amount = Math.min(amount, Math.max(0, cap));
   }
   return { base, covered: coverDamage(base, defender), amount, flank, rear, entrenched, shoreFire };
 }
@@ -511,6 +511,9 @@ export function resolve(match) {
       // skip. It still does not survive the exchange (:427).
       const hit = { attacker, target, ...damageFor(attacker, target, combat) };
       if (!(Number(hit.base) > 0)) continue;
+      // PB-347: the original refuses a shot whose shore-capped result is not positive
+      // (`if (0 < (int)local_8)`, decompiled.c 7082-7093), so base > 0 alone is no longer enough.
+      if (hit.shoreFire === true && !(Number(hit.amount) > 0)) continue;
       hits.push(hit);
     }
 
