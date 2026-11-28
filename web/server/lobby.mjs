@@ -1778,7 +1778,10 @@ export function createLobby() {
     if (peer) {
       const reply = { op: "ordered", id: message.id ?? null, piece: pieceId, to, rounds: result.rounds ?? 0,
         kind: moving && moving.kind ? moving.kind : null,
-        domain: sat ? "sat" : (moving && moving.domain) || null };
+        domain: sat ? "sat" : (moving && moving.domain) || null,
+        // PB-346: the ack has to be able to tell a march from a crossing.
+        seaSteps: Number(result.seaSteps) || 0,
+        crossing: result.crossing === true };
       peer.send(reply);
       rememberReply(username, message.id, reply);
     }

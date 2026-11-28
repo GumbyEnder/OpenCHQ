@@ -417,6 +417,16 @@ export function roundsText(rounds) {
 export function ackText(message) {
   const rounds = Math.max(0, Math.trunc(Number(message && message.rounds) || 0));
   if (rounds === 0) return "Order sent. That piece is already on that cell.";
+  // PB-346: a plan that crosses water is not a march, and the ack said "5 rounds to walk" for an
+  // infantry that spent most of the order as cargo (PB-342 Arm A). The server counts the water
+  // cells in the stored path; the page only says what that count means: the sea leg, and the one
+  // fact that kills the piece - it is a transport while it is out there.
+  const seaSteps = Math.max(0, Math.trunc(Number(message && message.seaSteps) || 0));
+  if (message && message.crossing === true && seaSteps > 0 && !flies(message)) {
+    return "Order sent. " + roundsText(rounds) + " to cross - " +
+      seaSteps + (seaSteps === 1 ? " step is" : " steps are") + " by sea. " +
+      "At sea that unit is cargo: one hit sinks it.";
+  }
   return "Order sent. " + roundsText(rounds) + (flies(message) ? " to fly." : " to walk.");
 }
 

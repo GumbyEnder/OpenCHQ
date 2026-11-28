@@ -288,7 +288,13 @@ export function logLines(match, side, events, round) {
         const place = named ? null : placeOf(match, event, side);
         const where = named ? " at " + named : place ? " " + place : "";
         const why = event.cause === "capture" ? "; the air strip was captured" : "";
-        if (mine) push("lost " + (event.kind ? unitPhrase(event.kind) : "a unit") + where + why);
+        // PB-346: cargo that dies at sea is the player's LAND piece. The event's `kind` is
+        // "transport" (the hull the player never ordered), so a loss of an infantry they marched
+        // read as "lost a transport" with nothing tying it back. Name the unit, then the hull.
+        const cargo = event.cargoKind ? String(event.cargoKind) : null;
+        if (mine && cargo) {
+          push("lost your " + unitNoun(cargo) + " - it was cargo on a transport" + (where ? "," + where : "") + why);
+        } else if (mine) push("lost " + (event.kind ? unitPhrase(event.kind) : "a unit") + where + why);
         // PB-216: the winner reads its own overrun line for the piece it ran over, so the generic
         // "an enemy unit was destroyed" on the same cell and round would be the same loss twice.
         else if (event.note === "Overrun." && overrunCells.has(roundCellOf(event))) break;
@@ -416,10 +422,15 @@ export function logLines(match, side, events, round) {
         break;
       }
       case "embarked":
-        if (mine) push("a unit boarded a transport");
+        // PB-346: this was the ONLY notice a player got, and it said neither which unit went aboard
+        // nor what boarding costs. Name the unit and say what it is now: one hit sinks it.
+        if (mine) {
+          push("your " + unitNoun(event.kind || "unit") +
+            " boarded a transport - cargo until it lands, and one hit sinks it");
+        }
         break;
       case "landed":
-        if (mine) push("a unit landed");
+        if (mine) push("your " + unitNoun(event.kind || "unit") + " landed");
         break;
       case "retired":
         break;

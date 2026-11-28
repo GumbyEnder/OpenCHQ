@@ -481,7 +481,21 @@ export function planOrder(match, side, pieceId, toX, toY) {
   if (planned.error) return { error: planned.error };
   const path = stopAtDestination(planned.path, { x, y });
   const rounds = walkRounds(piece, path);
-  return { ok: true, path, rounds };
+  // PB-346: a crossing is not a march. Count the cells of this plan that are water, so the ack can
+  // say "by sea" and warn that the piece stops being a land unit on the way - the player ordered an
+  // infantry and read "5 rounds to walk" (PB-342 Arm A: 7 of 8 steps at sea on the extract board,
+  // and one cruiser hit kills cargo). The count comes from the same path the order stores, so the
+  // ack cannot disagree with the plan.
+  //
+  // Only a LAND piece becomes cargo (move.mjs syncTransport stamps `transport` on `domain !== "sea"`
+  // in water). A hull ordered along a lane is sailing, and an aircraft is flying; neither may be
+  // told it will be "cargo, one hit sinks it" because its line happens to cross a water cell.
+  let seaSteps = 0;
+  for (const step of path) {
+    if (isWater(step.x, step.y)) seaSteps += 1;
+  }
+  const crossing = seaSteps > 0 && String(piece.domain || "").toLowerCase() === "land";
+  return { ok: true, path, rounds, seaSteps, crossing };
 }
 
 export function issueOrder(match, side, pieceId, toX, toY) {
@@ -507,7 +521,14 @@ export function issueOrder(match, side, pieceId, toX, toY) {
   piece.heldBy = null;
   piece.heldCell = null;
   piece.holdRounds = 0;
-  return { ok: true, path: plan.path.map((step) => ({ ...step })), rounds: plan.rounds };
+  return {
+    ok: true,
+    path: plan.path.map((step) => ({ ...step })),
+    rounds: plan.rounds,
+    // PB-346: the ack fields ride through the real order exactly as the preview reported them.
+    seaSteps: Number(plan.seaSteps) || 0,
+    crossing: plan.crossing === true,
+  };
 }
 
 // --- PB-245 AC5: the peacetime transfer ------------------------------------------------------
@@ -1553,6 +1574,9 @@ export function advance(match) {
           type: piece.transport ? "embarked" : "landed",
           pieceId: piece.id,
           side: piece.side,
+          // PB-346: name the KIND that went aboard. "a unit boarded a transport" was the only
+          // notice a player got, and it did not say which of their units was now cargo.
+          kind: piece.kind,
           x: nx,
           y: ny,
         });

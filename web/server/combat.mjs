@@ -673,6 +673,11 @@ export function resolve(match) {
           // PB-208: the line read "lost a unit" for every loss because this event carried no kind;
           // the seat that just lost a submarine could not be told it was a submarine.
           kind: kindOf(piece),
+          // PB-346: a drowned transport is the player's LAND piece. `kind` is "transport" (kindOf),
+          // which is the hull a player never ordered; cargoKind is the unit they did order, so the
+          // Log can tie the loss back to it (PB-342 Arm A: an infantry ordered to Nagoya read
+          // "lost a transport" and nothing connected the two sentences).
+          cargoKind: piece.transport === true ? piece.kind : null,
           by: attacker ? attacker.attacker.id : null,
           x: piece.x,
           y: piece.y,
