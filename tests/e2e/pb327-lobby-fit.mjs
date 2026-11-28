@@ -12,7 +12,10 @@
 //   (a)  the Lobby card is not a scroll window: scrollWidth <= clientWidth + 1;
 //   (b)  every control inside the card keeps its right edge inside the card's right edge (and its
 //        left edge inside the card's left edge), named per control, with the overflow in px;
-//   (c)  the launch form's own box is inside the card's content box;
+//   (c)  the UNION box of the launch form's children is inside the card's content box. The form's
+//        own rect is NOT the arm: the form is a grid container whose box stays 282 px inside the
+//        card while its children hang 209 px past it, so a check on form.right alone is green in
+//        the mutant and measures nothing (frodo, room 10373 §4);
 //   (d)  the two states hold the SAME control set and the same containment verdict, so a fix that
 //        only works after leaving (or only on a fresh load) cannot pass.
 //
@@ -70,6 +73,17 @@ const MEASURE = () => {
   const form = document.getElementById("launch");
   const cardBox = card.getBoundingClientRect();
   const formBox = form.getBoundingClientRect();
+  // (c) grades the union box of the form's own children, not the form's rect: a grid container keeps
+  // its box inside the card while its children overflow, so form.right alone cannot fail.
+  const kids = [...form.children]
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0);
+  const union = kids.length
+    ? {
+      left: r2(Math.min(...kids.map((r) => r.left))),
+      right: r2(Math.max(...kids.map((r) => r.right))),
+    }
+    : null;
   const rows = [];
   const push = (key, el) => {
     if (!el) return;
@@ -100,6 +114,12 @@ const MEASURE = () => {
       scrollWidth: card.scrollWidth, clientWidth: card.clientWidth },
     form: { left: r2(formBox.left), right: r2(formBox.right), w: r2(formBox.width),
       overRight: r2(formBox.right - cardBox.right) },
+    // (c) the graded box: union of the form's children, and how far it runs past the card
+    formChildren: kids.length,
+    formUnion: union
+      ? { left: union.left, right: union.right, w: r2(union.right - union.left),
+        overRight: r2(union.right - cardBox.right), overLeft: r2(cardBox.left - union.left) }
+      : { left: null, right: null, w: 0, overRight: 0, overLeft: 0 },
     bodyClass: document.body.className,
     rows,
   };
@@ -150,7 +170,9 @@ async function main() {
       mark("(b) fresh: " + row.key + " sits inside the Lobby card" + at, row.inside,
         JSON.stringify({ left: row.left, right: row.right, w: row.w, overRight: row.overRight, overLeft: row.overLeft, cardRight: fresh.card.right }));
     }
-    mark("(c) fresh: the launch form is inside the card" + at, fresh.form.overRight <= 0.5, JSON.stringify(fresh.form));
+    mark("(c) fresh: the launch form's children are inside the card (union box)" + at,
+      fresh.formUnion.overRight <= 0.5 && fresh.formUnion.overLeft <= 0.5,
+      JSON.stringify({ formUnion: fresh.formUnion, formChildren: fresh.formChildren, form: fresh.form }));
 
     // A real bot match, then the room's own Leave button — the route the report came in by.
     await page.selectOption('#launch select[name="era"]', "1986");
@@ -174,7 +196,9 @@ async function main() {
       mark("(b) after Leave: " + row.key + " sits inside the Lobby card" + at, row.inside,
         JSON.stringify({ left: row.left, right: row.right, w: row.w, overRight: row.overRight, overLeft: row.overLeft, cardRight: after.card.right }));
     }
-    mark("(c) after Leave: the launch form is inside the card" + at, after.form.overRight <= 0.5, JSON.stringify(after.form));
+    mark("(c) after Leave: the launch form's children are inside the card (union box)" + at,
+      after.formUnion.overRight <= 0.5 && after.formUnion.overLeft <= 0.5,
+      JSON.stringify({ formUnion: after.formUnion, formChildren: after.formChildren, form: after.form }));
     mark("(d) the two states hold the same controls" + at,
       JSON.stringify(fresh.rows.map((r) => r.key)) === JSON.stringify(after.rows.map((r) => r.key)),
       JSON.stringify({ fresh: fresh.rows.map((r) => r.key), after: after.rows.map((r) => r.key) }));
