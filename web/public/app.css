@@ -1145,6 +1145,8 @@ body.in-match .speedctl { display: flex; }
   cursor: pointer;
 }
 .slotrow.static { cursor: default; }
+/* PB-326: a Save Game row is a pick, so it takes the pointer and shows the keyboard ring. */
+.slotrow.pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .slotrow:hover { background: #14243a; }
 .slotrow .slottitle { font-size: 13px; color: #d9fbf7; }
 .slotrow .slotmeta { color: var(--muted); }

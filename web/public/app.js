@@ -10,6 +10,9 @@ import { THEMES, DEFAULT_THEME, isThemeId, nextThemeId, resolveTheme, themeById 
 import { createFlashLine } from "./flash.mjs";
 import { MACRO_HELP, MACRO_PRESETS, createMacroBook, macroKeyAction } from "./macros.mjs";
 import { unitLabel } from "./units.mjs";
+// PB-326: the Save Game list doubles as the Overwrite picker (manual p.36 l.1143); the sentence and
+// the picked name come from this module so the node test grades what the page paints.
+import { saveRowPick } from "./saveslots.mjs";
 import {
   PICK_HINT,
   ackText,
@@ -4007,6 +4010,7 @@ const saveStatus = document.getElementById("saveStatus");
 const saveConfirm = document.getElementById("saveConfirm");
 const saveConfirmText = document.getElementById("saveConfirmText");
 const saveExisting = document.getElementById("saveExisting");
+const saveOverwrite = document.getElementById("saveOverwrite");
 const saveBtn = document.getElementById("saveBtn");
 const slotsPanel = document.getElementById("slotsPanel");
 const slotsStatus = document.getElementById("slotsStatus");
@@ -4043,6 +4047,18 @@ function slotMeta(slot) {
   return eraName(slot.era) + " \u00b7 round " + slot.round + (players ? " \u00b7 " + players : "") + cash;
 }
 
+// PB-326: picking a row is the overwrite path (manual p.36 l.1143), not a second dialog. Both this
+// and the typed-duplicate branch of the submit handler call it, so the sentence and the confirm are
+// one producer's (web/public/saveslots.mjs), and the name field carries the picked title.
+function promptOverwrite(slot) {
+  const pick = saveRowPick(slot, slotMeta(slot));
+  saveName.value = pick.name;
+  saveConfirmText.textContent = pick.sentence;
+  saveConfirm.classList.remove("hidden");
+  saveStatus.textContent = "";
+  saveOverwrite?.focus();
+}
+
 function paintSaveExisting() {
   saveExisting.textContent = "";
   if (!saveSlots.length) {
@@ -4053,8 +4069,14 @@ function paintSaveExisting() {
     return;
   }
   for (const slot of saveSlots) {
-    const row = document.createElement("li");
-    row.className = "slotrow static";
+    // A button, not a styled <li>: Enter and Space arrive as a click with no key handler of our own,
+    // focus lands on the row, and `.slotrow` supplies the pointer cursor. No id is written to the
+    // row or the confirm - the title and its summary line are the whole row.
+    const item = document.createElement("li");
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "slotrow pick";
+    row.dataset.name = slot.name;
     const title = document.createElement("span");
     title.className = "slottitle";
     title.textContent = slot.name;
@@ -4062,7 +4084,9 @@ function paintSaveExisting() {
     meta.className = "slotmeta";
     meta.textContent = slotMeta(slot);
     row.append(title, meta);
-    saveExisting.append(row);
+    row.addEventListener("click", () => promptOverwrite(slot));
+    item.append(row);
+    saveExisting.append(item);
   }
 }
 
@@ -4215,10 +4239,7 @@ saveForm?.addEventListener("submit", (event) => {
   }
   const hit = saveSlots.find((slot) => String(slot.name).toLowerCase() === name.toLowerCase());
   if (hit) {
-    saveConfirmText.textContent = "A saved war named \"" + hit.name + "\" already exists ("
-      + slotMeta(hit) + "). Overwrite it with this round?";
-    saveConfirm.classList.remove("hidden");
-    saveStatus.textContent = "";
+    promptOverwrite(hit);
     return;
   }
   saveNow(name, false);
