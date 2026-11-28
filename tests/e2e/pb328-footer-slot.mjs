@@ -67,6 +67,10 @@ function freePort() {
 
 const r2 = (n) => Math.round(n * 100) / 100;
 
+// `ch` is the advance width of the font's "0" glyph. Read it from the slot's own resolved font with
+// this engine, not from a constant: PB-334(b) — the old arm (c) asserted `w > 60 && |w - 14*(w/14)| < 28`,
+// and the second half is 0 for every w, so any box wider than 60 px passed (14em, 100px, 13ch). The
+// AC is 14ch, so the expected width has to be measured from the font at run time.
 // One frame: the slot, the footer line and the legend, read together.
 const snapshot = (page) => page.evaluate(() => {
   const r2 = (n) => Math.round(n * 100) / 100;
@@ -74,11 +78,22 @@ const snapshot = (page) => page.evaluate(() => {
   const note = document.getElementById("boardNote");
   const legend = document.getElementById("legend");
   if (!slot || !note || !legend) return null;
+  const cs = getComputedStyle(slot);
+  const probe = document.createElement("span");
+  // 100 zeros, divided: one glyph's box is quantised to 1/64 px, which is 0.10 px after ×14.
+  probe.textContent = "0".repeat(100);
+  probe.style.cssText = "position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;" +
+    "font-style:" + cs.fontStyle + ";font-variant:" + cs.fontVariant + ";font-weight:" + cs.fontWeight +
+    ";font-size:" + cs.fontSize + ";font-family:" + cs.fontFamily + ";letter-spacing:normal";
+  (slot.parentElement || document.body).appendChild(probe);
+  const ch = probe.getBoundingClientRect().width / 100;
+  probe.remove();
   const sr = slot.getBoundingClientRect();
   const nr = note.getBoundingClientRect();
   const lr = legend.getBoundingClientRect();
   return {
-    slot: { x: r2(sr.x), y: r2(sr.y), w: r2(sr.width), h: r2(sr.height), text: (slot.textContent || "").trim(),
+    slot: { x: r2(sr.x), y: r2(sr.y), w: r2(sr.width), h: r2(sr.height), ch: r2(ch),
+      fontSize: cs.fontSize, text: (slot.textContent || "").trim(),
       scrollWidth: slot.scrollWidth, clientWidth: slot.clientWidth, display: getComputedStyle(slot).display },
     note: { x: r2(nr.x), y: r2(nr.y), w: r2(nr.width), h: r2(nr.height), text: (note.textContent || "").trim(),
       scrollWidth: note.scrollWidth, clientWidth: note.clientWidth,
@@ -153,9 +168,13 @@ async function main() {
     await page.waitForFunction(() => window.__chq.room() && window.__chq.room().mode === "bot", null, { timeout: 30000, polling: 100 });
     await sleep(450);
     const off = await snapshot(page);
+    // PB-334(b): the box is 14ch — measured, not asserted against a round number. `ch` is read from
+    // the slot's resolved font in snapshot(); the old `w > 60` plus a zero-valued modulo passed 14em,
+    // 100px and 13ch alike, so it proved nothing.
+    const want14ch = off ? 14 * off.slot.ch : NaN;
     mark("(c) inside a match the slot is PB-317's box again (14ch)" + at,
-      Boolean(off) && off.slot.w > 60 && Math.abs(off.slot.w - 14 * (off.slot.w / 14)) < 14 * 2,
-      JSON.stringify(off && off.slot));
+      Boolean(off) && Math.abs(off.slot.w - want14ch) <= 0.5,
+      JSON.stringify(off && { w: off.slot.w, ch: off.slot.ch, fontSize: off.slot.fontSize, want14ch: r2(14 * off.slot.ch), delta: r2(off.slot.w - want14ch) }));
 
     // Flip Show Common through the War dialogue, the way a player does.
     await page.evaluate(() => {
