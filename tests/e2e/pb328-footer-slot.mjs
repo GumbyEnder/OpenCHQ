@@ -210,7 +210,10 @@ async function main() {
       if (b) b.click();
     });
     await sleep(220);
-    // "Leave the match" lives inside the War panel (app.js), not in #nav.
+    // "Leave the match" lives inside the War panel (app.js), not in #nav. PB-199 (AC d) made it ask
+    // like Quit does, so the click opens a confirm(); Playwright dismisses dialogs by default and the
+    // leave was never sent. A player clicks OK, so the leg accepts this one dialog, once.
+    await page.once("dialog", (dialog) => dialog.accept());
     await page.evaluate(() => {
       const b = Array.from(document.querySelectorAll("button")).find((el) => (el.textContent || "").trim() === "Leave the match");
       if (b) b.click();
