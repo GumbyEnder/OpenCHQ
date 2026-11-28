@@ -83,6 +83,17 @@ h1 {
 
 form { display: grid; gap: 10px; }
 
+/* PB-327: a <select>'s min-content is the width of its LONGEST option, and the lobby's opponent list
+   carries the original's five names with their notes ("MARS GOD OF WAR (5) - ..."). With a one-auto-
+   column grid the column is sized to that min-content, so the launch form laid out 510 px wide inside a
+   318 px card and every field hung 209 px past the Lobby card's right edge, on a fresh load and after
+   Leave alike. Letting the fields shrink below their option text keeps the form inside the card; the
+   option list still shows each name in full when it opens. Scoped to the launch form. */
+#launch > label,
+#launch input,
+#launch select,
+#launch button { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+
 label { display: grid; gap: 4px; color: var(--muted); font-size: 14px; }
 
 input, select, button {
