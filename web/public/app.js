@@ -8,6 +8,7 @@ import {
 import { BADGE_MIN_PX, badgeHoverText, badgeLegendRows, badgeSvg } from "./badges.mjs";
 import { THEMES, DEFAULT_THEME, isThemeId, nextThemeId, resolveTheme, themeById } from "./themes.mjs";
 import { createFlashLine } from "./flash.mjs";
+import { toastSeat } from "./anchor.mjs";
 import { MACRO_HELP, MACRO_PRESETS, createMacroBook, macroKeyAction } from "./macros.mjs";
 import { unitLabel } from "./units.mjs";
 // PB-326: the Save Game list doubles as the Overwrite picker (manual p.36 l.1143); the sentence and
@@ -319,6 +320,9 @@ let boardPayload = {
 
 function say(text) {
   flashLine.say(text);
+  // PB-329: a toast can land between two room frames (a refusal is the page's own sentence), so the
+  // seat is re-measured the moment the box has text and a height - not only on the next paint.
+  seatFootLines();
 }
 
 // PB-167b: the toast had no idea where the status line was. `#flash` hung 10 px off the viewport
@@ -329,29 +333,58 @@ function say(text) {
 // its bottom edge lands FOOT_GAP px above the footer row, and above the finished-match line when
 // that line is up. Stacked one-liners, never overlapped, at any viewport and any text length.
 const FOOT_GAP = 8;
+// PB-329: the toast may not cover the map's footer row OR the legend above it. The seat is a
+// function of both boxes (see anchor.mjs); the old rule measured the footer only, so at 1024x768
+// the toast cleared the caption and sat 9.3 px into the legend - measured at 4088c33, at 1280 and
+// 1440 as well. The two constants below are the stylesheet's own floor for each state, so a toast
+// that already clears the band keeps the seat the CSS gave it and nothing moves.
+const FLASH_FLOOR_LOBBY = 18;
+const FLASH_FLOOR_MATCH = 10;
 let footLift = "";
+
+// The boxes a toast may not cover, as one band in viewport coordinates. `#legend` and the mapfoot
+// row are laid out in normal flow, so this is stable: the fixed toasts never move them.
+function toastBand(footer) {
+  let band = null;
+  const add = (el) => {
+    if (!el) return;
+    const box = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return;
+    if (box.width <= 0 || box.height <= 0) return;
+    band = band
+      ? { top: Math.min(band.top, box.top), bottom: Math.max(band.bottom, box.bottom) }
+      : { top: box.top, bottom: box.bottom };
+  };
+  add(document.getElementById("legend"));
+  add(footer);
+  return band;
+}
+
 function seatFootLines() {
   if (!flash || !boardNote) return;
   const inMatch = document.body.classList.contains("in-match");
   const footer = boardNote.closest(".mapfoot") || boardNote;
-  let footBottom = 0;
-  let flashBottom = 0;
-  if (inMatch) {
-    footBottom = Math.max(FOOT_GAP, Math.round(innerHeight - footer.getBoundingClientRect().top + FOOT_GAP));
-    flashBottom = footBottom;
-    if (resultLine && String(resultLine.textContent || "").trim()) {
-      // The finished-match line keeps its own row; the toast stacks above it rather than trading
-      // one cover for another.
-      resultLine.style.bottom = footBottom + "px";
-      const resultTop = resultLine.getBoundingClientRect().top;
-      flashBottom = Math.max(footBottom, Math.round(innerHeight - resultTop + FOOT_GAP));
-    }
+  const floor = inMatch ? FLASH_FLOOR_MATCH : FLASH_FLOOR_LOBBY;
+  let band = toastBand(footer);
+  // The finished-match line keeps its own row above the band, and the toast stacks above IT
+  // rather than trading one cover for another.
+  if (resultLine && String(resultLine.textContent || "").trim() && band) {
+    resultLine.style.bottom = toastSeat({
+      viewportHeight: innerHeight, band, gap: FOOT_GAP, floor, height: resultLine.offsetHeight,
+    }) + "px";
+    const resultTop = resultLine.getBoundingClientRect().top;
+    band = { top: resultTop, bottom: band.bottom };
+  } else if (resultLine) {
+    resultLine.style.bottom = "";
   }
-  const key = inMatch ? flashBottom + ":" + footBottom : "";
+  const seat = toastSeat({
+    viewportHeight: innerHeight, band, gap: FOOT_GAP, floor, height: flash.offsetHeight,
+  });
+  const key = inMatch + ":" + seat + ":" + flash.offsetHeight + ":" + (band ? Math.round(band.top) : "-");
   if (key === footLift) return;
   footLift = key;
-  flash.style.bottom = inMatch ? flashBottom + "px" : "";
-  if (resultLine) resultLine.style.bottom = inMatch ? footBottom + "px" : "";
+  flash.style.bottom = seat === floor ? "" : seat + "px";
 }
 
 // PB-250/PB-251: the cease fire on the table is this seat's own fact (`room.seat.ceasefire`), so
