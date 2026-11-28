@@ -254,6 +254,33 @@ pass and zeroes the piece's move points (−10) — pinned against the town. Sta
 site costs 20 per pass until the capture lands. City militia damage is therefore 2 (enemy city) or
 20 (neutral city), not one number; the runtime's single `militiaDamage` is a stand-in for both.
 
+**Fire is not gated by kind; the pin is** (`decompiled.c` 9054/9060-9063/9073-9077, live
+`1c0d:0129`-`1c0d:0191` and `1c0d:01ef`). The walk reads the kind as `0x906 & 0xf`
+(`AND AX,0xf`, `1c0d:0139`) and tests it twice:
+
+- **Enemy-owned site**: `local_4` is set to `0x82` (combat path, 2 damage) *before* the kind test
+  (`(local_4 = 0x82, bVar1 < 7)`, 9061; `MOV [BP-0x2],0x82` then `CMP [BP-0x10],7` at
+  `1c0d:0186-018b`), so **every kind pays the 2**. The test only decides what follows: kind < 7 writes
+  the pin (`0x6fe = 0xfff6`, 9063) and calls the militia shot (`1c0d:01c8`); kind 7-11 (sub, cruiser,
+  carrier, transport) pays 2 and is **not** pinned.
+- **Unowned site**: `local_4 = byte[0x199a]` (20) is assigned outside the kind test (9077), so every
+  kind pays the 20. The kind test at `1c0d:01ef` gates the capture call and the `0x6fe = byte[0x197a]`
+  write (9074-9075), not the damage.
+
+So the manual's two sentences both hold: the militia fires at whoever occupies the site (p.10), and a
+sea unit is never pinned (p.24). The live leg measured the land arm only (k3, 100 -> 98 enemy /
+100 -> 80 unowned, `t009b/militia-2026-11-13.txt`); the sea arm is a read of these two gates, not a
+live measurement. The pin's enemy branch also tests a byte one level down (`CMP byte ptr [BX+0x1996],
+0x80`, `1c0d:0197`, BX = the routine's second argument); D12 already ships `pinned` as a stand-in for
+the zeroed move points, so that byte is not modelled separately.
+
+**A dock cell is a town's footprint cell.** `FUN_188b_00a4` stores the site at the piece's own cell in
+`0xc478` (`MOV [0xc478],AX`, `188b:00c8`), and that lookup is `FUN_2724_00e3`, which matches a site's
+centre and its eight ring cells - facilities (subtype 5) centre only. A dock painted beside a town is
+inside that 3x3, so the original's militia walk reads the **town's** owner on a dock cell; that is the
+rule `board.mjs` implements by giving each dock its `port` (PB-320, PB-355). A dock cell outside every
+footprint falls through to the terrain table (terrain 1 = `0xf4`: 20 through the combat path, no pin).
+
 ## 6. Air strikes (p.25)
 
 `FUN_1ac5_0dbe` at 8795-8814, after the aircraft survives the run in:
