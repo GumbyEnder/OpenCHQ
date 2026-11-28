@@ -533,6 +533,13 @@ export function combatRules() {
     const id = Number(code);
     if (Number.isInteger(id) && id > 0) kindNine[id] = Math.max(0, finiteNumber(value, 0));
   }
+  // PB-349 (D11): the militia is two numbers, not one - 2 on an enemy-owned site and 20 on an
+  // UNOWNED one until the capture lands (FUN_1c0d_00b4 9056-9077, docs/re/COMBAT.md s5 :228-231).
+  // measured.combat.militia already records both (enemySite / neutralSite); they are read here so
+  // the runtime carries no second copy of the pair. `militiaDamage` stays the enemy-site value the
+  // rest of the config names, so a reader who looks for "the militia number" still finds it.
+  const militiaNeutralDamage = Math.max(0, finiteNumber((measured.militia || {}).neutralSite,
+    finiteNumber(combatValue("militiaDamage"), 0)));
   const maxStrength = Math.max(1, finiteNumber(combatValue("maxStrength"), 100));
   const built = {
     maxStrength,
@@ -565,6 +572,7 @@ export function combatRules() {
     paradropLoss: Math.min(1, Math.max(0, finiteNumber(combatValue("paradropLoss"), 0))),
     bombardFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("bombardFloor"), 0))),
     militiaDamage: Math.max(0, finiteNumber(combatValue("militiaDamage"), 0)),
+    militiaNeutralDamage,
     pinRounds: Math.max(0, Math.floor(finiteNumber(combatValue("pinRounds"), 0))),
   };
   combatCache.set(config, built);

@@ -33,7 +33,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { CELL_W, boardPayload, resolveDataRoot } from "../../server/board.mjs";
-import { attritionStep } from "../../server/move.mjs";
+import { advance, attritionStep, pieceState, terrainNameAt } from "../../server/move.mjs";
 import { baseDamageFor, candidatesFor, coverFor, damageFor, engageRange2, resolve, squaredDistance } from "../../server/combat.mjs";
 import { combatRules, combatValue, digInIds } from "../../server/rules.mjs";
 import { sendMission } from "../../server/air.mjs";
@@ -61,15 +61,14 @@ export const DEVIATIONS = [
     note: "config labels the 0.5 as the manual's rounding; the code's +1 is the doc's, and one point is the whole disagreement." },
   { id: "D9", formula: "s5 attrition and repair rates", doc: "per PASS (lake 3, polar 5, desert/jungle 3, site 20; repair +10 every other call)", server: "per ROUND stand-in (0.5 for those terrains, 1 wasteland; repair 5)", cls: "unmeasured stand-in", card: "D-017",
     note: "labelled STAND-IN in config; no per-round figure exists until the speed ruling. Not a defect." },
-  { id: "D10", formula: "s5 attrition on a city/base/capital/dock with no site row", doc: "20 per pass", server: "0 (the site branch skips a cell with no site row)", cls: "server defect", card: "PB-349",
-    note: "attritionStep's isSite branch requires a site; the original's 0xf4 byte damages the terrain, not the site." },
-  { id: "D11", formula: "s5 militia on an UNOWNED site", doc: "20 per pass until capture", server: "0 (militia fires only when site.owner is set and is not the piece's side)", cls: "server defect", card: "PB-349",
-    note: "combat.militiaDamage carries the enemy-site 2 only; the neutral-site 20 has no runtime actor." },
-  { id: "D12", formula: "s5 militia also zeroes move points", doc: "move points to -10 (9056-9077)", server: "strength only; move points untouched", cls: "server defect", card: "PB-349",
-    note: "the doc's own militia live leg (docs/re/t009b/militia-2026-11-13.txt) names the -10; no module writes it." },
   { id: "D13", formula: "s2.2 flank multiplier", doc: "'x1.5' (s2.2 :121, :125)", server: "d + floor(d x 0.5), the original's integer form (13 -> 19)", cls: "doc error", card: "PB-350",
     note: "decompiled.c 7070 is `local_8 += local_8/2`, so 13 reads 19, not 19.5. The port is faithful; the doc's prose rounds." },
 ];
+
+// PB-349 closed D10, D11 and D12 at this commit, so their rows are gone: the table holds only what
+// is still measured-and-unfixed. The arms that pinned them are now positive assertions in the s5
+// block below (a site cell with no row drains, an unowned site pays 20 into the floor, the beat
+// pins the occupant), and the three server files name the routine each figure comes from.
 
 const must = (ok, message) => {
   if (!ok) throw new Error(message);
@@ -319,20 +318,27 @@ export async function run(ctx) {
   const waste = drain("wasteland", 0.5);
   eq(waste.unit.strength, 0, "s5 wasteland reaches 0 with no floor");
   must(waste.events.some((event) => event.type === "destroyed"), "s5 wasteland at 0 must destroy the piece");
-  // D10: a site terrain with NO site row. The doc damages the cell (0xf4, 20/pass); the port's site
-  // branch skips a cell with no site, so the unit is untouched.
-  eq(drain("city", 100, []).events.length, 0,
-    "D10: the port's city-with-no-site-row branch no longer skips; re-measure (doc: 20/PASS)");
+  // D10 (PB-349): a site terrain drains the CELL, not the site row - the original's 0x1996 byte for
+  // docks/base/city/capital is 0xf4 (20 per pass, through the combat path) and never reads a site
+  // record. Only a site the piece OWNS is exempt, so the no-row case the doc's §5 table names pays.
+  eq(drain("city", 100, []).unit.strength, 99.5,
+    "s5 a city cell with NO site row drains at the site rate (doc: 20/PASS, D9 unit)");
+  eq(drain("capital", 20.1, []).unit.strength, 20,
+    "s5 the 20% floor holds on a site cell with no row, exactly as on lake/polar");
   const enemySite = [{ id: 1, name: "Testville", kind: "city", owner: "red", x: 10, y: 10 }];
   eq(drain("city", 100, enemySite).unit.strength, 99.5, "s5 an enemy site drains (port 0.5/round; doc 20/PASS)");
+  const unownedSite = [{ id: 3, name: "Testville", kind: "city", owner: null, x: 10, y: 10 }];
+  eq(drain("city", 100, unownedSite).unit.strength, 99.5,
+    "s5 an UNOWNED site row drains too - the byte reads \"does not own\", not \"has an owner\"");
   const ownSite = [{ id: 2, name: "Testville", kind: "city", owner: "blue", x: 10, y: 10 }];
   eq(drain("city", 100, ownSite).events.length, 0, "s5 an own site must not drain");
 
-  // Militia (FUN_1c0d_00b4, 9056-9077): an enemy-OWNED site costs 2 per pass, an UNOWNED site 20.
-  // PB-216/PB-288 put the militia on the OCCUPIED cell, which is the doc's "standing on" case, so
-  // the two pieces below do not have to be fighting: the squat pays, the garrison does not.
-  const militiaMatch = (siteOwner) => {
-    const squat = piece("blue:foot", "blue", "infantry", 10, 10);
+  // Militia (FUN_1c0d_00b4, 9056-9077): an enemy-OWNED site costs 2 per pass, an UNOWNED site 20,
+  // and both pin the occupant (move points to -10). PB-216/PB-288 put the militia on the OCCUPIED
+  // cell, which is the doc's "standing on" case, so the two pieces below do not have to be
+  // fighting: the squat pays, the garrison does not.
+  const militiaMatch = (siteOwner, strength = 100) => {
+    const squat = piece("blue:foot", "blue", "infantry", 10, 10, { strength });
     const guard = piece("red:tank", "red", "tank", 14, 10);
     const match = {
       round: 2, pieces: [squat, guard],
@@ -345,12 +351,53 @@ export async function run(ctx) {
   must(paid, "s5 militia: a piece standing on an enemy city must pay");
   eq(paid.amount, 2, "s5 militia: an enemy site costs 2 per beat (9056-9077)");
   eq(owned.squat.strength, 98, "s5 the militia's 2 is the only damage on a piece that is not fighting");
-  eq(owned.squat.movePoints, undefined,
-    "D12: the port still does not zero the occupant's move points; re-measure (doc: -10)");
+  // D12 (PB-349): the beat also zeroes the occupant's move points, and the port's shape for that is
+  // `pinned` - the state an order clears (move.mjs issueOrder), and the one advance() will not step.
+  eq(paid.pinned, true, "s5/D12: the militia row says the beat pinned the occupant");
+  eq(owned.squat.pinned, true, "s5/D12: the militia beat sets the pin on the piece itself");
+  eq(pieceState(owned.squat, owned.match), "pinned", "s5/D12: the pinned squatter reads as pinned");
+
   const neutral = militiaMatch(null);
-  must(!neutral.events.some((event) => event.militia === true && event.target === "blue:foot"),
-    "D11: the port's unowned-site militia no longer reads 0; re-measure (doc: 20)");
-  eq(neutral.squat.strength, 100, "D11: an unowned site pays nothing in the port");
+  const beat = neutral.events.find((event) => event.militia === true && event.target === "blue:foot");
+  must(beat, "PB-349/D11: an unowned site must charge the squatter, not skip it");
+  eq(beat.amount, 20, "s5 an unowned site costs 20 per beat until the capture lands (9056-9077)");
+  eq(neutral.squat.strength, 80, "PB-349/D11: 100 -> 80 on an unowned site, the measured leg");
+  eq(beat.side, null, "PB-349/D11: an unowned site's militia has no owner side to name");
+  eq(neutral.squat.pinned, true, "s5/D12: the neutral beat pins too");
+
+  // The two branches differ in ONE more way: the neutral 20 is floored at strength 20 (its live leg
+  // stops at 20), while the enemy site's 2 has no floor and can kill.
+  const flooredNeutral = militiaMatch(null, 25);
+  eq(flooredNeutral.squat.strength, 20, "s5 the neutral militia is floored at strength 20: 25 -> 20, not 5");
+  const brittleEnemy = militiaMatch("red", 2);
+  eq(brittleEnemy.squat.strength, 0, "s5 the enemy site's 2 has no floor: a 2-strength squatter dies");
+
+  // D12 end to end: a pinned squatter holding an order does not take its step this round, and a
+  // twin with the same order and no pin does. Both stand on the same plain pair, so the arm grades
+  // the pin and not the ground.
+  let pair = null;
+  for (let y = 1; y < 60 && !pair; y++) {
+    for (let x = 0; x < CELL_W - 1 && !pair; x++) {
+      if (terrainNameAt(x, y) === "plain" && terrainNameAt(x + 1, y) === "plain") pair = { x, y };
+    }
+  }
+  must(pair, "the extract has no plain pair for the pin arm");
+  const walkPair = (pinned) => {
+    const walker = piece("blue:foot", "blue", "infantry", pair.x, pair.y);
+    walker.path = [{ x: pair.x + 1, y: pair.y, pace: 1 }];
+    walker.credit = 0;
+    if (pinned) walker.pinned = true;
+    const match = { round: 1, pieces: [walker], sites: [] };
+    advance(match);
+    return walker;
+  };
+  const stepper = walkPair(false);
+  must(stepper.x !== pair.x, "the control walker did not step, so the pin arm would prove nothing");
+  const held = walkPair(true);
+  eq(held.x, pair.x, "s5/D12: the militia pin stops the step, not just the strength delta");
+  eq(held.path.length, 1, "s5/D12: a pinned walker keeps the order it was holding");
+  eq(pieceState(held, { round: 1 }), "pinned",
+    "s5/D12: a pinned walker holding a path reads as pinned, not as moving");
 
   // ---- s6 :233 — one air-strike case per target class -----------------------------------------
   // FUN_1ac5_0dbe 8795-8814 after the aircraft survives the run in: land (s>>1)+1; kinds 5-7 34;

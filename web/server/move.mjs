@@ -738,8 +738,11 @@ function facingFor(fromX, fromY, toX, toY) {
 export function pieceState(piece, match) {
   if (!piece) return null;
   if (inactiveRounds(piece, match && match.round) > 0) return "inactive";
-  if (Array.isArray(piece.path) && piece.path.length > 0) return "moving";
+  // PB-349: a pin OUTRANKS a held order. A militia-pinned squatter keeps the path it was walking
+  // and does not step it until it is re-ordered, so reading "moving" off the path alone would show
+  // a unit as moving while advance() skips it.
   if (piece.pinned === true) return "pinned";
+  if (Array.isArray(piece.path) && piece.path.length > 0) return "moving";
   if (piece.repairing === true) return "repairing";
   if (piece.entrenched === true) return "digging";
   return "idle";
@@ -923,7 +926,12 @@ export function attritionStep(match, lookup = null) {
     if (isSite) {
       if (!byCell) byCell = sitesByCell(match);
       const site = siteAtCell(byCell, piece);
-      if (!site || site.owner === piece.side) continue;
+      // PB-349 (D10): the original damages the TERRAIN - the 0x1996 byte for docks/base/city/
+      // capital is 0xf4, 20 per pass through the combat path - and never consults a site row.
+      // So a site KIND drains unless the piece owns the site it stands on: a cell with no row at
+      // all, a row with no owner, and an enemy row all pay. The old `!site` test skipped the
+      // no-row case, which is the one the doc's §5 table names explicitly.
+      if (site && site.owner === piece.side) continue;
     }
     const floor = name === "wasteland" ? 0 : combat.attritionFloor * max;
     const before = ensureStrength(piece, max);
