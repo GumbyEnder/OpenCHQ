@@ -59,17 +59,25 @@ kind. Row 0 is **not table data** — it overlaps the tail of the string `"ly = 
 first nine bytes read `108 121 32 61 32 37 100 46 0`; kind 0 is an empty slot (allowance 0, cannot
 move), so row 0 is never used. Column 0 holds stale bytes for the same reason.
 
+Two of those column-0 cells were transcribed one value wrong until 2026-11-28 (PB-350): row 4
+col 0 is **35** (`0x341a0 + 36`) and row 9 col 0 is **34** (`0x341a0 + 81`). Both were dumped twice
+in the PB-343 leg and both are already what `measured.damageMatrix.rows` carries in
+`config/game.json`, so the table above now prints them as dumped. Column 0 is never read at runtime
+(kind 0 is the empty slot above), so this is a transcription fix with no behaviour behind it — and
+dumping the 81 bytes against this table shows those two cells were the only disagreement there ever
+was; every other cell already matched.
+
 ```
         tgt 0   1   2   3   4   5   6   7   8
 atk 1      0  20  17  15   0  25  25  35  35
 atk 2     35  26  20  20   0  25  25  35  35
 atk 3     35  20  17  15   0  25  25  35  35
-atk 4      0   0   0   0   0   0   0   0   0
+atk 4     35   0   0   0   0   0   0   0   0
 atk 5      0  18  16  14   0  10  10   5   5
 atk 6      5   9   8   7   0  10  10   5   5
 atk 7      5   0   0   0   0 100 100  25  34
 atk 8     34  12  10   6   0  50  50  34  25
-atk 9     25  10   8   5   0  50  50  25  20
+atk 9     34  10   8   5   0  50  50  25  20
 ```
 
 Kind names used below (numeric byte is measured, name is the manual's hardware): **1 infantry,
@@ -123,8 +131,11 @@ Three things about the table's shape matter when wiring it:
 2. **Flank / rear** (7064-7071): only when attacker kind < 7, target kind < 5, and the target's own
    link is a *third* piece (not `0xff`, not the attacker). Compare the **attacker's facing** with
    the defender's: same facing → **×2** (rear); otherwise, if the attacker's facing is not the
-   defender's opposite, **×1.5** (flank); facing each other → ×1. Ships are never flanked and subs
-   never flank. Live, and the condition is what the two legs separate: a **three-piece layout**
+   defender's opposite, **×1.5 rounded down** (flank); facing each other → ×1. The code adds half
+   again as an INTEGER — decompiled.c 7070 is `local_8 += local_8 / 2`, i.e. `d + d/2` — so a city
+   cell of 13 flanks to **19**, not 19.5, and a plain 20 flanks to 30. Read the multiplier as the
+   integer form the port implements, not as a fractional one a reader could re-derive. Ships are
+   never flanked and subs never flank. Live, and the condition is what the two legs separate: a **three-piece layout**
    (the defender's link already names an anchor, the striker carries the defender's facing) measured
    **40** against a 20 baseline (`t009-rear-thirdpiece-2026-11-13.txt`); the **same matched facings as
    an isolated 1v1** measured **20** — no bonus (`t009-rear-1v1-2026-11-13.txt`). The 3543 sentence
@@ -135,7 +146,12 @@ Three things about the table's shape matter when wiring it:
    defender, and the bonus requires `defender.fighting` to name someone else.
 3. **Ship firing at land from beyond 2 cells** (7082-7093): `cap = targetStrength − 30`; halved when
    the cap is under 25. Only for attacker kind > 6 against target kind < 5 and dist² > 2.
-   **Not wired** (T-009b).
+   **Wired** (corrected 2026-11-28, PB-350): `damageFor()` applies it behind `config/game.json`
+   `terrain.shoreFire` (`wired: true`, range 2, cap 30, halveBelow 25), and PB-343's shore arms
+   exercise the branch. The tag is DISASSEMBLY, so the WIRING is proved and the three numbers are
+   not live-measured. The CLAUSE itself is the separate defect PB-347 fixed (the sequential
+   subtract, and the range read as d² rather than d); cite PB-347 rather than reading this
+   paragraph as an endorsement of what shipped before it.
 4. **Subs cannot engage land at all**: the range matrix column for land is 0 for kind 7, so a sub
    never acquires a land target — and the damage cell 7→land is 0, so a pairing that slips through
    deals nothing.
@@ -184,8 +200,12 @@ Effect: the entrench factor shows up as the kind-3 column of the damage matrix �
 infantry, 26→20 against tanks. The runtime gives an entrenched infantry defender code 3 and reads
 that column; `entrenchDamageFactor` is 1.0 exactly so the discount is not applied twice.
 
-Terrain cover (§2.1) is a *separate* multiplier on top, applied to the defender's terrain class; it
-is not wired yet (T-009b).
+Terrain cover (§2.1) is a *separate* multiplier on top, applied to the defender's terrain class. It
+**is wired** (corrected 2026-11-28, PB-350): `combat.coverFor()` runs inside `damageFor()` before
+flank/rear, the id sets are `config/game.json` `terrain.cover.value`, and the arithmetic is pinned by
+`web/test/nodes/t016_terrain.mjs` (city 20→13, mountain 20→15, plain/lake/desert identity) and
+`pb282_damage_cover.mjs`. The earlier "not wired" note described the harness state before that
+card and is superseded.
 
 ## 5. Attrition and repair (Q6)
 
