@@ -397,6 +397,23 @@ function sayResult(room) {
     flashLine.result(who + ": " + result.lastCapital.name + " fell at round " + result.lastCapital.round + "." + list);
     return;
   }
+  // PB-199 (AC a): a resignation is named from `result.reason`/`result.by`, never from the note -
+  // the note is a sentence on the room, and a reconnect used to rewrite it ("The clock is still
+  // held.") over a finished war. The server writes who resigned onto the match, so this line and the
+  // Log line are the same fact. A resignation names no capital, so no capital list is appended.
+  if (result && result.reason === "resignation") {
+    const loser = result.by === "blue" || result.by === "red"
+      ? result.by
+      : result.winner === "blue" ? "red" : result.winner === "red" ? "blue" : "";
+    const lossWord = loser && loser === mine
+      ? "You resigned"
+      : loser === "blue" ? "Blue resigned" : loser === "red" ? "Red resigned" : "A side resigned";
+    const winWord = result.winner === mine
+      ? "You win"
+      : result.winner === "blue" ? "Blue wins" : result.winner === "red" ? "Red wins" : "The match is over";
+    flashLine.result(lossWord + ". " + winWord + ".");
+    return;
+  }
   const note = typeof room.note === "string" ? room.note.trim() : "";
   if (note) {
     flashLine.result(note + list);
@@ -2127,12 +2144,21 @@ function syncSpeed() {
 
 function syncGameButtons() {
   const running = Boolean(room && room.clock === "running");
+  // PB-199 (AC c): a finished match has no clock to run and nothing left to resign. Both controls
+  // read the room's own `over` byte, the same one the server refuses on, so a reload cannot light
+  // them again and the page never offers an action the server will refuse.
+  const over = Boolean(room && room.over);
   if (clockBtn) {
     clockBtn.textContent = running ? "\u275A\u275A" : "\u25B6";
     clockBtn.setAttribute("aria-pressed", running ? "true" : "false");
-    clockBtn.title = running ? "Pause the clock" : "Play the clock";
+    clockBtn.disabled = !room || over;
+    clockBtn.title = over ? "The match is over." : running ? "Pause the clock" : "Play the clock";
   }
-  for (const button of [document.getElementById("saveBtn"), resignBtn, newBtn, quitBtn]) if (button) button.disabled = !room;
+  for (const button of [document.getElementById("saveBtn"), newBtn, quitBtn]) if (button) button.disabled = !room;
+  if (resignBtn) {
+    resignBtn.disabled = !room || over;
+    resignBtn.title = over ? "The match is over." : "Resign this game. The other side wins.";
+  }
   syncSpeed();
   syncMessageLevel();
 }
@@ -2146,7 +2172,9 @@ function syncBuyNav() {
 }
 
 clockBtn?.addEventListener("click", () => {
-  if (!room) return;
+  // PB-199 (AC c): the finished frame's ▶ is dead - the server refuses the clock change, and the
+  // page does not send it either.
+  if (!room || room.over) return;
   send({ op: room.clock === "running" ? "hold" : "run" });
 });
 speedDown?.addEventListener("click", () => {
@@ -2158,7 +2186,7 @@ speedUp?.addEventListener("click", () => {
   send({ op: "speed", delta: 1 });
 });
 resignBtn?.addEventListener("click", () => {
-  if (!room) return;
+  if (!room || room.over) return;
   if (!confirm("Resign this game? The other side wins.")) return;
   send({ op: "resign" });
 });
@@ -3342,14 +3370,26 @@ const DIALOG_PAINTERS = {
       const run = document.createElement("button");
       run.type = "button";
       run.textContent = room.clock === "running" ? "Hold the clock" : "Run the clock";
-      run.addEventListener("click", () => send({ op: room.clock === "running" ? "hold" : "run" }));
+      // PB-199 (AC c): the panel's clock control is the same op as the strip's ▶, so it reads the
+      // same `over` byte and is dead on a finished war.
+      run.disabled = Boolean(room.over);
+      run.title = room.over ? "The match is over." : "";
+      run.addEventListener("click", () => {
+        if (room.over) return;
+        send({ op: room.clock === "running" ? "hold" : "run" });
+      });
       group.append(run);
     }
     const leave = document.createElement("button");
     leave.type = "button";
     leave.className = "ghost";
     leave.textContent = "Leave the match";
-    leave.addEventListener("click", () => send({ op: "leave" }));
+    // PB-199 (AC d): "Leave the match" throws the war away exactly like Quit, so it asks the same
+    // way Quit, New and Resign do - one click must not end a match.
+    leave.addEventListener("click", () => {
+      if (!confirm("Leave this match and return to the lobby? It is not kept.")) return;
+      send({ op: "leave" });
+    });
     // PB-309 (manual p.35 l.1126-1127): "you can actually switch sides during a game. To do this,
     // press Switch Sides. This only works in a solo game or a game against 'no opponent.'" The door
     // is on the live war's own panel - a film's four views are not this control. It is offered in a

@@ -592,7 +592,10 @@ export function createLobby() {
     room.clock = "held";
     room.holdRoom = true;
     if (room.match) room.match.clock = "held";
-    room.note = note;
+    // PB-199 (AC a): a finished match's note is the RESULT, and a disconnect after the result must
+    // not replace it. The hold still stops the clock (it is already held on an over match) and the
+    // rejoin still clears it; only the sentence is protected.
+    if (!(room.match && room.match.over)) room.note = note;
     saveRoom(room);
     tellRoom(room);
   }
@@ -636,8 +639,9 @@ export function createLobby() {
   // drop is still on the piece and still steps on the next running round.
   function seatView(room, username) {
     if (!room) return null;
-    // The seat is occupied again, so the note the drop left behind is stale.
-    if (/disconnected/.test(String(room.note || ""))) {
+    // The seat is occupied again, so the note the drop left behind is stale - unless the match is
+    // over, where the note is the result and no reconnect may rewrite it (PB-199 AC a).
+    if (!(room.match && room.match.over) && /disconnected/.test(String(room.note || ""))) {
       // A rejoin never starts the clock (wakeRoomHold): the note is replaced with the state both
       // seats are actually in.
       if (room.clock === "held") room.note = "Both seats are present. The clock is still held.";
@@ -724,7 +728,27 @@ export function createLobby() {
     // resignation would make the next `run` read as "held by <seat>" over a finished match.
     room.holds = { blue: false, red: false };
     room.match.clock = "held";
-    room.note = nameOf(username) + " resigned. " + other + " wins.";
+    // PB-199 (AC a): who resigned is written onto the match, so the sentence is a rule (`resultOf`
+    // carries it as `by`) and not a note a later frame can overwrite. It is the same winReason shape
+    // the film and history already record for a resignation.
+    room.match.winReason = {
+      kind: "resignation",
+      side: mine,
+      round: Number.isInteger(room.match.round) ? room.match.round : 0,
+    };
+    room.note = resultNote(room.match);
+    // PB-199 (AC b): the end of the war is one Log line, on BOTH seats, from the same sentence the
+    // end screen reads - and the log is part of the room, so a reload still shows it.
+    const endLine = { round: Number(room.match.round) || 0, text: room.note };
+    if (!room.log) room.log = { blue: [], red: [] };
+    for (const side of ["blue", "red"]) {
+      if (!Array.isArray(room.log[side])) room.log[side] = [];
+      room.log[side].push(endLine);
+      const seat = room.seats[side];
+      if (!seat) continue;
+      const peer = sockets.get(seat.username);
+      if (peer) peer.send({ op: "log", roomId: room.id, round: endLine.round, lines: [endLine] });
+    }
     // PB-248: the war ended outside a tick, so the film is closed here; without this the header
     // stayed open and the war never appeared in War Films (PM 9159, frodo 9162).
     closeFilmNow(room);
@@ -1900,6 +1924,10 @@ export function createLobby() {
     if (isLayoutRoom(room)) {
       return { error: "Layout mode is a pregame setup. The clock does not run and money does not accrue." };
     }
+    // PB-199 (AC c): a finished match has no clock to change. Without this the ▶ is obeyed on the
+    // over frame and a finished war can be set running (game row 10363). The refusal comes before
+    // any hold is touched, so the clock stays held and neither seat's holds move.
+    if (room.match && room.match.over) return { error: "The match is already over." };
     const holds = holdsOf(room);
     if (!running) {
       // A hold is never refused, and both seats see it on the next frame.
