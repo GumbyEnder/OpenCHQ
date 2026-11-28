@@ -233,8 +233,11 @@ try {
   mark("an aircraft is bought and berthed", true, "plane " + planeId + " near " + bought.near);
 
   // ---------------------------------------------------------------- the Air menu, read from the DOM
+  // PB-338: a mission pill prints "<name> · <rounds>", so the page's controls are matched on the
+  // mission NAME and the number is checked beside it, never the other way round.
   const CAP = "Scramble (CAP)";
   const OTHERS = ["Strike", "Bomb", "Transfer"];
+  const missionName = (text) => String(text || "").trim().split(" \u00b7 ")[0];
   async function openAirMenu() {
     await page.click('.navbtn[data-dialog="air"]').catch(() => {});
     await page.waitForFunction(() => document.querySelectorAll("#dialogBody .airtable .buyrow").length > 0, null, { timeout: 8000, polling: 100 })
@@ -253,12 +256,14 @@ try {
       return { away: (row.children[2] ? row.children[2].textContent : "").trim(), buttons };
     }, planeId);
   }
+  // PB-338: a pill prints "<name> · <rounds>", so a door is clicked by its mission NAME; the arm
+  // that reads the away figure lives in the menu assertions, not in the click helper.
   async function clickMission(label) {
     return page.evaluate((want) => {
       const rows = [...document.querySelectorAll("#dialogBody .airtable .buyrow")].filter((r) => !r.classList.contains("head"));
       for (const row of rows) {
         for (const b of row.querySelectorAll("button")) {
-          if ((b.textContent || "").trim() !== want) continue;
+          if (String(b.textContent || "").trim().split(" \u00b7 ")[0] !== want) continue;
           if (b.disabled) return { clicked: false, disabled: true };
           b.click();
           return { clicked: true };
@@ -301,7 +306,7 @@ try {
   const readyShot = await shot("pb293-1-ready-menu");
   {
     const seen = (readyRow && readyRow.buttons || []).map((b) => b.label);
-    const missing = [CAP].concat(OTHERS).filter((label) => !seen.includes(label));
+    const missing = [CAP].concat(OTHERS).filter((label) => !seen.map(missionName).includes(label));
     const greyed = (readyRow && readyRow.buttons || []).filter((b) => b.disabled).map((b) => b.label);
     mark("a READY plane's Air menu lists all four missions", Boolean(readyRow) && missing.length === 0, "labels " + JSON.stringify(seen));
     mark("a READY plane's missions are all enabled (the control arm)", greyed.length === 0, "disabled " + JSON.stringify(greyed));
@@ -328,10 +333,12 @@ try {
   let awayAtFirstCap = null;
   {
     const labels = (awayRow && awayRow.buttons || []).map((b) => b.label);
-    const caps = (awayRow && awayRow.buttons || []).filter((b) => b.label === CAP);
-    const present = OTHERS.filter((label) => labels.includes(label));
+    const caps = (awayRow && awayRow.buttons || []).filter((b) => missionName(b.label) === CAP);
+    const present = OTHERS.filter((label) => labels.map(missionName).includes(label));
     mark("an INACTIVE plane's menu offers exactly ONE control", labels.length === 1, "labels " + JSON.stringify(labels));
     mark("that control is an ENABLED \"Scramble (CAP)\"", caps.length === 1 && caps[0].disabled === false, JSON.stringify(caps));
+    mark("the lone CAP pill still prints its away rounds (PB-338)", caps.length === 1 && /\u00b7\s*\d+$/.test(caps[0].label),
+      JSON.stringify(caps.map((b) => b.label)));
     mark("Strike, Bomb and Transfer are ABSENT, not merely greyed (manual p.24)", present.length === 0,
       "still present " + JSON.stringify(present));
     mark("the readout column reads the 4 rounds it owes", Boolean(awayRow) && /^4 rounds$/.test(awayRow.away), "away " + JSON.stringify(awayRow && awayRow.away));
@@ -392,8 +399,8 @@ try {
   })));
   const kitShot = await shot("pb293-4-kit-door");
   {
-    const capHit = kit.filter((b) => b.label === CAP || b.label.startsWith(CAP + " ("));
-    const others = kit.filter((b) => ["Strike", "Bomb", "Transfer"].some((l) => b.label === l || b.label.startsWith(l + " (")));
+    const capHit = kit.filter((b) => missionName(b.label) === CAP);
+    const others = kit.filter((b) => ["Strike", "Bomb", "Transfer"].includes(missionName(b.label)));
     mark("the Kit door offers the CAP for the selected plane", capHit.length === 1 && capHit[0].disabled === false, JSON.stringify(capHit));
     mark("the Kit door offers no Strike/Bomb/Transfer either (the two doors agree)", others.length === 0, JSON.stringify(others));
     mark("evidence: Kit-door screenshot", true, kitShot);

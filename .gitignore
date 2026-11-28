@@ -44,3 +44,6 @@ tests/e2e/pb205-save-resume-*/
 tests/e2e/pb305-film-to-game-*/
 # PB-309 Switch Sides page-leg runs: screenshots + verdicts.json per width, same rule.
 tests/e2e/pb309-switch-sides-*/
+
+# PB-338 Air-button away-rounds page-leg runs: screenshots + evidence JSON per run, same rule.
+tests/e2e/pb338-air-rounds-*/

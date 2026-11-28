@@ -225,7 +225,12 @@ export function airBriefing(match, side) {
         // the same shape PB-293 ruled for an inactive plane's menu.
         { mode: "drop", label: "Paradrop", rounds: costs.strike,
           allowed: left === 0 && !basedOnCarrier(match, side, plane),
-          note: "Pick an infantry to drop, then a land cell that is not an enemy city or unit. The aircraft stays home and goes unready." },
+          // PB-338: the sentence names the duration it asks about. It used to end at "goes
+          // unready", so the one mission whose price a player cannot infer (the plane stays home,
+          // so nothing on the board moves) was the one whose title carried no figure at all
+          // (PM 10488 §2). N is the same field the order charges, interpolated here so the seat
+          // payload and the page's visible label cannot disagree.
+          note: "Pick an infantry to drop, then a land cell that is not an enemy city or unit. The aircraft stays home and goes unready for " + costs.strike + " rounds." },
         // A transfer rebases the plane instead of flying a mission (manual p.22: "Air units may
         // only be transferred to cities, bases, and aircraft carriers"). Its round cost comes from
         // config and is UNVERIFIED (air.transferRoundsSource): the manual never prints one.

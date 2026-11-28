@@ -255,15 +255,20 @@ try {
     const rows = [...document.querySelectorAll("#dialogBody .airtable .buyrow")].filter((r) => !r.classList.contains("head"));
     const row = rows.find((r) => { const c = r.children[0]; return Boolean(c) && String(c.dataset.piece || (c.textContent || "").trim()) === String(id); });
     if (!row) return { clicked: false, missing: true };
-    const button = [...row.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "Paradrop");
+    // PB-338: a mission pill now prints "<name> · <rounds>", so the door is found by its NAME and
+    // the arm below is stronger for it - the pill must carry the drop's own away figure.
+    const button = [...row.querySelectorAll("button")].find((b) => String(b.textContent || "").trim().split(" · ")[0] === "Paradrop");
     if (!button) return { clicked: false, noDrop: true, labels: [...row.querySelectorAll("button")].map((b) => b.textContent.trim()) };
     if (button.disabled) return { clicked: false, disabled: true };
     const title = button.title || "";
+    const label = (button.textContent || "").trim();
     button.click();
-    return { clicked: true, title };
+    return { clicked: true, title, label };
   }, planeId);
   await sleep(400);
   mark("the Air door offers Paradrop for a ready plane", Boolean(armedDrop.clicked), JSON.stringify(armedDrop));
+  mark("the Paradrop pill prints the drop's away rounds beside its name (PB-338)",
+    /^Paradrop · \d+$/.test(String(armedDrop.label || "")), JSON.stringify(armedDrop.label));
   mark("the Paradrop door names the rules before the player aims",
     /enemy city|land cell/i.test(String(armedDrop.title || "")), JSON.stringify(String(armedDrop.title || "").slice(0, 200)));
 

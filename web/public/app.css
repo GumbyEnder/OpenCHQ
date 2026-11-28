@@ -1261,7 +1261,11 @@ body.in-match .speedctl { display: flex; }
    covered and a click at its centre landed on a mission. Buttons keep their own text:
    flex: 0 0 auto forbids the shrink that would have fitted them by clipping the labels. */
 .airmissions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
-.airmissions button { flex: 0 0 auto; max-width: 100%; font-size: 11px; padding: 1px 7px; border-radius: 6px; }
+/* PB-338: a button's label carries its away rounds ("Strike · 8") and must read as ONE line - a
+   label that wrapped inside its own pill would still pass a scrollWidth test while splitting the
+   number onto a second row. The cluster wraps (PB-298), each pill doesn't; flex: 0 0 auto plus
+   nowrap means an over-wide pill would SPILL and be caught, never be squeezed and hide its number. */
+.airmissions button { flex: 0 0 auto; max-width: 100%; white-space: nowrap; font-size: 11px; padding: 1px 7px; border-radius: 6px; }
 
 body.in-match .mapstage {
   flex: 1 1 auto;

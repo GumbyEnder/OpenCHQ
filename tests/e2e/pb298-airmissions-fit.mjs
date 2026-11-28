@@ -275,11 +275,15 @@ try {
     mark("[" + tag + "] the Air dialog opens and the READY row renders", Boolean(m) && m.buttons.length > 0, Boolean(m) ? m.buttons.length + " buttons" : "no row");
     if (!m) continue;
 
-    // 1. control: the full READY menu, all enabled.
+    // 1. control: the full READY menu, all enabled. PB-338: a pill prints "<name> · <rounds>", so
+    // the mission is matched by its NAME and the away figure is required beside it.
     const labels = m.buttons.map((b) => b.label);
-    const missing = [CAP].concat(OTHERS).filter((l) => !labels.includes(l));
+    const names = labels.map((text) => String(text).split(" \u00b7 ")[0]);
+    const missing = [CAP].concat(OTHERS).filter((l) => !names.includes(l));
     const greyed = m.buttons.filter((b) => b.disabled).map((b) => b.label);
     mark("[" + tag + "] the READY row lists all four missions", missing.length === 0, "labels " + JSON.stringify(labels));
+    mark("[" + tag + "] every mission pill prints its away rounds beside the name (PB-338)",
+      labels.length > 0 && labels.every((text) => /\u00b7\s*\d+$/.test(text)), JSON.stringify(labels));
     mark("[" + tag + "] the READY missions are all enabled (the control arm)", greyed.length === 0, "disabled " + JSON.stringify(greyed));
 
     // 2. every button inside its cell, 0.5 px.

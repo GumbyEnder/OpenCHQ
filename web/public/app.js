@@ -53,6 +53,9 @@ import {
 // PB-330: the act key the server's delivered line carries, so the page's own echo and the
 // server's copy of the same act are one row, not two.
 import { actKey } from "./acts.mjs";
+// PB-338: the one producer for a mission button's visible label, so the Air door and the Kit door
+// print the same mission name and the same away-rounds figure.
+import { missionButtonLabel } from "./airlabels.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { scanAddPieces, scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
@@ -2563,14 +2566,11 @@ function toolRow(room) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "buy";
-        // A transfer's round cost is config's air.transferRounds, tagged UNVERIFIED
-        // (air.transferRoundsSource): the manual names the sites, never a price. So the label
-        // shows a price only when the file sets one, and a transfer never needs a base in reach -
-        // it moves the base.
+        // PB-338: the label carries the away rounds in VISIBLE text ("Strike · 8"), from the
+        // briefing's own missions[].rounds. The old shape printed "(8r)" here and nothing at all
+        // on the Air door; one producer now feeds both doors (web/public/airlabels.mjs).
         const needsBase = mission.mode !== "transfer";
-        button.textContent = mission.rounds > 0
-          ? mission.label + " (" + mission.rounds + "r)"
-          : mission.label;
+        button.textContent = missionButtonLabel(mission);
         // PB-293: `allowed` is the server's own answer, so the page enables exactly what the server
         // would accept - an inactive plane may still fly CAP - instead of blanket-disabling by ready.
         button.disabled = mission.allowed === false || (needsBase && !briefing.canFly);
@@ -3218,7 +3218,10 @@ const DIALOG_PAINTERS = {
       for (const mission of Array.isArray(plane.missions) ? plane.missions : []) {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = mission.label;
+        // PB-338: this door printed the mission's name and nothing else, so "the rounds shown" in
+        // the dialog's own footer was shown nowhere except a hover title - and Paradrop's title is
+        // the rule's sentence, not a figure. The visible label now carries missions[].rounds.
+        button.textContent = missionButtonLabel(mission);
         // PB-178: the Bomb door names the restricted air radius before the player aims, because a
         // target outside that circle is refused - the player should learn the rule from the door,
         // not from a refusal after a wasted click. The number is the briefing's, so it is the same
