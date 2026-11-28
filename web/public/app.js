@@ -3282,7 +3282,10 @@ const DIALOG_PAINTERS = {
         cell(plane.ready ? "ready" : String(plane.roundsLeft) + " rounds"), acts);
       table.append(line);
     }
-    body.append(table, note("A mission puts the aircraft out of action for its own number of rounds; that number is the config's, not this page's."));
+    // PB-333: this footer is player-facing. It used to explain where the number comes from; it now
+    // says what the mission does to the aircraft. Copy only — the duration itself is unchanged and
+    // the Away cell still prints it.
+    body.append(table, note("A mission takes the aircraft out of action for the rounds shown."));
   },
 
   kit(body) {
