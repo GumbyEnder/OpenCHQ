@@ -47,14 +47,6 @@ export const name = "combat_vs_doc";
 // that arm in the same commit that edits this table.
 // ---------------------------------------------------------------------------------------------
 export const DEVIATIONS = [
-  { id: "D1", formula: "s2 0x18f0 cell [9][0]", doc: 25, server: 34, cls: "doc error", card: "PB-350",
-    note: "COMBAT.md:72 transcribes row 9 col 0 as 25; the EXE byte is 34 (0x341a0+81) and config agrees. Column 0 is never read at runtime (kind 0 is an empty slot)." },
-  { id: "D2", formula: "s2 0x18f0 cell [4][0]", doc: 0, server: 35, cls: "doc error", card: "PB-350",
-    note: "COMBAT.md:67 transcribes row 4 col 0 as 0; the EXE byte is 35 (0x341a0+36). Kind 4 is unused." },
-  { id: "D3", formula: "s2.1 terrain cover ('Not wired: T-009b')", doc: "unwired", server: "wired", cls: "doc error", card: "PB-350",
-    note: "coverFor()/damageFor() apply it and t016_terrain.mjs pins the arithmetic; s2.1, s4 :183 and s10 item 5 are stale." },
-  { id: "D4", formula: "s2.3 ship-vs-land cap ('Not wired: T-009b')", doc: "unwired", server: "wired", cls: "doc error", card: "PB-350",
-    note: "combat.damageFor applies config.terrain.shoreFire (tag disassembly, PM 4572 interim); s2.3 and s10 item 5 are stale." },
   { id: "D7", formula: "s6 air strike, sea", doc: "34 for kinds 5-7, 25 for kinds 8/9 (four strikes on a cruiser/carrier)", server: "34 for every sea kind (max x 0.34)", cls: "server defect", card: "PB-348",
     note: "config.airStrikeSeaAmount carries one number; measured.combat.airStrike.shipDamage already records the per-kind split." },
   { id: "D8", formula: "s6 air strike, land", doc: "(strength>>1)+1, so 100 leaves 49", server: "before x 0.5, so 100 leaves 50", cls: "server defect", card: "PB-348",
@@ -67,9 +59,13 @@ export const DEVIATIONS = [
     note: "combat.militiaDamage carries the enemy-site 2 only; the neutral-site 20 has no runtime actor." },
   { id: "D12", formula: "s5 militia also zeroes move points", doc: "move points to -10 (9056-9077)", server: "strength only; move points untouched", cls: "server defect", card: "PB-349",
     note: "the doc's own militia live leg (docs/re/t009b/militia-2026-11-13.txt) names the -10; no module writes it." },
-  { id: "D13", formula: "s2.2 flank multiplier", doc: "'x1.5' (s2.2 :121, :125)", server: "d + floor(d x 0.5), the original's integer form (13 -> 19)", cls: "doc error", card: "PB-350",
-    note: "decompiled.c 7070 is `local_8 += local_8/2`, so 13 reads 19, not 19.5. The port is faithful; the doc's prose rounds." },
 ];
+
+// PB-350 closed D1, D2, D3, D4 and D13 at this commit: the doc now prints the dumped bytes, its
+// cover and shore-cap sentences say wired, and its flank prose gives the integer form. Those rows
+// are gone from the table (which holds only what is still measured-and-unfixed); the arms they
+// pinned are now positive assertions - the 81-cell match, the two repaired cells by value, and the
+// 13 -> 19 flank.
 
 const must = (ok, message) => {
   if (!ok) throw new Error(message);
@@ -87,16 +83,19 @@ const rows = matrix.rows || {};
 const kindNine = matrix.kindNineColumn || {};
 
 // The doc's transcript of 0x18f0 (COMBAT.md:62-73), verbatim, row = attacker, col = target.
+// PB-350 corrected the two column-0 cells the PB-343 leg dumped twice: row 4 col 0 is 35
+// (0x341a0+36) and row 9 col 0 is 34 (0x341a0+81). They are unread at runtime (kind 0 is an empty
+// slot), so the only arm that moves is the transcript-vs-binary one below.
 const DOC_ROWS = {
   1: [0, 20, 17, 15, 0, 25, 25, 35, 35],
   2: [35, 26, 20, 20, 0, 25, 25, 35, 35],
   3: [35, 20, 17, 15, 0, 25, 25, 35, 35],
-  4: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+  4: [35, 0, 0, 0, 0, 0, 0, 0, 0],
   5: [0, 18, 16, 14, 0, 10, 10, 5, 5],
   6: [5, 9, 8, 7, 0, 10, 10, 5, 5],
   7: [5, 0, 0, 0, 0, 100, 100, 25, 34],
   8: [34, 12, 10, 6, 0, 50, 50, 34, 25],
-  9: [25, 10, 8, 5, 0, 50, 50, 25, 20],
+  9: [34, 10, 8, 5, 0, 50, 50, 25, 20],
 };
 const SEA = new Set(["submarine", "cruiser", "carrier"]);
 const piece = (id, side, kind, x, y, extra = {}) => ({
@@ -133,18 +132,30 @@ export async function run(ctx) {
         "kindNineColumn[9] is " + kindNine["9"] + ", EXE byte 0x341fa is " + bytes[0x341a0 + 90]);
     }
   }
-  // The doc's transcript disagrees with the binary at exactly the two cells D1/D2 name. If a third
-  // cell ever moves this reds, because the deviation table would then be incomplete.
+  // PB-350 corrected the doc's transcript, so the table and the binary now agree at ALL 81 cells.
+  // This arm is the inverse of the one it replaces: it used to pin the two known mismatches
+  // (["4,0","9,0"]); it now pins the empty set, so a doc cell that drifts again, in EITHER
+  // direction, reds here with the cell named.
   const docErrors = [];
   for (let attacker = 1; attacker <= 9; attacker++) {
     for (let target = 0; target <= 8; target++) {
       if (DOC_ROWS[attacker][target] !== Number(rows[String(attacker)][target])) docErrors.push(attacker + "," + target);
     }
   }
-  eq(docErrors, ["4,0", "9,0"],
-    "COMBAT.md s2's table now disagrees with the EXE at " + JSON.stringify(docErrors) + "; D1/D2 are the only known cells");
-  eq(DOC_ROWS[9][0], DEVIATIONS[0].doc, "COMBAT.md:72 no longer says D1's 25");
-  eq(DOC_ROWS[4][0], DEVIATIONS[1].doc, "COMBAT.md:67 no longer says D2's 0");
+  eq(docErrors, [],
+    "COMBAT.md s2's table now disagrees with the EXE at " + JSON.stringify(docErrors) + "; PB-350 closed the last two cells");
+  eq(DOC_ROWS[9][0], 34, "COMBAT.md:72 row 9 col 0 is the dumped byte 34 (0x341a0+81)");
+  eq(DOC_ROWS[4][0], 35, "COMBAT.md:67 row 4 col 0 is the dumped byte 35 (0x341a0+36)");
+
+  // PB-350 also corrected prose, and prose with no arm is prose the next edit re-breaks. This reads
+  // the doc itself: the two repaired cells print as dumped, the cover and shore-cap sentences no
+  // longer say "not wired", and the flank sentence gives the integer form.
+  const docText = readFileSync(new URL("../../../docs/re/COMBAT.md", import.meta.url), "utf8");
+  must(docText.includes("atk 4     35"), "COMBAT.md s2 row 4 no longer prints the dumped 35 (PB-350)");
+  must(docText.includes("atk 9     34"), "COMBAT.md s2 row 9 no longer prints the dumped 34 (PB-350)");
+  must(!/not wired yet \(T-009b\)/.test(docText), "COMBAT.md s4 still says terrain cover is not wired (PB-350)");
+  must(!/\*\*Not wired\*\* \(T-009b\)/.test(docText), "COMBAT.md s2.3 still says the shore cap is not wired (PB-350)");
+  must(/\*\*×1\.5 rounded down\*\*/.test(docText), "COMBAT.md s2.2 no longer gives the integer flank form (PB-350)");
 
   // The runtime's pairing call, for every kind the eras field (named kinds only: 4 is unused and
   // 5/6 are AI hulls with no remake actor). Target 9 is the a*9+9 out-of-row read, so it comes
@@ -219,7 +230,7 @@ export async function run(ctx) {
   // would read 19.5 and 20 would read 30.
   const flank = damageFor({ ...attacker, facing: "n" }, { ...dugIn }, cfg);
   must(flank.flank === true, "s2.2 the perpendicular attack no longer reads as a flank");
-  eq(flank.amount, 19, "D13: flank is the integer form 13 + 13/2 = 19, not x1.5 = 19.5");
+  eq(flank.amount, 19, "s2.2 flank is the integer form 13 + 13/2 = 19, not x1.5 = 19.5");
   eq(damageFor(
     piece("blue:tank2", "blue", "tank", plainCell.x, plainCell.y, { facing: "n" }),
     piece("red:foot2", "red", "infantry", plainCell.x, plainCell.y, { facing: "w", fighting: "blue:third", entrenched: true }),
