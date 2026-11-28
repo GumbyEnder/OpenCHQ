@@ -1006,11 +1006,16 @@ body.in-match .brand > .pursechip { flex: 0 0 auto; }
   body.in-match #strip > .nav { gap: 1px; }
   /* The purse keeps a legible floor; the round/clock readout keeps its own width (PB-173). 30 px is
      the widest floor that does not push the chip past the row at 1024x768; with the brand
-     content-sized the chip's own box is what holds "999b" (26.7 px) whole. */
-  body.in-match .pursechip { min-width: 30px; }
-  /* PB-180 (a): at 1024 the row has no pixel for the income leg. It moves into the chip's title —
-     the cash figure, which the original shows on the main display, is never clipped. */
-  body.in-match .pursechip .inc { display: none; }
+     content-sized the chip's own box is what holds "999b" (26.7 px) whole.
+     PB-337 (PM 10496 §2): the chip is CONTENT-SIZED at this width and never the row's shrink target.
+     PB-180 dropped the income leg here because the row was assumed to have no pixel for it; measured
+     on eceac31 the row does have the room (the account box's auto margin), and the rate is the number
+     a player buys against - a figure that only lives in a tooltip is not a display. With the chip
+     elastic, a row that ran short would ellipsize the chip's LAST leg (the rate) away and print a
+     budget with no rate, which is the same defect in a quieter voice; content-sized, a short row is
+     loud instead. Measured at 1024x768 in 1986/1942/2023: chip 66.39 / 71.08 / 100.58 px, the readout
+     keeps its 224.17 px text, the gap stays 4 px and the row still ends inside the window. */
+  body.in-match .pursechip { min-width: 30px; flex: 0 0 auto; }
   /* PB-291: the two rules above take the readout whole and hand the deficit to the nav's scroll
      window, and the scroll window is a clip: at 1024x768 #nav read 480 px of commands in a 283 px
      window, so Air sat hidden inside the cluster and the AC ("every header control fully visible and
@@ -1452,22 +1457,44 @@ body.in-match .brand > .stripinfo { flex: 0 1 auto; min-width: 0; max-width: non
   body.in-match #strip > .whoami { gap: 1px; }
   body.in-match .speedctl { gap: 1px; }
   body.in-match .pursechip { min-width: 27px; }
-  /* "Speed 0 · paused" measures 86.9 px at 11 px type; 90 keeps the slot fixed (PB-143: a
-     content-sized readout moved the + button 20.75 px sideways) and returns 2 px to the row. */
-  body.in-match .speedreadout { width: 90px; }
+  /* "Speed 0 · paused" measures 86.9 px at 11 px type; 88 keeps the slot fixed (PB-143: a
+     content-sized readout moved the + button 20.75 px sideways) and returns 2 px to the row.
+     PB-337: 90 -> 88 - still wider than the longest string, so nothing clips and nothing moves. */
+  body.in-match .speedreadout { width: 88px; }
+  /* PB-337 (PM 10496 §2): the income leg is PAINTED at this width now, and that costs the row 39-73 px
+     depending on the seat (39 = "65b +1.55b/rd"; 73 = "OIL 600b +500M/s"). The row's slack is the
+     account box's auto margin; the rest comes from the same lever class the PM named for this band -
+     padding and gaps, never a label or a box: the speed slot (above), the OIL word's right margin
+     (4 -> 2 px, so the warning still separates from the cash) and the ten command labels' side
+     padding (1 -> 0 px). The command cluster keeps its 1 px gap, so two labels still clear each other
+     by 1 px of background - the pairwise arm's own floor - and every button is still exactly as wide
+     as its own text (the leg grades scrollWidth <= clientWidth on all ten). */
+  body.in-match .pursechip .oilword { margin-right: 2px; }
+  /* PB-337: the same lever on the two control clusters whose boxes are wider than their labels -
+     the four game buttons (16 px; the cluster's own 4 -> 2 px gap still separates them) and the two
+     account buttons (4 px; the account box's 1 px gap still separates them). No label clips
+     (scrollWidth <= clientWidth on every button), no pair of boxes touches, and nothing is hidden:
+     PB-291's "every header control on the row" is the reason this is padding and not a display:none. */
+  body.in-match .gamebtns .navbtn { padding: 2px 0; }
+  body.in-match .gamebtns { gap: 2px; }
+  body.in-match .account .ghost,
+  body.in-match .debugtoggle { padding: 2px 0; }
   /* PB-291 gave the cluster `flex: 1 1 auto`, so every pixel freed anywhere in the row became
      cluster width and the readout never saw it. At this width the cluster is content-sized: the
      row's slack sits between the commands and the account box (`margin-left: auto` there), and the
      only shrink target left is the readout, which is what PB-323 is asking for. */
   body.in-match #strip > .nav { flex: 0 1 auto; }
-  /* 8 px more, from side padding on the ten command labels: at 11 px type the last glyph of "Buy",
-     "Air", "Kit", "Map", "War" and "Log" still prints whole, and the leg grades every button's
-     scrollWidth against its clientWidth rather than eyeballing a screenshot. */
-  body.in-match #strip > .nav .navbtn { padding: 2px 1px; }
-  /* PB-323b: the Concealed win line is the widest terminal state the row can print; 1 px of side
-     padding on the two account buttons is invisible next to the label and buys 4 px for the readout. */
+  /* PB-337: 1 px -> 0 px of side padding, 20 px on the ten labels, because the income leg is painted
+     here now. The boxes stay separated by the cluster's own 1 px gap - the pairwise arm's floor - and
+     each button is still exactly as wide as its own text, so the leg's scrollWidth <= clientWidth arm
+     holds for all ten. */
+  body.in-match #strip > .nav .navbtn { padding: 2px 0; }
+  /* PB-323b: the Concealed win line is the widest terminal state the row can print; the two account
+     buttons' side padding buys width for the readout. PB-337: 1 px -> 0 px, because the income leg is
+     painted here now and every pixel is the row's; the account box's 1 px gap still separates the two
+     boxes and each button is exactly as wide as its own label. */
   body.in-match .account .ghost,
-  body.in-match .debugtoggle { padding: 2px 1px; }
+  body.in-match .debugtoggle { padding: 2px 0; }
 }
 
 /* PB-323b: the band ABOVE 1100 keeps the cease-fire count on the strip (PM 10334 §2), and at 1280 it
