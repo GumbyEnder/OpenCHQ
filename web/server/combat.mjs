@@ -55,6 +55,44 @@ const MILITIA_SITES = new Set(["city", "base", "dock", "docks", "capital"]);
 // move here: sea domain out, cargo on a land hull out.
 const pinnedByBeat = (piece) => Boolean(piece) && piece.domain !== "sea" && piece.transport !== true;
 
+// PB-355 (b2): the pin's SECOND guard - the ground the occupant stands on. The 0xfff6 store is
+// wrapped in `if (*(byte *)(param_2 + 0x1996) < 0x80)` (1c0d:0197), and param_2 is the routine's
+// second argument. The per-pass walk passes piece[0x836] (decompiled.c 4519 -> 4532), the field
+// FUN_16ee_1374 sets from get_terrain_type, i.e. the terrain of the cell the piece is ON; the
+// completed-move call passes 0 (decompiled.c 7721) and table[0] = 0 is under 0x80. So an ARRIVAL
+// pins land on any ground and a later beat pins only where the byte under the occupant is under
+// 0x80: docks/capital/base/city are 0xf4 and oilfield 0xe0 (8060) and refuse it. The bytes are the
+// same 15-entry table the attrition rows read (measured.combat.attritionTable), not a literal.
+//
+// A beat's write is three-valued, and the port keeps the original's distinction instead of
+// clearing the flag whenever a store is skipped:
+//   "set"     - 9063 stores -10: enemy site, kind < 7, and either the arrival call or a passing byte
+//   "cleared" - 9075 stores byte[0x197a] = 0x14 (20) at an UNOWNED site for kind < 7, and a kind
+//               >= 7 never reaches a store at all (9061's `bVar1 < 7`). Both leave the occupant
+//               free to move, so a pin an older room carries is not this code's and is dropped.
+//   null      - land, enemy site, later beat, byte >= 0x80: no store. The pin an arrival beat set
+//               is left standing; the original does not clear it on a pass that skips the write.
+//               ("cleared" is not separately graded from the flag: PB-072's contact rule clears an
+//               unengaged piece at the top of every resolve, so the flag is already false when the
+//               beat runs. The rows and the order are what the node reads.)
+function pinTerrainByte(piece, combat) {
+  const id = terrainIdAt(piece.x, piece.y);
+  if (id === null || id === undefined) return null;
+  const bytes = combat.attritionTableBytes;
+  if (!Array.isArray(bytes) || bytes.length !== 15) return null;
+  const byte = bytes[Number(id)];
+  return Number.isFinite(byte) ? byte : null;
+}
+
+function militiaPinWrite(piece, { firstBeatAtSite, neutral, combat }) {
+  if (!pinnedByBeat(piece)) return "cleared";   // 9061: the store is inside `bVar1 < 7`
+  if (neutral) return "cleared";                // 9075: 0x6fe := byte[0x197a] = 20, a positive budget
+  if (firstBeatAtSite) return "set";            // 7721 passes 0, and table[0] = 0 clears the guard
+  const byte = pinTerrainByte(piece, combat);
+  if (byte === null) return "set";              // no board under the piece: keep the old answer
+  return byte < 0x80 ? "set" : null;            // CMP [BX+0x1996],0x80 at 1c0d:0197
+}
+
 // Chebyshev distance 1, X wraps around the board edge, Y does not.
 export function adjacent(a, b) {
   if (!a || !b) return false;
@@ -594,7 +632,13 @@ export function resolve(match) {
         // The beat is per piece per city: a piece that walks into a second city starts that
         // city's clock fresh, and a piece that leaves and comes back is a new occupation.
         const key = siteKey(site);
-        const last = piece.militiaSite === key ? Number(piece.militiaRound ?? -1) : -1;
+        // PB-355 (b2): an ARRIVAL beat, not a later pass. The caller on a completed move passes 0
+        // for the terrain (194c:0f8a, decompiled.c 7721), and table[0] = 0 clears the pin store's
+        // guard; the per-pass walk passes piece[0x836] instead (decompiled.c 4532). The port beats
+        // per site per SHOT_EVERY_ROUNDS, so the first beat of an occupation is the arrival analog
+        // and the stamps below are what a later beat reads.
+        const firstBeatAtSite = piece.militiaSite !== key;
+        const last = firstBeatAtSite ? -1 : Number(piece.militiaRound ?? -1);
         if (Number(round) - last < Number(combat.shotEveryRounds)) return;
         paid.add(piece.id);
         piece.militiaSite = key;
@@ -624,14 +668,20 @@ export function resolve(match) {
         // so a sea hull (or cargo on one) takes the shot and keeps its mobility - Manual p.24. The
         // damage above is NOT gated: `local_4 = 0x82` is assigned before that test, and the unowned
         // branch's byte outside it, so a submarine still pays 2 or 20.
-        const pinned = pinnedByBeat(piece);
-        if (pinned) {
+        //
+        // PB-355 (b2): the store has a second guard - the ground - and an unowned site's write is
+        // not a pin (0x197a = 20). militiaPinWrite names all three outcomes; a skipped store does
+        // NOT clear a pin the arrival beat set, and a "cleared" one does drop a stale flag.
+        const pinWrite = militiaPinWrite(piece, { firstBeatAtSite, neutral, combat });
+        if (pinWrite === "set") {
           piece.pinned = true;
-        } else if (piece.pinned === true) {
-          // A room saved before this fix can hold a sea piece the militia had pinned. The original
-          // never pins one, so the stale flag is cleared at the same beat that would have set it.
+        } else if (pinWrite === "cleared" && piece.pinned === true) {
+          // A room saved before PB-355 can hold a sea piece the militia had pinned, or a land piece
+          // at an unowned site: the original never pins either, so the stale flag is dropped at the
+          // same beat that would have set it.
           piece.pinned = false;
         }
+        const pinned = pinWrite === "set";
         log.push({
           type: "shot",
           side: site.owner || null,

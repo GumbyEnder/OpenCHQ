@@ -53,8 +53,9 @@ export const DEVIATIONS = [
 
 // PB-349 closed D10, D11 and D12 at this commit, so their rows are gone: the table holds only what
 // is still measured-and-unfixed. The arms that pinned them are now positive assertions in the s5
-// block below (a site cell with no row drains, an unowned site pays 20 into the floor, the beat
-// pins the occupant), and the three server files name the routine each figure comes from.
+// block below (a site cell with no row drains, an unowned site pays 20 into the floor, the enemy
+// beat pins the occupant while the unowned one hands it a 20-point allowance - PB-355 b2), and the
+// three server files name the routine each figure comes from.
 //
 // PB-350 closes D1, D2, D3, D4 and D13 on top of that: the doc prints the dumped bytes, its cover
 // and shore-cap sentences say wired, and its flank prose gives the integer form. Those rows are gone
@@ -354,10 +355,13 @@ export async function run(ctx) {
   const ownSite = [{ id: 2, name: "Testville", kind: "city", owner: "blue", x: 10, y: 10 }];
   eq(drain("city", 100, ownSite).events.length, 0, "s5 an own site must not drain");
 
-  // Militia (FUN_1c0d_00b4, 9056-9077): an enemy-OWNED site costs 2 per pass, an UNOWNED site 20,
-  // and both pin the occupant (move points to -10). PB-216/PB-288 put the militia on the OCCUPIED
-  // cell, which is the doc's "standing on" case, so the two pieces below do not have to be
-  // fighting: the squat pays, the garrison does not.
+  // Militia (FUN_1c0d_00b4, 9056-9077): an enemy-OWNED site costs 2 per pass, an UNOWNED site 20.
+  // Only the enemy branch pins: `0x6fe = 0xfff6` (-10) at 9063, and only for kind < 7 and, on a
+  // later pass, only when the 0x1996 byte under the occupant is under 0x80. The unowned branch
+  // writes `byte[0x197a] = 0x14` (20) - a positive move allowance, not the pin (PB-355 b2,
+  // docs/re/COMBAT.md s5). PB-216/PB-288 put the militia on the OCCUPIED cell, which is the doc's
+  // "standing on" case, so the two pieces below do not have to be fighting: the squat pays, the
+  // garrison does not.
   const militiaMatch = (siteOwner, strength = 100) => {
     const squat = piece("blue:foot", "blue", "infantry", 10, 10, { strength });
     const guard = piece("red:tank", "red", "tank", 14, 10);
@@ -388,7 +392,12 @@ export async function run(ctx) {
   eq(beat.amount, 20, "s5 an unowned site costs 20 per beat until the capture lands (9056-9077)");
   eq(neutral.squat.strength, 80, "PB-349/D11: 100 -> 80 on an unowned site, the measured leg");
   eq(beat.side, null, "PB-349/D11: an unowned site's militia has no owner side to name");
-  eq(neutral.squat.pinned, true, "s5/D12: the neutral beat pins too");
+  // PB-355 (b2): the unowned branch does not pin. 9075 stores byte[0x197a] = 0x14 (20), a positive
+  // move allowance; the -10 pin is the ENEMY branch's store (9063) only.
+  if (neutral.squat.pinned === true) {
+    fail("s5/D12: the unowned branch stores 20 (0x197a), not the pin, so it must not pin the squatter");
+  }
+  eq(beat.pinned, false, "s5/D12: the unowned row must not claim a pin");
 
   // The two branches differ in ONE more way: the neutral 20 is floored at strength 20 (its live leg
   // stops at 20), while the enemy site's 2 has no floor and can kill.

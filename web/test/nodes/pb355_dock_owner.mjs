@@ -16,6 +16,14 @@
 //   - the militia DAMAGE starts asking the kind                     -> (c)/(d) read 0 where the
 //     original pays 2 at an enemy port and 20 at an unowned one (local_4 = 0x82 is assigned
 //     before the kind test, 9061).
+//   - the pin store stops asking the ground under the occupant     -> (b2)/(ii) reads a pinned
+//     land hull on a later beat at a 0xf4 dock cell, which 1c0d:0197 refuses;
+//   - the arrival call's 0 argument is dropped and every beat asks the ground
+//                                                                 -> (b2)/(i) reads an unpinned
+//     land hull on the cell it just arrived at, which the original pins;
+//   - an unowned site's write is read as the pin (0x197a = 20, not 0xfff6)
+//                                                                 -> (d) reads a pinned land
+//     hull where the original only hands the occupant a 20-point move allowance.
 //
 // (b) to (d) are the militia legs, built from the BOARD ROWS ONLY - no openMatch, no seedOwners.
 // That is the seam the card names: economy.seedOwners already synced docks at the bell, so a leg
@@ -198,16 +206,60 @@ export async function run(ctx) {
       "pb355 (c)/G1: a " + kind + " must take its next step after the militia beat");
   }
   {
-    // The gate is kind, not a blanket removal: a LAND hull on the same enemy dock is still pinned.
+    // (i) ARRIVAL. The completed-move call passes 0 for the terrain (decompiled.c 7721) and
+    // table[0] = 0 clears the pin store's guard, so the first beat of an occupation pins land even
+    // though the dock cell's own 0x1996 byte is 0xf4.
     const { list, byId, docks } = roster("1942");
     const dock = docks.find((candidate) => asSide((portOf(byId, candidate) || {}).owner) === "red");
+    if (!dock) fail("pb355 (b2)/(i): the 1942 board has no dock beside a red port");
     const walker = holding(foot(dock), dock);
     const rows = beat(list, walker);
-    if (rows.length !== 1) fail("pb355 (c): an enemy-port dock must charge a land hull once, got " + rows.length);
-    eq(rows[0].amount, 2, "pb355 (c): the land hull pays the same 2");
-    eq(rows[0].pinned, true, "pb355 (c)/D12: the land arm keeps the pin (kind < 7)");
-    eq(walker.pinned, true, "pb355 (c)/D12: the land hull is held on an enemy dock");
-    eq(pieceState(walker, { round: 2 }), "pinned", "pb355 (c)/D12: the land hull reads pinned");
+    if (rows.length !== 1) fail("pb355 (b2)/(i): an enemy-port dock must charge a land hull once, got " + rows.length);
+    eq(rows[0].amount, 2, "pb355 (b2)/(i): the land hull pays the same 2");
+    eq(rows[0].pinned, true, "pb355 (b2)/(i)/D12: the arrival beat pins land (kind < 7)");
+    eq(walker.pinned, true, "pb355 (b2)/(i)/D12: the land hull is held on arrival at an enemy dock");
+    eq(pieceState(walker, { round: 2 }), "pinned", "pb355 (b2)/(i)/D12: the land hull reads pinned");
+
+    // (ii) A LATER BEAT ON THE DOCK CELL (0x1996 = 0xf4): no store. The walk passes piece[0x836]
+    // here (decompiled.c 4532) and `CMP [bx+0x1996],0x80` at 1c0d:0197 refuses. Clearing the flag
+    // first proves the refusal is the guard, not a store that never ran; the SHOT is not gated.
+    walker.pinned = false;
+    const laterRows = beat(list, walker, 4);
+    if (laterRows.length !== 1) fail("pb355 (b2)/(ii): a later beat must still charge the land hull, got " + laterRows.length);
+    eq(laterRows[0].amount, 2, "pb355 (b2)/(ii): the later beat still charges 2 - the guard is the store, not the shot");
+    eq(laterRows[0].pinned, false, "pb355 (b2)/(ii)/1c0d:0197: a later beat on a 0xf4 dock cell must not pin");
+    if (walker.pinned === true) fail("pb355 (b2)/(ii): the 0xf4 dock cell pinned the land hull on a later beat");
+    eq(pieceState(walker, { round: 4 }), "moving", "pb355 (b2)/(ii): the guard leaves the land hull free to move");
+    // The store's OTHER outcome is "no write": the arrival pin is left standing. That is not graded
+    // from the piece here because the contact rule owns the flag between beats (PB-072: unengaged
+    // land unpins, so it clears at the top of every resolve). The graded claim is the row's
+    // `pinned`, which the beat above reads false while the shot still lands.
+  }
+  {
+    // (iii) THE TEST, NOT A DELETED STORE. No shipped militia cell carries a 0x1996 byte under 0x80
+    // - every dock is terrain 1 and every city/capital/base cell is 4/5/6, all 0xf4 - so the
+    // passing side of the guard is graded on a fixture site standing on a real PLAIN cell (8 =
+    // 0x60), the town's ring ground. A later beat there must pin: a deleted store reads false, and
+    // a "never pin after arrival" guard reads false too.
+    const board = boardPayload();
+    const cells = Array.isArray(board.cells) ? board.cells : [];
+    const flat = cells.findIndex((value) => Number(value) === 8);
+    if (flat < 0) fail("pb355 (b2)/(iii): the board has no plain (0x60) cell, so the guard's passing side is ungraded");
+    const px = flat % board.width;
+    const py = Math.floor(flat / board.width);
+    const ring = [{ id: "ring:fixture", name: "Ring fixture", kind: "city", owner: "red", x: px, y: py }];
+    const stand = {
+      id: "blue:ring", side: "blue", kind: "infantry", domain: "land", transport: false,
+      x: px, y: py, path: [], pace: 1, facing: null, fighting: null, strength: 100, maxStrength: 100,
+    };
+    const first = beat(ring, stand);
+    if (first.length !== 1) fail("pb355 (b2)/(iii): the fixture site must charge the land hull once, got " + first.length);
+    eq(first[0].pinned, true, "pb355 (b2)/(iii): the arrival beat pins on plain ground too");
+    stand.pinned = false;   // so a later pin can only come from the terrain test
+    const later = beat(ring, stand, 4);
+    if (later.length !== 1) fail("pb355 (b2)/(iii): the fixture site must charge the second beat, got " + later.length);
+    eq(later[0].pinned, true, "pb355 (b2)/(iii)/1c0d:0197: a later beat on a 0x60 plain cell pins");
+    eq(stand.pinned, true, "pb355 (b2)/(iii): the plain ring cell holds the land hull");
   }
   {
     // Cargo on a land hull is kind 11 in the original and never pinned either.
@@ -243,10 +295,21 @@ export async function run(ctx) {
       eq(pieceState(boat, { round: 2 }), "moving", "pb355 (d)/D12: a " + kind + " keeps its order on an unowned dock");
     }
 
-    const walker = foot(dock);
+    const walker = holding(foot(dock), dock);
     const land = beat(bare.list, walker);
     if (land.length !== 1) fail("pb355 (d): the unowned dock must charge a land hull once, got " + land.length);
-    eq(walker.pinned, true, "pb355 (d)/D12: the land arm is still pinned on an unowned dock");
+    // PB-355 (b2): the unowned branch stores byte[0x197a] = 0x14 (20) into the move budget
+    // (decompiled.c 9075, DS:0x197a read at file offset 0x328b0+0x197a, anchored on the 0x1996 and
+    // 0x1986 tables). 20 is a POSITIVE allowance - `pinned` models the enemy branch's -10 store, so
+    // an unowned site pins no kind, land included, and PB-349's land arm here was wrong.
+    eq(walker.strength, 80, "pb355 (d)/D11: the land hull pays the unowned 20");
+    eq(land[0].pinned, false, "pb355 (b2)/9075: the unowned branch stores 20, not the pin");
+    if (walker.pinned === true) fail("pb355 (d)/D12: the unowned dock pinned a land hull");
+    eq(pieceState(walker, { round: 2 }), "moving", "pb355 (d)/D12: a land hull keeps its order on an unowned dock");
+    // The third outcome ("cleared") is not graded from the flag here: PB-072's contact rule already
+    // clears an unengaged piece at the top of every resolve, so the flag is false before the beat
+    // runs and the assertion would pass for the wrong reason. What is graded is the row and the
+    // order, both of which say the unowned branch leaves the occupant free to move.
 
   }
   {

@@ -251,7 +251,8 @@ measured figures live in `measured.combat.repairPerPass` as reference rows.
 
 **Militia** (`FUN_1c0d_00b4` 9056-9077): standing on an **enemy-owned** site costs 2 strength per
 pass and zeroes the piece's move points (−10) — pinned against the town. Standing on an **unowned**
-site costs 20 per pass until the capture lands. City militia damage is therefore 2 (enemy city) or
+site costs 20 per pass until the capture lands, and hands the occupant 20 move points back (see the
+`0x197a` write below) — it does not pin. City militia damage is therefore 2 (enemy city) or
 20 (neutral city), not one number; the runtime's single `militiaDamage` is a stand-in for both.
 
 **Fire is not gated by kind; the pin is** (`decompiled.c` 9054/9060-9063/9073-9077, live
@@ -269,20 +270,56 @@ site costs 20 per pass until the capture lands. City militia damage is therefore
 
 So the manual's two sentences both hold: the militia fires at whoever occupies the site (p.10), and a
 sea unit is never pinned (p.24). The live leg measured the land arm only (k3, 100 -> 98 enemy /
-100 -> 80 unowned, `t009b/militia-2026-11-13.txt`); the sea arm is a read of these two gates, not a
-live measurement. The pin's enemy branch also tests a byte one level down (`CMP byte ptr [BX+0x1996],
-0x80`, `1c0d:0197`, BX = the routine's second argument); D12 already ships `pinned` as a stand-in for
-the zeroed move points, so that byte is not modelled separately.
+100 -> 80 unowned, `t009b/militia-2026-11-13.txt`), and that harness forces the piece's `0x836` to 3
+(lake) for the leg - so it is compatible with, not a measurement of, the terrain guard below.
 
-**The port ships this split** (PB-355 b). One predicate, `pinnedByBeat` in `web/server/combat.mjs`,
-now guards BOTH pin sites — the contact pin and the militia pin: `domain !== "sea" && transport !==
-true`, the remake's spelling of the original's `kind < 7`. A submarine, cruiser or carrier standing on
-an enemy or unowned dock still takes the 2 or the 20, keeps its order and steps it; a land hull on the
-same cell is pinned exactly as before, so G3 (land still pins) grades the store rather than its
-absence. `game.json`'s `militiaDamage` / `measured.combat.militia` are untouched — this commit moves
-the pin, not the damage. `web/test/nodes/pb355_dock_owner.mjs` grades own / enemy / unowned docks for
-all three hulls, the later tick, the step, and the land control, over both the extract board and the
-baked board.
+**The pin's second guard is the ground under the occupant** (PB-355 b2). The `0xfff6` store sits
+inside `if (*(byte*)(param_2 + 0x1996) < 0x80)` (`CMP byte ptr [BX+0x1996],0x80`, `1c0d:0197`), and
+`param_2` is the routine's second argument:
+
+- the per-pass walk passes `piece[0x836]` (`decompiled.c` 4519 -> 4532) - the field `FUN_16ee_1374`
+  sets from `get_terrain_type`, i.e. the terrain of the cell the piece is ON (read once at the top of
+  the pass, before any step taken that pass);
+- the completed-move call passes **0** (`decompiled.c` 7721, `FUN_194c_0f8a`), and `table[0] = 0`
+  clears the guard.
+
+So an **arrival** pins land on any ground, and a **later pass** pins only where the `0x1996` byte
+under the occupant is under `0x80`: docks/capital/base/city are `0xf4` and oilfield `0xe0` and refuse
+it, while plain/forest (`0x60`), mountain, desert, jungle, polar and wasteland pass. On the shipped
+board every militia cell is `0xf4` (docks terrain 1, city/capital/base cells 4/5/6), so in practice
+the guard means "the arrival pass pins, later passes in the town do not", and the passing side is only
+reachable on a site whose cell is open ground (graded on a fixture over a real plain cell).
+
+**The unowned branch's write is not the pin.** `0x6fe = byte[0x197a]` (9075) and `DS:0x197a` is
+`0x14` (20) - read from `extracted/exe/CHQ_unpacked.EXE` at file offset `0x328b0 + 0x197a`, anchored
+on the three known tables at that base (`0x1996` = `0 244 0 3 244 244 244 224 96 96 32 35 35 5 31`,
+`0x1986` = `0 2 0 0 1 1 1 1 0 0 0 0 0 0 0`, `0x199a` = `0xf4`). 20 is a POSITIVE move-point
+allowance (`FUN_15f4_0002` stops the step loop under 20, `decompiled.c` 4583), so an unowned site
+hands the occupant a step back; it never pins. `pinned` models the enemy branch's `-10` store only,
+so no kind - land included - is pinned at an unowned site. PB-349's land arm read that write as a
+pin; that read was wrong and PB-355 b2 flips it.
+
+**The port ships this split** (PB-355 b, b2). `pinnedByBeat` in `web/server/combat.mjs` (`domain !==
+"sea" && transport !== true`, the remake's spelling of `kind < 7`) guards BOTH pin sites - the contact
+pin and the militia pin - and `militiaPinWrite` adds the three-valued store:
+
+| branch | store | row `pinned` | piece after the beat |
+|---|---|---|---|
+| enemy site, land, arrival beat | `0xfff6` | true | pinned |
+| enemy site, land, later beat, byte < 0x80 | `0xfff6` | true | pinned |
+| enemy site, land, later beat, byte >= 0x80 | none | false | flag left standing |
+| unowned site, any kind | `20` (`0x197a`) | false | stale flag dropped |
+| any site, kind >= 7 (sea, or cargo on one) | none | false | stale flag dropped |
+
+The bytes come from `measured.combat.attritionTable` through `combatRules().attritionTableBytes` -
+the same 15 bytes the attrition rows read, not a second literal. `game.json`'s `militiaDamage` /
+`measured.combat.militia` are untouched: this is the pin, not the damage. Two modelling notes: the
+port's beat is per site per `shotEveryRounds`, so the first beat of an occupation is the arrival
+analog (a leave-and-return inside one clock window is not re-graded as an arrival); and the original's
+20-point allowance is a per-pass step budget the port has no move-point field for, so the port reads
+it as "not pinned". `web/test/nodes/pb355_dock_owner.mjs` grades own / enemy / unowned docks for all
+three hulls, the later tick, the arrival/later pair (i)/(ii)/(iii), the unowned write, the step, and
+the land control, over both the extract board and the baked board.
 
 **A dock cell is a town's footprint cell.** `FUN_188b_00a4` stores the site at the piece's own cell in
 `0xc478` (`MOV [0xc478],AX`, `188b:00c8`), and that lookup is `FUN_2724_00e3`, which matches a site's

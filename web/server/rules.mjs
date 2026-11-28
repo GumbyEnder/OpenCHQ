@@ -553,6 +553,12 @@ export function combatRules() {
   const militiaNeutralDamage = Math.max(0, finiteNumber((measured.militia || {}).neutralSite,
     finiteNumber(combatValue("militiaDamage"), 0)));
   const maxStrength = Math.max(1, finiteNumber(combatValue("maxStrength"), 100));
+  // PB-355 (b2): the 0x1996 per-terrain byte, unchanged. The militia's pin store tests it directly
+  // (`CMP byte ptr [BX+0x1996],0x80`, 1c0d:0197, BX = the terrain the occupant stands on), so the
+  // runtime reads the same dumped 15 bytes the attrition rows read instead of a second literal.
+  const attritionTableBytes = Array.isArray((measured.attritionTable || {}).bytes)
+    ? measured.attritionTable.bytes.map((value) => Math.max(0, Math.floor(finiteNumber(value, 0))))
+    : [];
   const built = {
     maxStrength,
     shotEveryRounds: Math.max(1, Math.floor(finiteNumber(combatValue("shotEveryRounds"), 2))),
@@ -584,6 +590,8 @@ export function combatRules() {
     bombardFloor: Math.min(1, Math.max(0, finiteNumber(combatValue("bombardFloor"), 0))),
     militiaDamage: Math.max(0, finiteNumber(combatValue("militiaDamage"), 0)),
     militiaNeutralDamage,
+    // PB-355 (b2): the 0x1996 bytes, for the pin store's terrain guard (1c0d:0197).
+    attritionTableBytes,
     pinRounds: Math.max(0, Math.floor(finiteNumber(combatValue("pinRounds"), 0))),
   };
   combatCache.set(config, built);
