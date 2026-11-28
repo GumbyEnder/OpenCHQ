@@ -47,20 +47,36 @@ bash tools/fire.sh            # WEB_OK -> mark done -> commit -> push origin/web
 
 `OPENCHQ_LOOP_NODEPLOY=1` skips the CLI deploy, `OPENCHQ_LOOP_NOPUSH=1` commits without pushing.
 
-### The GitHub trigger does not ship (measured 2026-11-11)
+### The push is the deploy lane; the check is still a curl (history: 2026-11-11)
 
 A push to `origin/web` created Railway deployments, but both of the 2026-11-10 evening pushes
 (21:43 and 21:48) came back `REMOVED` and the live build stayed at `84eff0b` while `origin/web`
 moved through `6a74a49` to `27aa2fb`. `/api/version` is the check that matters: it read
 `build.json` at the time, so it named the commit actually serving, and it did not move for a push.
-(As of 2026-11-23 the service is repo-connected and /api/version reports `RAILWAY_GIT_COMMIT_SHA`
-with `"source":"railway"` — see the build-stamp section below. This paragraph is the history of
-why the check is a curl and not a push receipt.)
+That was the un-repo-connected window, and it is why the loop verifies by curl and never by a
+push receipt.
 
-What worked, and is now the deploy lane: `railway up -y -d --service openchq-web` from the repo
-root, after `railway status` confirms the project link. That shipped `27aa2fb`/`3e2eba3` in about
-90 seconds. Treat a push as "code is in the branch", never as "code is live"; confirm with
-`curl -s https://openchq-web-production.up.railway.app/api/version`.
+Since the service was repo-connected (2026-11-23) and re-verified 2026-11-27, a fast-forward push
+to `refs/heads/web` IS the deploy, with no `railway up` involved (frodo's push-gate log
+`/mnt/nas/host-ops/openchq/web-push-gate.log` is the record of the push; `/api/version` is the
+record of the serve):
+
+- PB-331 `2ada057..d88dbfe`, ALLOWED 22:59:37 → the live-evidence directory was created 23:00:28
+  and the live E2E at 23:02:28 read `served d88dbfe source=railway`.
+- PB-332 `d88dbfe..4b46935`, ALLOWED 23:25:56 → the version poll
+  (`pb332/ship-4b46935/version-poll.log`) read `d88dbfe` at 23:26:22, `502 Application failed to
+  respond` at 23:26:47, and `{"commit":"4b46935…","source":"railway"}` at 23:26:57 — 61 s, one
+  swap window, no CLI deploy.
+
+So: the push is the lane, `railway up` is the belt-and-braces path, expect one empty/502 read
+across the container swap (that is the swap, not a failed deploy), and `/api/version` answering
+the pushed sha is the proof. Treat "the push went through" as "code is in the branch" until
+`/api/version` names it.
+
+One consequence to respect: **a docs-only commit to `web` is still a deploy.** It restarts the
+process and ends every live room. Land doc corrections with a ship record — piggybacked on the
+next code ship, on that ship's literal — never standalone mid-queue, so the sha the queued
+tickets cite as their base does not move under them.
 
 ### Build stamp: which commit an upload names (measured 2026-11-23)
 
@@ -210,13 +226,19 @@ where per-seat room state stops being disposable, and the decision belongs there
 ### Deploy policy (this is the part that was actually hurting)
 
 A deploy restarts the process, which ends every live room. The loop used to deploy on every
-green fire, and GitHub push-to-deploy also fired on docs-only commits — 7 deploys in the first
-13 minutes, each one a reboot.
+green fire, and in the un-repo-connected window GitHub push-to-deploy also fired on docs-only
+commits — 7 deploys in the first 13 minutes, each one a reboot.
 
-- GitHub push-to-deploy is disconnected. `railway up` from `tools/fire.sh` is the only deploy path.
-- `tools/fire.sh` deploys only when the pass touched `web/` or `package.json`. A graph, doc or
-  loop-counter commit prints `NO_RUNTIME_CHANGE` and does not reboot the game.
-- Manual deploy after a server change: `railway up -y -d --service openchq-web`.
+- GitHub push-to-deploy is connected (2026-11-23 onward, re-measured 2026-11-27): a fast-forward
+  push to `refs/heads/web` is the deploy, and `openchq-web` has no Railway watch pattern, so
+  **every** push builds — a docs-only commit included. The gate is therefore the ship record and
+  not the file set: only a literal that passed a gate is pushed to `web`, and doc corrections ride
+  a code ship (see the deploy-path section above).
+- `tools/fire.sh` pushes first and reports `PUSH_DEPLOY_QUEUED`; it prints `NO_RUNTIME_CHANGE` when
+  nothing under `web/` changed but notes the push still triggers a git build, and it falls back to
+  `railway up` only when the fire never reached origin (`OPENCHQ_LOOP_NOPUSH=1` or a failed push).
+- Manual deploy after a server change: `railway up -y -d --service openchq-web` — belt-and-braces;
+  the push is the lane.
 - `railway up` uploads the tree, so it never picks up a pushed-but-untested commit by accident.
 - **Badge deploy checklist (T-014, frodo note 6 / PM room 4039).** `web/test/run.mjs` asserts no badge
   behaviour, so a green `run.mjs` says nothing about how a unit looks. Before any deploy that touches
