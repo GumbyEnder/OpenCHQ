@@ -12,7 +12,11 @@
 // width and the chip is content-sized there - a chip that could shrink would ellipsize its LAST leg
 // (the rate) and print a budget with no rate again, in a quieter voice.
 //
-// Arms, per width (1024x768, 1280x800, 1440x900) and per era (1986, 1942), in a real launched game:
+// Arms, per width (1024x768, 1280x800, 1440x900) and per era (1986, 1942), in a real launched game.
+// Every arm's label names the viewport the frame was WINDOWED at, read from that frame
+// (`snap.viewport`), not from a constant: PB-337 shipped this file saying " @1024x768 " on arms that
+// had actually run at 1440 and 1280 (PM 10506 §2), so a grader diffing labels against the AC saw one
+// width in all of them.
 //   (a) the chip's OWN SPANS are visible: `.cash` and `.inc` both compute to a non-none display and
 //       paint a non-zero width, and the chip's text carries a balance AND a rate ("50b+500M/s" shape);
 //   (b) the painted rate is the title's rate - the same token the summary leg of `title` carries, so
@@ -22,6 +26,12 @@
 //       edge is PB-331's number - >= 4 px at 1024, exactly 8 px at 1280, exactly 12 px at 1440;
 //   (e) the row still fits: no pair of controls overlaps, the strip does not scroll, #nav is not a
 //       scroll window (PB-291), and the last control ends inside the window;
+//   (e2) every button in the strip prints its own label whole - `scrollWidth <= clientWidth + 1` per
+//       button, plus the fractional arm: the ink rect of the button's own contents inside its border
+//       box to 0.5 px, because the integer pair snaps (the 1024 band's 0 px side padding leaves 1 px,
+//       and a 451.5 px box reads 451 or 452 by where the fraction lands). This is the arm app.css
+//       cites when it sets the command labels' side padding 1 -> 0 px ("the leg grades scrollWidth <=
+//       clientWidth on all ten"); until this rider the leg collected the numbers and graded nothing;
 //   (f) 1024 only: the widest chip the page can print (OIL + three-digit balance + rate, era 2023,
 //       whose blue seat opens oil-short) keeps (a)-(e);
 //   (g) 1024 only: W2 - a real room at round >= 10 with the clock running keeps (a)-(e);
@@ -111,6 +121,27 @@ const snapshot = (page) => page.evaluate(() => {
   }
   const brand = strip.querySelector(".brand").getBoundingClientRect();
   const last = strip.lastElementChild.getBoundingClientRect();
+  // (e2): every button's own label, measured two ways in the same frame - the integer scroll/client
+  // pair, and the fractional ink rect of the button's contents against its border box. Scoped to
+  // <button> on purpose: #stripInfo is a span that ellipsizes by design at 1024 (PB-291's 64 px cap),
+  // so grading it here would red a rule this ticket does not own.
+  const buttons = [];
+  for (const el of strip.querySelectorAll("button")) {
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) continue;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const ink = range.getBoundingClientRect();
+    buttons.push({
+      key: el.id || (el.textContent || "").trim().slice(0, 16),
+      text: (el.textContent || "").trim(),
+      cluster: el.closest(".nav") ? "nav" : el.closest(".gamebtns") ? "gamebtns" : el.closest(".account") ? "account" : "other",
+      x: rr2(r.x), right: rr2(r.right),
+      scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
+      scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+      inkLeft: rr2(ink.left), inkRight: rr2(ink.right),
+    });
+  }
   return {
     text: (info.textContent || "").trim(),
     title: info.getAttribute("title") || "",
@@ -128,6 +159,7 @@ const snapshot = (page) => page.evaluate(() => {
     round: window.__chq.room() ? window.__chq.room().round : null,
     clock: window.__chq.room() ? window.__chq.room().clock : null,
     controls,
+    buttons,
   };
 });
 
@@ -152,7 +184,11 @@ const RATE = /\+(?:foe\s*)?[\d.]+[Mb]?\/(?:s|rd)/;
 const CASH = /\d+b/;
 
 function verdicts(snap, width, phase) {
-  const at = " @1024x768 " + phase;
+  // The label names the viewport the frame was actually windowed at (the page is the truth, read from
+  // `snap.viewport`); `width` is the AC band that sets (d)'s floor. When the two disagree the (e2) arm
+  // reds rather than the label quietly agreeing with the constant.
+  const vp = (snap && snap.viewport) || null;
+  const at = " @" + (vp ? vp.w + "x" + vp.h : width + "x?") + " " + phase;
   const legs = (snap && snap.chip && snap.chip.legs) || {};
   const cash = legs.cash || null;
   const inc = legs.inc || null;
@@ -199,6 +235,20 @@ function verdicts(snap, width, phase) {
     pairs.length === 0 && stripFits && navFits && rowInside && readoutFits && Boolean(snap.chip.insideBrand),
     JSON.stringify({ overlaps: pairs, strip: snap && snap.strip, nav: snap && snap.nav,
       readout: snap && snap.readout, insideBrand: snap && snap.chip.insideBrand }));
+
+  // (e2) every button in the strip prints its own label whole. Two instruments in one arm because each
+  // is blind alone: the integer scroll/client pair catches a label that overflows its own box, and the
+  // fractional ink rect catches the sub-pixel overflow the integer pair rounds away (a 1 px side pad is
+  // 1 px; a 451.5 px box reads 451 or 452). Touching is not overflowing - 0.5 px is the tolerance.
+  const btns = (snap && snap.buttons) || [];
+  const commandPills = btns.filter((b) => b.cluster === "nav");
+  const past = btns.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1 ||
+    b.inkLeft < b.x - 0.5 || b.inkRight > b.right + 0.5);
+  mark("(e2)" + at + ": every strip button prints its own label whole (" + commandPills.length + " command pills)",
+    Boolean(vp) && vp.w === width && commandPills.length === 10 && btns.length > 0 && past.length === 0,
+    JSON.stringify({ windowed: vp, gradedWidth: width, buttons: btns.length, commandPills: commandPills.length,
+      past: past.map((b) => ({ key: b.key, cluster: b.cluster, sw: b.scrollWidth, cw: b.clientWidth,
+        sh: b.scrollHeight, ch: b.clientHeight, ink: [b.inkLeft, b.inkRight], box: [b.x, b.right] })) }));
 }
 
 async function launch(page, era, tag) {
@@ -322,6 +372,22 @@ async function main() {
         strip: { scrollWidth: strip.scrollWidth, clientWidth: strip.clientWidth },
         nav: { scrollWidth: document.getElementById("nav").scrollWidth, clientWidth: document.getElementById("nav").clientWidth },
         controls,
+        buttons: (() => {
+          const list = [];
+          for (const el of strip.querySelectorAll("button")) {
+            const r = el.getBoundingClientRect();
+            if (!(r.width > 0 && r.height > 0)) continue;
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const ink = range.getBoundingClientRect();
+            list.push({ key: el.id || (el.textContent || "").trim().slice(0, 16),
+              cluster: el.closest(".nav") ? "nav" : el.closest(".gamebtns") ? "gamebtns" : "account",
+              x: rr2(r.x), right: rr2(r.right), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
+              scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+              inkLeft: rr2(ink.left), inkRight: rr2(ink.right) });
+          }
+          return list;
+        })(),
       };
       // put the real frame back
       window.__chq.stripPreview(room);
@@ -336,6 +402,12 @@ async function main() {
         && ceiling.nav.scrollWidth <= ceiling.nav.clientWidth + 1 && ceiling.gap >= 4 && !ceiling.chipClip,
       JSON.stringify({ overlaps: ceilingPairs, gap: ceiling.gap, strip: ceiling.strip, nav: ceiling.nav,
         chip: ceiling.chipText, chipClip: ceiling.chipClip }));
+    const ceilingPast = (ceiling.buttons || []).filter((b) => b.scrollWidth > b.clientWidth + 1 ||
+      b.scrollHeight > b.clientHeight + 1 || b.inkLeft < b.x - 0.5 || b.inkRight > b.right + 0.5);
+    mark("(h) 1024x768 ceiling: every strip button still prints its own label under the three-digit readout",
+      (ceiling.buttons || []).filter((b) => b.cluster === "nav").length === 10 && ceilingPast.length === 0,
+      JSON.stringify({ buttons: (ceiling.buttons || []).length, commandPills: (ceiling.buttons || []).filter((b) => b.cluster === "nav").length,
+        past: ceilingPast }));
     writeFileSync(path.join(OUT, "pb337-ceiling.json"), JSON.stringify(ceiling, null, 2));
     await context.close();
   }
