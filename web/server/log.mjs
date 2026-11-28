@@ -15,6 +15,7 @@ import { unitNoun, unitPhrase } from "../public/units.mjs";
 import { resourceSpec } from "./resources.mjs";
 import { forSeat } from "./view.mjs";
 import { peaceActive } from "./peace.mjs";
+import { actKey } from "../public/acts.mjs";
 
 const SIDES = ["blue", "red"];
 
@@ -129,10 +130,13 @@ export function logLines(match, side, events, round) {
   // hides tagged lines and never hides untagged ones, so a payday, a capture or a fight keeps
   // reading at every level. The values are the levels' own vocabulary: "spotted", "threat",
   // "serious".
-  const push = (text, tag) => {
+  // `key` is the act's identity, shared with the page (public/acts.mjs): the mover's own echo and
+  // this delivered line are one row, not two, whichever lands first (PB-330).
+  const push = (text, tag, key) => {
     if (!text) return;
     const line = { round: lineTurn, text };
     if (tag) line.tag = tag;
+    if (key) line.key = key;
     lines.push(line);
   };
 
@@ -402,7 +406,10 @@ export function logLines(match, side, events, round) {
         // is gated on the war being on as well as on sight. A peacetime move the opponent can
         // read in the log would be the same leak the view closes.
         const air = String(event.kind ?? "") === "aircraft" || String(event.domain ?? "") === "air";
-        if (mine) push(air ? "an aircraft rebased" : "a unit transferred");
+        // PB-330: the mover's own ack already wrote this act into the Log, so the delivered copy
+        // carries the act's key and the page keeps the first of the two (one order, one row). The
+        // enemy arm keeps no key: it never had an echo to collide with.
+        if (mine) push(air ? "an aircraft rebased" : "a unit transferred", null, actKey("transfer", event.pieceId, event));
         else if (!peaceActive(match) && legible(match, side, event)) {
           push(air ? "an enemy aircraft rebased" : "an enemy unit transferred");
         }
@@ -481,7 +488,9 @@ export function logLines(match, side, events, round) {
         // PB-245b AC4: only the owner reads the destination. The enemy is invisible at peace (p.31),
         // and a stored destination printed to the other seat would be the intent behind that
         // invisibility, which is the leak the view closes.
-        if (mine) push("a destination is set; it moves when the war begins");
+        // PB-330: same key as the mover's own echo (which carries the walk's round count), so the
+        // two lines are one row.
+        if (mine) push("a destination is set; it moves when the war begins", null, actKey("destination", event.pieceId, event));
         break;
       case "destination_launched": {
         // The war has begun, so the usual sight rule applies: the owner always reads its unit's

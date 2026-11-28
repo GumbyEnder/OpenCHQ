@@ -50,6 +50,9 @@ import {
   destinationMessage,
   destinationText,
 } from "./command.mjs";
+// PB-330: the act key the server's delivered line carries, so the page's own echo and the
+// server's copy of the same act are one row, not two.
+import { actKey } from "./acts.mjs";
 import { chromeGeometry, roundFraction, timeLeftText } from "./chrome.mjs";
 import { scanAddPieces, scanKeepsAcrossRound, scanSpec, scanState } from "./scan.mjs";
 import { fitScale, textBitmap, validateAtlas } from "./font.mjs";
@@ -4757,13 +4760,26 @@ function connect() {
       // producer for both the sentence and the clearing).
       settleOrder(message.id);
       say(transferText() + clearSelectionSuffix());
-      noteLog([{ round: room && room.round ? room.round : 0, text: transferText().replace(/\.$/, "") }]);
+      // PB-330: this echo owns the row; the server's delivered "a unit transferred" carries the same
+      // key and is dropped by noteLog. The echo is the one with the sentence, and the row must not
+      // repeat itself.
+      noteLog([{
+        round: room && room.round ? room.round : 0,
+        text: transferText().replace(/\.$/, ""),
+        key: actKey("transfer", message.piece, message.to),
+      }]);
     } else if (message.op === "destination") {
       // PB-245b: the destination is stored, not walked. The ack's `rounds` is the walk's preview,
       // which is what the player is promised; nothing has been spent and no path is drawn.
       settleOrder(message.id);
       say(destinationText(message.rounds));
-      noteLog([{ round: room && room.round ? room.round : 0, text: destinationText(message.rounds).replace(/\.$/, "") }]);
+      // PB-330: one row, and it is this one: the echo is the line that carries the walk's round
+      // count. The server's "a destination is set..." arrives with the same key and is dropped.
+      noteLog([{
+        round: room && room.round ? room.round : 0,
+        text: destinationText(message.rounds).replace(/\.$/, ""),
+        key: actKey("destination", message.piece, message.to),
+      }]);
       clearCommand();
     } else if (message.op === "ordered") {
       settleOrder(message.id);
