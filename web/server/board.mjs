@@ -206,6 +206,15 @@ export function matchSites(era = "1986", board = boardPayload()) {
   // attributed from the whole asset list, before this runs, so a dock keeps its port's country even
   // when the port's town is absent that year.
   const live = applyEra(base, era);
+  // PB-355: a dock's owner is its port's owner, and "its port" means the year's row, not the asset
+  // list - `base` above is built without an owner, so a dock resolved against it can only ever be
+  // null. Keyed by string id, the same join economy.seedOwners uses: an era that drops the port's
+  // town leaves the dock out of this map (unowned, the neutral 20), and a port the era holds but
+  // leaves neutral resolves to null on purpose (D11's two-value table, PB-349).
+  const liveById = new Map();
+  for (const site of live) {
+    if (site && site.id !== undefined && site.id !== null) liveById.set(String(site.id), site);
+  }
   // The file's owner byte is live from the bell. R6 cleared it as an interim deviation, when the win
   // check still counted the two seats and a held opening would have decided 1942 on the opening
   // bell; the original's turn-0 RAM says otherwise - London is 0x59 and Berlin 0x9A before any order
@@ -220,12 +229,19 @@ export function matchSites(era = "1986", board = boardPayload()) {
       for (let x = 0; x < CELL_W; x++) {
         if (board.cells[y * CELL_W + x] !== 1) continue;
         const port = neighbourSite(base, x, y);
+        // PB-355: the owner travels with the row from the bell. It is the PORT's row in the year
+        // being played, so a dock beside neutral Madrid is neutral and a dock beside blue Archangel
+        // is blue. A dock with no neighbour, or whose town the era drops, stays null - unowned, and
+        // the militia's neutral branch is what charges a squatter there (D11, unchanged).
+        const served = port ? liveById.get(String(port.id)) || null : null;
+        const owner = served && (served.owner === "blue" || served.owner === "red") ? served.owner : null;
         docks.push({
           id: `dock:${x}:${y}`,
           name: `Dock ${x},${y}`,
           x,
           y,
           kind: "dock",
+          owner,
           country_id: port ? port.country_id : null,
           // PB-320: the port this dock serves. A dock is a painted water cell, not a site the
           // original can capture, so its owner is its port's owner and nothing else. The id is
