@@ -602,17 +602,18 @@ export function resolve(match) {
         // PB-349 (D11): 9056-9077 is a two-value table, not one number - 2 on an ENEMY-owned site
         // and 20 on an UNOWNED one until the capture lands (docs/re/COMBAT.md s5 :228-231, live leg
         // docs/re/t009b/militia-2026-11-13.txt 100 -> 80). Both values are read from
-        // measured.combat.militia through combatRules(); neither is a literal here. Only the
-        // neutral branch is floored - 9089-9093's min(amount, strength-20) - so the enemy site's
-        // 2 can kill and the unowned site's 20 cannot take a unit under 20.
+        // measured.combat.militia through combatRules(); neither is a literal here.
+        //
+        // PB-356: and NEITHER is floored. 0x199a is the terrain table's 0xf4 byte (20, 0x80 set =
+        // through the combat path), and 9089-9093's min(amount, strength-20) is on the 0x80-CLEAR
+        // rows - the lake 3 and polar 5 attrition legs, which is why lake 22 -> 20 is still flat.
+        // The shipped D11 floor made the unowned 20 unable to take a unit under 20; the original
+        // kills with it, as the DOSBox unowned-site k7 leg read (25 -> 5 -> 0, slot cleared) and
+        // Manual p.10 states ("can kill a weakened unit trying to capture a city").
         const neutral = site.owner === null || site.owner === undefined;
-        const before = ensureStrength(piece, max);
-        let amount = neutral ? combat.militiaNeutralDamage : combat.militiaDamage;
-        if (neutral) {
-          const floor = combat.attritionFloor * max;
-          amount = Math.max(0, Math.min(amount, before - floor));
-        }
-        if (amount <= 0) return; // at the floor: the beat happens, nothing more is taken
+        ensureStrength(piece, max);
+        const amount = neutral ? combat.militiaNeutralDamage : combat.militiaDamage;
+        if (amount <= 0) return; // a zero-valued row: the beat happens, nothing more is taken
         const militia = applyDamage(piece, amount, max);
         // PB-349 (D12): the same routine takes the occupant's move points to -10 ("pinned against
         // the town", docs/re/COMBAT.md s5). The port has no move-point field; the shape it does

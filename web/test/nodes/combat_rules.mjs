@@ -235,8 +235,17 @@ export async function run(ctx) {
       match.round = round;
       attritionStep(match, look);
     }
-    if (!near(match.pieces[0].strength, cfg.maxStrength * cfg.attritionFloor)) {
-      fail("desert attrition did not stop at the floor: " + match.pieces[0].strength);
+    // PB-356: the floor arm must NAME its own defect. With the 0x80-clear floor dropped the unit
+    // drains past 20 and is removed, and `match.pieces[0].strength` then throws
+    // "Cannot read properties of undefined" - a crash that grades nothing. Report the removal.
+    const desert = match.pieces[0];
+    const desertFloor = cfg.maxStrength * cfg.attritionFloor;
+    if (!desert) {
+      fail("desert attrition removed the unit: the 0x80-clear floor (" + desertFloor + " at attritionFloor "
+        + cfg.attritionFloor + ") must stop the drain, but the piece is gone");
+    }
+    if (!near(desert.strength, desertFloor)) {
+      fail("desert attrition did not stop at the floor: " + desert.strength);
     }
     const waste = matchOf([unit("blue:f", "blue", "infantry", 10, 10)], { round: 1 });
     for (let round = 1; round <= 200; round++) {
